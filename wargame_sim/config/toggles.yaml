@@ -1,0 +1,11 @@
+# Опциональные параметры (§4.5). Выключенный параметр не участвует в
+# формулах (его модификатор равен 1.0) и скрывается в интерфейсе.
+schema_version: 1
+toggles:
+  fuel: true
+  equipment: true
+  vehicle_condition: true
+  readiness: true
+  commander_influence: true
+  intel: true
+  fatigue: true

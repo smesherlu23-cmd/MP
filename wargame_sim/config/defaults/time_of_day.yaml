@@ -1,0 +1,12 @@
+# Модификаторы времени суток: заметность и точность огня.
+schema_version: 1
+time_of_day:
+  день:
+    detection: 1.00
+    accuracy: 1.00
+  сумерки:
+    detection: 0.75
+    accuracy: 0.90
+  ночь:
+    detection: 0.45
+    accuracy: 0.70

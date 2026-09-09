@@ -1,0 +1,50 @@
+# Снабжение: расход боезапаса и топлива, подвоз, штрафы при нехватке.
+# Итоговый расход = base_per_turn × множитель приказа (orders.yaml)
+#                 × (1 + intensity_weight × интенсивность огня элемента).
+schema_version: 1
+supply:
+  ammo:
+    base_per_turn: 6.0
+    intensity_weight: 0.85
+    resupply_per_turn: 14.0   # подвоз от живого тылового элемента
+    resupply_without_source: 0.0
+    min: 0.0
+    max: 100.0
+    # k_боезапас(ammo)
+    state_curve:
+      - {x: 0.0, y: 0.10}
+      - {x: 10.0, y: 0.45}
+      - {x: 30.0, y: 0.80}
+      - {x: 60.0, y: 1.00}
+      - {x: 100.0, y: 1.05}
+  fuel:
+    base_per_turn: 4.0
+    intensity_weight: 0.30
+    resupply_per_turn: 12.0
+    resupply_without_source: 0.0
+    infantry_uses_fuel: false  # см. §15, вопрос 6 — топливо только для техники
+    min: 0.0
+    max: 100.0
+    # k_топливо(fuel) — применяется к элементам с техникой
+    state_curve:
+      - {x: 0.0, y: 0.55}
+      - {x: 15.0, y: 0.80}
+      - {x: 40.0, y: 0.95}
+      - {x: 100.0, y: 1.00}
+  equipment:
+    loss_per_turn: 0.8
+    loss_per_casualty_share: 8.0
+    resupply_per_turn: 5.0
+    min: 0.0
+    max: 100.0
+    # k_снаряжение(equipment)
+    state_curve:
+      - {x: 0.0, y: 0.55}
+      - {x: 30.0, y: 0.82}
+      - {x: 70.0, y: 0.97}
+      - {x: 100.0, y: 1.03}
+  # Множитель подвоза, если тыловой элемент подавлен/обескровлен
+  source_efficiency_curve:
+    - {x: 0.0, y: 0.0}
+    - {x: 50.0, y: 0.7}
+    - {x: 100.0, y: 1.0}
