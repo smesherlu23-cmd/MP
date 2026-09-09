@@ -1,0 +1,37 @@
+# Множители уровней опыта (1 — новобранцы, 4 — ветераны).
+# combat              — вклад в коэффициент состояния;
+# morale_resistance   — делитель падения морали;
+# detection           — множитель обнаружения;
+# suppression_recovery— множитель спада подавления;
+# initiative          — слагаемое к броску инициативы;
+# morale_bonus        — слагаемое k6 в формуле морали.
+schema_version: 1
+experience:
+  1:
+    combat: 0.80
+    morale_resistance: 0.85
+    detection: 0.85
+    suppression_recovery: 0.80
+    initiative: 0.00
+    morale_bonus: 0.00
+  2:
+    combat: 0.95
+    morale_resistance: 1.00
+    detection: 1.00
+    suppression_recovery: 1.00
+    initiative: 0.50
+    morale_bonus: 0.40
+  3:
+    combat: 1.10
+    morale_resistance: 1.20
+    detection: 1.15
+    suppression_recovery: 1.20
+    initiative: 1.00
+    morale_bonus: 0.80
+  4:
+    combat: 1.25
+    morale_resistance: 1.45
+    detection: 1.35
+    suppression_recovery: 1.45
+    initiative: 1.75
+    morale_bonus: 1.20

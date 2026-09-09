@@ -1,0 +1,43 @@
+# Модификаторы местности.
+# attack/defense    — множители огневой мощи и устойчивости;
+# detection         — базовая заметность (чем меньше, тем труднее обнаружить);
+# fatigue           — множитель прироста усталости;
+# speed             — множитель подвижности (влияет на выход из контакта);
+# cover             — доля потерь, поглощаемая укрытием (0..0.95).
+schema_version: 1
+terrain:
+  равнина:
+    attack: 1.05
+    defense: 0.90
+    detection: 1.20
+    fatigue: 0.95
+    speed: 1.10
+    cover: 0.05
+  холмы:
+    attack: 1.00
+    defense: 1.10
+    detection: 0.95
+    fatigue: 1.10
+    speed: 0.90
+    cover: 0.15
+  лес:
+    attack: 0.85
+    defense: 1.20
+    detection: 0.70
+    fatigue: 1.15
+    speed: 0.75
+    cover: 0.25
+  застройка:
+    attack: 0.80
+    defense: 1.35
+    detection: 0.75
+    fatigue: 1.05
+    speed: 0.70
+    cover: 0.30
+  болото:
+    attack: 0.75
+    defense: 0.95
+    detection: 0.85
+    fatigue: 1.35
+    speed: 0.50
+    cover: 0.10

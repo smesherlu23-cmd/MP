@@ -1,0 +1,121 @@
+# Типы элементов подразделения. Значения — шаблон для конструктора и
+# коэффициенты, которыми тип участвует в расчёте.
+#
+# label            — отображаемое название;
+# combat           — боевой элемент (учитывается в проверке разгрома);
+# hq               — штаб (даёт связь и влияние командира);
+# supply_source    — тыл (подвозит боезапас и топливо в фазе восстановления);
+# recon            — разведка (даёт прибавку к обнаружению всей стороне);
+# target_priority  — привлекательность как цели при распределении огня;
+# vulnerability    — уязвимость типа при распределении потерь;
+# anti_tank        — доля огня, работающая по технике (0..1);
+# detection        — множитель собственного обнаружения;
+# stealth          — множитель собственной заметности (меньше — скрытнее);
+# defaults         — стартовые значения полей при добавлении из шаблона.
+schema_version: 1
+element_types:
+  стрелковая_рота:
+    label: Стрелковая рота
+    combat: true
+    hq: false
+    supply_source: false
+    recon: false
+    target_priority: 1.00
+    vulnerability: 1.00
+    anti_tank: 0.15
+    detection: 1.00
+    stealth: 1.00
+    defaults:
+      personnel_full: 120
+      attack: 42
+      defense: 45
+  штаб:
+    label: Штаб батальона
+    combat: false
+    hq: true
+    supply_source: false
+    recon: false
+    target_priority: 1.40
+    vulnerability: 1.20
+    anti_tank: 0.05
+    detection: 1.15
+    stealth: 0.85
+    defaults:
+      personnel_full: 35
+      attack: 8
+      defense: 25
+  миномётная_батарея:
+    label: Миномётная батарея
+    combat: true
+    hq: false
+    supply_source: false
+    recon: false
+    target_priority: 1.25
+    vulnerability: 1.15
+    anti_tank: 0.10
+    detection: 0.85
+    stealth: 0.80
+    defaults:
+      personnel_full: 60
+      attack: 65
+      defense: 22
+  разведвзвод:
+    label: Разведывательный взвод
+    combat: true
+    hq: false
+    supply_source: false
+    recon: true
+    target_priority: 0.70
+    vulnerability: 1.10
+    anti_tank: 0.10
+    detection: 1.80
+    stealth: 0.55
+    defaults:
+      personnel_full: 30
+      attack: 20
+      defense: 28
+  бронегруппа:
+    label: Бронегруппа
+    combat: true
+    hq: false
+    supply_source: false
+    recon: false
+    target_priority: 1.30
+    vulnerability: 0.55
+    anti_tank: 0.65
+    detection: 1.05
+    stealth: 1.20
+    defaults:
+      personnel_full: 40
+      attack: 75
+      defense: 70
+  тыл:
+    label: Тыл и снабжение
+    combat: false
+    hq: false
+    supply_source: true
+    recon: false
+    target_priority: 0.45
+    vulnerability: 0.90
+    anti_tank: 0.02
+    detection: 0.70
+    stealth: 0.95
+    defaults:
+      personnel_full: 45
+      attack: 5
+      defense: 30
+  инженерный_взвод:
+    label: Инженерный взвод
+    combat: true
+    hq: false
+    supply_source: false
+    recon: false
+    target_priority: 0.80
+    vulnerability: 1.05
+    anti_tank: 0.25
+    detection: 0.95
+    stealth: 0.90
+    defaults:
+      personnel_full: 35
+      attack: 22
+      defense: 40

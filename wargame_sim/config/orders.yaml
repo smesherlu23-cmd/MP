@@ -1,0 +1,118 @@
+# Матрица приказов. Для каждого приказа — набор модификаторов и условие
+# выполнения задачи. Значения откалиброваны прогонами через cli.py:
+# при равных батальонах «атака» против «обороны» выигрывает примерно в 30%
+# случаев, встречный бой «атака–атака» даёт 50/50.
+#
+# attack/defense     — множители огня и устойчивости;
+# visibility         — заметность носителя приказа (для обнаружения его противником);
+# detection_speed    — скорость обнаружения противника;
+# ammo_use/fuel_use  — множители расхода боезапаса и топлива;
+# fatigue_gain       — множитель прироста усталости;
+# morale_resistance  — устойчивость морали (делитель падения морали);
+# initiative         — слагаемое к броску инициативы;
+# disengage          — стремление выйти из контакта (0..1);
+# task               — условие выполнения задачи:
+#   kind: enemy_routed | hold_turns | ambush | recon | disengage | none
+#   turns            — сколько ходов надо выстоять (hold_turns);
+#   damage_ratio     — какую долю потерь нанести (ambush);
+#   intel_level      — какой уровень разведданных набрать (recon);
+#   personnel_ratio  — какую долю л/с сохранить (disengage/ambush).
+schema_version: 1
+orders:
+  атака:
+    attack: 1.35
+    defense: 0.88
+    visibility: 1.25
+    detection_speed: 1.10
+    ammo_use: 1.02
+    fuel_use: 1.30
+    fatigue_gain: 1.02
+    morale_resistance: 1.10
+    initiative: 1.50
+    disengage: 0.00
+    task:
+      kind: enemy_routed
+  оборона:
+    attack: 0.90
+    defense: 1.24
+    visibility: 0.85
+    detection_speed: 1.00
+    ammo_use: 1.00
+    fuel_use: 0.60
+    fatigue_gain: 0.90
+    morale_resistance: 1.05
+    initiative: 0.00
+    disengage: 0.00
+    task:
+      kind: hold_turns
+      turns: 15
+  засада:
+    attack: 1.45
+    defense: 1.05
+    visibility: 0.45
+    detection_speed: 1.20
+    ammo_use: 1.05
+    fuel_use: 0.50
+    fatigue_gain: 0.85
+    morale_resistance: 1.10
+    initiative: 3.00
+    disengage: 0.35
+    task:
+      kind: ambush
+      damage_ratio: 0.25
+      personnel_ratio: 0.70
+  разведка:
+    attack: 0.55
+    defense: 0.85
+    visibility: 0.55
+    detection_speed: 1.60
+    ammo_use: 0.55
+    fuel_use: 0.90
+    fatigue_gain: 1.05
+    morale_resistance: 1.00
+    initiative: 1.00
+    disengage: 0.25
+    task:
+      kind: recon
+      intel_level: полные
+  закрепление:
+    attack: 0.78
+    defense: 1.25
+    visibility: 0.80
+    detection_speed: 0.90
+    ammo_use: 0.90
+    fuel_use: 0.50
+    fatigue_gain: 0.80
+    morale_resistance: 1.15
+    initiative: -0.50
+    disengage: 0.00
+    task:
+      kind: hold_turns
+      turns: 20
+  отступление:
+    attack: 0.45
+    defense: 0.70
+    visibility: 1.10
+    detection_speed: 0.80
+    ammo_use: 0.50
+    fuel_use: 1.20
+    fatigue_gain: 1.20
+    morale_resistance: 0.85
+    initiative: -1.50
+    disengage: 0.60
+    task:
+      kind: disengage
+      personnel_ratio: 0.60
+  паническое бегство:
+    attack: 0.10
+    defense: 0.35
+    visibility: 1.40
+    detection_speed: 0.50
+    ammo_use: 0.20
+    fuel_use: 1.40
+    fatigue_gain: 1.50
+    morale_resistance: 0.50
+    initiative: -3.00
+    disengage: 0.90
+    task:
+      kind: none

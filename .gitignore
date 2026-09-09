@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+*.egg-info/
+wargame_sim/data/results/*.json
+wargame_sim/data/results/*.md
+wargame_sim/data/results/*.csv
+wargame_sim/data/results/*.html
+!wargame_sim/data/results/.gitkeep

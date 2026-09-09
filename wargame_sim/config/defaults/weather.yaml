@@ -1,0 +1,25 @@
+# Модификаторы погоды.
+# detection — заметность; accuracy — точность огня;
+# fatigue   — прирост усталости; vehicles — работоспособность техники.
+schema_version: 1
+weather:
+  ясная:
+    detection: 1.00
+    accuracy: 1.00
+    fatigue: 1.00
+    vehicles: 1.00
+  дождь:
+    detection: 0.85
+    accuracy: 0.90
+    fatigue: 1.15
+    vehicles: 0.92
+  снег:
+    detection: 0.80
+    accuracy: 0.85
+    fatigue: 1.30
+    vehicles: 0.85
+  туман:
+    detection: 0.55
+    accuracy: 0.75
+    fatigue: 1.05
+    vehicles: 0.95

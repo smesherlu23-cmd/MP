@@ -1,0 +1,37 @@
+[project]
+name = "wargame-sim"
+version = "0.1.0"
+description = "Модульный симулятор боя для варгейма: движок, CLI и десктопный интерфейс на Flet"
+requires-python = ">=3.11"
+dependencies = [
+    "flet>=0.28",
+    "matplotlib>=3.8",
+    "pydantic>=2.6",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[tool.pytest.ini_options]
+pythonpath = ["wargame_sim"]
+testpaths = ["wargame_sim/tests"]
+addopts = "-q"
+markers = ["slow: длительные статистические тесты"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["wargame_sim"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "RUF001",  # кириллица в строках — это язык интерфейса, не опечатка
+    "RUF002",
+    "RUF003",
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"wargame_sim/tests/*" = ["E501"]
