@@ -95,15 +95,15 @@ element_types:
     hq: false
     supply_source: true
     recon: false
-    target_priority: 0.85
-    vulnerability: 1.35
+    target_priority: 0.45
+    vulnerability: 0.90
     anti_tank: 0.02
     detection: 0.70
     stealth: 0.95
     defaults:
       personnel_full: 45
       attack: 5
-      defense: 18
+      defense: 30
   инженерный_взвод:
     label: Инженерный взвод
     combat: true

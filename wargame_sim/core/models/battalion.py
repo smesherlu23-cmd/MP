@@ -123,27 +123,40 @@ class Battalion(BaseModel):
     def readiness(self) -> float:
         return self._weighted("readiness")
 
-    @property
-    def combat_power(self) -> float:
-        """Остаточная боеспособность, 0..100.
-
-        Доля исходной огневой мощи, которую батальон ещё может выдать:
-        численность × мораль × (1 − подавление) × боезапас.
-        """
+    def _power(self, *, with_suppression: bool) -> float:
         if not self.elements:
             return 0.0
         potential = sum(element.attack * element.personnel_full for element in self.elements)
         if potential == 0:
             return 0.0
-        actual = sum(
-            element.attack
-            * element.personnel_current
-            * (element.morale / 100.0)
-            * (1.0 - element.suppression / 100.0)
-            * (element.ammo / 100.0)
-            for element in self.alive_elements
-        )
+        actual = 0.0
+        for element in self.alive_elements:
+            value = (
+                element.attack
+                * element.personnel_current
+                * (element.morale / 100.0)
+                * (element.ammo / 100.0)
+            )
+            if with_suppression:
+                value *= 1.0 - element.suppression / 100.0
+            actual += value
         return 100.0 * actual / potential
+
+    @property
+    def combat_power(self) -> float:
+        """Остаточная боеспособность, 0..100.
+
+        Доля исходной огневой мощи, которую батальон способен выдать, когда
+        придёт в себя: численность × мораль × боезапас. Подавление сюда не
+        входит — оно спадает за пару ходов и показывается отдельной строкой,
+        иначе любой батальон под огнём выглядел бы небоеспособным.
+        """
+        return self._power(with_suppression=False)
+
+    @property
+    def effective_power(self) -> float:
+        """Боеспособность прямо сейчас: то же, но с учётом подавления."""
+        return self._power(with_suppression=True)
 
     @property
     def organisation(self) -> float:
@@ -182,6 +195,7 @@ class Battalion(BaseModel):
             "equipment": round(self.equipment, 2),
             "supply": round(self.supply_level, 2),
             "combat_power": round(self.combat_power, 2),
+            "effective_power": round(self.effective_power, 2),
             "organisation": round(self.organisation, 2),
         }
 
