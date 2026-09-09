@@ -4,9 +4,9 @@
 schema_version: 1
 supply:
   ammo:
-    base_per_turn: 6.0
-    intensity_weight: 0.85
-    resupply_per_turn: 14.0   # подвоз от живого тылового элемента
+    base_per_turn: 5.0
+    intensity_weight: 0.60
+    resupply_per_turn: 16.0   # подвоз от живого тылового элемента
     resupply_without_source: 0.0
     min: 0.0
     max: 100.0

@@ -11,7 +11,7 @@
 schema_version: 1
 morale:
   weights:
-    k1_casualties: 50.0
+    k1_casualties: 44.0
     k2_suppression: 0.12
     k3_vehicle_losses: 30.0
     k4_no_hq: 2.5

@@ -23,9 +23,10 @@ from core.models.result import (
     RunRecord,
     SideReport,
 )
-from core.models.scenario import Scenario, new_id
+from core.models.scenario import MAX_SEED, Scenario, new_id
 
 __all__ = [
+    "MAX_SEED",
     "SCHEMA_VERSION",
     "BatchResult",
     "Battalion",

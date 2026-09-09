@@ -11,6 +11,10 @@ from core.models.element import SCHEMA_VERSION
 from core.models.enums import Side
 from core.models.environment import Environment
 
+#: Верхняя граница сида: помещается в 32-битное знаковое целое, поэтому
+#: его удобно вводить руками и переносить между машинами.
+MAX_SEED = 2**31 - 1
+
 
 def new_id(prefix: str) -> str:
     """Короткий человекочитаемый идентификатор."""
@@ -28,7 +32,7 @@ class Scenario(BaseModel):
     battalion_a: Battalion
     battalion_b: Battalion
     environment: Environment = Field(default_factory=Environment)
-    master_seed: int = 0
+    master_seed: int = Field(default=0, ge=0, le=MAX_SEED)
     notes: str = ""
 
     def normalised(self) -> Scenario:

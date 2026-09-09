@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import sys
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
@@ -73,6 +74,18 @@ def run_single(scenario: Scenario, config: AppConfig, index: int, base_seed: int
     )
 
 
+def spawn_supported() -> bool:
+    """Можно ли поднять пул процессов.
+
+    Метод ``spawn`` заново импортирует ``__main__``, поэтому из интерактивной
+    сессии или из ``python -c`` пул не поднимется. В таком случае прогон
+    выполняется последовательно, а не падает.
+    """
+    main = sys.modules.get("__main__")
+    path = getattr(main, "__file__", None)
+    return bool(path) and Path(path).exists()
+
+
 def _init_worker(scenario_data: dict, config_dir: str | None) -> None:
     """Инициализация рабочего процесса: сценарий и конфиг читаются один раз."""
     global _WORKER_SCENARIO, _WORKER_CONFIG
@@ -134,6 +147,8 @@ def run_batch(
     config = config or ConfigStore(Path(config_dir) if config_dir else None).load()
     runs = max(1, int(runs))
     workers = processes if processes is not None else min(mp.cpu_count(), runs)
+    if not spawn_supported():
+        workers = 1
     records: list[RunRecord] = []
 
     if workers <= 1:

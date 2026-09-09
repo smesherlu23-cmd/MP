@@ -21,7 +21,7 @@ schema_version: 1
 orders:
   атака:
     attack: 1.35
-    defense: 0.94
+    defense: 0.88
     visibility: 1.25
     detection_speed: 1.10
     ammo_use: 1.02
@@ -33,8 +33,8 @@ orders:
     task:
       kind: enemy_routed
   оборона:
-    attack: 0.85
-    defense: 1.12
+    attack: 0.90
+    defense: 1.24
     visibility: 0.85
     detection_speed: 1.00
     ammo_use: 1.00
