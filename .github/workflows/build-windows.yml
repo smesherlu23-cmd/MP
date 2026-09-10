@@ -6,11 +6,7 @@ name: Сборка Windows EXE
 # требует Windows-раннер, Flutter SDK и занимает ~10-15 минут.
 on:
   push:
-    # TODO(проверка CI): claude/new-session-xlcznn добавлена временно, чтобы
-    # обкатать этот workflow реальным прогоном до мержа в main — GitHub не
-    # даёт диспетчить workflow_dispatch, пока файл не окажется на
-    # default-ветке хотя бы один раз. Убрать после проверки.
-    branches: [main, claude/new-session-xlcznn]
+    branches: [main]
     tags: ["v*"]
   pull_request:
   workflow_dispatch: {}
