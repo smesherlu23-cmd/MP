@@ -59,6 +59,12 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write # нужно только для прикрепления файла к Release по тегу
+    env:
+      # Без этого flet-cli падает на первом же ✅/emoji в своём логе:
+      # консоль windows-latest по умолчанию в cp1252, а rich пытается
+      # писать в неё символы, которых в cp1252 нет — UnicodeEncodeError
+      # прямо в середине установки Flutter (проверено прогоном CI).
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
 
