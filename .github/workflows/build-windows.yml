@@ -1,0 +1,122 @@
+name: Сборка Windows EXE
+
+# Запускается при пуше в main, при пуше тега релиза (v1.2.3 → архив
+# прикладывается к GitHub Release) и вручную из вкладки Actions.
+# На pull request гоняются только быстрые тесты — без сборки exe: она
+# требует Windows-раннер, Flutter SDK и занимает ~10-15 минут.
+on:
+  push:
+    # TODO(проверка CI): claude/new-session-xlcznn добавлена временно, чтобы
+    # обкатать этот workflow реальным прогоном до мержа в main — GitHub не
+    # даёт диспетчить workflow_dispatch, пока файл не окажется на
+    # default-ветке хотя бы один раз. Убрать после проверки.
+    branches: [main, claude/new-session-xlcznn]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch: {}
+
+# Версия flet-cli, которой собираем, обязана совпадать с версией flet,
+# закреплённой в wargame_sim/pyproject.toml ([project.dependencies]) —
+# иначе инструмент сборки и упаковываемое внутрь exe приложение окажутся
+# на разных версиях flet.
+env:
+  FLET_CLI_VERSION: "0.86.5"
+
+jobs:
+  # --------------------------------------------------------------------
+  # Быстрая проверка: тесты и линтер. Гейтит сборку exe — нет смысла
+  # тратить 10+ минут на Windows-раннере, если сломан код.
+  # --------------------------------------------------------------------
+  test:
+    name: Тесты и линтер
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Установить зависимости
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      - name: ruff check .
+        run: python -m ruff check .
+
+      - name: pytest (без длительных статистических тестов)
+        run: python -m pytest -m "not slow"
+
+  # --------------------------------------------------------------------
+  # Сборка исполняемого файла под Windows через `flet build windows`.
+  # Требует запуска именно на Windows-раннере — Flet не умеет кросс-
+  # компилировать Windows-цель с других ОС (это ограничение Flutter:
+  # компиляция под Windows идёт через MSVC).
+  # --------------------------------------------------------------------
+  build-windows:
+    name: Сборка Windows EXE
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    permissions:
+      contents: write # нужно только для прикрепления файла к Release по тегу
+    env:
+      # Без этого flet-cli падает на первом же ✅/emoji в своём логе:
+      # консоль windows-latest по умолчанию в cp1252, а rich пытается
+      # писать в неё символы, которых в cp1252 нет — UnicodeEncodeError
+      # прямо в середине установки Flutter (проверено прогоном CI).
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Включить Windows Developer Mode
+        # Flutter создаёт симлинки для plugin-пакетов при сборке под Windows
+        # и без Developer Mode падает с "Building with plugins requires
+        # symlink support". На windows-latest он выключен по умолчанию.
+        shell: pwsh
+        run: |
+          $path = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+          New-Item -Path $path -Force | Out-Null
+          New-ItemProperty -Path $path -Name AllowDevelopmentWithoutDevLicense -PropertyType DWORD -Value 1 -Force | Out-Null
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Установить flet-cli
+        run: python -m pip install --upgrade pip && python -m pip install "flet-cli==${{ env.FLET_CLI_VERSION }}"
+
+      - name: Кеш Flutter SDK и инструментов сборки flet
+        # flet build сам скачивает и ставит нужную версию Flutter SDK при
+        # первом запуске (в ~/.flet/cache) — кешируем этот каталог, чтобы
+        # не тянуть ~1 ГБ заново на каждом прогоне.
+        uses: actions/cache@v4
+        with:
+          path: ~/.flet/cache
+          key: flet-cache-windows-${{ env.FLET_CLI_VERSION }}
+          restore-keys: |
+            flet-cache-windows-
+
+      - name: Собрать exe
+        working-directory: wargame_sim
+        # --yes отвечает "да" на вопрос об установке Flutter SDK — без
+        # него команда падает в CI (там нет интерактивного ввода).
+        # --python-version 3.12 фиксирует версию Python, встраиваемую в
+        # exe: у этой версии flet-cli нет сборки под 3.11, только 3.12+.
+        run: flet build windows --python-version 3.12 --yes -v
+
+      - name: Упаковать в zip
+        working-directory: wargame_sim/build/windows
+        shell: pwsh
+        run: Compress-Archive -Path * -DestinationPath ../../wargame-sim-windows.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wargame-sim-windows
+          path: wargame_sim/wargame-sim-windows.zip
+          if-no-files-found: error
+
+      - name: Прикрепить к GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: wargame_sim/wargame-sim-windows.zip

@@ -1,0 +1,28 @@
+[project]
+name = "wargame-sim"
+version = "0.1.0"
+description = "Симулятор боя для варгейма — десктопное приложение (Flet)"
+requires-python = ">=3.12"
+# Список для `flet build`: он собирает embedded-Python для исполняемого файла
+# именно из этих зависимостей и не подхватывает корневой pyproject.toml
+# репозитория (см. корневой pyproject.toml — там тот же список для
+# разработки и тестов). Версия flet закреплена жёстко и совпадает с той,
+# что используется в .github/workflows/build-windows.yml: там же собирается
+# сам инструмент `flet-cli`, и расхождение версий ломает сборку.
+dependencies = [
+    "flet==0.86.5",
+    "matplotlib>=3.8",
+    "pydantic>=2.6",
+    "PyYAML>=6.0",
+]
+
+# Метаданные и точка входа для `flet build` (см. .github/workflows/build-windows.yml).
+[tool.flet]
+org = "com.wargamesim"
+product = "Симулятор боя"
+company = "Wargame Sim"
+copyright = "Wargame Sim"
+
+[tool.flet.app]
+# Точка входа — app.py, а не main.py по умолчанию у flet build.
+module = "app"
