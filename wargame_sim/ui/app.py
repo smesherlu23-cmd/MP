@@ -158,11 +158,19 @@ def main(page: ft.Page) -> None:
 
 
 def run() -> None:
-    """Запустить приложение. Шрифты лежат в assets и грузятся с диска."""
+    """Запустить приложение. Шрифты лежат в assets и грузятся с диска.
+
+    В собранном ``flet build`` исполняемом файле каталог ассетов кладёт
+    сама сборка, и путь рядом с исходниками не существует — тогда
+    остаётся значение по умолчанию, иначе шрифты не найдутся.
+    """
     from pathlib import Path
 
     assets = Path(__file__).resolve().parents[1] / "assets"
-    ft.run(main, assets_dir=str(assets))
+    if assets.is_dir():
+        ft.run(main, assets_dir=str(assets))
+    else:
+        ft.run(main)
 
 
 if __name__ == "__main__":
