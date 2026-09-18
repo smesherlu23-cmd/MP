@@ -29,6 +29,29 @@ from core.storage import (
     save_scenario,
 )
 
+#: Значение фильтра «без ограничения».
+ALL = "*"
+
+#: Фильтр стороны в таблицах элементов.
+SIDE_BOTH = "AB"
+SIDE_A = "A"
+SIDE_B = "B"
+
+#: Детальность журнала: только текст, плюс модификаторы, плюс изменения полей.
+DETAIL_EVENTS = "events"
+DETAIL_FACTORS = "factors"
+DETAIL_ALL = "all"
+
+#: Способ правки коэффициентов.
+CONFIG_FIELDS = "fields"
+CONFIG_YAML = "yaml"
+
+#: Порог морали для блока «Требует внимания».
+DEFAULT_ALARM_MORALE = 70
+
+#: Число прогонов массового моделирования по умолчанию.
+DEFAULT_RUNS = 100
+
 #: Маршруты приложения (§10).
 ROUTES = {
     "home": "/",
@@ -73,6 +96,35 @@ class AppState:
         self.batch_progress: tuple[int, int] = (0, 0)
         self.notifier: Callable[[str], None] | None = None
         self.navigator: Callable[[str], None] | None = None
+        self.theme_switcher: Callable[[bool], None] | None = None
+
+        # -- экранное состояние редизайна -----------------------------------
+        #: Раскрытый элемент в конструкторе — одновременно не больше одного.
+        self.expanded_element: str | None = None
+        #: Открытый батальон — показывается подпунктом в навигации.
+        self.open_unit: tuple[str, str] | None = None
+        #: Фильтр стороны в таблицах элементов, отдельно для пульта и итога.
+        self.run_side_filter: str = SIDE_BOTH
+        self.result_side_filter: str = SIDE_BOTH
+        #: Фильтры журнала и его детальность.
+        self.journal_turn: str = ALL
+        self.journal_element: str = ALL
+        self.journal_event: str = ALL
+        self.journal_detail: str = DETAIL_FACTORS
+        #: Порог, ниже которого элемент попадает в «Требует внимания».
+        self.alarm_morale: int = DEFAULT_ALARM_MORALE
+        #: Экран коэффициентов: раздел и способ правки.
+        self.config_section: str = "combat"
+        self.config_view: str = CONFIG_FIELDS
+        #: Архив: фильтр по исходу и строка поиска.
+        self.archive_outcome: str = ALL
+        self.archive_query: str = ""
+        #: Параметры массового прогона.
+        self.batch_runs: int = DEFAULT_RUNS
+        self.batch_seed: int = self.scenario.master_seed
+        self.batch_processes: int = 0
+        #: Тёмная тема — по умолчанию светлая, как в макете.
+        self.dark_theme: bool = False
 
     # -- конфигурация -------------------------------------------------------
     @property
@@ -105,6 +157,12 @@ class AppState:
         """Перейти на экран; как именно — решает роутер приложения."""
         if self.navigator is not None:
             self.navigator(route)
+
+    def toggle_theme(self) -> None:
+        """Переключить светлую и тёмную тему и перерисовать текущий экран."""
+        self.dark_theme = not self.dark_theme
+        if self.theme_switcher is not None:
+            self.theme_switcher(self.dark_theme)
 
     def refresh(self, *controls: Any) -> None:
         """Обновить контролы, если приложение действительно запущено.

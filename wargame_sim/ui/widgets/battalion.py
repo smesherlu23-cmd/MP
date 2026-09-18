@@ -1,142 +1,245 @@
-"""Сводки по батальону и элементам. Все числа приходят из core."""
+"""Панели и таблицы по батальону. Все числа приходят из core."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import flet as ft
 
+from core.config import AppConfig
 from core.models import Battalion, Element
-from ui.widgets.common import GAP, card, data_table, kv_rows, meter
+from ui import theme as t
+from ui.widgets import common as c
 
-#: Показатели, которые видит ГМ в панели состояния стороны (§10).
-SUMMARY_FIELDS: tuple[tuple[str, str], ...] = (
-    ("Личный состав", "personnel"),
-    ("Техника", "vehicles"),
-    ("Мораль", "morale"),
-    ("Подавление", "suppression"),
-    ("Снабжение", "supply"),
-    ("Усталость", "fatigue"),
-    ("Боеспособность", "combat_power"),
-    ("Организация", "organisation"),
+#: Колонки таблицы элементов на пульте боя.
+RUN_COLUMNS: tuple[c.Col, ...] = (
+    c.Col("С", 26),
+    c.Col("Элемент", expand=True),
+    c.Col("Тип", 130),
+    c.Col("Л/с", 78, numeric=True),
+    c.Col("Техн.", 60, numeric=True),
+    c.Col("Мораль", 56, numeric=True),
+    c.Col("Подавл.", 60, numeric=True),
+    c.Col("Устал.", 56, numeric=True),
+    c.Col("Боезап.", 62, numeric=True),
+    c.Col("Приказ", 96, pad_left=14),
 )
 
 
-def battalion_rows(battalion: Battalion) -> list[tuple[str, str]]:
-    """Строки сводки батальона — то же, что показывает `Battalion.summary()`."""
-    summary = battalion.summary()
-    return [
-        ("Состояние", str(summary["state"])),
-        ("Приказ", str(battalion.order)),
-        ("Задача", battalion.task or "—"),
-        ("Элементов", f"{summary['elements_alive']} из {summary['elements']}"),
-        (
-            "Личный состав",
-            f"{summary['personnel_current']} из {summary['personnel_full']} "
-            f"({float(summary['personnel_ratio']) * 100:.0f}%)",
-        ),
-        ("Техника", f"{summary['vehicles_current']} из {summary['vehicles_full']}"),
-        ("Мораль", f"{summary['morale']:.0f}"),
-        ("Опыт (средний)", f"{summary['experience']:.1f}"),
-        ("Слаженность", f"{summary['cohesion']:.0f}"),
-        ("Связь", f"{battalion.communications:.0f}"),
-        ("Влияние командира", f"{battalion.commander_influence:.0f}"),
-        ("Подавление", f"{summary['suppression']:.0f}"),
-        ("Усталость", f"{summary['fatigue']:.0f}"),
-        ("Боезапас", f"{summary['ammo']:.0f}%"),
-        ("Топливо", f"{summary['fuel']:.0f}%"),
-        ("Снаряжение", f"{summary['equipment']:.0f}%"),
-        ("Снабжение", f"{summary['supply']:.0f}%"),
-        ("Боеспособность", f"{summary['combat_power']:.0f}%"),
-        ("Организация", f"{summary['organisation']:.0f}%"),
-    ]
+def side_letter(side: str) -> ft.Control:
+    """Буква стороны — стороны различаются буквой, а не цветом."""
+    return ft.Text(side, style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED))
 
 
-def battalion_summary(battalion: Battalion, *, title: str | None = None) -> ft.Control:
-    """Карточка со сводкой батальона (пересобирается при каждой правке)."""
-    heading = title or f"{battalion.side} — {battalion.name}"
-    return card(heading, [kv_rows(battalion_rows(battalion))])
+def type_label(element: Element, config: AppConfig) -> str:
+    """Человеческое название типа элемента вместо ключа конфига."""
+    entry = config.element_types.element_types.get(element.type)
+    return entry.label.lower() if entry else element.type
 
 
-def state_panel(battalion: Battalion) -> ft.Control:
-    """Панель состояния стороны во время боя: полоски ключевых показателей."""
-    summary = battalion.summary()
-    personnel = (
-        f"{summary['personnel_current']} / {summary['personnel_full']}"
-    )
-    vehicles = f"{summary['vehicles_current']} / {summary['vehicles_full']}"
-    return card(
-        f"{battalion.side} — {battalion.name}",
+def element_row(
+    element: Element,
+    battalion: Battalion,
+    config: AppConfig,
+    *,
+    side: str,
+    last: bool = False,
+) -> ft.Control:
+    """Строка элемента на пульте боя."""
+    suppression = element.suppression
+    # Подавление выше 20 выделяется — это то, что ГМ должен заметить первым.
+    high = suppression > 20
+    return c.table_row(
+        RUN_COLUMNS,
         [
-            ft.Text(f"Состояние: {summary['state']}", size=13, weight=ft.FontWeight.W_500),
-            meter(
-                "Личный состав",
-                float(summary["personnel_ratio"]) * 100,
-                hint=personnel,
+            side_letter(side),
+            t.text(element.name, size=t.SIZE_ROW, no_wrap=True),
+            t.text(type_label(element, config), size=t.SIZE_META, color=t.TEXT_3, no_wrap=True),
+            c.fraction(element.personnel_current, element.personnel_full),
+            c.fraction(element.vehicles_current, element.vehicles_full)
+            if element.has_vehicles
+            else c.dash(),
+            t.num(f"{element.morale:.0f}"),
+            t.num(
+                f"{suppression:.0f}",
+                weight=t.W500 if high else t.W400,
+                color=t.WARN if high else t.TEXT,
             ),
-            meter(
-                "Техника",
-                (summary["vehicles_current"] / summary["vehicles_full"] * 100)
-                if summary["vehicles_full"]
-                else 0,
-                hint=vehicles,
-            ),
-            meter("Мораль", float(summary["morale"])),
-            meter("Подавление", float(summary["suppression"])),
-            meter("Снабжение", float(summary["supply"])),
-            meter("Усталость", float(summary["fatigue"])),
-            meter("Боеспособность", float(summary["combat_power"])),
-            meter("Организация", float(summary["organisation"])),
+            t.num(f"{element.fatigue:.0f}"),
+            t.num(f"{element.ammo:.0f}"),
+            t.text(str(battalion.order_for(element)), size=t.SIZE_META, color=t.TEXT_3),
         ],
+        bgcolor=t.SURFACE_ALT if side == "B" else None,
+        last=last,
     )
 
 
-def element_rows(battalion: Battalion) -> list[list[str]]:
-    return [
+def side_panel(battalion: Battalion, side: str, *, losses: int, vehicle_losses: int) -> ft.Control:
+    """Карточка стороны: шесть метрик полосами и строка итогов."""
+    summary = battalion.summary()
+    personnel_ratio = float(summary["personnel_ratio"]) * 100
+    vehicles_full = int(summary["vehicles_full"])
+    vehicles_current = int(summary["vehicles_current"])
+    vehicles_ratio = (vehicles_current / vehicles_full * 100) if vehicles_full else 0
+
+    def metric(label: str, value: float, display: ft.Control | None = None, color: str = t.TEXT):
+        return c.bar(label, value, display=display, color=color)
+
+    grid = ft.Column(
         [
-            element.name,
-            element.type,
-            f"{element.personnel_current}/{element.personnel_full}",
-            f"{element.vehicles_current}/{element.vehicles_full}" if element.has_vehicles else "—",
-            f"{element.morale:.0f}",
-            f"{element.suppression:.0f}",
-            f"{element.fatigue:.0f}",
-            f"{element.ammo:.0f}",
-            str(battalion.order_for(element)),
-            "да" if element.alive else "нет",
-        ]
-        for element in battalion.elements
-    ]
+            ft.Row(
+                [
+                    metric(
+                        "Личный состав",
+                        personnel_ratio,
+                        c.fraction(summary["personnel_current"], summary["personnel_full"]),
+                    ),
+                    metric(
+                        "Техника",
+                        vehicles_ratio,
+                        c.fraction(summary["vehicles_current"], vehicles_full)
+                        if vehicles_full
+                        else c.dash(),
+                    ),
+                ],
+                spacing=18,
+            ),
+            ft.Row(
+                [
+                    metric("Мораль", float(summary["morale"])),
+                    metric("Подавление", float(summary["suppression"]), color=t.WARN),
+                ],
+                spacing=18,
+            ),
+            ft.Row(
+                [
+                    metric("Боеспособность", float(summary["combat_power"])),
+                    metric("Организация", float(summary["organisation"])),
+                ],
+                spacing=18,
+            ),
+        ],
+        spacing=t.GAP_SM,
+        tight=True,
+    )
+
+    totals = ft.Container(
+        content=ft.Row(
+            [
+                _total("потери", str(losses), accent=True),
+                _total("техн.", str(vehicle_losses), accent=True),
+                _total("снабж.", f"{summary['supply']:.0f}"),
+                _total("устал.", f"{summary['fatigue']:.0f}"),
+            ],
+            spacing=16,
+        ),
+        padding=ft.Padding.only(top=t.GAP_SM),
+        border=t.border_top(t.BORDER_CARD),
+        margin=ft.Margin.only(top=2),
+    )
+
+    header = ft.Row(
+        [
+            ft.Text(side, style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED, spacing=1.1)),
+            ft.Text(battalion.name, style=t.sans(size=t.SIZE_TITLE, weight=t.W600), expand=True),
+            ft.Text(str(battalion.order), style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3)),
+        ],
+        spacing=8,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+    )
+
+    return c.card([header, grid, totals], expand=True, spacing=t.GAP_IN)
 
 
-ELEMENT_HEADERS = (
-    "Элемент",
-    "Тип",
-    "Л/с",
-    "Техника",
-    "Мораль",
-    "Подавл.",
-    "Устал.",
-    "Боезапас",
-    "Приказ",
-    "Боеспособен",
-)
-
-
-def elements_table(battalion: Battalion) -> ft.Control:
-    return data_table(ELEMENT_HEADERS, element_rows(battalion))
-
-
-def element_chip(element: Element, battalion: Battalion) -> ft.Control:
-    """Компактная строка элемента для списка в конструкторе."""
+def _total(label: str, value: str, *, accent: bool = False) -> ft.Control:
     return ft.Row(
         [
-            ft.Icon(
-                ft.Icons.CHECK_CIRCLE_OUTLINE if element.alive else ft.Icons.CANCEL_OUTLINED,
-                size=16,
+            ft.Text(label, style=t.mono(size=t.SIZE_META, color=t.TEXT_3)),
+            ft.Text(
+                value,
+                style=t.mono(
+                    size=t.SIZE_META,
+                    weight=t.W600 if accent else t.W400,
+                    color=t.LOSS if accent else t.TEXT_3,
+                ),
             ),
-            ft.Text(element.name, size=13, weight=ft.FontWeight.W_500, expand=3),
-            ft.Text(element.type, size=12, opacity=0.7, expand=3),
-            ft.Text(f"{element.personnel_current}/{element.personnel_full}", size=12, expand=2),
-            ft.Text(str(battalion.order_for(element)), size=12, opacity=0.7, expand=2),
         ],
-        spacing=GAP,
+        spacing=5,
+        tight=True,
     )
+
+
+def summary_rows(
+    battalion: Battalion,
+    config: AppConfig,
+) -> Sequence[tuple[str, ft.Control] | None]:
+    """Пары «показатель — значение» для карточки сводки батальона.
+
+    Выключенный тумблером параметр не показывается вовсе: он не участвует
+    в расчёте, и держать его в сводке — значит врать ГМ (§4.5).
+    """
+    s = battalion.summary()
+    toggles = config.tog
+    rows: list[tuple[str, ft.Control] | None] = [
+        ("Состояние", t.text(str(s["state"]), size=t.SIZE_ROW)),
+        ("Приказ", t.text(str(battalion.order), size=t.SIZE_ROW)),
+        (
+            "Задача",
+            t.text(
+                battalion.task or "не задана",
+                size=t.SIZE_ROW,
+                color=t.TEXT if battalion.task else t.TEXT_PLACEHOLDER,
+            ),
+        ),
+        None,
+        ("Элементов", t.num(f"{s['elements_alive']} из {s['elements']}")),
+        ("Личный состав", c.fraction(s["personnel_current"], s["personnel_full"])),
+        ("Техника", c.fraction(s["vehicles_current"], s["vehicles_full"])),
+        None,
+        ("Мораль", t.num(f"{s['morale']:.0f}")),
+        ("Опыт (средний)", t.num(f"{s['experience']:.1f}")),
+        ("Слаженность", t.num(f"{s['cohesion']:.0f}")),
+        ("Связь", t.num(f"{battalion.communications:.0f}")),
+    ]
+    if toggles.commander_influence:
+        rows.append(("Командир", t.num(f"{battalion.commander_influence:.0f}")))
+    rows.append(("Подавление", t.num(f"{s['suppression']:.0f}")))
+    if toggles.fatigue:
+        rows.append(("Усталость", t.num(f"{s['fatigue']:.0f}")))
+    rows.append(None)
+    rows.append(("Боезапас", t.num(f"{s['ammo']:.0f}%")))
+    if toggles.fuel:
+        rows.append(("Топливо", t.num(f"{s['fuel']:.0f}%")))
+    if toggles.equipment:
+        rows.append(("Снаряжение", t.num(f"{s['equipment']:.0f}%")))
+    rows.append(("Снабжение", t.num(f"{s['supply']:.0f}%")))
+    return rows
+
+
+def summary_card(
+    battalion: Battalion,
+    config: AppConfig,
+    *,
+    side: str,
+) -> ft.Control:
+    """Правая карточка сводки: пары значений и две полосы внизу."""
+    body: list[ft.Control] = []
+    for row in summary_rows(battalion, config):
+        if row is None:
+            body.append(c.divider())
+        else:
+            body.append(c.kv_line(row[0], row[1]))
+
+    summary = battalion.summary()
+    body.append(c.divider())
+    body.append(c.bar("Боеспособность", float(summary["combat_power"])))
+    body.append(c.bar("Организация", float(summary["organisation"])))
+
+    header = ft.Row(
+        [
+            ft.Text(side, style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED, spacing=1.1)),
+            ft.Text(battalion.name, style=t.sans(size=t.SIZE_BODY, weight=t.W600), expand=True),
+        ],
+        spacing=8,
+    )
+    return ft.Column([header, *body], spacing=0, tight=True)

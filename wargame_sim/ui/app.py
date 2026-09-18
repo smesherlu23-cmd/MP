@@ -1,4 +1,9 @@
-"""Роутер и стек View: навигация с рабочей кнопкой «назад» (§10)."""
+"""Роутер приложения.
+
+Рамка (боковая навигация и верхняя полоса) живёт в :mod:`ui.shell` и
+одинакова на всех экранах, поэтому переход перерисовывает только контент.
+Кнопок «назад» и «на главную» нет — их роль взяла на себя навигация слева.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +15,8 @@ from urllib.parse import parse_qs, urlparse
 import flet as ft
 
 from core.config import ConfigError
+from ui import theme as t
+from ui.shell import screen
 from ui.state import ROUTES, AppState
 from ui.views import (
     archive,
@@ -22,7 +29,7 @@ from ui.views import (
     unit_editor,
     units,
 )
-from ui.widgets.common import PAD, error_banner, link_button, page_title
+from ui.widgets import common as c
 
 TITLE = "Симулятор боя"
 
@@ -60,34 +67,37 @@ def resolve(app: AppState, route: str) -> ft.View:
         try:
             return builder(app, **arguments)
         except ConfigError as error:
-            return _error_view(app, path, str(error))
+            return _error_view(app, str(error))
 
     return _not_found(app, path)
 
 
 def _not_found(app: AppState, path: str) -> ft.View:
-    return ft.View(
-        route=path,
-        controls=[
-            page_title("Экран не найден", f"Маршрут «{path}» неизвестен."),
-            link_button(
-                "На главную", ROUTES["home"], app.go),
-        ],
-        padding=PAD,
+    return screen(
+        app,
+        active="home",
+        title="Экран не найден",
+        subtitle=f"Маршрут «{path}» неизвестен",
+        body=c.empty_hint("Выберите раздел в навигации слева."),
     )
 
 
-def _error_view(app: AppState, path: str, message: str) -> ft.View:
-    return ft.View(
-        route=path,
-        controls=[
-            page_title("Ошибка конфигурации"),
-            error_banner(message),
-            link_button("Открыть редактор коэффициентов", ROUTES["config"], app.go),
-            link_button(
-                "На главную", ROUTES["home"], app.go),
-        ],
-        padding=PAD,
+def _error_view(app: AppState, message: str) -> ft.View:
+    return screen(
+        app,
+        active="config",
+        title="Ошибка конфигурации",
+        body=ft.Column(
+            [
+                c.error_banner(message),
+                c.secondary_button(
+                    "Открыть редактор коэффициентов",
+                    lambda: app.go(ROUTES["config"]),
+                ),
+            ],
+            spacing=t.GAP,
+            tight=True,
+        ),
     )
 
 
@@ -96,57 +106,28 @@ def main(page: ft.Page) -> None:
 
     Активным считается первый View в ``page.views``, а ``push_route`` на уже
     текущий маршрут события не порождает — поэтому экран рисуется явно, а
-    история переходов ведётся отдельно, чтобы кнопка «назад» работала и в
-    десктопном окне, и в браузере.
+    история переходов ведётся отдельно.
     """
     app = AppState(page)
     history: list[str] = []
 
     page.title = TITLE
-    page.theme_mode = ft.ThemeMode.SYSTEM
     page.padding = 0
+    page.spacing = 0
+    page.bgcolor = t.CONTENT_BG
+    page.fonts = dict(t.FONT_FILES)
+    page.theme_mode = ft.ThemeMode.LIGHT
+    page.theme = ft.Theme(font_family=t.SANS)
+    page.window.width = 1600
+    page.window.height = 1000
+    page.window.min_width = 1280
+    page.window.min_height = 800
 
     def notify(message: str) -> None:
         page.show_dialog(ft.SnackBar(content=ft.Text(message)))
 
-    def toggle_theme() -> None:
-        page.theme_mode = (
-            ft.ThemeMode.DARK if page.theme_mode != ft.ThemeMode.DARK else ft.ThemeMode.LIGHT
-        )
-        page.update()
-
-    def back() -> None:
-        if not history:
-            return
-        target = history.pop()
-        navigate(target, remember=False)
-
-    def appbar() -> ft.AppBar:
-        return ft.AppBar(
-            title=ft.Text(TITLE),
-            leading=ft.IconButton(
-                icon=ft.Icons.ARROW_BACK,
-                tooltip="Назад",
-                disabled=not history,
-                on_click=lambda *_: back(),
-            ),
-            actions=[
-                ft.IconButton(
-                    icon=ft.Icons.BRIGHTNESS_6,
-                    tooltip="Светлая или тёмная тема",
-                    on_click=lambda *_: toggle_theme(),
-                ),
-                ft.IconButton(
-                    icon=ft.Icons.HOME_OUTLINED,
-                    tooltip="На главную",
-                    on_click=lambda *_: navigate(ROUTES["home"]),
-                ),
-            ],
-        )
-
     def render() -> None:
-        view = resolve(app, page.route)
-        view.appbar = appbar()
+        view = resolve(app, page.route or ROUTES["home"])
         page.views.clear()
         page.views.append(view)
         page.update()
@@ -160,15 +141,28 @@ def main(page: ft.Page) -> None:
             history.append(current)
         page.run_task(page.push_route, route)
 
+    def back() -> None:
+        if history:
+            navigate(history.pop(), remember=False)
+
+    def switch_theme(dark: bool) -> None:
+        page.theme_mode = ft.ThemeMode.DARK if dark else ft.ThemeMode.LIGHT
+        render()
+
     app.notifier = notify
     app.navigator = navigate
+    app.theme_switcher = switch_theme
     page.on_route_change = lambda *_: render()
     page.on_view_pop = lambda *_: back()
     render()
 
 
 def run() -> None:
-    ft.run(main)
+    """Запустить приложение. Шрифты лежат в assets и грузятся с диска."""
+    from pathlib import Path
+
+    assets = Path(__file__).resolve().parents[1] / "assets"
+    ft.run(main, assets_dir=str(assets))
 
 
 if __name__ == "__main__":

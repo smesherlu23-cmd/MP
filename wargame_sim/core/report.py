@@ -6,7 +6,7 @@ import csv
 import html
 import io
 
-from core.models import BatchResult, BattleResult, SideReport
+from core.models import BatchResult, BattleResult, SideReport, Winner
 
 # --------------------------------------------------------------------------
 # Бой
@@ -31,6 +31,11 @@ _SIDE_ROWS: tuple[tuple[str, str], ...] = (
     ("Состояние", "state"),
     ("Задача выполнена", "task_completed"),
 )
+
+
+def winner_label(winner: Winner) -> str:
+    """Как исход читается словами: «победа A», «победа B» или «ничья»."""
+    return "ничья" if winner == Winner.DRAW else f"победа {winner}"
 
 
 def outcome_text(result: BattleResult) -> str:
