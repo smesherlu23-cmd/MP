@@ -1,36 +1,67 @@
-"""Архив: сохранённые бои и сценарии, повтор по сиду."""
+"""Архив: проведённые бои и сохранённые сценарии, повтор по сиду (§10).
+
+Поиск идёт по названию сценария и по сиду, фильтр — по исходу. Повтор
+подставляет сид сохранённого боя в сценарий: бой воспроизводится ход в ход.
+"""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import flet as ft
 
-from core.models import BattleResult, Scenario
+from core.models import BattleResult, Scenario, Winner
+from core.report import winner_label
 from core.storage import delete_file
-from ui.state import ROUTES, AppState
-from ui.widgets.common import (
-    GAP,
-    PAD,
-    card,
-    data_table,
-    empty_hint,
-    link_button,
-    page_title,
-    text_button,
-)
+from ui import theme as t
+from ui.shell import screen
+from ui.state import ALL, ROUTES, AppState
+from ui.widgets import common as c
 
 ROUTE = ROUTES["archive"]
 
+#: Фильтр по исходу боя.
+OUTCOME_OPTIONS: tuple[tuple[str, str], ...] = (
+    (ALL, "все"),
+    (str(Winner.A), "победа A"),
+    (str(Winner.B), "победа B"),
+    (str(Winner.DRAW), "ничья"),
+)
+
+RESULT_COLUMNS: tuple[c.Col, ...] = (
+    c.Col("Сценарий", expand=True),
+    c.Col("Исход", 86),
+    c.Col("Причина", 110),
+    c.Col("Ходов", 58, numeric=True),
+    c.Col("Сид", 62, numeric=True),
+    c.Col("Потери A", 78, numeric=True),
+    c.Col("Потери B", 78, numeric=True),
+    c.Col("", 190),
+)
+
+
+def matches(result: BattleResult, query: str, outcome: str) -> bool:
+    """Строка проходит фильтр по исходу и поиску по названию или сиду."""
+    if outcome != ALL and str(result.winner) != outcome:
+        return False
+    if not query:
+        return True
+    needle = query.strip().lower()
+    return needle in result.scenario_name.lower() or needle in str(result.master_seed)
+
 
 def build(app: AppState) -> ft.View:
-    message = ft.Text("", size=12, opacity=0.75)
+    results_body = ft.Container(expand=True)
+    results_title = ft.Text(style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED, spacing=1.1))
+    scenarios_body = ft.Container(expand=True)
 
-    def open_scenario(scenario: Scenario) -> None:
-        app.load_scenario(scenario)
-        app.notify(f"Загружен сценарий «{scenario.name}»")
-        app.go(ROUTES["battle_setup"])
+    # -- действия -----------------------------------------------------------
+    def open_result(result: BattleResult) -> None:
+        app.result = result
+        app.go(ROUTES["battle_result"].format(id=result.scenario_id))
 
     def replay(result: BattleResult) -> None:
-        """Повтор по сиду: тот же сценарий, тот же сид — тот же бой (§7)."""
+        """Повтор по сиду: тот же сценарий и тот же сид — тот же бой (§7)."""
         found = [item for _, item in app.scenarios() if item.id == result.scenario_id]
         if found:
             app.load_scenario(found[0])
@@ -39,112 +70,249 @@ def build(app: AppState) -> ft.View:
         app.notify(f"Повтор по сиду {result.master_seed}")
         app.go(ROUTES["battle"].format(id=app.scenario.id))
 
-    def show(result: BattleResult) -> None:
-        app.result = result
-        app.go(ROUTES["battle_result"].format(id=result.scenario_id))
+    def open_scenario(scenario: Scenario) -> None:
+        app.load_scenario(scenario)
+        app.notify(f"Загружен сценарий «{scenario.name}»")
+        app.go(ROUTES["battle_setup"])
 
-    def remove(path) -> None:
+    def remove(path: Path, label: str) -> None:
         delete_file(path)
-        message.value = f"Удалено: {path.name}"
+        app.notify(f"Удалено: {label}")
         app.go(ROUTE)
 
-    scenarios = app.scenarios()
-    results = app.results()
+    def set_outcome(value: str) -> None:
+        app.archive_outcome = value
+        outcome_switch.content = c.segmented(OUTCOME_OPTIONS, value, set_outcome)
+        render_results()
+        app.refresh(outcome_switch)
 
-    scenario_controls: list[ft.Control] = (
-        [
-            ft.Row(
-                [
-                    ft.Column(
-                        [
-                            ft.Text(scenario.name, size=14, weight=ft.FontWeight.W_600),
-                            ft.Text(
-                                f"{scenario.battalion_a.name} против {scenario.battalion_b.name} · "
-                                f"{scenario.environment.terrain}, "
-                                f"{scenario.environment.time_of_day}, "
-                                f"{scenario.environment.weather} · сид {scenario.master_seed}",
-                                size=12,
-                                opacity=0.7,
-                            ),
-                        ],
-                        spacing=2,
-                        expand=True,
-                    ),
-                    text_button("Открыть", lambda s=scenario: open_scenario(s)),
-                    text_button("Удалить", lambda p=path: remove(p)),
-                ],
-                spacing=GAP,
-                wrap=True,
-            )
-            for path, scenario in scenarios
+    def set_query(value: str) -> None:
+        app.archive_query = value
+        render_results()
+
+    # -- проведённые бои ----------------------------------------------------
+    def result_row(path: Path, result: BattleResult, *, last: bool) -> ft.Control:
+        a, b = result.side_a.personnel_lost, result.side_b.personnel_lost
+        actions = ft.Row(
+            [
+                c.spacer(),
+                c.secondary_button(
+                    "Открыть", lambda: open_result(result), height=t.BUTTON_XS_H
+                ),
+                c.secondary_button(
+                    "Повтор",
+                    lambda: replay(result),
+                    icon=ft.Icons.REPLAY,
+                    height=t.BUTTON_XS_H,
+                ),
+                c.icon_button(
+                    ft.Icons.DELETE_OUTLINE,
+                    lambda: remove(path, result.scenario_name),
+                    size=t.BUTTON_XS_H,
+                    icon_size=15,
+                    color=t.LOSS,
+                    tooltip="Удалить запись",
+                ),
+            ],
+            spacing=6,
+        )
+        return c.table_row(
+            RESULT_COLUMNS,
+            [
+                t.text(result.scenario_name, size=t.SIZE_ROW, weight=t.W500, no_wrap=True),
+                t.text(
+                    winner_label(result.winner),
+                    size=t.SIZE_ROW,
+                    weight=t.W500,
+                    color=t.TEXT_3 if result.winner == Winner.DRAW else t.TEXT,
+                ),
+                t.text(str(result.end_reason), size=t.SIZE_ROW, color=t.TEXT_3),
+                t.num(str(result.turns)),
+                t.num(str(result.master_seed)),
+                t.num(str(a), color=t.LOSS if a >= b else t.TEXT),
+                t.num(str(b), color=t.LOSS if b > a else t.TEXT),
+                actions,
+            ],
+            height=t.TABLE_ROW_TALL_H,
+            last=last,
+        )
+
+    def render_results() -> None:
+        found = [
+            (path, result)
+            for path, result in app.results()
+            if matches(result, app.archive_query, app.archive_outcome)
         ]
-        if scenarios
-        else [empty_hint("Сохранённых сценариев пока нет.")]
-    )
-
-    result_rows = [
-        [
-            result.scenario_name,
-            str(result.winner),
-            str(result.end_reason),
-            str(result.turns),
-            str(result.master_seed),
-            str(result.side_a.personnel_lost),
-            str(result.side_b.personnel_lost),
-        ]
-        for _, result in results
-    ]
-
-    result_controls: list[ft.Control] = (
-        [
-            data_table(
-                ("Сценарий", "Исход", "Причина", "Ходов", "Сид", "Потери A", "Потери B"),
-                result_rows,
-            ),
-            ft.Row(
+        results_title.value = f"ПРОВЕДЁННЫЕ БОИ · {len(found)}"
+        if found:
+            results_body.content = ft.Column(
                 [
-                    ft.Row(
-                        [
-                            ft.Text(f"{result.scenario_name} · сид {result.master_seed}", size=12),
-                            text_button("Открыть", lambda r=result: show(r)),
-                            text_button("Повтор по сиду", lambda r=result: replay(r)),
-                            text_button("Удалить", lambda p=path: remove(p)),
-                        ],
-                        spacing=6,
-                    )
-                    for path, result in results
+                    result_row(path, result, last=index == len(found) - 1)
+                    for index, (path, result) in enumerate(found)
                 ],
-                spacing=GAP,
-                wrap=True,
-            ),
-        ]
-        if results
-        else [empty_hint("Сохранённых боёв пока нет.")]
-    )
-
-    return ft.View(
-        route=ROUTE,
-        controls=[
-            ft.Column(
-                [
-                    page_title("Архив", "Сценарии и проведённые бои; любой можно повторить."),
-                    ft.Row(
-                        [
-                            link_button(
-                "На главную", ROUTES["home"], app.go, icon=ft.Icons.ARROW_BACK),
-                            link_button("Настройка боя", ROUTES["battle_setup"], app.go),
-                        ],
-                        spacing=GAP,
-                        wrap=True,
-                    ),
-                    message,
-                    card("Сценарии", scenario_controls),
-                    card("Проведённые бои", result_controls),
-                ],
-                spacing=GAP,
+                spacing=0,
                 scroll=ft.ScrollMode.AUTO,
                 expand=True,
             )
+        else:
+            results_body.content = c.empty_hint(
+                "Ничего не найдено — снимите фильтр или очистите поиск."
+            )
+        app.refresh(results_body, results_title)
+
+    # -- сценарии -----------------------------------------------------------
+    def scenario_block(path: Path, scenario: Scenario, *, last: bool) -> ft.Control:
+        environment = scenario.environment
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                scenario.name,
+                                style=t.sans(size=t.SIZE_BODY, weight=t.W600),
+                                expand=True,
+                            ),
+                            ft.Text(
+                                f"сид {scenario.master_seed}",
+                                style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED),
+                            ),
+                        ],
+                        spacing=8,
+                    ),
+                    ft.Text(
+                        f"{scenario.battalion_a.name} · {scenario.battalion_a.order}"
+                        f" → {scenario.battalion_b.name} · {scenario.battalion_b.order}",
+                        style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3, height=1.5),
+                    ),
+                    ft.Text(
+                        f"{environment.terrain} · {environment.time_of_day}"
+                        f" · {environment.weather} · предел {environment.max_turns}",
+                        style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3, height=1.5),
+                    ),
+                    ft.Row(
+                        [
+                            c.secondary_button(
+                                "Открыть",
+                                lambda: open_scenario(scenario),
+                                height=t.BUTTON_SM_H,
+                            ),
+                            c.tertiary_button(
+                                "Удалить",
+                                lambda: remove(path, scenario.name),
+                                height=t.BUTTON_SM_H,
+                                color=t.LOSS,
+                            ),
+                        ],
+                        spacing=t.GAP_SM,
+                    ),
+                ],
+                spacing=6,
+                tight=True,
+            ),
+            padding=ft.Padding.symmetric(vertical=14, horizontal=t.PAD_CARD),
+            border=None if last else t.border_bottom(t.BORDER_INNER),
+        )
+
+    def render_scenarios() -> None:
+        scenarios = app.scenarios()
+        if scenarios:
+            scenarios_body.content = ft.Column(
+                [
+                    scenario_block(path, scenario, last=index == len(scenarios) - 1)
+                    for index, (path, scenario) in enumerate(scenarios)
+                ],
+                spacing=0,
+                scroll=ft.ScrollMode.AUTO,
+                expand=True,
+            )
+        else:
+            scenarios_body.content = c.empty_hint("Сохранённых сценариев пока нет.")
+        app.refresh(scenarios_body)
+
+    # -- сборка -------------------------------------------------------------
+    outcome_switch = ft.Container(
+        content=c.segmented(OUTCOME_OPTIONS, app.archive_outcome, set_outcome)
+    )
+    search_input, search_field = c.text_field(
+        app.archive_query,
+        set_query,
+        placeholder="Поиск по сценарию или сиду",
+        width=260,
+        nested=True,
+    )
+    search_field.on_change = lambda *_: set_query(search_field.value or "")
+    search = ft.Container(
+        content=ft.Row(
+            [ft.Icon(ft.Icons.SEARCH, size=17, color=t.TEXT_MUTED), search_input],
+            spacing=6,
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        height=t.BUTTON_H,
+        padding=ft.Padding.only(left=10),
+        bgcolor=t.CARD_BG,
+        border=ft.Border.all(1, t.BORDER),
+        border_radius=t.R_BUTTON,
+        alignment=ft.Alignment.CENTER_LEFT,
+    )
+
+    render_results()
+    render_scenarios()
+
+    results_card = ft.Container(
+        content=ft.Column(
+            [
+                ft.Container(
+                    content=ft.Row(
+                        [results_title, c.spacer(), outcome_switch],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    height=t.CARD_HEADER_H,
+                    padding=ft.Padding.symmetric(horizontal=t.PAD_CARD),
+                    border=t.border_bottom(t.BORDER),
+                ),
+                ft.Column([c.table_head(RESULT_COLUMNS), results_body], spacing=0, expand=True),
+                c.card_footer(
+                    [
+                        ft.Text(
+                            "повтор по сиду воспроизводит бой ход в ход",
+                            style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
+                        )
+                    ]
+                ),
+            ],
+            spacing=0,
+            expand=True,
+        ),
+        bgcolor=t.CARD_BG,
+        border=ft.Border.all(1, t.BORDER),
+        border_radius=t.R_CARD,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        expand=True,
+    )
+
+    scenarios_card = c.framed_card(
+        f"Сценарии · {len(app.scenarios())}",
+        scenarios_body,
+        trailing=[
+            c.icon_button(
+                ft.Icons.ADD,
+                lambda: app.go(ROUTES["battle_setup"]),
+                size=t.BUTTON_XS_H,
+                icon_size=16,
+                tooltip="Собрать новый сценарий",
+            )
         ],
-        padding=PAD,
+        expand=True,
+    )
+
+    return screen(
+        app,
+        active="archive",
+        title="Архив",
+        subtitle="Сценарии и проведённые бои; любой можно повторить",
+        actions=[search],
+        body=c.columns(results_card, scenarios_card, right_width=400),
     )

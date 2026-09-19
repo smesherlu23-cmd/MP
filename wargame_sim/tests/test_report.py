@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from core import preview
 from core.batch import run_batch
 from core.engine import run_battle
 from core.report import (
@@ -55,3 +58,26 @@ def test_batch_exports(scenario, config) -> None:
     assert "## Прогоны" in markdown
     rows = batch_csv(batch).strip().splitlines()
     assert len(rows) == 6
+
+
+# --------------------------------------------------------------------------
+# Сравнение сторон до боя (экран настройки)
+# --------------------------------------------------------------------------
+def test_edge_names_the_stronger_side(scenario, config) -> None:
+    """«Что даёт перевес» считается теми же формулами, что и первый ход."""
+    edge = preview.edge(scenario, config)
+    assert edge.a.firepower > 0 and edge.b.resilience > 0
+    assert edge.leader in ("A", "B", "")
+    assert str(scenario.environment.terrain) in edge.text
+    assert f"{edge.ratio_a:.2f}" in edge.text
+
+
+def test_edge_is_symmetric_for_equal_sides(scenario, config) -> None:
+    """Зеркальный сценарий не должен давать перевеса ни одной стороне."""
+    mirrored = scenario.model_copy(deep=True)
+    mirrored.battalion_b = mirrored.battalion_a.model_copy(deep=True)
+    mirrored.battalion_b.id = "bat_mirror"
+    mirrored.environment.fortification_B = mirrored.environment.fortification_A
+    edge = preview.edge(mirrored, config)
+    assert edge.ratio_a == pytest.approx(edge.ratio_b)
+    assert edge.leader == ""

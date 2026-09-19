@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from core.config import ConfigError, ConfigStore, Curve
+from core.config import ConfigError, ConfigStore, Curve, introspect
 from core.config.schema import CONFIG_SCHEMAS
 
 
@@ -100,3 +100,75 @@ def test_defaults_directory_is_never_overwritten(config_copy: ConfigStore) -> No
     data["combat"]["casualties"]["lethality"] = 0.5
     config_copy.save("combat", data)
     assert config_copy.default_path_for("combat").read_text(encoding="utf-8") == reference
+
+
+# --------------------------------------------------------------------------
+# Разбор по схеме и точечная правка текста (редактор коэффициентов)
+# --------------------------------------------------------------------------
+def test_describe_covers_every_scalar_of_a_section(config_copy: ConfigStore) -> None:
+    """Редактор показывает ровно то, что лежит в файле, — ничего не теряя."""
+    raw = config_copy.raw("combat")
+    groups = introspect.describe("combat", raw)
+    shown = {field.dotted for group in groups for field in group.fields}
+    expected = set(introspect.flatten(raw)) - {"schema_version"}
+    assert shown == expected
+
+
+def test_describe_takes_bounds_from_schema(config_copy: ConfigStore) -> None:
+    groups = introspect.describe("combat", config_copy.raw("combat"))
+    fields = {field.dotted: field for group in groups for field in group.fields}
+    cap = fields["combat.casualties.cap_per_turn"]
+    assert (cap.minimum, cap.maximum) == (0.0, 1.0)
+    assert fields["combat.detection.intel_levels"].kind == introspect.KIND_LIST
+    assert fields["combat.curves.cohesion"].kind == introspect.KIND_CURVE
+
+
+def test_describe_handles_numeric_keys(config_copy: ConfigStore) -> None:
+    """Уровни опыта в YAML — числа; путь всё равно строковый."""
+    groups = introspect.describe("experience", config_copy.raw("experience"))
+    assert any(group.dotted == "experience.1" for group in groups)
+
+
+def test_patch_scalar_keeps_comments_and_order(config_copy: ConfigStore) -> None:
+    """Правка одного числа не должна стирать пояснения в конфиге."""
+    before = config_copy.raw_text("combat")
+    after = introspect.patch_scalar(before, ("combat", "casualties", "lethality"), 0.031)
+    config_copy.save_text("combat", after)
+
+    assert config_copy.get().cbt.casualties.lethality == pytest.approx(0.031)
+    assert "# k_летальность" in after
+    assert after.count("\n") == before.count("\n")
+    assert yaml.safe_load(after)["combat"]["vehicles"] == yaml.safe_load(before)["combat"]["vehicles"]
+
+
+def test_patch_scalar_writes_booleans_and_strings(config_copy: ConfigStore) -> None:
+    toggles = introspect.patch_scalar(config_copy.raw_text("toggles"), ("toggles", "fuel"), False)
+    config_copy.save_text("toggles", toggles)
+    assert config_copy.get().tog.fuel is False
+
+    types = introspect.patch_scalar(
+        config_copy.raw_text("element_types"),
+        ("element_types", "стрелковая_рота", "label"),
+        "Стрелковая рота (штат)",
+    )
+    config_copy.save_text("element_types", types)
+    assert config_copy.get().element_type("стрелковая_рота").label == "Стрелковая рота (штат)"
+
+
+def test_patch_scalar_reports_unknown_path(config_copy: ConfigStore) -> None:
+    with pytest.raises(introspect.PatchError):
+        introspect.patch_scalar(config_copy.raw_text("combat"), ("combat", "выдумка"), 1)
+
+
+def test_differences_finds_changed_values(config_copy: ConfigStore) -> None:
+    defaults = yaml.safe_load(
+        config_copy.default_path_for("combat").read_text(encoding="utf-8")
+    )
+    assert introspect.differences(config_copy.raw("combat"), defaults) == []
+
+    data = config_copy.raw("combat")
+    data["combat"]["casualties"]["lethality"] = 0.999
+    config_copy.save("combat", data)
+    assert introspect.differences(config_copy.raw("combat"), defaults) == [
+        "combat.casualties.lethality"
+    ]

@@ -1,4 +1,9 @@
-"""Настройка боя: стороны, окружение, укрепления, разведданные, приказы, сид."""
+"""Настройка боя: стороны, условия, сид и сравнение сторон.
+
+Блок «Что даёт перевес» считается по реальному конфигу — берёт те же
+множители приказов и местности, которые потом применит движок, а не
+пересказывает их словами.
+"""
 
 from __future__ import annotations
 
@@ -6,8 +11,10 @@ import random
 
 import flet as ft
 
+from core import preview
 from core.models import (
     MAX_SEED,
+    Battalion,
     IntelLevel,
     Order,
     Side,
@@ -16,25 +23,26 @@ from core.models import (
     Weather,
     new_id,
 )
+from ui import theme as t
+from ui.shell import scenario_aside, screen
 from ui.state import ROUTES, AppState
-from ui.widgets.battalion import battalion_summary
-from ui.widgets.common import (
-    GAP,
-    PAD,
-    action_button,
-    card,
-    choice,
-    error_banner,
-    link_button,
-    number_field,
-    page_title,
-    text_button,
-    text_input,
-    two_columns,
-)
+from ui.widgets import common as c
 
 ROUTE = ROUTES["battle_setup"]
 
+#: Ширины групп в карточке условий. В строке с переносом ширина ребёнка
+#: обязана быть задана: иначе Flet рисует серый прямоугольник вместо
+#: содержимого. Значения с запасом под самые длинные названия из конфига.
+TERRAIN_W = 340
+TIME_W = 190
+WEATHER_W = 240
+LIMIT_W = 120
+
+COMPARE: tuple[c.Col, ...] = (
+    c.Col("Показатель", expand=True),
+    c.Col("A", 80, numeric=True),
+    c.Col("B", 80, numeric=True),
+)
 
 
 def build(app: AppState) -> ft.View:
@@ -43,23 +51,22 @@ def build(app: AppState) -> ft.View:
     config = app.config
     toggles = config.tog
 
-    summary_a = ft.Container(content=battalion_summary(scenario.battalion_a), expand=True)
-    summary_b = ft.Container(content=battalion_summary(scenario.battalion_b), expand=True)
-    message = ft.Text("", size=12, opacity=0.75)
+    compare_holder = ft.Container()
+    edge_holder = ft.Container(expand=True)
+    message = ft.Text(style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3))
 
     def touch() -> None:
         app.engine = None
-        summary_a.content = battalion_summary(scenario.battalion_a)
-        summary_b.content = battalion_summary(scenario.battalion_b)
-        app.refresh(summary_a, summary_b)
+        compare_holder.content = compare_card()
+        edge_holder.content = edge_note()
+        app.refresh(compare_holder, edge_holder)
 
-    def set_environment(attribute: str, value) -> None:
+    def set_environment(attribute: str, value: object) -> None:
         setattr(environment, attribute, value)
         touch()
 
-    def set_side(side: Side, attribute: str, value) -> None:
-        battalion = scenario.battalion(side)
-        setattr(battalion, attribute, value)
+    def set_side(side: Side, attribute: str, value: object) -> None:
+        setattr(scenario.battalion(side), attribute, value)
         touch()
 
     def pick_unit(side: Side, unit_id: str) -> None:
@@ -74,10 +81,6 @@ def build(app: AppState) -> ft.View:
             scenario.battalion_b = battalion
         touch()
 
-    def set_seed(value: float) -> None:
-        scenario.master_seed = int(value)
-        app.engine = None
-
     def random_seed() -> None:
         scenario.master_seed = random.randint(0, MAX_SEED)
         app.notify(f"Новый сид: {scenario.master_seed}")
@@ -87,183 +90,358 @@ def build(app: AppState) -> ft.View:
         if not scenario.id:
             scenario.id = new_id("scn")
         path = app.save_scenario(scenario)
-        message.value = f"Сценарий сохранён: {path}"
+        message.value = f"Сценарий сохранён: {path.name}"
         app.refresh(message)
 
     def start() -> None:
         app.start_battle()
         app.go(ROUTES["battle"].format(id=scenario.id))
 
+    # -- сравнение сторон ---------------------------------------------------
+    def compare_card() -> ft.Control:
+        a, b = scenario.battalion_a, scenario.battalion_b
+        sa, sb = a.summary(), b.summary()
+
+        def line(label: str, left: str, right: str, *, weight: ft.FontWeight = t.W400):
+            return c.table_row(
+                COMPARE,
+                [
+                    t.text(label, size=t.SIZE_ROW, color=t.TEXT_3),
+                    t.num(left, weight=weight),
+                    t.num(right, weight=weight),
+                ],
+                height=t.TABLE_ROW_H - 2,
+            )
+
+        rows = [
+            c.table_row(
+                COMPARE,
+                [
+                    t.text("Состояние", size=t.SIZE_ROW, color=t.TEXT_3),
+                    t.text(str(sa["state"]), size=t.SIZE_ROW, align=ft.TextAlign.RIGHT),
+                    t.text(str(sb["state"]), size=t.SIZE_ROW, align=ft.TextAlign.RIGHT),
+                ],
+                height=t.TABLE_ROW_H - 2,
+            ),
+            c.table_row(
+                COMPARE,
+                [
+                    t.text("Приказ", size=t.SIZE_ROW, color=t.TEXT_3),
+                    t.text(str(a.order), size=t.SIZE_ROW, align=ft.TextAlign.RIGHT),
+                    t.text(str(b.order), size=t.SIZE_ROW, align=ft.TextAlign.RIGHT),
+                ],
+                height=t.TABLE_ROW_H - 2,
+            ),
+            line("Элементов", str(len(a.elements)), str(len(b.elements))),
+            line("Личный состав", str(a.personnel_current), str(b.personnel_current)),
+            line("Техника", str(a.vehicles_current), str(b.vehicles_current)),
+            line("Мораль", f"{sa['morale']:.0f}", f"{sb['morale']:.0f}"),
+            line("Опыт (средний)", f"{sa['experience']:.1f}", f"{sb['experience']:.1f}"),
+            line("Слаженность", f"{sa['cohesion']:.0f}", f"{sb['cohesion']:.0f}"),
+            line("Связь", f"{a.communications:.0f}", f"{b.communications:.0f}"),
+            line(
+                "Влияние командира",
+                f"{a.commander_influence:.0f}",
+                f"{b.commander_influence:.0f}",
+            ),
+            line("Боезапас", f"{sa['ammo']:.0f}", f"{sb['ammo']:.0f}"),
+            line("Снабжение", f"{sa['supply']:.0f}", f"{sb['supply']:.0f}"),
+        ]
+        rows.append(
+            ft.Container(
+                content=ft.Column(
+                    [
+                        line(
+                            "Боеспособность",
+                            f"{sa['combat_power']:.0f}",
+                            f"{sb['combat_power']:.0f}",
+                            weight=t.W500,
+                        ),
+                        line(
+                            "Организация",
+                            f"{sa['organisation']:.0f}",
+                            f"{sb['organisation']:.0f}",
+                            weight=t.W500,
+                        ),
+                    ],
+                    spacing=0,
+                    tight=True,
+                ),
+                padding=ft.Padding.only(top=6),
+                border=t.border_top(t.BORDER_INNER),
+            )
+        )
+
+        return c.framed_card(
+            "Сравнение сторон",
+            ft.Column(
+                [
+                    c.table_head(COMPARE),
+                    ft.Column(rows, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True),
+                ],
+                spacing=0,
+                expand=True,
+            ),
+            footer=c.card_footer([edge_holder], height=None),
+            expand=True,
+        )
+
+    def edge_note() -> ft.Control:
+        """Честный разбор перевеса: те же формулы, что применит движок."""
+        edge = preview.edge(scenario, config)
+        return ft.Column(
+            [t.caption("Что даёт перевес"), c.note(edge.text)],
+            spacing=4,
+            tight=True,
+            expand=True,
+        )
+
+    # -- карточка стороны ---------------------------------------------------
     unit_options = [(battalion.id, battalion.name) for _, battalion in app.units()]
 
     def side_card(side: Side) -> ft.Control:
         battalion = scenario.battalion(side)
-        controls: list[ft.Control] = [
+        key = "A" if side == Side.A else "B"
+        fields: list[ft.Control] = [
+            c.labeled(
+                "Подразделение",
+                c.select(
+                    battalion.id,
+                    unit_options or [(battalion.id, battalion.name)],
+                    lambda value, s=side: pick_unit(s, value),
+                    expand=True,
+                ),
+                expand=True,
+            ),
             ft.Row(
                 [
-                    choice(
-                        f"Подразделение стороны {side}",
-                        unit_options or [(battalion.id, battalion.name)],
-                        battalion.id,
-                        lambda value, s=side: pick_unit(s, value),
-                        width=240,
-                    ),
-                    choice(
+                    c.labeled(
                         "Приказ",
-                        [(str(order), str(order)) for order in Order],
-                        str(battalion.order),
-                        lambda value, s=side: set_side(s, "order", Order(value)),
+                        c.select(
+                            str(battalion.order),
+                            [(str(order), str(order)) for order in Order],
+                            lambda value, s=side: set_side(s, "order", Order(value)),
+                            expand=True,
+                        ),
+                        expand=True,
                     ),
+                    c.labeled(
+                        "Разведданные",
+                        c.select(
+                            str(environment.intel(key)),
+                            [(str(level), str(level)) for level in IntelLevel],
+                            lambda value, s=side: set_environment(
+                                "intel_A" if s == Side.A else "intel_B", IntelLevel(value)
+                            ),
+                            expand=True,
+                        ),
+                        expand=True,
+                    )
+                    if toggles.intel
+                    else ft.Container(expand=True),
                 ],
-                spacing=GAP,
-                wrap=True,
+                spacing=t.GAP_SM,
             ),
-            text_input(
+            c.labeled(
                 "Задача боя",
-                battalion.task,
-                lambda value, s=side: set_side(s, "task", value),
+                c.text_field(
+                    battalion.task,
+                    lambda value, s=side: set_side(s, "task", value),
+                    placeholder="не задана",
+                    expand=True,
+                )[0],
+                expand=True,
             ),
             ft.Row(
                 [
-                    number_field(
-                        "Укрепления",
-                        environment.fortification("A" if side == Side.A else "B"),
-                        minimum=0,
-                        maximum=5,
-                        integer=True,
-                        hint="0…5",
-                        on_change=lambda value, s=side: set_environment(
-                            "fortification_A" if s == Side.A else "fortification_B", int(value)
+                    c.labeled(
+                        "Укрепления 0…5",
+                        c.number_field(
+                            environment.fortification(key),
+                            lambda value, s=side: set_environment(
+                                "fortification_A" if s == Side.A else "fortification_B", int(value)
+                            ),
+                            minimum=0,
+                            maximum=5,
+                            integer=True,
+                            expand=True,
                         ),
+                        expand=True,
                     ),
-                    number_field(
+                    c.labeled(
                         "Связь",
-                        battalion.communications,
-                        minimum=0,
-                        maximum=100,
-                        on_change=lambda value, s=side: set_side(s, "communications", value),
+                        c.number_field(
+                            battalion.communications,
+                            lambda value, s=side: set_side(s, "communications", value),
+                            minimum=0,
+                            maximum=100,
+                            expand=True,
+                        ),
+                        expand=True,
                     ),
+                    c.labeled(
+                        "Командир",
+                        c.number_field(
+                            battalion.commander_influence,
+                            lambda value, s=side: set_side(s, "commander_influence", value),
+                            minimum=0,
+                            maximum=100,
+                            expand=True,
+                        ),
+                        expand=True,
+                    )
+                    if toggles.commander_influence
+                    else ft.Container(expand=True),
                 ],
-                spacing=GAP,
-                wrap=True,
+                spacing=t.GAP_SM,
             ),
         ]
-        if toggles.intel:
-            controls.append(
-                choice(
-                    "Разведданные",
-                    [(str(level), str(level)) for level in IntelLevel],
-                    str(environment.intel("A" if side == Side.A else "B")),
-                    lambda value, s=side: set_environment(
-                        "intel_A" if s == Side.A else "intel_B", IntelLevel(value)
-                    ),
-                )
-            )
-        if toggles.commander_influence:
-            controls.append(
-                number_field(
-                    "Влияние командира",
-                    battalion.commander_influence,
-                    minimum=0,
-                    maximum=100,
-                    on_change=lambda value, s=side: set_side(s, "commander_influence", value),
-                )
-            )
-        return card(f"Сторона {side} — {battalion.name}", controls, expand=True)
 
-    conditions = card(
-        "Условия боя",
-        [
-            ft.Row(
-                [
-                    choice(
-                        "Местность",
-                        [(str(item), str(item)) for item in Terrain],
-                        str(environment.terrain),
-                        lambda value: set_environment("terrain", Terrain(value)),
-                    ),
-                    choice(
-                        "Время суток",
-                        [(str(item), str(item)) for item in TimeOfDay],
-                        str(environment.time_of_day),
-                        lambda value: set_environment("time_of_day", TimeOfDay(value)),
-                    ),
-                    choice(
-                        "Погода",
-                        [(str(item), str(item)) for item in Weather],
-                        str(environment.weather),
-                        lambda value: set_environment("weather", Weather(value)),
-                    ),
-                    number_field(
-                        "Предел ходов",
-                        environment.max_turns,
-                        minimum=1,
-                        maximum=500,
-                        integer=True,
-                        hint="max_turns",
-                        on_change=lambda value: set_environment("max_turns", int(value)),
-                    ),
-                ],
-                spacing=GAP,
-                wrap=True,
-            )
-        ],
-    )
-
-    seed_card = card(
-        "Случайность",
-        [
-            ft.Row(
-                [
-                    number_field(
-                        "Сид боя",
-                        scenario.master_seed,
-                        minimum=0,
-                        maximum=MAX_SEED,
-                        integer=True,
-                        hint="один и тот же сид даёт один и тот же бой",
-                        on_change=set_seed,
-                        width=260,
-                    ),
-                    text_button("Случайный сид", random_seed, icon=ft.Icons.CASINO),
-                ],
-                spacing=GAP,
-                wrap=True,
-            ),
-            text_input(
-                "Название сценария", scenario.name, lambda value: setattr(scenario, "name", value)
-            ),
-            text_input("Заметки", scenario.notes, lambda value: setattr(scenario, "notes", value)),
-        ],
-    )
-
-    controls: list[ft.Control] = [
-        page_title("Настройка боя", "Кто, где и с какой задачей вступает в бой."),
-    ]
-    if app.config_error:
-        controls.append(error_banner(app.config_error))
-    controls += [
-        ft.Row(
+        header = ft.Row(
             [
-                link_button(
-                "На главную", ROUTES["home"], app.go, icon=ft.Icons.ARROW_BACK),
-                link_button("Подразделения", ROUTES["units"], app.go),
-                action_button("Начать бой", start, icon=ft.Icons.PLAY_ARROW),
-                text_button("Сохранить сценарий", save, icon=ft.Icons.SAVE),
-                link_button("Массовое моделирование", ROUTES["batch"], app.go),
+                t.card_title(f"Сторона {key}"),
+                c.spacer(),
+                ft.Text(
+                    f"{battalion.personnel_current} чел. · {battalion.vehicles_current} техн.",
+                    style=t.mono(size=t.SIZE_META, color=t.TEXT_3),
+                ),
             ],
-            spacing=GAP,
-            wrap=True,
-        ),
-        message,
-        two_columns(side_card(Side.A), side_card(Side.B)),
-        conditions,
-        seed_card,
-        two_columns(summary_a, summary_b),
-    ]
+            spacing=8,
+        )
+        return c.card([header, *fields], expand=True)
 
-    return ft.View(
-        route=ROUTE,
-        controls=[ft.Column(controls, spacing=GAP, scroll=ft.ScrollMode.AUTO, expand=True)],
-        padding=PAD,
+    # -- условия ------------------------------------------------------------
+    conditions = c.card(
+        [
+            t.card_title("Условия боя"),
+            c.flow(
+                [
+                    c.labeled(
+                        "Местность",
+                        c.segmented(
+                            [(str(item), str(item)) for item in Terrain],
+                            str(environment.terrain),
+                            lambda value: set_environment("terrain", Terrain(value)),
+                        ),
+                        width=TERRAIN_W,
+                    ),
+                    c.labeled(
+                        "Время суток",
+                        c.segmented(
+                            [(str(item), str(item)) for item in TimeOfDay],
+                            str(environment.time_of_day),
+                            lambda value: set_environment("time_of_day", TimeOfDay(value)),
+                        ),
+                        width=TIME_W,
+                    ),
+                    c.labeled(
+                        "Погода",
+                        c.segmented(
+                            [(str(item), str(item)) for item in Weather],
+                            str(environment.weather),
+                            lambda value: set_environment("weather", Weather(value)),
+                        ),
+                        width=WEATHER_W,
+                    ),
+                    c.labeled(
+                        "Предел ходов",
+                        c.number_field(
+                            environment.max_turns,
+                            lambda value: set_environment("max_turns", int(value)),
+                            minimum=1,
+                            maximum=500,
+                            integer=True,
+                            width=LIMIT_W,
+                        ),
+                        width=LIMIT_W,
+                    ),
+                ],
+                spacing=20,
+            ),
+        ]
     )
+
+    randomness = c.card(
+        [
+            t.card_title("Сценарий и случайность"),
+            ft.Row(
+                [
+                    c.labeled(
+                        "Название сценария",
+                        c.text_field(
+                            scenario.name,
+                            lambda value: setattr(scenario, "name", value),
+                            expand=True,
+                        )[0],
+                        expand=True,
+                    ),
+                    c.labeled(
+                        "Сид боя",
+                        c.number_field(
+                            scenario.master_seed,
+                            lambda value: setattr(scenario, "master_seed", int(value)),
+                            minimum=0,
+                            maximum=MAX_SEED,
+                            integer=True,
+                            width=140,
+                        ),
+                        width=140,
+                    ),
+                    c.secondary_button("Случайный", random_seed, icon=ft.Icons.CASINO, height=32),
+                ],
+                spacing=t.GAP_SM,
+                vertical_alignment=ft.CrossAxisAlignment.END,
+            ),
+            c.labeled(
+                "Заметки",
+                c.text_field(
+                    scenario.notes,
+                    lambda value: setattr(scenario, "notes", value),
+                    placeholder="необязательно",
+                    expand=True,
+                )[0],
+                expand=True,
+            ),
+            c.note(
+                "Один и тот же сид даёт один и тот же бой — результат можно повторить точно."
+            ),
+            message,
+        ]
+    )
+
+    touch()
+
+    left = ft.Column(
+        [
+            ft.Row(
+                [side_card(Side.A), side_card(Side.B)],
+                spacing=t.GAP,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            ),
+            conditions,
+            randomness,
+            c.spacer(),
+        ],
+        spacing=t.GAP,
+        expand=True,
+        scroll=ft.ScrollMode.AUTO,
+    )
+
+    return screen(
+        app,
+        active="battle",
+        active_child="setup",
+        title="Настройка боя",
+        subtitle="Кто, где и с какой задачей вступает в бой",
+        actions=[
+            c.tertiary_button("Сохранить сценарий", save, icon=ft.Icons.SAVE_OUTLINED),
+            c.secondary_button("Массовое моделирование", lambda: app.go(ROUTES["batch"])),
+            c.primary_button("Начать бой", start, icon=ft.Icons.PLAY_ARROW),
+        ],
+        aside=scenario_aside(app),
+        body=c.columns(left, compare_holder, right_width=390),
+    )
+
+
+def side_name(battalion: Battalion) -> str:
+    return battalion.name
