@@ -73,6 +73,30 @@ def state_coefficient(
     return factors.value, factors
 
 
+def noise_range(
+    element: Element, battalion: Battalion, config: AppConfig
+) -> tuple[float, float, Factors]:
+    """Границы случайного множителя огня для конкретного элемента.
+
+    Ширину задаёт выучка: опыт, эффективная слаженность и подавление.
+    Центр диапазона не двигается, поэтому средний огонь остаётся прежним —
+    меняется только предсказуемость: ветеранская рота стреляет ровно,
+    необученная под подавлением — как придётся (§6.2).
+    """
+    curves = config.cbt.curves
+    noise = config.cbt.casualties.noise
+    effective_cohesion = element.cohesion * battalion.communications / 100.0
+
+    factors = Factors()
+    factors.mul("опыт", curves.noise_experience(element.experience))
+    factors.mul("слаженность", curves.noise_cohesion(effective_cohesion))
+    factors.mul("подавление", curves.noise_suppression(element.suppression))
+
+    centre = (noise.max + noise.min) / 2.0
+    half = (noise.max - noise.min) / 2.0 * factors.value
+    return centre - half, centre + half, factors
+
+
 def commander_factor(battalion: Battalion, config: AppConfig) -> float:
     """k_командир — влияние командира, если параметр включён."""
     if not config.tog.commander_influence:

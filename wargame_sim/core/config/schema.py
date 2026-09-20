@@ -375,6 +375,9 @@ class CombatCurves(BaseModel):
     fortification: Curve
     fortification_cover: Curve
     collapse: Curve
+    noise_experience: Curve
+    noise_cohesion: Curve
+    noise_suppression: Curve
 
 
 class ChecksConfig(BaseModel):
