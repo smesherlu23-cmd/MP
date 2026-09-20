@@ -57,7 +57,9 @@ def check_morale_states(
                     f"{PHASE}:veh",
                     key,
                 )
-                abandoned = apply_vehicle_loss(state, side, element, abandoned)
+                # Брошенная при панике техника достаётся противнику целой —
+                # экипаж уходит своим ходом, поэтому потерь в л/с здесь нет.
+                abandoned = sum(apply_vehicle_loss(state, side, element, abandoned).values())
                 _set_order(state, side, element, Order.PANIC)
                 element.alive = False
                 state.side(side).panicked_elements += 1

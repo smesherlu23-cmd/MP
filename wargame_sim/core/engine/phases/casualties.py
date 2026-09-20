@@ -31,34 +31,41 @@ def apply_personnel_loss(
 
 def apply_vehicle_loss(
     state: BattleState, side: str, element: Element, destroyed: int
-) -> int:
-    """Списать технику пропорционально наличию в группах."""
+) -> dict[str, int]:
+    """Списать технику пропорционально наличию в группах.
+
+    Возвращает, сколько машин каждого типа выбито: по этому потом
+    считается экипаж — он у каждой машины свой (§4.1).
+    """
     if destroyed <= 0 or element.vehicles_current == 0:
-        return 0
+        return {}
     remaining = min(destroyed, element.vehicles_current)
     total = element.vehicles_current
-    written_off = 0
+    written_off: dict[str, int] = {}
+
+    def take_from(group, amount: int) -> int:
+        amount = min(amount, group.count_current)
+        if amount <= 0:
+            return 0
+        group.count_current -= amount
+        written_off[group.vehicle_type] = written_off.get(group.vehicle_type, 0) + amount
+        return amount
+
     for group in element.vehicles:
         if remaining <= 0:
             break
-        quota = min(group.count_current, round(destroyed * group.count_current / total))
-        quota = min(quota, remaining)
-        if quota > 0:
-            group.count_current -= quota
-            remaining -= quota
-            written_off += quota
+        quota = min(round(destroyed * group.count_current / total), remaining)
+        remaining -= take_from(group, quota)
     # Остаток раздаём по группам, где ещё есть машины.
     for group in element.vehicles:
         if remaining <= 0:
             break
-        take = min(group.count_current, remaining)
-        group.count_current -= take
-        remaining -= take
-        written_off += take
+        remaining -= take_from(group, remaining)
+
     side_state = state.side(side)
-    side_state.vehicles_lost[element.id] = (
-        side_state.vehicles_lost.get(element.id, 0) + written_off
-    )
+    side_state.vehicles_lost[element.id] = side_state.vehicles_lost.get(
+        element.id, 0
+    ) + sum(written_off.values())
     return written_off
 
 
@@ -143,10 +150,16 @@ def run(
                 hits, vehicles_cfg.condition_share, state.turn, f"{PHASE}:cond", target_key
             )
             destroyed = hits - damaged_hits
-            destroyed = apply_vehicle_loss(state, enemy, target, destroyed)
+            lost_by_type = apply_vehicle_loss(state, enemy, target, destroyed)
+            destroyed = sum(lost_by_type.values())
             damage_vehicle_condition(target, damaged_hits, vehicles_cfg.condition_loss_per_hit)
+            # Экипаж берётся из карточки машины: с танком гибнет танковый
+            # экипаж, с грузовиком — водитель со старшим.
+            crew_aboard = sum(
+                count * config.vehicle(name).crew for name, count in lost_by_type.items()
+            )
             crew = rng.round_stochastic(
-                destroyed * vehicles_cfg.crew_loss_per_vehicle,
+                crew_aboard * vehicles_cfg.crew_loss_share,
                 state.turn,
                 f"{PHASE}:crew",
                 target_key,

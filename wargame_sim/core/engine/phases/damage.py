@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from core.config import AppConfig
-from core.engine.formulas import contact_accuracy, firepower, noise_range, resilience
+from core.engine.formulas import (
+    anti_tank_share,
+    contact_accuracy,
+    firepower,
+    noise_range,
+    resilience,
+    vehicle_armour,
+)
 from core.engine.rng import RngStreams
 from core.engine.state import BattleState, TurnData, element_key, other_side
 from core.log import BattleLog
@@ -112,7 +119,7 @@ def run(
                 continue
             portion = turn_data.fire.get(attacker_key, 0.0) * part * accuracy
             incoming += portion
-            anti_tank += portion * config.element_type(attacker.type).anti_tank
+            anti_tank += portion * anti_tank_share(attacker, config)[0]
             contributions.append((f"огонь:{attacker.name}", portion))
         if incoming <= 0:
             continue
@@ -120,8 +127,12 @@ def run(
         defence = turn_data.defence.get(target_key, 0.0)
         pressure = incoming / (defence + casualties_cfg.defense_epsilon)
         vehicle_pressure = 0.0
+        armour, facing = 0.0, "нет техники"
         if target.vehicles_current > 0:
-            vehicle_defence = defence + config.cbt.vehicles.defense_epsilon
+            armour, facing = vehicle_armour(target, enemy_battalion, config)
+            vehicle_defence = (
+                defence + config.cbt.vehicles.defense_epsilon
+            ) * config.cbt.curves.armour(armour)
             vehicle_pressure = anti_tank / vehicle_defence
 
         turn_data.pressure[target_key] = turn_data.pressure.get(target_key, 0.0) + pressure
@@ -142,6 +153,8 @@ def run(
                 (f"контакт:{level}", accuracy),
                 ("устойчивость цели", defence),
                 ("ε", casualties_cfg.defense_epsilon),
+                ("противотанковый огонь", anti_tank),
+                (f"броня:{facing}", armour),
             ],
             text=(
                 f"Давление на «{target.name}»: {pressure:.2f} "

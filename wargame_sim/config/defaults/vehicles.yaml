@@ -1,0 +1,100 @@
+# Библиотека техники. На запись отсюда ссылается группа техники внутри
+# элемента (`vehicle_type`), поэтому БТР и танк в одной роте считаются
+# по-разному: у них своя броня, своя пушка и свой экипаж.
+#
+# class          — класс машины, только для группировки в интерфейсе;
+# crew           — экипаж, чел.: столько теряется вместе с машиной;
+# armour_front   — лобовая защита 0..100, работает против огня с фронта;
+# armour_side    — бортовая защита 0..100, работает в засаде и при охвате;
+# firepower      — вклад машины в огонь по пехоте, 0..100;
+# anti_tank      — противотанковая мощь, 0..100;
+# mobility       — подвижность 0..100: отрыв от противника и проходимость;
+# visibility     — заметность 0..100: насколько машина притягивает огонь;
+# reliability    — надёжность 0..100: чем ниже, тем чаще небоевые поломки;
+# fuel_use       — множитель расхода топлива;
+# transport      — сколько человек пехоты возит (0 — не возит).
+schema_version: 1
+vehicles:
+  БТР:
+    label: Бронетранспортёр
+    class: БТР
+    crew: 2
+    armour_front: 22
+    armour_side: 12
+    firepower: 14
+    anti_tank: 8
+    mobility: 62
+    visibility: 55
+    reliability: 88
+    fuel_use: 1.00
+    transport: 8
+
+  БМП:
+    label: Боевая машина пехоты
+    class: БМП
+    crew: 3
+    armour_front: 34
+    armour_side: 18
+    firepower: 26
+    anti_tank: 45
+    mobility: 58
+    visibility: 60
+    reliability: 82
+    fuel_use: 1.15
+    transport: 7
+
+  Танк:
+    label: Основной боевой танк
+    class: танк
+    crew: 3
+    armour_front: 82
+    armour_side: 40
+    firepower: 34
+    anti_tank: 88
+    mobility: 52
+    visibility: 72
+    reliability: 78
+    fuel_use: 1.80
+    transport: 0
+
+  САУ:
+    label: Самоходная артиллерия
+    class: САУ
+    crew: 5
+    armour_front: 20
+    armour_side: 12
+    firepower: 70
+    anti_tank: 18
+    mobility: 46
+    visibility: 48
+    reliability: 80
+    fuel_use: 1.30
+    transport: 0
+
+  Миномёт:
+    label: Буксируемый миномёт
+    class: орудие
+    crew: 4
+    armour_front: 0
+    armour_side: 0
+    firepower: 52
+    anti_tank: 6
+    mobility: 22
+    visibility: 30
+    reliability: 94
+    fuel_use: 0.20
+    transport: 0
+
+  Грузовик:
+    label: Транспорт снабжения
+    class: транспорт
+    crew: 2
+    armour_front: 0
+    armour_side: 0
+    firepower: 0
+    anti_tank: 0
+    mobility: 70
+    visibility: 44
+    reliability: 90
+    fuel_use: 0.85
+    transport: 12

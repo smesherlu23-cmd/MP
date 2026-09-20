@@ -122,6 +122,9 @@ class ElementTypeDefaults(BaseModel):
     personnel_full: int = Field(ge=0)
     attack: float = Field(ge=0, le=100)
     defense: float = Field(ge=0, le=100)
+    #: Какая техника и сколько её по штату у этого типа элемента.
+    vehicle_type: str = ""
+    vehicle_count: int = Field(default=0, ge=0)
 
 
 class ElementTypeEntry(BaseModel):
@@ -145,6 +148,37 @@ class ElementTypesConfig(BaseModel):
 
     schema_version: int = 1
     element_types: dict[str, ElementTypeEntry] = Field(min_length=1)
+
+
+# --------------------------------------------------------------------------
+# vehicles.yaml
+# --------------------------------------------------------------------------
+class VehicleEntry(BaseModel):
+    """Карточка типа машины: то, чем БТР отличается от танка (§4.1)."""
+
+    model_config = Strict
+
+    label: str
+    # Класс нужен только для группировки в интерфейсе, поэтому обычная
+    # строка: новый класс заводится в конфиге, без правки кода.
+    vehicle_class: str = Field(alias="class")
+    crew: int = Field(ge=0)
+    armour_front: float = Field(ge=0, le=100)
+    armour_side: float = Field(ge=0, le=100)
+    firepower: float = Field(ge=0, le=100)
+    anti_tank: float = Field(ge=0, le=100)
+    mobility: float = Field(ge=0, le=100)
+    visibility: float = Field(ge=0, le=100)
+    reliability: float = Field(ge=0, le=100)
+    fuel_use: float = Field(ge=0)
+    transport: int = Field(ge=0)
+
+
+class VehicleLibraryConfig(BaseModel):
+    model_config = Strict
+
+    schema_version: int = 1
+    vehicles: dict[str, VehicleEntry] = Field(min_length=1)
 
 
 # --------------------------------------------------------------------------
@@ -310,7 +344,10 @@ class VehiclesConfig(BaseModel):
     condition_share: float = Field(ge=0, le=1)
     condition_loss_per_hit: float = Field(ge=0)
     disabled_below_condition: float = Field(ge=0, le=100)
-    crew_loss_per_vehicle: float = Field(ge=0)
+    #: Какая часть экипажа из карточки машины становится потерей.
+    crew_loss_share: float = Field(ge=0, le=1)
+    #: Небоевой износ за ход при нулевой надёжности.
+    breakdown_per_turn: float = Field(ge=0)
     abandoned_on_panic: float = Field(ge=0, le=1)
 
 
@@ -378,6 +415,8 @@ class CombatCurves(BaseModel):
     noise_experience: Curve
     noise_cohesion: Curve
     noise_suppression: Curve
+    armour: Curve
+    visibility: Curve
 
 
 class ChecksConfig(BaseModel):
@@ -440,6 +479,7 @@ CONFIG_SCHEMAS: dict[str, type[BaseModel]] = {
     "time_of_day": TimeOfDayConfig,
     "orders": OrdersConfig,
     "element_types": ElementTypesConfig,
+    "vehicles": VehicleLibraryConfig,
     "experience": ExperienceConfig,
     "morale": MoraleConfig,
     "combat": CombatConfig,
