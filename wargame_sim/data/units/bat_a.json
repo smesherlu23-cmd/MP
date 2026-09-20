@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "bat_a",
-  "name": "1-й мотострелковый батальон",
+  "name": "1-й батальон",
   "side": "A",
   "elements": [
     {
@@ -194,7 +194,7 @@
         }
       ],
       "attack": 5.0,
-      "defense": 18.0,
+      "defense": 30.0,
       "experience": 2,
       "morale": 75.0,
       "cohesion": 80.0,
@@ -211,6 +211,6 @@
   "commander_influence": 60.0,
   "communications": 85.0,
   "order": "атака",
-  "task": "Прорвать оборону на участке и выйти к перекрёстку",
+  "task": "",
   "state": "в бою"
 }

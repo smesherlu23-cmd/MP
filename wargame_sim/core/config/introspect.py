@@ -39,6 +39,9 @@ UNBOUNDED_MAX = 1_000_000.0
 #: Ключ, который редактировать нечего: версия схемы показана в подзаголовке.
 VERSION_KEY = "schema_version"
 
+#: Отступ вложенности в конфигах проекта.
+INDENT = 2
+
 
 @dataclass(frozen=True)
 class FieldSpec:
@@ -232,6 +235,88 @@ def format_scalar(value: Any) -> str:
     if text and _PLAIN.match(text) and text.strip() == text:
         return text
     return json.dumps(text, ensure_ascii=False)
+
+
+def _walk_keys(text: str):
+    """Строки файла с их отступом и полным путём ключа."""
+    stack: list[tuple[int, str]] = []
+    for index, line in enumerate(text.splitlines(keepends=True)):
+        body = line.rstrip("\n")
+        if body.lstrip().startswith(("#", "-")) or not body.strip():
+            yield index, line, None, None
+            continue
+        match = _LINE.match(body)
+        if match is None:
+            yield index, line, None, None
+            continue
+        indent = len(match["indent"])
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        stack.append((indent, match["key"].strip()))
+        yield index, line, indent, tuple(key for _, key in stack)
+
+
+def block_bounds(text: str, path: Sequence[str]) -> tuple[int, int, int]:
+    """Границы блока по пути: первая строка, строка за блоком и отступ.
+
+    Блок — сам ключ и всё, что вложено в него по отступу. Комментарии
+    и пустые строки внутри блока считаются его частью.
+    """
+    target = tuple(path)
+    start: int | None = None
+    own_indent = 0
+    end: int | None = None
+    lines = text.splitlines(keepends=True)
+
+    for index, _line, indent, current in _walk_keys(text):
+        if start is None:
+            if current == target:
+                start, own_indent = index, indent or 0
+            continue
+        if indent is not None and indent <= own_indent:
+            end = index
+            break
+    if start is None:
+        raise PatchError(".".join(target))
+    if end is None:
+        end = len(lines)
+    # Хвостовые пустые строки блоку не принадлежат, а пустая строка перед
+    # ним — это его отбивка: она уходит вместе с блоком, поэтому удаление
+    # и добавление записи дают файл без лишних пропусков.
+    while end > start + 1 and not lines[end - 1].strip():
+        end -= 1
+    while start > 0 and not lines[start - 1].strip():
+        start -= 1
+    return start, end, own_indent
+
+
+def remove_entry(text: str, path: Sequence[str]) -> str:
+    """Убрать блок целиком — вместе с его собственными комментариями."""
+    start, end, _ = block_bounds(text, path)
+    lines = text.splitlines(keepends=True)
+    return "".join(lines[:start] + lines[end:])
+
+
+def append_entry(
+    text: str, parent: Sequence[str], key: str, fields: Mapping[str, Any]
+) -> str:
+    """Добавить запись в конец блока ``parent``, сохранив оформление файла."""
+    _start, end, parent_indent = block_bounds(text, parent)
+    lines = text.splitlines(keepends=True)
+
+    child_indent = parent_indent + INDENT
+    for _index, _line, indent, current in _walk_keys(text):
+        if current and len(current) == len(parent) + 1 and current[:-1] == tuple(parent):
+            child_indent = indent or child_indent
+            break
+
+    block = [f"{' ' * child_indent}{key}:\n"]
+    block += [
+        f"{' ' * (child_indent + INDENT)}{name}: {format_scalar(value)}\n"
+        for name, value in fields.items()
+    ]
+    tail = "" if lines[end - 1].endswith("\n") else "\n"
+    return "".join(lines[:end]) + tail + "\n" + "".join(block) + "".join(lines[end:])
 
 
 def patch_scalar(text: str, path: Sequence[str], value: Any) -> str:
