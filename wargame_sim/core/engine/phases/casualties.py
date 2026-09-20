@@ -31,34 +31,41 @@ def apply_personnel_loss(
 
 def apply_vehicle_loss(
     state: BattleState, side: str, element: Element, destroyed: int
-) -> int:
-    """Списать технику пропорционально наличию в группах."""
+) -> dict[str, int]:
+    """Списать технику пропорционально наличию в группах.
+
+    Возвращает, сколько машин каждого типа выбито: по этому потом
+    считается экипаж — он у каждой машины свой (§4.1).
+    """
     if destroyed <= 0 or element.vehicles_current == 0:
-        return 0
+        return {}
     remaining = min(destroyed, element.vehicles_current)
     total = element.vehicles_current
-    written_off = 0
+    written_off: dict[str, int] = {}
+
+    def take_from(group, amount: int) -> int:
+        amount = min(amount, group.count_current)
+        if amount <= 0:
+            return 0
+        group.count_current -= amount
+        written_off[group.vehicle_type] = written_off.get(group.vehicle_type, 0) + amount
+        return amount
+
     for group in element.vehicles:
         if remaining <= 0:
             break
-        quota = min(group.count_current, round(destroyed * group.count_current / total))
-        quota = min(quota, remaining)
-        if quota > 0:
-            group.count_current -= quota
-            remaining -= quota
-            written_off += quota
+        quota = min(round(destroyed * group.count_current / total), remaining)
+        remaining -= take_from(group, quota)
     # Остаток раздаём по группам, где ещё есть машины.
     for group in element.vehicles:
         if remaining <= 0:
             break
-        take = min(group.count_current, remaining)
-        group.count_current -= take
-        remaining -= take
-        written_off += take
+        remaining -= take_from(group, remaining)
+
     side_state = state.side(side)
-    side_state.vehicles_lost[element.id] = (
-        side_state.vehicles_lost.get(element.id, 0) + written_off
-    )
+    side_state.vehicles_lost[element.id] = side_state.vehicles_lost.get(
+        element.id, 0
+    ) + sum(written_off.values())
     return written_off
 
 
@@ -107,13 +114,21 @@ def run(
         }
 
         # --- личный состав ------------------------------------------------
+        # Кривая обвала: пока устойчивость держит давление, потери идут по
+        # обычной кривой; когда давление её пробивает, множитель растёт —
+        # фронт либо стоит, либо сыпется, промежуточного состояния мало.
+        collapse = config.cbt.curves.collapse(pressure)
         share = clamp(
-            casualties_cfg.lethality * pressure**casualties_cfg.pressure_exponent,
+            casualties_cfg.lethality * pressure**casualties_cfg.pressure_exponent * collapse,
             0.0,
             casualties_cfg.cap_per_turn,
         )
-        raw = target.personnel_current * share * (1.0 - enemy_cover)
-        losses = rng.round_stochastic(raw, state.turn, PHASE, target_key)
+        # Потери бросаются, а не вычисляются: матожидание то же, но разброс
+        # зависит от размера цели — у взвода он втрое шире, чем у роты.
+        chance = clamp(share * (1.0 - enemy_cover), 0.0, 1.0)
+        losses = rng.binomial(
+            target.personnel_current, chance, state.turn, PHASE, target_key
+        )
         losses = apply_personnel_loss(state, enemy, target, losses)
 
         # --- техника ------------------------------------------------------
@@ -127,17 +142,24 @@ def run(
                 0.0,
                 vehicles_cfg.cap_per_turn,
             )
-            hits_raw = target.vehicles_current * vehicle_share * (1.0 - enemy_cover)
-            hits = rng.round_stochastic(hits_raw, state.turn, f"{PHASE}:veh", target_key)
-            damaged_hits = rng.round_stochastic(
-                hits * vehicles_cfg.condition_share, state.turn, f"{PHASE}:cond", target_key
+            vehicle_chance = clamp(vehicle_share * (1.0 - enemy_cover), 0.0, 1.0)
+            hits = rng.binomial(
+                target.vehicles_current, vehicle_chance, state.turn, f"{PHASE}:veh", target_key
             )
-            damaged_hits = min(damaged_hits, hits)
+            damaged_hits = rng.binomial(
+                hits, vehicles_cfg.condition_share, state.turn, f"{PHASE}:cond", target_key
+            )
             destroyed = hits - damaged_hits
-            destroyed = apply_vehicle_loss(state, enemy, target, destroyed)
+            lost_by_type = apply_vehicle_loss(state, enemy, target, destroyed)
+            destroyed = sum(lost_by_type.values())
             damage_vehicle_condition(target, damaged_hits, vehicles_cfg.condition_loss_per_hit)
+            # Экипаж берётся из карточки машины: с танком гибнет танковый
+            # экипаж, с грузовиком — водитель со старшим.
+            crew_aboard = sum(
+                count * config.vehicle(name).crew for name, count in lost_by_type.items()
+            )
             crew = rng.round_stochastic(
-                destroyed * vehicles_cfg.crew_loss_per_vehicle,
+                crew_aboard * vehicles_cfg.crew_loss_share,
                 state.turn,
                 f"{PHASE}:crew",
                 target_key,
@@ -180,6 +202,7 @@ def run(
                 ("давление", pressure),
                 ("летальность", casualties_cfg.lethality),
                 ("экспонента", casualties_cfg.pressure_exponent),
+                ("обвал обороны", collapse),
                 ("доля потерь", share),
                 ("укрытие", 1.0 - enemy_cover),
                 ("потолок за ход", casualties_cfg.cap_per_turn),

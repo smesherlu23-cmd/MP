@@ -28,6 +28,7 @@ from ui.views import (
     home,
     unit_editor,
     units,
+    vehicles,
 )
 from ui.widgets import common as c
 
@@ -39,6 +40,7 @@ ROUTE_TABLE: tuple[tuple[re.Pattern[str], Builder], ...] = (
     (re.compile(r"^/$"), lambda app: home.build(app)),
     (re.compile(r"^/units$"), lambda app: units.build(app)),
     (re.compile(r"^/units/(?P<unit_id>[^/]+)$"), unit_editor.build),
+    (re.compile(r"^/vehicles$"), vehicles.build),
     (re.compile(r"^/battle/setup$"), lambda app: battle_setup.build(app)),
     (re.compile(r"^/battle/(?P<battle_id>[^/]+)/result$"), battle_result.build),
     (re.compile(r"^/battle/(?P<battle_id>[^/]+)$"), battle_run.build),

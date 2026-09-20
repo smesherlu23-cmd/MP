@@ -29,6 +29,7 @@ def run(state: BattleState, config: AppConfig, log: BattleLog) -> None:
     ammo_cfg = config.sup.ammo
     fuel_cfg = config.sup.fuel
     equipment_cfg = config.sup.equipment
+    vehicles_cfg = config.cbt.vehicles
     morale_cfg = config.mor
 
     for side in SIDES:
@@ -63,6 +64,22 @@ def run(state: BattleState, config: AppConfig, log: BattleLog) -> None:
                     element.fatigue - rest, fatigue_cfg.min, fatigue_cfg.max
                 )
                 factors.append(("отдых", rest))
+
+            # Небоевой износ: чем ниже надёжность машины, тем быстрее
+            # она теряет состояние сама по себе — без единого попадания.
+            if config.tog.vehicle_condition and element.vehicles_current:
+                worn = 0.0
+                for group in element.vehicles:
+                    if not group.count_current:
+                        continue
+                    entry = config.vehicle(group.vehicle_type)
+                    drop = vehicles_cfg.breakdown_per_turn * (
+                        1.0 - entry.reliability / 100.0
+                    )
+                    group.condition = clamp(group.condition - drop, 0.0, 100.0)
+                    worn = max(worn, drop)
+                if worn:
+                    factors.append(("износ техники", worn))
 
             # Подвоз снабжения от живого тылового элемента
             if efficiency > 0:

@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "id": "scn_demo",
-  "name": "Встречный бой на равнине",
+  "name": "Встречный бой",
   "battalion_a": {
     "schema_version": 1,
     "id": "bat_a",
-    "name": "1-й мотострелковый батальон",
+    "name": "1-й батальон",
     "side": "A",
     "elements": [
       {
@@ -198,7 +198,7 @@
           }
         ],
         "attack": 5.0,
-        "defense": 18.0,
+        "defense": 30.0,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -215,13 +215,13 @@
     "commander_influence": 60.0,
     "communications": 85.0,
     "order": "атака",
-    "task": "Прорвать оборону на участке и выйти к перекрёстку",
+    "task": "",
     "state": "в бою"
   },
   "battalion_b": {
     "schema_version": 1,
     "id": "bat_b",
-    "name": "2-й мотострелковый батальон",
+    "name": "2-й батальон",
     "side": "B",
     "elements": [
       {
@@ -414,7 +414,7 @@
           }
         ],
         "attack": 5.0,
-        "defense": 18.0,
+        "defense": 30.0,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -431,7 +431,7 @@
     "commander_influence": 60.0,
     "communications": 85.0,
     "order": "оборона",
-    "task": "Удержать рубеж 15 ходов",
+    "task": "",
     "state": "в бою"
   },
   "environment": {
@@ -446,5 +446,5 @@
     "max_turns": 30
   },
   "master_seed": 42,
-  "notes": "Демонстрационный сценарий: атака против подготовленной обороны."
+  "notes": ""
 }

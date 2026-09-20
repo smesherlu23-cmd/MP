@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from core.config import AppConfig
-from core.engine.formulas import clamp
+from core.engine.formulas import clamp, vehicle_fuel_use
 from core.engine.state import SIDES, BattleState, TurnData, element_key
 from core.log import BattleLog
 
@@ -44,6 +44,7 @@ def run(state: BattleState, turn_data: TurnData, config: AppConfig, log: BattleL
                 fuel_spent = (
                     fuel_cfg.base_per_turn
                     * order.fuel_use
+                    * vehicle_fuel_use(element, config)
                     * (1.0 + fuel_cfg.intensity_weight * intensity)
                 )
                 element.fuel = clamp(element.fuel - fuel_spent, fuel_cfg.min, fuel_cfg.max)

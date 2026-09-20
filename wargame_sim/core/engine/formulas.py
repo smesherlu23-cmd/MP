@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from core.config import AppConfig
-from core.models import Battalion, ContactLevel, Element, Environment
+from core.models import Battalion, BattalionState, ContactLevel, Element, Environment
 
 
 @dataclass
@@ -71,6 +71,94 @@ def state_coefficient(
         )
 
     return factors.value, factors
+
+
+def anti_tank_share(element: Element, config: AppConfig) -> tuple[float, str]:
+    """Противотанковые возможности элемента, 0..1.
+
+    Берётся лучшее из того, что у элемента есть: пехотные средства типа
+    элемента или пушки его машин. Поэтому рота на БТР остаётся слабой
+    против танков, а та же рота на БМП — уже нет (§4.1).
+    """
+    infantry = config.element_type(element.type).anti_tank
+    if element.vehicles_current == 0:
+        return infantry, "пехота"
+
+    armed = 0.0
+    for group in element.vehicles:
+        if group.count_current:
+            armed += group.count_current * config.vehicle(group.vehicle_type).anti_tank
+    from_vehicles = armed / element.vehicles_current / 100.0
+    if from_vehicles > infantry:
+        return from_vehicles, "техника"
+    return infantry, "пехота"
+
+
+def vehicle_armour(
+    element: Element, battalion: Battalion, config: AppConfig
+) -> tuple[float, str]:
+    """Средняя броня машин элемента и проекция, по которой бьют.
+
+    По сломанному строю — отступающему или паникующему — огонь приходит
+    в борт, и та же машина держит его заметно хуже.
+    """
+    if element.vehicles_current == 0:
+        return 0.0, "нет техники"
+
+    flank = battalion.state in (BattalionState.RETREATING, BattalionState.PANIC)
+    total = 0.0
+    for group in element.vehicles:
+        if not group.count_current:
+            continue
+        entry = config.vehicle(group.vehicle_type)
+        total += group.count_current * (entry.armour_side if flank else entry.armour_front)
+    return total / element.vehicles_current, "борт" if flank else "лоб"
+
+
+def vehicle_visibility(element: Element, config: AppConfig) -> float:
+    """Средняя заметность машин элемента; без техники — нейтральная."""
+    if element.vehicles_current == 0:
+        return 0.0
+    total = 0.0
+    for group in element.vehicles:
+        if group.count_current:
+            total += group.count_current * config.vehicle(group.vehicle_type).visibility
+    return total / element.vehicles_current
+
+
+def vehicle_fuel_use(element: Element, config: AppConfig) -> float:
+    """Множитель расхода топлива по машинам элемента."""
+    if element.vehicles_current == 0:
+        return 1.0
+    total = 0.0
+    for group in element.vehicles:
+        if group.count_current:
+            total += group.count_current * config.vehicle(group.vehicle_type).fuel_use
+    return total / element.vehicles_current
+
+
+def noise_range(
+    element: Element, battalion: Battalion, config: AppConfig
+) -> tuple[float, float, Factors]:
+    """Границы случайного множителя огня для конкретного элемента.
+
+    Ширину задаёт выучка: опыт, эффективная слаженность и подавление.
+    Центр диапазона не двигается, поэтому средний огонь остаётся прежним —
+    меняется только предсказуемость: ветеранская рота стреляет ровно,
+    необученная под подавлением — как придётся (§6.2).
+    """
+    curves = config.cbt.curves
+    noise = config.cbt.casualties.noise
+    effective_cohesion = element.cohesion * battalion.communications / 100.0
+
+    factors = Factors()
+    factors.mul("опыт", curves.noise_experience(element.experience))
+    factors.mul("слаженность", curves.noise_cohesion(effective_cohesion))
+    factors.mul("подавление", curves.noise_suppression(element.suppression))
+
+    centre = (noise.max + noise.min) / 2.0
+    half = (noise.max - noise.min) / 2.0 * factors.value
+    return centre - half, centre + half, factors
 
 
 def commander_factor(battalion: Battalion, config: AppConfig) -> float:

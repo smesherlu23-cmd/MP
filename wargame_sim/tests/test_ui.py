@@ -22,7 +22,7 @@ from ui import shell
 from ui import theme as t
 from ui.app import ROUTE_TABLE, resolve
 from ui.state import CONFIG_YAML, ROUTES, AppState
-from ui.views import archive, config_editor, unit_editor
+from ui.views import archive, config_editor, unit_editor, vehicles
 from ui.widgets import journal
 from ui.widgets.common import number_field
 
@@ -90,6 +90,7 @@ def _routes(app: AppState) -> list[str]:
         ROUTES["home"],
         ROUTES["units"],
         ROUTES["unit"].format(id=unit_id),
+        ROUTES["vehicles"],
         ROUTES["battle_setup"],
         ROUTES["battle"].format(id=app.scenario.id),
         ROUTES["battle_result"].format(id=app.scenario.id),
@@ -355,6 +356,52 @@ def test_attention_rows_are_sorted_and_capped(app: AppState) -> None:
     rows = journal.attention_rows([("A", battalion)], threshold=100)
     assert len(rows) == 4
     assert [row[2] for row in rows] == sorted(row[2] for row in rows)
+
+
+# --------------------------------------------------------------------------
+# Конструктор техники
+# --------------------------------------------------------------------------
+def test_vehicle_constructor_lists_the_library(app: AppState) -> None:
+    view = vehicles.build(app)
+    library = app.config.vehicles.vehicles
+    assert _has(view, f"Машины · {len(library)}")
+    for name in library:
+        assert _has(view, name)
+
+
+def test_vehicle_constructor_edits_write_to_config(app: AppState) -> None:
+    """Правка поля уходит в vehicles.yaml и подхватывается расчётом."""
+    from core.config.introspect import patch_scalar
+
+    text = patch_scalar(app.store.raw_text("vehicles"), ("vehicles", "Танк", "crew"), 4)
+    app.store.save_text("vehicles", text)
+    app.reload_config()
+    assert app.config.vehicle("Танк").crew == 4
+    assert "# crew           — экипаж" in app.store.raw_text("vehicles")
+
+
+def test_vehicle_constructor_creates_and_removes(app: AppState) -> None:
+    from core.config.introspect import append_entry, remove_entry
+
+    before = set(app.config.vehicles.vehicles)
+    text = append_entry(
+        app.store.raw_text("vehicles"), ("vehicles",), "Тягач", vehicles.NEW_VEHICLE
+    )
+    app.store.save_text("vehicles", text)
+    app.reload_config()
+    assert set(app.config.vehicles.vehicles) == before | {"Тягач"}
+
+    app.store.save_text("vehicles", remove_entry(app.store.raw_text("vehicles"), ("vehicles", "Тягач")))
+    app.reload_config()
+    assert set(app.config.vehicles.vehicles) == before
+
+
+def test_vehicle_in_use_is_not_deleted_silently(app: AppState) -> None:
+    """Машину, которая стоит в подразделении, удалить нельзя — и сказано почему."""
+    view = vehicles.build(app, "БТР")
+    assert _has(view, "Где используется")
+    texts = " ".join(_texts(view))
+    assert "тип «стрелковая_рота»" in texts
 
 
 def test_unit_editor_saves_edits(app: AppState) -> None:

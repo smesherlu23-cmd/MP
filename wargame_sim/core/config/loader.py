@@ -25,6 +25,7 @@ from core.config.schema import (
     TerrainConfig,
     TimeOfDayConfig,
     TogglesConfig,
+    VehicleLibraryConfig,
     WeatherConfig,
 )
 
@@ -81,6 +82,7 @@ class AppConfig(BaseModel):
     time_of_day: TimeOfDayConfig
     orders: OrdersConfig
     element_types: ElementTypesConfig
+    vehicles: VehicleLibraryConfig
     experience: ExperienceConfig
     morale: MoraleConfig
     combat: CombatConfig
@@ -127,6 +129,17 @@ class AppConfig(BaseModel):
                 "element_types",
                 Path("element_types.yaml"),
                 f"тип элемента «{name}» не описан; известны: {known}",
+            )
+        return entry
+
+    def vehicle(self, name: str):
+        entry = self.vehicles.vehicles.get(name)
+        if entry is None:
+            known = ", ".join(sorted(self.vehicles.vehicles))
+            raise ConfigError(
+                "vehicles",
+                Path("vehicles.yaml"),
+                f"техника «{name}» не описана; известны: {known}",
             )
         return entry
 

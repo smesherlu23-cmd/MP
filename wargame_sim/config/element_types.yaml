@@ -11,7 +11,9 @@
 # anti_tank        — доля огня, работающая по технике (0..1);
 # detection        — множитель собственного обнаружения;
 # stealth          — множитель собственной заметности (меньше — скрытнее);
-# defaults         — стартовые значения полей при добавлении из шаблона.
+# defaults         — стартовые значения полей при добавлении из шаблона;
+#                    vehicle_type/vehicle_count — штатная техника типа
+#                    (запись из vehicles.yaml и сколько её по штату).
 schema_version: 1
 element_types:
   стрелковая_рота:
@@ -29,6 +31,8 @@ element_types:
       personnel_full: 120
       attack: 42
       defense: 45
+      vehicle_type: БТР
+      vehicle_count: 4
   штаб:
     label: Штаб батальона
     combat: false
@@ -89,6 +93,8 @@ element_types:
       personnel_full: 40
       attack: 75
       defense: 70
+      vehicle_type: БМП
+      vehicle_count: 10
   тыл:
     label: Тыл и снабжение
     combat: false
@@ -104,6 +110,8 @@ element_types:
       personnel_full: 45
       attack: 5
       defense: 30
+      vehicle_type: Грузовик
+      vehicle_count: 8
   инженерный_взвод:
     label: Инженерный взвод
     combat: true

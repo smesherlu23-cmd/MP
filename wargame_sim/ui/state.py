@@ -57,6 +57,7 @@ ROUTES = {
     "home": "/",
     "units": "/units",
     "unit": "/units/{id}",
+    "vehicles": "/vehicles",
     "battle_setup": "/battle/setup",
     "battle": "/battle/{id}",
     "battle_result": "/battle/{id}/result",
@@ -103,6 +104,8 @@ class AppState:
         self.expanded_element: str | None = None
         #: Открытый батальон — показывается подпунктом в навигации.
         self.open_unit: tuple[str, str] | None = None
+        #: Выбранная машина в конструкторе техники.
+        self.selected_vehicle: str = ""
         #: Фильтр стороны в таблицах элементов, отдельно для пульта и итога.
         self.run_side_filter: str = SIDE_BOTH
         self.result_side_filter: str = SIDE_BOTH

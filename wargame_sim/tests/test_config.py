@@ -172,3 +172,34 @@ def test_differences_finds_changed_values(config_copy: ConfigStore) -> None:
     assert introspect.differences(config_copy.raw("combat"), defaults) == [
         "combat.casualties.lethality"
     ]
+
+
+def test_append_and_remove_entry_keep_the_file_intact(config_copy: ConfigStore) -> None:
+    """Создание и удаление записи не должны стирать пояснения в конфиге."""
+    before = config_copy.raw_text("vehicles")
+    fields = {
+        "label": "Бронированный тягач",
+        "class": "транспорт",
+        "crew": 2,
+        "armour_front": 15.0,
+        "armour_side": 10.0,
+        "firepower": 0.0,
+        "anti_tank": 0.0,
+        "mobility": 55.0,
+        "visibility": 50.0,
+        "reliability": 85.0,
+        "fuel_use": 1.1,
+        "transport": 6,
+    }
+    added = introspect.append_entry(before, ("vehicles",), "Тягач", fields)
+    config_copy.save_text("vehicles", added)
+    assert config_copy.get().vehicle("Тягач").crew == 2
+    assert "# crew           — экипаж" in added
+
+    removed = introspect.remove_entry(added, ("vehicles", "Тягач"))
+    assert removed == before  # обход туда-обратно не оставляет следов
+
+
+def test_remove_entry_reports_unknown_path(config_copy: ConfigStore) -> None:
+    with pytest.raises(introspect.PatchError):
+        introspect.remove_entry(config_copy.raw_text("vehicles"), ("vehicles", "Звездолёт"))

@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 
 from core.config import AppConfig
-from core.engine.formulas import contact_target_share, cover
+from core.engine.formulas import contact_target_share, cover, vehicle_visibility
 from core.engine.rng import RngStreams
 from core.engine.state import BattleState, TurnData, element_key, other_side
 from core.log import BattleLog
@@ -69,10 +69,15 @@ def run(
                 targeting_cfg.noise.min,
                 targeting_cfg.noise.max,
             )
+            # Техника притягивает огонь тем сильнее, чем она заметнее:
+            # танковая рота видна лучше, чем пеший взвод.
+            seen = vehicle_visibility(target, config)
+            noticeability = config.cbt.curves.visibility(seen) if seen else 1.0
             weight = (
                 entry.target_priority**targeting_cfg.priority_exponent
                 * entry.vulnerability
                 * (1.0 - enemy_cover)
+                * noticeability
                 * noise
             )
             focus = 1.0
@@ -87,6 +92,7 @@ def run(
                 ("приоритет", entry.target_priority),
                 ("уязвимость", entry.vulnerability),
                 ("укрытие", 1.0 - enemy_cover),
+                ("заметность техники", noticeability),
                 ("фокус", focus),
                 ("случайность", noise),
             ]

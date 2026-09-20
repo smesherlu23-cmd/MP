@@ -30,13 +30,6 @@ DEFAULT_COMPOSITION: tuple[tuple[str, str], ...] = (
 )
 
 #: Техника, добавляемая элементу по умолчанию.
-DEFAULT_VEHICLES: dict[str, tuple[str, int]] = {
-    "бронегруппа": ("БМП", 10),
-    "стрелковая_рота": ("БТР", 4),
-    "тыл": ("Грузовик", 8),
-}
-
-
 def make_element(
     type_name: str,
     name: str,
@@ -51,14 +44,12 @@ def make_element(
     entry = config.element_type(type_name)
     defaults = entry.defaults
     vehicles: list[VehicleGroup] = []
-    if with_vehicles and type_name in DEFAULT_VEHICLES:
-        vehicle_type, count = DEFAULT_VEHICLES[type_name]
+    if with_vehicles and defaults.vehicle_type and defaults.vehicle_count:
         vehicles.append(
             VehicleGroup(
-                vehicle_type=vehicle_type,
-                count_full=count,
-                count_current=count,
-                condition=100.0,
+                vehicle_type=defaults.vehicle_type,
+                count_full=defaults.vehicle_count,
+                count_current=defaults.vehicle_count,
             )
         )
     return Element(

@@ -45,7 +45,7 @@ orders:
     disengage: 0.00
     task:
       kind: hold_turns
-      turns: 15
+      turns: 16
   засада:
     attack: 1.45
     defense: 1.05
