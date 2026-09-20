@@ -12,7 +12,9 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import random
+from statistics import NormalDist
 
 #: Ширина сида, передаваемого в ``random.Random``.
 SEED_BYTES = 8
@@ -69,6 +71,52 @@ class RngStreams:
         if remainder and self.random(turn, phase, f"{element_id}#round") < remainder:
             whole += 1
         return whole
+
+    def binomial(
+        self, trials: int, probability: float, turn: int, phase: str, element_id: str
+    ) -> int:
+        """Сколько из ``trials`` испытаний удалось при вероятности ``probability``.
+
+        Так бросаются потери: не «посчитали долю и округлили», а честный
+        разброс, который сам собой зависит от размера цели — взвод колбасит,
+        батальон усредняется. Матожидание равно ``trials * probability``,
+        поэтому калибровка от перехода на бросок не едет.
+
+        Берётся ровно один бросок потока (обратная функция распределения),
+        поэтому расход потока не зависит от численности: бой остаётся
+        воспроизводимым, даже когда в роте стало на человека меньше.
+        """
+        if trials <= 0 or probability <= 0:
+            return 0
+        if probability >= 1:
+            return trials
+
+        draw = self.random(turn, phase, element_id)
+        term = (1.0 - probability) ** trials
+        if term == 0.0:
+            return self._binomial_normal(trials, probability, draw)
+
+        cumulative = term
+        ratio = probability / (1.0 - probability)
+        successes = 0
+        while draw > cumulative and successes < trials:
+            successes += 1
+            term *= ratio * (trials - successes + 1) / successes
+            cumulative += term
+        return successes
+
+    @staticmethod
+    def _binomial_normal(trials: int, probability: float, draw: float) -> int:
+        """Нормальное приближение — только когда точная сумма недостижима.
+
+        ``(1-p)^n`` уходит за точность double лишь при огромных ``n``, каких
+        в батальонном бою не бывает; приближение оставлено, чтобы функция
+        не возвращала молча среднее вместо броска.
+        """
+        mean = trials * probability
+        deviation = math.sqrt(trials * probability * (1.0 - probability))
+        value = NormalDist(mean, deviation).inv_cdf(draw)
+        return max(0, min(trials, round(value)))
 
     def reset(self) -> None:
         """Сбросить кэш потоков (используется при перезапуске боя)."""

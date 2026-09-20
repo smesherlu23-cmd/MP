@@ -374,6 +374,7 @@ class CombatCurves(BaseModel):
     vehicle_condition: Curve
     fortification: Curve
     fortification_cover: Curve
+    collapse: Curve
 
 
 class ChecksConfig(BaseModel):

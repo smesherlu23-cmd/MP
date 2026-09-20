@@ -107,13 +107,21 @@ def run(
         }
 
         # --- личный состав ------------------------------------------------
+        # Кривая обвала: пока устойчивость держит давление, потери идут по
+        # обычной кривой; когда давление её пробивает, множитель растёт —
+        # фронт либо стоит, либо сыпется, промежуточного состояния мало.
+        collapse = config.cbt.curves.collapse(pressure)
         share = clamp(
-            casualties_cfg.lethality * pressure**casualties_cfg.pressure_exponent,
+            casualties_cfg.lethality * pressure**casualties_cfg.pressure_exponent * collapse,
             0.0,
             casualties_cfg.cap_per_turn,
         )
-        raw = target.personnel_current * share * (1.0 - enemy_cover)
-        losses = rng.round_stochastic(raw, state.turn, PHASE, target_key)
+        # Потери бросаются, а не вычисляются: матожидание то же, но разброс
+        # зависит от размера цели — у взвода он втрое шире, чем у роты.
+        chance = clamp(share * (1.0 - enemy_cover), 0.0, 1.0)
+        losses = rng.binomial(
+            target.personnel_current, chance, state.turn, PHASE, target_key
+        )
         losses = apply_personnel_loss(state, enemy, target, losses)
 
         # --- техника ------------------------------------------------------
@@ -127,12 +135,13 @@ def run(
                 0.0,
                 vehicles_cfg.cap_per_turn,
             )
-            hits_raw = target.vehicles_current * vehicle_share * (1.0 - enemy_cover)
-            hits = rng.round_stochastic(hits_raw, state.turn, f"{PHASE}:veh", target_key)
-            damaged_hits = rng.round_stochastic(
-                hits * vehicles_cfg.condition_share, state.turn, f"{PHASE}:cond", target_key
+            vehicle_chance = clamp(vehicle_share * (1.0 - enemy_cover), 0.0, 1.0)
+            hits = rng.binomial(
+                target.vehicles_current, vehicle_chance, state.turn, f"{PHASE}:veh", target_key
             )
-            damaged_hits = min(damaged_hits, hits)
+            damaged_hits = rng.binomial(
+                hits, vehicles_cfg.condition_share, state.turn, f"{PHASE}:cond", target_key
+            )
             destroyed = hits - damaged_hits
             destroyed = apply_vehicle_loss(state, enemy, target, destroyed)
             damage_vehicle_condition(target, damaged_hits, vehicles_cfg.condition_loss_per_hit)
@@ -180,6 +189,7 @@ def run(
                 ("давление", pressure),
                 ("летальность", casualties_cfg.lethality),
                 ("экспонента", casualties_cfg.pressure_exponent),
+                ("обвал обороны", collapse),
                 ("доля потерь", share),
                 ("укрытие", 1.0 - enemy_cover),
                 ("потолок за ход", casualties_cfg.cap_per_turn),
