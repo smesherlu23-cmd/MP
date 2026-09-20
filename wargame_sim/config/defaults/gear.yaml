@@ -1,0 +1,57 @@
+# Обмундирование. На запись отсюда ссылается тип солдата (troops.yaml: gear).
+#
+# class       — класс комплекта, для группировки;
+# folder      — папка библиотеки; пустая — «без папки»;
+# protection  — защищённость 0..100: вклад в устойчивость;
+# visibility  — заметность 0..100: насколько комплект выдаёт солдата;
+# mobility    — подвижность 0..100: чем тяжелее комплект, тем ниже;
+# fatigue     — множитель набора усталости.
+schema_version: 1
+
+folders: [Полевое, Штурмовое, Специальное]
+
+gear:
+  Полевая_форма:
+    label: Полевая форма
+    class: базовое
+    folder: Полевое
+    protection: 8
+    visibility: 50
+    mobility: 82
+    fatigue: 1.00
+
+  Бронежилет:
+    label: Бронежилет с разгрузкой
+    class: базовое
+    folder: Полевое
+    protection: 34
+    visibility: 50
+    mobility: 68
+    fatigue: 1.18
+
+  Штурмовой_комплект:
+    label: Штурмовой комплект
+    class: усиленное
+    folder: Штурмовое
+    protection: 52
+    visibility: 56
+    mobility: 54
+    fatigue: 1.40
+
+  Маскировочный_комплект:
+    label: Маскировочный комплект
+    class: специальное
+    folder: Специальное
+    protection: 12
+    visibility: 22
+    mobility: 76
+    fatigue: 1.05
+
+  Зимний_комплект:
+    label: Зимний комплект
+    class: базовое
+    folder: Полевое
+    protection: 16
+    visibility: 44
+    mobility: 64
+    fatigue: 1.22

@@ -1,0 +1,105 @@
+# Пехотное вооружение. На запись отсюда ссылается тип солдата
+# (troops.yaml: weapon и secondary), а через него — штат типа элемента.
+#
+# class      — класс оружия, для группировки и для понятных подписей;
+# folder     — папка библиотеки; пустая — «без папки»;
+# crew       — расчёт, чел.: столько человек обслуживают одну единицу;
+# firepower  — огневая мощь по пехоте, 0..100;
+# anti_tank  — противотанковая мощь, 0..100;
+# range      — относительная дальность 0..100: на что хватает выстрела;
+# ammo_use   — множитель расхода боезапаса.
+schema_version: 1
+
+# Папки библиотеки. Пустая папка тоже живёт здесь, поэтому список.
+folders: [Стрелковое, Пулемёты, Противотанковое, Огневая поддержка]
+
+weapons:
+  Пистолет:
+    label: Пистолет
+    class: стрелковое
+    folder: Стрелковое
+    crew: 1
+    firepower: 8
+    anti_tank: 0
+    range: 8
+    ammo_use: 0.30
+
+  Автомат:
+    label: Автомат
+    class: стрелковое
+    folder: Стрелковое
+    crew: 1
+    firepower: 30
+    anti_tank: 0
+    range: 30
+    ammo_use: 1.00
+
+  Снайперская_винтовка:
+    label: Снайперская винтовка
+    class: стрелковое
+    folder: Стрелковое
+    crew: 1
+    firepower: 42
+    anti_tank: 0
+    range: 62
+    ammo_use: 0.45
+
+  Ручной_пулемёт:
+    label: Ручной пулемёт
+    class: пулемёт
+    folder: Пулемёты
+    crew: 1
+    firepower: 58
+    anti_tank: 0
+    range: 48
+    ammo_use: 1.70
+
+  Станковый_пулемёт:
+    label: Станковый пулемёт
+    class: пулемёт
+    folder: Пулемёты
+    crew: 2
+    firepower: 76
+    anti_tank: 4
+    range: 60
+    ammo_use: 2.30
+
+  РПГ:
+    label: Ручной противотанковый гранатомёт
+    class: гранатомёт
+    folder: Противотанковое
+    crew: 1
+    firepower: 34
+    anti_tank: 62
+    range: 26
+    ammo_use: 0.80
+
+  ПТРК:
+    label: Противотанковый ракетный комплекс
+    class: ПТРК
+    folder: Противотанковое
+    crew: 2
+    firepower: 20
+    anti_tank: 92
+    range: 88
+    ammo_use: 0.55
+
+  Автоматический_гранатомёт:
+    label: Автоматический гранатомёт
+    class: гранатомёт
+    folder: Огневая поддержка
+    crew: 2
+    firepower: 70
+    anti_tank: 12
+    range: 54
+    ammo_use: 1.90
+
+  Ротный_миномёт:
+    label: Ротный миномёт
+    class: миномёт
+    folder: Огневая поддержка
+    crew: 3
+    firepower: 82
+    anti_tank: 6
+    range: 72
+    ammo_use: 1.40

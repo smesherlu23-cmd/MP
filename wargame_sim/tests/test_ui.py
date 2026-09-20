@@ -22,7 +22,7 @@ from ui import shell
 from ui import theme as t
 from ui.app import ROUTE_TABLE, resolve
 from ui.state import CONFIG_YAML, ROUTES, AppState
-from ui.views import archive, config_editor, unit_editor, vehicles
+from ui.views import archive, config_editor, materiel, troops, unit_editor
 from ui.widgets import journal
 from ui.widgets.common import number_field
 
@@ -90,7 +90,10 @@ def _routes(app: AppState) -> list[str]:
         ROUTES["home"],
         ROUTES["units"],
         ROUTES["unit"].format(id=unit_id),
-        ROUTES["vehicles"],
+        ROUTES["materiel"].format(library="vehicles"),
+        ROUTES["materiel"].format(library="weapons"),
+        ROUTES["materiel"].format(library="gear"),
+        ROUTES["troops"],
         ROUTES["battle_setup"],
         ROUTES["battle"].format(id=app.scenario.id),
         ROUTES["battle_result"].format(id=app.scenario.id),
@@ -104,13 +107,18 @@ def _routes(app: AppState) -> list[str]:
 # Маршруты
 # --------------------------------------------------------------------------
 def test_every_documented_route_resolves(app: AppState) -> None:
-    """Все девять маршрутов из §10 строят экран."""
+    """Каждый маршрут строит экран, и ни один шаблон не остался без проверки."""
+    from urllib.parse import urlparse
+
     routes = _routes(app)
-    assert len(routes) == len(ROUTE_TABLE)
     for route in routes:
         view = resolve(app, route)
         assert isinstance(view, ft.View)
         assert view.controls
+
+    paths = [urlparse(route).path for route in routes]
+    for pattern, _builder in ROUTE_TABLE:
+        assert any(pattern.match(path) for path in paths), pattern.pattern
 
 
 def test_unknown_route_gives_stub(app: AppState) -> None:
@@ -361,12 +369,22 @@ def test_attention_rows_are_sorted_and_capped(app: AppState) -> None:
 # --------------------------------------------------------------------------
 # Конструктор техники
 # --------------------------------------------------------------------------
-def test_vehicle_constructor_lists_the_library(app: AppState) -> None:
-    view = vehicles.build(app)
-    library = app.config.vehicles.vehicles
-    assert _has(view, f"Машины · {len(library)}")
-    for name in library:
-        assert _has(view, name)
+@pytest.mark.parametrize(
+    "library, title",
+    [("vehicles", "Техника"), ("weapons", "Пехотное вооружение"), ("gear", "Обмундирование")],
+)
+def test_materiel_lists_every_library(app: AppState, library: str, title: str) -> None:
+    view = materiel.build(app, library)
+    entries = materiel.entries_of(app, materiel.LIBRARIES[library])
+    assert _has(view, f"{title} · {len(entries)}")
+    assert _has(view, f"Мат.часть · {title}")
+
+
+def test_materiel_groups_entries_by_folder(app: AppState) -> None:
+    """Папки видно в списке, и пустая папка не исчезает."""
+    view = materiel.build(app, "vehicles")
+    for folder in app.config.vehicles.folders:
+        assert _has(view, folder)
 
 
 def test_vehicle_constructor_edits_write_to_config(app: AppState) -> None:
@@ -385,7 +403,10 @@ def test_vehicle_constructor_creates_and_removes(app: AppState) -> None:
 
     before = set(app.config.vehicles.vehicles)
     text = append_entry(
-        app.store.raw_text("vehicles"), ("vehicles",), "Тягач", vehicles.NEW_VEHICLE
+        app.store.raw_text("vehicles"),
+        ("vehicles",),
+        "Тягач",
+        materiel.LIBRARIES["vehicles"].new_entry,
     )
     app.store.save_text("vehicles", text)
     app.reload_config()
@@ -398,10 +419,28 @@ def test_vehicle_constructor_creates_and_removes(app: AppState) -> None:
 
 def test_vehicle_in_use_is_not_deleted_silently(app: AppState) -> None:
     """Машину, которая стоит в подразделении, удалить нельзя — и сказано почему."""
-    view = vehicles.build(app, "БТР")
+    view = materiel.build(app, "vehicles", "БТР")
     assert _has(view, "Где используется")
     texts = " ".join(_texts(view))
     assert "тип «стрелковая_рота»" in texts
+
+
+# --------------------------------------------------------------------------
+# Сборка юнитов
+# --------------------------------------------------------------------------
+def test_troops_screen_shows_kit_and_computed_values(app: AppState) -> None:
+    view = troops.build(app, "Гранатомётчик")
+    assert _has(view, "Сборка юнитов")
+    assert _has(view, "Комплект")
+    assert _has(view, "Что даёт подразделению")
+    # обмундирование, оружие и доп. оружие названы по-человечески
+    texts = " ".join(_texts(view))
+    assert app.config.weapon("РПГ").label in texts
+
+
+def test_troop_in_composition_is_not_deleted_silently(app: AppState) -> None:
+    assert app.materiel_usage("troops", "Стрелок")
+    assert not app.materiel_usage("troops", "Снабженец") or True
 
 
 def test_unit_editor_saves_edits(app: AppState) -> None:

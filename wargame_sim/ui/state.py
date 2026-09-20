@@ -57,7 +57,8 @@ ROUTES = {
     "home": "/",
     "units": "/units",
     "unit": "/units/{id}",
-    "vehicles": "/vehicles",
+    "materiel": "/materiel/{library}",
+    "troops": "/troops",
     "battle_setup": "/battle/setup",
     "battle": "/battle/{id}",
     "battle_result": "/battle/{id}/result",
@@ -104,8 +105,10 @@ class AppState:
         self.expanded_element: str | None = None
         #: Открытый батальон — показывается подпунктом в навигации.
         self.open_unit: tuple[str, str] | None = None
-        #: Выбранная машина в конструкторе техники.
-        self.selected_vehicle: str = ""
+        #: Выбранная запись в каждой библиотеке мат.части.
+        self.selected_materiel: dict[str, str] = {}
+        #: Выбранный тип солдата в сборке юнитов.
+        self.selected_troop: str = ""
         #: Фильтр стороны в таблицах элементов, отдельно для пульта и итога.
         self.run_side_filter: str = SIDE_BOTH
         self.result_side_filter: str = SIDE_BOTH
@@ -178,6 +181,37 @@ class AppState:
 
         for control in controls:
             safe_update(control)
+
+    # -- мат.часть ----------------------------------------------------------
+    def materiel_usage(self, section: str, name: str) -> list[str]:
+        """Где используется запись библиотеки: типы, солдаты, батальоны."""
+        config = self.config
+        places: list[str] = []
+
+        if section == "vehicles":
+            for type_name, entry in config.element_types.element_types.items():
+                if entry.defaults.vehicle_type == name:
+                    places.append(f"тип «{type_name}»")
+            for _path, battalion in self.units():
+                if any(
+                    group.vehicle_type == name
+                    for element in battalion.elements
+                    for group in element.vehicles
+                ):
+                    places.append(f"батальон «{battalion.name}»")
+        elif section == "weapons":
+            for troop_name, troop in config.troops.troops.items():
+                if name in (troop.weapon, troop.secondary):
+                    places.append(f"солдат «{troop_name}»")
+        elif section == "gear":
+            for troop_name, troop in config.troops.troops.items():
+                if troop.gear == name:
+                    places.append(f"солдат «{troop_name}»")
+        elif section == "troops":
+            for type_name, entry in config.element_types.element_types.items():
+                if name in entry.composition:
+                    places.append(f"тип «{type_name}»")
+        return places
 
     # -- подразделения ------------------------------------------------------
     def units(self) -> list[tuple[Path, Battalion]]:

@@ -34,7 +34,13 @@ class NavItem:
 NAV: tuple[NavItem, ...] = (
     NavItem("home", "Главная", ft.Icons.DASHBOARD_OUTLINED, ROUTES["home"]),
     NavItem("units", "Подразделения", ft.Icons.GROUPS_OUTLINED, ROUTES["units"]),
-    NavItem("vehicles", "Техника", ft.Icons.DIRECTIONS_CAR_OUTLINED, ROUTES["vehicles"]),
+    NavItem(
+        "materiel",
+        "Мат.часть",
+        ft.Icons.INVENTORY_OUTLINED,
+        ROUTES["materiel"].format(library="vehicles"),
+    ),
+    NavItem("troops", "Сборка юнитов", ft.Icons.PERSON_OUTLINE, ROUTES["troops"]),
     NavItem("battle", "Бой", ft.Icons.SHIELD_OUTLINED, ROUTES["battle_setup"]),
     NavItem("batch", "Массовое моделирование", ft.Icons.INSIGHTS_OUTLINED, ROUTES["batch"]),
     NavItem("config", "Коэффициенты", ft.Icons.TUNE_OUTLINED, ROUTES["config"]),
@@ -103,9 +109,13 @@ def children_for(section: str, app: AppState) -> list[tuple[str, str, str]]:
     if section == "units" and app.open_unit is not None:
         unit_id, name = app.open_unit
         return [(name, ROUTES["unit"].format(id=unit_id), unit_id)]
-    if section == "vehicles" and app.selected_vehicle:
-        name = app.selected_vehicle
-        return [(name, f"{ROUTES['vehicles']}?vehicle_id={name}", name)]
+    if section == "materiel":
+        from ui.views.materiel import LIBRARIES
+
+        return [
+            (spec.label, ROUTES["materiel"].format(library=key), key)
+            for key, spec in LIBRARIES.items()
+        ]
     if section == "config":
         from ui.views.config_editor import SECTION_LABELS
 
