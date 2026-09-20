@@ -16,6 +16,7 @@ from core.models import (
     Side,
     VehicleGroup,
 )
+from core.staff import element_staff
 
 #: Типовой состав мотострелкового батальона: тип элемента и его название.
 DEFAULT_COMPOSITION: tuple[tuple[str, str], ...] = (
@@ -43,6 +44,9 @@ def make_element(
     """Элемент со стартовыми значениями из ``element_types.yaml``."""
     entry = config.element_type(type_name)
     defaults = entry.defaults
+    # Если у типа задан состав, штат считается по нему: правка в
+    # библиотеке оружия сразу видна в новом подразделении (§4.1).
+    staff = element_staff(type_name, config)
     vehicles: list[VehicleGroup] = []
     if with_vehicles and defaults.vehicle_type and defaults.vehicle_count:
         vehicles.append(
@@ -56,10 +60,10 @@ def make_element(
         id=element_id,
         name=name,
         type=type_name,
-        personnel_full=defaults.personnel_full,
-        personnel_current=defaults.personnel_full,
-        attack=defaults.attack,
-        defense=defaults.defense,
+        personnel_full=staff.personnel if staff else defaults.personnel_full,
+        personnel_current=staff.personnel if staff else defaults.personnel_full,
+        attack=staff.attack if staff else defaults.attack,
+        defense=staff.defense if staff else defaults.defense,
         experience=experience,
         morale=morale,
         vehicles=vehicles,

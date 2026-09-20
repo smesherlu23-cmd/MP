@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 from core.config import AppConfig
 from core.models import Battalion, BattalionState, ContactLevel, Element, Environment
+from core.staff import element_staff
 
 
 @dataclass
@@ -80,18 +81,22 @@ def anti_tank_share(element: Element, config: AppConfig) -> tuple[float, str]:
     элемента или пушки его машин. Поэтому рота на БТР остаётся слабой
     против танков, а та же рота на БМП — уже нет (§4.1).
     """
-    infantry = config.element_type(element.type).anti_tank
-    if element.vehicles_current == 0:
-        return infantry, "пехота"
+    best = config.element_type(element.type).anti_tank
+    source = "пехота"
 
-    armed = 0.0
-    for group in element.vehicles:
-        if group.count_current:
-            armed += group.count_current * config.vehicle(group.vehicle_type).anti_tank
-    from_vehicles = armed / element.vehicles_current / 100.0
-    if from_vehicles > infantry:
-        return from_vehicles, "техника"
-    return infantry, "пехота"
+    staff = element_staff(element.type, config)
+    if staff is not None and staff.anti_tank > best:
+        best, source = staff.anti_tank, "состав"
+
+    if element.vehicles_current:
+        armed = 0.0
+        for group in element.vehicles:
+            if group.count_current:
+                armed += group.count_current * config.vehicle(group.vehicle_type).anti_tank
+        from_vehicles = armed / element.vehicles_current / 100.0
+        if from_vehicles > best:
+            best, source = from_vehicles, "техника"
+    return best, source
 
 
 def vehicle_armour(

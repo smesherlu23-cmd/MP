@@ -17,6 +17,16 @@
 schema_version: 1
 element_types:
   стрелковая_рота:
+    staff_attack: 1.0001
+    staff_defense: 1.2332
+    composition:
+      Командир: 6
+      Стрелок: 75
+      Пулемётчик: 18
+      Гранатомётчик: 12
+      Снайпер: 3
+      Связист: 3
+      Санитар: 3
     label: Стрелковая рота
     combat: true
     hq: false
@@ -34,6 +44,14 @@ element_types:
       vehicle_type: БТР
       vehicle_count: 4
   штаб:
+    staff_attack: 0.253
+    staff_defense: 0.8178
+    composition:
+      Командир: 8
+      Стрелок: 12
+      Связист: 10
+      Санитар: 3
+      Водитель: 2
     label: Штаб батальона
     combat: false
     hq: true
@@ -49,6 +67,14 @@ element_types:
       attack: 8
       defense: 25
   миномётная_батарея:
+    staff_attack: 0.9892
+    staff_defense: 0.8393
+    composition:
+      Командир: 4
+      Миномётчик: 36
+      Стрелок: 12
+      Связист: 4
+      Водитель: 4
     label: Миномётная батарея
     combat: true
     hq: false
@@ -64,6 +90,14 @@ element_types:
       attack: 65
       defense: 22
   разведвзвод:
+    staff_attack: 0.5433
+    staff_defense: 1.0742
+    composition:
+      Командир: 2
+      Разведчик: 20
+      Снайпер: 4
+      Пулемётчик: 2
+      Связист: 2
     label: Разведывательный взвод
     combat: true
     hq: false
@@ -79,6 +113,14 @@ element_types:
       attack: 20
       defense: 28
   бронегруппа:
+    staff_attack: 1.0806
+    staff_defense: 1.5944
+    composition:
+      Командир: 2
+      Стрелок: 20
+      Пулемётчик: 6
+      Гранатомётчик: 6
+      Водитель: 6
     label: Бронегруппа
     combat: true
     hq: false
@@ -96,6 +138,14 @@ element_types:
       vehicle_type: БМП
       vehicle_count: 10
   тыл:
+    staff_attack: 0.3979
+    staff_defense: 1.3023
+    composition:
+      Командир: 2
+      Водитель: 28
+      Снабженец: 10
+      Связист: 2
+      Санитар: 3
     label: Тыл и снабжение
     combat: false
     hq: false
@@ -113,6 +163,13 @@ element_types:
       vehicle_type: Грузовик
       vehicle_count: 8
   инженерный_взвод:
+    staff_attack: 0.4939
+    staff_defense: 0.9465
+    composition:
+      Командир: 2
+      Сапёр: 24
+      Стрелок: 6
+      Связист: 3
     label: Инженерный взвод
     combat: true
     hq: false

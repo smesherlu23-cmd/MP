@@ -68,7 +68,6 @@ def _button(
         tooltip=tooltip or None,
         expand=expand,
         on_click=None if (disabled or on_click is None) else (lambda *_: on_click()),
-        animate_opacity=120,
     )
 
 

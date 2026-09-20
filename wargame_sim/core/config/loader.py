@@ -19,13 +19,16 @@ from core.config.schema import (
     ElementTypesConfig,
     ExperienceConfig,
     FatigueConfig,
+    GearConfig,
     MoraleConfig,
     OrdersConfig,
     SupplyConfig,
     TerrainConfig,
     TimeOfDayConfig,
     TogglesConfig,
+    TroopsConfig,
     VehicleLibraryConfig,
+    WeaponsConfig,
     WeatherConfig,
 )
 
@@ -83,6 +86,9 @@ class AppConfig(BaseModel):
     orders: OrdersConfig
     element_types: ElementTypesConfig
     vehicles: VehicleLibraryConfig
+    weapons: WeaponsConfig
+    gear: GearConfig
+    troops: TroopsConfig
     experience: ExperienceConfig
     morale: MoraleConfig
     combat: CombatConfig
@@ -142,6 +148,39 @@ class AppConfig(BaseModel):
                 f"техника «{name}» не описана; известны: {known}",
             )
         return entry
+
+    def weapon(self, name: str):
+        entry = self.weapons.weapons.get(name)
+        if entry is None:
+            known = ", ".join(sorted(self.weapons.weapons))
+            raise ConfigError(
+                "weapons", Path("weapons.yaml"), f"оружие «{name}» не описано; известны: {known}"
+            )
+        return entry
+
+    def gear_entry(self, name: str):
+        entry = self.gear.gear.get(name)
+        if entry is None:
+            known = ", ".join(sorted(self.gear.gear))
+            raise ConfigError(
+                "gear", Path("gear.yaml"), f"комплект «{name}» не описан; известны: {known}"
+            )
+        return entry
+
+    def troop(self, name: str):
+        entry = self.troops.troops.get(name)
+        if entry is None:
+            known = ", ".join(sorted(self.troops.troops))
+            raise ConfigError(
+                "troops",
+                Path("troops.yaml"),
+                f"тип солдата «{name}» не описан; известны: {known}",
+            )
+        return entry
+
+    @property
+    def staff(self):
+        return self.troops.staff
 
     def experience_level(self, level: int):
         entry = self.experience.experience.get(level)

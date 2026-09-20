@@ -37,6 +37,9 @@ def run(
     first_strike = (
         casualties_cfg.first_strike_bonus if turn_data.first_side == side else 1.0
     )
+    # Противотанковая доля зависит только от элемента — считаем её один
+    # раз на стреляющего, а не в каждой паре «стреляющий — цель».
+    anti_tank_of: dict[str, float] = {}
 
     # --- огневая мощь атакующих ------------------------------------------
     for attacker in state.elements(side):
@@ -55,6 +58,7 @@ def run(
             accuracy=1.0,
             first_strike=first_strike,
         )
+        anti_tank_of[attacker_key] = anti_tank_share(attacker, config)[0]
         turn_data.fire[attacker_key] = value
         turn_data.breakdown[attacker_key] = factors.pairs()
         # Интенсивность огня — база для расхода боезапаса (§6.1, фаза 8).
@@ -119,7 +123,7 @@ def run(
                 continue
             portion = turn_data.fire.get(attacker_key, 0.0) * part * accuracy
             incoming += portion
-            anti_tank += portion * anti_tank_share(attacker, config)[0]
+            anti_tank += portion * anti_tank_of.get(attacker_key, 0.0)
             contributions.append((f"огонь:{attacker.name}", portion))
         if incoming <= 0:
             continue

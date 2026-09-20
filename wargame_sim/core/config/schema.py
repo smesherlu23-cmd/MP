@@ -141,6 +141,13 @@ class ElementTypeEntry(BaseModel):
     detection: float = Field(gt=0)
     stealth: float = Field(gt=0)
     defaults: ElementTypeDefaults
+    #: Состав по типам солдат. Если он задан, численность, огневая мощь
+    #: и устойчивость считаются по нему, а не берутся из ``defaults``.
+    composition: dict[str, int] = Field(default_factory=dict)
+    #: Какая доля огневых возможностей и защищённости штата реализуется
+    #: в бою: штаб вооружён, но стрелковой ротой не является.
+    staff_attack: float = Field(default=1.0, ge=0)
+    staff_defense: float = Field(default=1.0, ge=0)
 
 
 class ElementTypesConfig(BaseModel):
@@ -162,6 +169,8 @@ class VehicleEntry(BaseModel):
     # Класс нужен только для группировки в интерфейсе, поэтому обычная
     # строка: новый класс заводится в конфиге, без правки кода.
     vehicle_class: str = Field(alias="class")
+    #: Папка библиотеки; пустая — «без папки».
+    folder: str = ""
     crew: int = Field(ge=0)
     armour_front: float = Field(ge=0, le=100)
     armour_side: float = Field(ge=0, le=100)
@@ -178,7 +187,99 @@ class VehicleLibraryConfig(BaseModel):
     model_config = Strict
 
     schema_version: int = 1
+    #: Папки библиотеки — в том числе пустые, поэтому список, а не
+    #: множество значений поля ``folder``.
+    folders: list[str] = Field(default_factory=list)
     vehicles: dict[str, VehicleEntry] = Field(min_length=1)
+
+
+# --------------------------------------------------------------------------
+# weapons.yaml
+# --------------------------------------------------------------------------
+class WeaponEntry(BaseModel):
+    """Карточка пехотного оружия — проще машины, но того же устройства."""
+
+    model_config = Strict
+
+    label: str
+    weapon_class: str = Field(alias="class")
+    folder: str = ""
+    crew: int = Field(ge=1)
+    firepower: float = Field(ge=0, le=100)
+    anti_tank: float = Field(ge=0, le=100)
+    range: float = Field(ge=0, le=100)
+    ammo_use: float = Field(ge=0)
+
+
+class WeaponsConfig(BaseModel):
+    model_config = Strict
+
+    schema_version: int = 1
+    folders: list[str] = Field(default_factory=list)
+    weapons: dict[str, WeaponEntry] = Field(min_length=1)
+
+
+# --------------------------------------------------------------------------
+# gear.yaml
+# --------------------------------------------------------------------------
+class GearEntry(BaseModel):
+    """Комплект обмундирования: чем защищённее, тем тяжелее."""
+
+    model_config = Strict
+
+    label: str
+    gear_class: str = Field(alias="class")
+    folder: str = ""
+    protection: float = Field(ge=0, le=100)
+    visibility: float = Field(ge=0, le=100)
+    mobility: float = Field(ge=0, le=100)
+    fatigue: float = Field(ge=0)
+
+
+class GearConfig(BaseModel):
+    model_config = Strict
+
+    schema_version: int = 1
+    folders: list[str] = Field(default_factory=list)
+    gear: dict[str, GearEntry] = Field(min_length=1)
+
+
+# --------------------------------------------------------------------------
+# troops.yaml
+# --------------------------------------------------------------------------
+class TroopEntry(BaseModel):
+    """Тип солдата: кому что выдано."""
+
+    model_config = Strict
+
+    label: str
+    folder: str = ""
+    gear: str
+    weapon: str
+    secondary: str = ""
+    ammo: int = Field(ge=0)
+
+
+class StaffRules(BaseModel):
+    """Как комплект солдата превращается в штат подразделения."""
+
+    model_config = Strict
+
+    secondary_share: float = Field(ge=0, le=1)
+    vehicle_firepower: float = Field(ge=0)
+    attack_scale: float = Field(gt=0)
+    defense_base: float = Field(ge=0, le=100)
+    defense_protection: float = Field(ge=0)
+    defense_vehicle: float = Field(ge=0)
+
+
+class TroopsConfig(BaseModel):
+    model_config = Strict
+
+    schema_version: int = 1
+    staff: StaffRules
+    folders: list[str] = Field(default_factory=list)
+    troops: dict[str, TroopEntry] = Field(min_length=1)
 
 
 # --------------------------------------------------------------------------
@@ -480,6 +581,9 @@ CONFIG_SCHEMAS: dict[str, type[BaseModel]] = {
     "orders": OrdersConfig,
     "element_types": ElementTypesConfig,
     "vehicles": VehicleLibraryConfig,
+    "weapons": WeaponsConfig,
+    "gear": GearConfig,
+    "troops": TroopsConfig,
     "experience": ExperienceConfig,
     "morale": MoraleConfig,
     "combat": CombatConfig,

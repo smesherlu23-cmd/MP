@@ -15,8 +15,8 @@
         "personnel_full": 35,
         "personnel_current": 35,
         "vehicles": [],
-        "attack": 8.0,
-        "defense": 25.0,
+        "attack": 7.999137142857143,
+        "defense": 25.001314285714287,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -43,8 +43,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 42.0,
-        "defense": 45.0,
+        "attack": 41.99853276666667,
+        "defense": 44.99844033333334,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -71,8 +71,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 42.0,
-        "defense": 45.0,
+        "attack": 41.99853276666667,
+        "defense": 44.99844033333334,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -99,8 +99,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 42.0,
-        "defense": 45.0,
+        "attack": 41.99853276666667,
+        "defense": 44.99844033333334,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -120,8 +120,8 @@
         "personnel_full": 60,
         "personnel_current": 60,
         "vehicles": [],
-        "attack": 65.0,
-        "defense": 22.0,
+        "attack": 64.99703466666668,
+        "defense": 22.00085066666667,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -141,8 +141,8 @@
         "personnel_full": 30,
         "personnel_current": 30,
         "vehicles": [],
-        "attack": 20.0,
-        "defense": 28.0,
+        "attack": 20.000684000000003,
+        "defense": 28.000813333333333,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -169,8 +169,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 75.0,
-        "defense": 70.0,
+        "attack": 74.99850270000002,
+        "defense": 70.00213200000002,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -197,8 +197,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 5.0,
-        "defense": 30.0,
+        "attack": 4.999392444444444,
+        "defense": 29.999204,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -231,8 +231,8 @@
         "personnel_full": 35,
         "personnel_current": 35,
         "vehicles": [],
-        "attack": 8.0,
-        "defense": 25.0,
+        "attack": 7.999137142857143,
+        "defense": 25.001314285714287,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -259,8 +259,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 42.0,
-        "defense": 45.0,
+        "attack": 41.99853276666667,
+        "defense": 44.99844033333334,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -287,8 +287,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 42.0,
-        "defense": 45.0,
+        "attack": 41.99853276666667,
+        "defense": 44.99844033333334,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -315,8 +315,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 42.0,
-        "defense": 45.0,
+        "attack": 41.99853276666667,
+        "defense": 44.99844033333334,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -336,8 +336,8 @@
         "personnel_full": 60,
         "personnel_current": 60,
         "vehicles": [],
-        "attack": 65.0,
-        "defense": 22.0,
+        "attack": 64.99703466666668,
+        "defense": 22.00085066666667,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -357,8 +357,8 @@
         "personnel_full": 30,
         "personnel_current": 30,
         "vehicles": [],
-        "attack": 20.0,
-        "defense": 28.0,
+        "attack": 20.000684000000003,
+        "defense": 28.000813333333333,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -385,8 +385,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 75.0,
-        "defense": 70.0,
+        "attack": 74.99850270000002,
+        "defense": 70.00213200000002,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
@@ -413,8 +413,8 @@
             "condition": 100.0
           }
         ],
-        "attack": 5.0,
-        "defense": 30.0,
+        "attack": 4.999392444444444,
+        "defense": 29.999204,
         "experience": 2,
         "morale": 75.0,
         "cohesion": 80.0,
