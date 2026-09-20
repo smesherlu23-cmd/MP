@@ -63,6 +63,10 @@ class Element(BaseModel):
     suppression: float = Field(default=0.0, ge=0, le=100)
     order: Order | None = None
     alive: bool = True
+    #: Введён ли элемент в бой. Невведённый — резерв: он не стреляет, по
+    #: нему не стреляют, и в агрегаты батальона он не входит, пока ГМ не
+    #: введёт его прямо в бою (§6.1).
+    engaged: bool = True
 
     @model_validator(mode="after")
     def _current_not_above_full(self) -> Element:

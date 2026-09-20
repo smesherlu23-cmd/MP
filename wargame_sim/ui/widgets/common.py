@@ -487,10 +487,17 @@ def stacked_bar(segments: Sequence[tuple[float, str]]) -> ft.Control:
 # --------------------------------------------------------------------------
 # Поля ввода
 # --------------------------------------------------------------------------
-def _field_shell(control: ft.Control, *, width: int | None, expand: bool | int, nested: bool):
+def _field_shell(
+    control: ft.Control,
+    *,
+    width: int | None,
+    expand: bool | int,
+    nested: bool,
+    height: int = t.FIELD_H,
+):
     return ft.Container(
         content=control,
-        height=t.FIELD_H,
+        height=height,
         width=width,
         expand=expand,
         bgcolor=t.CARD_BG if nested else t.SURFACE_ALT,
@@ -614,6 +621,8 @@ def select(
     width: int | None = None,
     expand: bool | int = False,
     nested: bool = False,
+    height: int = t.FIELD_H,
+    size: int = t.SIZE_BODY,
 ) -> ft.Control:
     """Выпадающий список в оформлении поля."""
     dropdown = ft.Dropdown(
@@ -621,7 +630,7 @@ def select(
         options=[ft.DropdownOption(key=key, text=label) for key, label in options],
         border=ft.InputBorder.NONE,
         content_padding=ft.Padding.symmetric(vertical=0),
-        text_style=t.sans(size=t.SIZE_BODY),
+        text_style=t.sans(size=size),
         dense=True,
         expand=True,
         trailing_icon=ft.Icons.EXPAND_MORE,
@@ -634,7 +643,7 @@ def select(
 
     dropdown.on_select = handle
     dropdown.on_change = handle
-    return _field_shell(dropdown, width=width, expand=expand, nested=nested)
+    return _field_shell(dropdown, width=width, expand=expand, nested=nested, height=height)
 
 
 def toggle(label: str, value: bool, on_change: Callable[[bool], None]) -> ft.Control:

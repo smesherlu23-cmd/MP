@@ -6,6 +6,7 @@ from core.config import AppConfig
 from core.engine.formulas import clamp
 from core.engine.state import SIDES, BattleState, TurnData, element_key
 from core.log import BattleLog
+from core.staff import element_load
 
 PHASE = "fatigue"
 
@@ -29,7 +30,8 @@ def run(state: BattleState, turn_data: TurnData, config: AppConfig, log: BattleL
             if in_contact:
                 gain += fatigue_cfg.gain_in_contact
             gain += fatigue_cfg.gain_per_casualty_share * loss_share
-            gain *= order.fatigue_gain * terrain.fatigue * weather.fatigue
+            load = element_load(element.type, config)
+            gain *= order.fatigue_gain * terrain.fatigue * weather.fatigue * load.fatigue
 
             before = element.fatigue
             element.fatigue = clamp(before + gain, fatigue_cfg.min, fatigue_cfg.max)
@@ -47,6 +49,7 @@ def run(state: BattleState, turn_data: TurnData, config: AppConfig, log: BattleL
                     ("контакт", fatigue_cfg.gain_in_contact if in_contact else 0.0),
                     ("от потерь", fatigue_cfg.gain_per_casualty_share * loss_share),
                     (f"приказ:{state.order_of(side, element)}", order.fatigue_gain),
+                    ("комплект", load.fatigue),
                     (f"местность:{state.environment.terrain}", terrain.fatigue),
                     (f"погода:{state.environment.weather}", weather.fatigue),
                 ],

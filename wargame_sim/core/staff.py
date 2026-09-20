@@ -59,6 +59,46 @@ def soldier(name: str, config: AppConfig) -> SoldierValues:
 
 
 @dataclass(frozen=True)
+class StaffLoad:
+    """Что комплект стоит подразделению: усталость и расход боезапаса.
+
+    Величины нормированы базовыми значениями из ``troops.yaml``: у штатного
+    состава обе равны единице, поэтому калибровка не двигается, а меняются
+    они тогда, когда подразделение действительно переодели или
+    перевооружили.
+    """
+
+    fatigue: float = 1.0
+    ammo: float = 1.0
+
+
+def element_load(type_name: str, config: AppConfig) -> StaffLoad:
+    """Множители усталости и расхода боезапаса по составу типа элемента."""
+    entry = config.element_type(type_name)
+    if not entry.composition:
+        return StaffLoad()
+
+    rules = config.staff
+    personnel = sum(entry.composition.values())
+    if personnel <= 0:
+        return StaffLoad()
+
+    fatigue = 0.0
+    ammo = 0.0
+    for troop_name, count in entry.composition.items():
+        troop = config.troop(troop_name)
+        fatigue += count * config.gear_entry(troop.gear).fatigue
+        ammo += count * config.weapon(troop.weapon).ammo_use
+        if troop.secondary:
+            ammo += count * config.weapon(troop.secondary).ammo_use * rules.secondary_share
+
+    return StaffLoad(
+        fatigue=fatigue / personnel / rules.fatigue_baseline,
+        ammo=ammo / personnel / rules.ammo_baseline,
+    )
+
+
+@dataclass(frozen=True)
 class StaffSummary:
     """Штат типа элемента, посчитанный по составу."""
 

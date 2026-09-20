@@ -76,6 +76,14 @@ def build(app: AppState) -> ft.View:
         app.go(ROUTES["battle_setup"])
 
     def remove(path: Path, label: str) -> None:
+        """Удаление в два щелчка: файл с диска возврату не подлежит."""
+        token = str(path)
+        if app.pending_delete != token:
+            app.pending_delete = token
+            app.notify(f"Удалить «{label}»? Нажмите ещё раз.")
+            app.go(ROUTE)
+            return
+        app.pending_delete = ""
         delete_file(path)
         app.notify(f"Удалено: {label}")
         app.go(ROUTE)
@@ -105,7 +113,15 @@ def build(app: AppState) -> ft.View:
                     icon=ft.Icons.REPLAY,
                     height=t.BUTTON_XS_H,
                 ),
-                c.icon_button(
+                c.secondary_button(
+                    "Точно?" if app.pending_delete == str(path) else "",
+                    lambda: remove(path, result.scenario_name),
+                    icon=None if app.pending_delete == str(path) else ft.Icons.DELETE_OUTLINE,
+                    height=t.BUTTON_XS_H,
+                    tooltip="Удалить запись",
+                )
+                if app.pending_delete == str(path)
+                else c.icon_button(
                     ft.Icons.DELETE_OUTLINE,
                     lambda: remove(path, result.scenario_name),
                     size=t.BUTTON_XS_H,
@@ -198,7 +214,9 @@ def build(app: AppState) -> ft.View:
                                 height=t.BUTTON_SM_H,
                             ),
                             c.tertiary_button(
-                                "Удалить",
+                                "Точно удалить?"
+                                if app.pending_delete == str(path)
+                                else "Удалить",
                                 lambda: remove(path, scenario.name),
                                 height=t.BUTTON_SM_H,
                                 color=t.LOSS,

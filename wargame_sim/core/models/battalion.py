@@ -41,8 +41,23 @@ class Battalion(BaseModel):
         return None
 
     @property
+    def engaged_elements(self) -> list[Element]:
+        """Элементы, введённые в бой; остальные — резерв."""
+        return [element for element in self.elements if element.engaged]
+
+    @property
+    def reserve_elements(self) -> list[Element]:
+        """Резерв: в бою не участвует, пока его не введут."""
+        return [element for element in self.elements if not element.engaged]
+
+    @property
     def alive_elements(self) -> list[Element]:
-        return [element for element in self.elements if element.alive]
+        """Кто реально дерётся: введён в бой и ещё боеспособен.
+
+        Все агрегаты батальона считаются по этому списку, поэтому резерв
+        не завышает ни численность, ни мораль, ни боеспособность.
+        """
+        return [element for element in self.engaged_elements if element.alive]
 
     def order_for(self, element: Element) -> Order:
         """Приказ элемента; если не задан — приказ батальона (§4.4)."""
@@ -51,7 +66,7 @@ class Battalion(BaseModel):
     # -- агрегаты (только для чтения, считаются на лету) --------------------
     @property
     def personnel_full(self) -> int:
-        return sum(element.personnel_full for element in self.elements)
+        return sum(element.personnel_full for element in self.engaged_elements)
 
     @property
     def personnel_current(self) -> int:
@@ -65,7 +80,7 @@ class Battalion(BaseModel):
 
     @property
     def vehicles_full(self) -> int:
-        return sum(element.vehicles_full for element in self.elements)
+        return sum(element.vehicles_full for element in self.engaged_elements)
 
     @property
     def vehicles_current(self) -> int:
@@ -124,9 +139,10 @@ class Battalion(BaseModel):
         return self._weighted("readiness")
 
     def _power(self, *, with_suppression: bool) -> float:
-        if not self.elements:
+        engaged = self.engaged_elements
+        if not engaged:
             return 0.0
-        potential = sum(element.attack * element.personnel_full for element in self.elements)
+        potential = sum(element.attack * element.personnel_full for element in engaged)
         if potential == 0:
             return 0.0
         actual = 0.0
@@ -163,7 +179,8 @@ class Battalion(BaseModel):
         """Организация, 0..100: связь × слаженность × доля живых элементов."""
         if not self.elements:
             return 0.0
-        alive_share = len(self.alive_elements) / len(self.elements)
+        engaged = self.engaged_elements
+        alive_share = len(self.alive_elements) / len(engaged) if engaged else 0.0
         return alive_share * self.cohesion * (self.communications / 100.0)
 
     @property
@@ -178,7 +195,8 @@ class Battalion(BaseModel):
             "name": self.name,
             "side": str(self.side),
             "state": str(self.state),
-            "elements": len(self.elements),
+            "elements": len(self.engaged_elements),
+            "reserve": len(self.reserve_elements),
             "elements_alive": len(self.alive_elements),
             "personnel_full": self.personnel_full,
             "personnel_current": self.personnel_current,

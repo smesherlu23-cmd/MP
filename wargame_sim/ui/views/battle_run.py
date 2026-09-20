@@ -15,7 +15,7 @@ from ui.shell import scenario_aside, screen
 from ui.state import ALL, SIDE_A, SIDE_B, SIDE_BOTH, AppState
 from ui.widgets import common as c
 from ui.widgets import journal as j
-from ui.widgets.battalion import RUN_COLUMNS, element_row, side_panel
+from ui.widgets.battalion import RUN_COLUMNS, element_row, reserve_row, side_panel
 
 ROUTE = "/battle/{id}"
 
@@ -120,6 +120,14 @@ def build(app: AppState, battle_id: str) -> ft.View:
         )
         app.refresh(panels)
 
+    def change_order(side: str, element_id: str, order) -> None:
+        engine.set_order(side, element_id, order)
+        redraw_all()
+
+    def commit_reserve(side: str, element_id: str) -> None:
+        engine.commit(side, element_id)
+        redraw_all()
+
     def redraw_elements() -> None:
         rows: list[ft.Control] = []
         sides = (
@@ -130,7 +138,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         pairs = [
             (side, element)
             for side in sides
-            for element in engine.state.battalion(side).elements
+            for element in engine.state.battalion(side).engaged_elements
         ]
         for index, (side, element) in enumerate(pairs):
             rows.append(
@@ -140,12 +148,54 @@ def build(app: AppState, battle_id: str) -> ft.View:
                     config,
                     side=side,
                     last=index == len(pairs) - 1,
+                    on_order=(
+                        lambda order, s=side, e=element.id: change_order(s, e, order)
+                    )
+                    if not engine.finished
+                    else None,
                 )
             )
+
+        reserve = [
+            (side, element)
+            for side in sides
+            for element in engine.state.battalion(side).reserve_elements
+        ]
+        if reserve:
+            rows.append(
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            t.caption("Резерв"),
+                            c.spacer(),
+                            ft.Text(
+                                "не стреляет и по нему не стреляют",
+                                style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
+                            ),
+                        ],
+                        spacing=8,
+                    ),
+                    height=t.TABLE_HEAD_H,
+                    bgcolor=t.SURFACE_ALT,
+                    padding=ft.Padding.symmetric(horizontal=t.PAD_ROW_X),
+                    border=t.border_bottom(t.BORDER_INNER),
+                )
+            )
+            rows.extend(
+                reserve_row(
+                    element,
+                    side=side,
+                    on_commit=lambda s=side, e=element.id: commit_reserve(s, e),
+                )
+                for side, element in reserve
+            )
+
         elements_body.content = ft.Column(
             rows, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True
         )
-        elements_count.value = f"строк {len(pairs)}"
+        elements_count.value = (
+            f"строк {len(pairs)}" + (f" · резерв {len(reserve)}" if reserve else "")
+        )
         app.refresh(elements_body, elements_count)
 
     def redraw_attention() -> None:

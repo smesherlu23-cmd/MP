@@ -225,6 +225,8 @@ class PatchError(LookupError):
 
 def format_scalar(value: Any) -> str:
     """Скаляр в записи YAML: без потери типа и без лишних кавычек."""
+    if isinstance(value, _InlineList):
+        return format_list(value.values)
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
@@ -317,6 +319,23 @@ def append_entry(
     ]
     tail = "" if lines[end - 1].endswith("\n") else "\n"
     return "".join(lines[:end]) + tail + "\n" + "".join(block) + "".join(lines[end:])
+
+
+def format_list(values: Sequence[Any]) -> str:
+    """Список в поточной записи YAML: ``[a, b, c]``."""
+    return "[" + ", ".join(format_scalar(value) for value in values) + "]"
+
+
+def patch_list(text: str, path: Sequence[str], values: Sequence[Any]) -> str:
+    """Заменить список, записанный в одну строку (``folders: [...]``)."""
+    return patch_scalar(text, path, _InlineList(values))
+
+
+class _InlineList:
+    """Обёртка, чтобы :func:`format_scalar` отдал поточный список."""
+
+    def __init__(self, values: Sequence[Any]) -> None:
+        self.values = list(values)
 
 
 def patch_scalar(text: str, path: Sequence[str], value: Any) -> str:

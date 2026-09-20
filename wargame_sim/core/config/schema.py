@@ -271,6 +271,10 @@ class StaffRules(BaseModel):
     defense_base: float = Field(ge=0, le=100)
     defense_protection: float = Field(ge=0)
     defense_vehicle: float = Field(ge=0)
+    #: База, относительно которой считается нагрузка комплекта: у штатного
+    #: состава множители равны единице и калибровку не двигают.
+    fatigue_baseline: float = Field(gt=0)
+    ammo_baseline: float = Field(gt=0)
 
 
 class TroopsConfig(BaseModel):
