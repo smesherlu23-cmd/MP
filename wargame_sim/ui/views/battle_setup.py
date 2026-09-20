@@ -361,6 +361,86 @@ def build(app: AppState) -> ft.View:
         ]
     )
 
+    # -- наряд сил ----------------------------------------------------------
+    def set_engaged(side: Side, element_id: str, engaged: bool) -> None:
+        battalion = scenario.battalion(side)
+        element = battalion.element(element_id)
+        if element is None:
+            return
+        element.engaged = engaged
+        touch()
+
+    def force_column(side: Side) -> ft.Control:
+        battalion = scenario.battalion(side)
+        key = "A" if side == Side.A else "B"
+        rows: list[ft.Control] = []
+        for element in battalion.elements:
+            rows.append(
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Text(
+                                element.name,
+                                style=t.sans(
+                                    size=t.SIZE_ROW,
+                                    color=t.TEXT if element.engaged else t.TEXT_PLACEHOLDER,
+                                ),
+                                expand=True,
+                                no_wrap=True,
+                            ),
+                            ft.Text(
+                                f"{element.personnel_current} чел.",
+                                style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED),
+                            ),
+                            c.toggle(
+                                "",
+                                element.engaged,
+                                lambda value, e=element.id, s=side: set_engaged(s, e, value),
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    height=t.TABLE_ROW_H + 6,
+                )
+            )
+        engaged = battalion.engaged_elements
+        return ft.Column(
+            [
+                ft.Row(
+                    [
+                        t.caption(f"Сторона {key}"),
+                        c.spacer(),
+                        ft.Text(
+                            f"{len(engaged)} из {len(battalion.elements)} · "
+                            f"{battalion.personnel_current} чел.",
+                            style=t.mono(size=t.SIZE_META, color=t.TEXT_3),
+                        ),
+                    ],
+                    spacing=8,
+                ),
+                *rows,
+            ],
+            spacing=0,
+            tight=True,
+            expand=True,
+        )
+
+    forces = c.card(
+        [
+            t.card_title("Наряд сил"),
+            c.note(
+                "Выключенный элемент остаётся в резерве: он не стреляет и по нему "
+                "не стреляют. Ввести его в бой можно прямо на пульте, на любом ходу."
+            ),
+            ft.Row(
+                [force_column(Side.A), force_column(Side.B)],
+                spacing=t.GAP,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            ),
+        ]
+    )
+
     randomness = c.card(
         [
             t.card_title("Сценарий и случайность"),
@@ -419,6 +499,7 @@ def build(app: AppState) -> ft.View:
                 vertical_alignment=ft.CrossAxisAlignment.START,
             ),
             conditions,
+            forces,
             randomness,
             c.spacer(),
         ],

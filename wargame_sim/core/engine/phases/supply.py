@@ -6,6 +6,7 @@ from core.config import AppConfig
 from core.engine.formulas import clamp, vehicle_fuel_use
 from core.engine.state import SIDES, BattleState, TurnData, element_key
 from core.log import BattleLog
+from core.staff import element_load
 
 PHASE = "supply"
 
@@ -20,6 +21,7 @@ def run(state: BattleState, turn_data: TurnData, config: AppConfig, log: BattleL
             key = element_key(side, element)
             order = config.order(state.order_of(side, element))
             intensity = turn_data.fire_intensity.get(key, 0.0)
+            load = element_load(element.type, config)
             loss_share = turn_data.loss_share.get(key, 0.0)
 
             before = {
@@ -29,12 +31,14 @@ def run(state: BattleState, turn_data: TurnData, config: AppConfig, log: BattleL
             }
             factors: list[tuple[str, float]] = [
                 (f"приказ:{order_name(state, side, element)}", order.ammo_use),
+                ("комплект", load.ammo),
                 ("интенсивность огня", intensity),
             ]
 
             ammo_spent = (
                 ammo_cfg.base_per_turn
                 * order.ammo_use
+                * load.ammo
                 * (1.0 + ammo_cfg.intensity_weight * intensity)
             )
             element.ammo = clamp(element.ammo - ammo_spent, ammo_cfg.min, ammo_cfg.max)

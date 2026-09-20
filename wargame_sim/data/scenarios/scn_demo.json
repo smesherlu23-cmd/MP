@@ -27,7 +27,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "стрелковая_рота_2",
@@ -55,7 +56,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "стрелковая_рота_3",
@@ -83,7 +85,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "стрелковая_рота_4",
@@ -111,7 +114,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "миномётная_батарея_5",
@@ -132,7 +136,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "разведвзвод_6",
@@ -153,7 +158,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "бронегруппа_7",
@@ -181,7 +187,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "тыл_8",
@@ -209,7 +216,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       }
     ],
     "commander_influence": 60.0,
@@ -243,7 +251,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "стрелковая_рота_2",
@@ -271,7 +280,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "стрелковая_рота_3",
@@ -299,7 +309,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "стрелковая_рота_4",
@@ -327,7 +338,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "миномётная_батарея_5",
@@ -348,7 +360,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "разведвзвод_6",
@@ -369,7 +382,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "бронегруппа_7",
@@ -397,7 +411,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       },
       {
         "id": "тыл_8",
@@ -425,7 +440,8 @@
         "fatigue": 0.0,
         "suppression": 0.0,
         "order": null,
-        "alive": true
+        "alive": true,
+        "engaged": true
       }
     ],
     "commander_influence": 60.0,

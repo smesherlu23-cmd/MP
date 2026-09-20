@@ -107,8 +107,12 @@ class AppState:
         self.open_unit: tuple[str, str] | None = None
         #: Выбранная запись в каждой библиотеке мат.части.
         self.selected_materiel: dict[str, str] = {}
+        #: Открытая папка библиотеки — пока она выбрана, справа карточка папки.
+        self.selected_folder: dict[str, str] = {}
         #: Выбранный тип солдата в сборке юнитов.
         self.selected_troop: str = ""
+        #: Открытая папка в сборке юнитов.
+        self.selected_troop_folder: str = ""
         #: Фильтр стороны в таблицах элементов, отдельно для пульта и итога.
         self.run_side_filter: str = SIDE_BOTH
         self.result_side_filter: str = SIDE_BOTH
@@ -122,6 +126,9 @@ class AppState:
         #: Экран коэффициентов: раздел и способ правки.
         self.config_section: str = "combat"
         self.config_view: str = CONFIG_FIELDS
+        #: Что взведено на удаление: второй щелчок по той же кнопке
+        #: удаляет. Дешевле диалога и работает без запущенного окна.
+        self.pending_delete: str = ""
         #: Архив: фильтр по исходу и строка поиска.
         self.archive_outcome: str = ALL
         self.archive_query: str = ""

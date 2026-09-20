@@ -22,13 +22,21 @@ from core.engine.phases import (
     targeting,
 )
 from core.engine.rng import RngStreams
-from core.engine.state import SIDES, BattleState, SideState, TurnData, other_side
+from core.engine.state import (
+    SIDES,
+    BattleState,
+    SideState,
+    TurnData,
+    element_key,
+    other_side,
+)
 from core.log import BattleLog
 from core.models import (
     BattalionState,
     BattleResult,
     ElementReport,
     EndReason,
+    Order,
     Scenario,
     SideReport,
     Winner,
@@ -96,7 +104,8 @@ class BattleEngine:
             battalion = self.scenario.battalion(name).copy_deep()
             battalion.state = BattalionState.FIGHTING
             side_state = SideState(battalion=battalion)
-            for element in battalion.elements:
+            # Резерв в учёт не попадает: он войдёт, когда его введут в бой.
+            for element in battalion.engaged_elements:
                 side_state.initial_personnel[element.id] = element.personnel_current
                 side_state.initial_vehicles[element.id] = element.vehicles_current
                 side_state.personnel_lost[element.id] = 0
@@ -161,6 +170,87 @@ class BattleEngine:
         checks.run(self.state, self.turn_data, config, self.rng, log)
 
         self._evaluate_end()
+
+    # -- управление боем ----------------------------------------------------
+    def commit(self, side: str, element_id: str) -> bool:
+        """Ввести резервный элемент в бой прямо по ходу.
+
+        С этого момента он стреляет, по нему стреляют и он входит во все
+        агрегаты батальона; его численность регистрируется в реестре, чтобы
+        «потеряно + в строю» по-прежнему сходилось с исходным (§4.2).
+        """
+        battalion = self.state.battalion(side)
+        element = battalion.element(element_id)
+        if element is None or element.engaged:
+            return False
+
+        element.engaged = True
+        side_state = self.state.side(side)
+        side_state.initial_personnel[element.id] = element.personnel_current
+        side_state.initial_vehicles[element.id] = element.vehicles_current
+        side_state.personnel_lost.setdefault(element.id, 0)
+        side_state.vehicles_lost.setdefault(element.id, 0)
+        side_state.in_contact[element.id] = False
+
+        self.log.add(
+            turn=self.state.turn,
+            phase="command",
+            actor=element_key(side, element),
+            event="reserve_committed",
+            before={"engaged": False},
+            after={
+                "engaged": True,
+                "personnel": element.personnel_current,
+                "vehicles": element.vehicles_current,
+            },
+            text=(
+                f"«{element.name}» введён в бой из резерва: "
+                f"{element.personnel_current} чел."
+            ),
+        )
+        return True
+
+    def withdraw(self, side: str, element_id: str) -> bool:
+        """Вывести элемент из боя в резерв — до первого выстрела по нему."""
+        battalion = self.state.battalion(side)
+        element = battalion.element(element_id)
+        if element is None or not element.engaged or self.state.turn > 0:
+            return False
+        element.engaged = False
+        side_state = self.state.side(side)
+        for registry in (
+            side_state.initial_personnel,
+            side_state.initial_vehicles,
+            side_state.personnel_lost,
+            side_state.vehicles_lost,
+            side_state.in_contact,
+        ):
+            registry.pop(element.id, None)
+        return True
+
+    def set_order(self, side: str, element_id: str, order: Order | None) -> bool:
+        """Сменить приказ отдельного элемента по ходу боя."""
+        battalion = self.state.battalion(side)
+        element = battalion.element(element_id)
+        if element is None:
+            return False
+
+        before = str(battalion.order_for(element))
+        element.order = order
+        after = str(battalion.order_for(element))
+        if before == after:
+            return False
+
+        self.log.add(
+            turn=self.state.turn,
+            phase="command",
+            actor=element_key(side, element),
+            event="order_changed",
+            before={"order": before},
+            after={"order": after},
+            text=f"«{element.name}»: приказ {before} → {after}.",
+        )
+        return True
 
     def run(self, max_turns: int | None = None) -> BattleResult:
         """Прогнать бой до конца и вернуть результат."""

@@ -130,10 +130,18 @@ def main(page: ft.Page) -> None:
     def notify(message: str) -> None:
         page.show_dialog(ft.SnackBar(content=ft.Text(message)))
 
+    # Один-единственный View на всё приложение: при замене стека Flutter
+    # анимирует навигацию, а рамка у нас одинаковая на всех экранах —
+    # анимировать нечего. Меняем содержимое, а не сам View.
+    root = ft.View(route=ROUTES["home"], padding=0, spacing=0, bgcolor=t.CONTENT_BG)
+
     def render() -> None:
         view = resolve(app, page.route or ROUTES["home"])
-        page.views.clear()
-        page.views.append(view)
+        root.controls = view.controls
+        root.bgcolor = view.bgcolor
+        if not page.views or page.views[0] is not root:
+            page.views.clear()
+            page.views.append(root)
         page.update()
 
     def navigate(route: str, *, remember: bool = True) -> None:

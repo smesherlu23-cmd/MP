@@ -9,23 +9,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 import flet as ft
 
 from core.config import ConfigError
+from core.config import folders as folder_ops
 from core.config.introspect import PatchError, append_entry, patch_scalar, remove_entry
 from ui import theme as t
 from ui.shell import aside_block, screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
+from ui.widgets import library as lib
 
 ROUTE = ROUTES["materiel"]
 
-#: Запись без папки собирается сюда.
-NO_FOLDER = "Без папки"
+#: Подпись корня библиотеки.
+NO_FOLDER = lib.ROOT_LABEL
 
 #: Ширина поля в карточке.
 FIELD_W = 178
@@ -116,7 +118,7 @@ LIBRARIES: dict[str, Library] = {
                 "Общее",
                 (
                     Num("crew", "Экипаж, чел.", 0, 20, True),
-                    Num("transport", "Возит пехоты, чел.", 0, 40, True),
+                    Num("transport", "Возит пехоты · справочно", 0, 40, True),
                 ),
             ),
             (
@@ -136,7 +138,7 @@ LIBRARIES: dict[str, Library] = {
             (
                 "Подвижность и заметность",
                 (
-                    Num("mobility", "Подвижность", 0, 100),
+                    Num("mobility", "Подвижность · справочно", 0, 100),
                     Num("visibility", "Заметность", 0, 100),
                 ),
             ),
@@ -182,7 +184,7 @@ LIBRARIES: dict[str, Library] = {
             c.Col("", 64),
         ),
         groups=(
-            ("Расчёт", (Num("crew", "Расчёт, чел.", 1, 10, True),)),
+            ("Расчёт", (Num("crew", "Расчёт · справочно", 1, 10, True),)),
             (
                 "Вооружение",
                 (
@@ -193,7 +195,7 @@ LIBRARIES: dict[str, Library] = {
             (
                 "Применение",
                 (
-                    Num("range", "Дальность", 0, 100),
+                    Num("range", "Дальность · справочно", 0, 100),
                     Num("ammo_use", "Расход боезапаса, ×", 0, 5),
                 ),
             ),
@@ -230,8 +232,8 @@ LIBRARIES: dict[str, Library] = {
             (
                 "Цена комплекта",
                 (
-                    Num("visibility", "Заметность", 0, 100),
-                    Num("mobility", "Подвижность", 0, 100),
+                    Num("visibility", "Заметность · справочно", 0, 100),
+                    Num("mobility", "Подвижность · справочно", 0, 100),
                     Num("fatigue", "Усталость, ×", 0, 3),
                 ),
             ),
@@ -259,29 +261,26 @@ def folders_of(app: AppState, library: Library) -> list[str]:
     return list(getattr(app.config, library.key).folders)
 
 
-def grouped(entries: dict[str, Any], folders: Sequence[str]) -> list[tuple[str, list[str]]]:
-    """Записи по папкам: сначала объявленные папки, потом «без папки»."""
-    buckets: dict[str, list[str]] = {name: [] for name in folders}
-    loose: list[str] = []
-    for name, entry in entries.items():
-        folder = getattr(entry, "folder", "")
-        if folder in buckets:
-            buckets[folder].append(name)
-        else:
-            loose.append(name)
-    result = list(buckets.items())
-    if loose:
-        result.append((NO_FOLDER, loose))
-    return result
-
-
-def build(app: AppState, library: str = "vehicles", item: str = "") -> ft.View:
+def build(
+    app: AppState, library: str = "vehicles", item: str = "", folder: str = ""
+) -> ft.View:
     spec = LIBRARIES.get(library) or LIBRARIES["vehicles"]
     store = app.store
     entries = entries_of(app, spec)
     folders = folders_of(app, spec)
 
     names = list(entries)
+    known_folders = folder_ops.tree(folders)
+    # Справа показывается либо запись, либо папка — что выбрали последним.
+    open_folder = folder if folder in known_folders else ""
+    if folder:
+        app.selected_folder[spec.key] = open_folder
+    elif item:
+        app.selected_folder[spec.key] = ""
+    else:
+        open_folder = app.selected_folder.get(spec.key, "")
+        open_folder = open_folder if open_folder in known_folders else ""
+
     selected = item or app.selected_materiel.get(spec.key, "")
     if selected not in entries:
         selected = names[0] if names else ""
@@ -309,8 +308,13 @@ def build(app: AppState, library: str = "vehicles", item: str = "") -> ft.View:
 
     def go(name: str = "") -> None:
         app.selected_materiel[spec.key] = name
+        app.selected_folder[spec.key] = ""
         suffix = f"?item={name}" if name else ""
         app.go(ROUTE.format(library=spec.key) + suffix)
+
+    def go_folder(path: str) -> None:
+        app.selected_folder[spec.key] = path
+        app.go(ROUTE.format(library=spec.key) + f"?folder={path}")
 
     # -- правки -------------------------------------------------------------
     def set_field(name: str, key: str, value: object) -> None:
@@ -369,22 +373,61 @@ def build(app: AppState, library: str = "vehicles", item: str = "") -> ft.View:
             app.notify(f"Удалено: «{name}»")
             go()
 
+    # -- папки --------------------------------------------------------------
     def create_folder() -> None:
-        base, index = "Новая папка", 2
-        name = base
-        while name in folders:
-            name, index = f"{base} {index}", index + 1
-        data = store.raw(spec.key)
-        data.setdefault("folders", []).append(name)
+        """Новая папка появляется внутри открытой — так делается вложенность."""
+        raw = store.raw(spec.key)
         try:
-            store.save(spec.key, data)
-        except ConfigError as error:
-            error_holder.content = c.error_banner(str(error))
-            app.refresh(error_holder)
+            patched, path = folder_ops.create(
+                store.raw_text(spec.key), raw, open_folder, "Новая папка"
+            )
+        except (ConfigError, PatchError):
+            say("Не удалось создать папку — проверьте файл библиотеки.")
             return
-        app.reload_config()
-        app.notify(f"Создана папка «{name}»")
-        go(selected)
+        if write(patched):
+            app.notify(f"Создана папка «{path}»")
+            go_folder(path)
+
+    def rename_folder(new_name: str) -> None:
+        if not open_folder or not new_name.strip():
+            return
+        raw = store.raw(spec.key)
+        try:
+            patched, path = folder_ops.rename(
+                store.raw_text(spec.key), raw, spec.key, open_folder, new_name
+            )
+        except (ConfigError, PatchError):
+            say("Не удалось переименовать папку.")
+            return
+        if write(patched):
+            go_folder(path)
+
+    def move_folder(new_parent: str) -> None:
+        if not open_folder:
+            return
+        raw = store.raw(spec.key)
+        try:
+            patched, path = folder_ops.move(
+                store.raw_text(spec.key), raw, spec.key, open_folder, new_parent
+            )
+        except (ConfigError, PatchError):
+            say("Папку нельзя перенести внутрь самой себя.")
+            return
+        if write(patched):
+            go_folder(path)
+
+    def delete_folder() -> None:
+        if not open_folder:
+            return
+        raw = store.raw(spec.key)
+        try:
+            patched = folder_ops.remove(store.raw_text(spec.key), raw, spec.key, open_folder)
+        except (ConfigError, PatchError):
+            say("Не удалось удалить папку.")
+            return
+        if write(patched):
+            app.notify(f"Удалена папка «{open_folder}»")
+            go_folder(folder_ops.parent_of(open_folder))
 
     def reset_library() -> None:
         try:
@@ -398,24 +441,6 @@ def build(app: AppState, library: str = "vehicles", item: str = "") -> ft.View:
         go()
 
     # -- список -------------------------------------------------------------
-    def folder_row(title: str, count: int) -> ft.Control:
-        return ft.Container(
-            content=ft.Row(
-                [
-                    ft.Icon(ft.Icons.FOLDER_OUTLINED, size=15, color=t.TEXT_MUTED),
-                    t.caption(title),
-                    c.spacer(),
-                    ft.Text(str(count), style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED)),
-                ],
-                spacing=8,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            height=t.TABLE_HEAD_H,
-            bgcolor=t.SURFACE_ALT,
-            padding=ft.Padding.symmetric(horizontal=t.PAD_ROW_X),
-            border=t.border_bottom(t.BORDER_INNER),
-        )
-
     def entry_row(name: str, *, last: bool) -> ft.Control:
         entry = entries[name]
         actions = ft.Row(
@@ -452,16 +477,25 @@ def build(app: AppState, library: str = "vehicles", item: str = "") -> ft.View:
                 actions,
             ],
             height=t.TABLE_ROW_TALL_H,
-            bgcolor=t.ROW_EXPANDED if name == selected else None,
+            bgcolor=t.ROW_EXPANDED if name == selected and not open_folder else None,
             last=last,
             on_click=lambda: go(name),
         )
 
     rows: list[ft.Control] = []
-    for folder, folder_names in grouped(entries, folders):
-        rows.append(folder_row(folder, len(folder_names)))
+    for path, folder_names in lib.folder_entries(entries, folders):
+        if path or folder_names:
+            rows.append(
+                lib.folder_header(
+                    path,
+                    len(folder_names),
+                    selected=bool(path) and path == open_folder,
+                    on_click=(lambda p=path: go_folder(p)) if path else None,
+                )
+            )
         if not folder_names:
-            rows.append(c.empty_hint("Папка пуста."))
+            if path:
+                rows.append(c.empty_hint("Папка пуста."))
             continue
         rows.extend(
             entry_row(name, last=index == len(folder_names) - 1)
@@ -509,7 +543,7 @@ def build(app: AppState, library: str = "vehicles", item: str = "") -> ft.View:
             lambda value: set_field(name, "class", value),
             width=FIELD_W,
         )
-        folder_options = [("", NO_FOLDER), *[(f, f) for f in folders]]
+        folder_options = lib.folder_options(folders)
         blocks.append(
             ft.Column(
                 [
@@ -524,7 +558,7 @@ def build(app: AppState, library: str = "vehicles", item: str = "") -> ft.View:
                             c.labeled(
                                 "Папка",
                                 c.select(
-                                    entry.folder if entry.folder in folders else "",
+                                    entry.folder if entry.folder in known_folders else "",
                                     folder_options,
                                     lambda value: set_field(name, "folder", value),
                                     width=FIELD_W,
@@ -590,13 +624,35 @@ def build(app: AppState, library: str = "vehicles", item: str = "") -> ft.View:
             expand=True,
         )
 
-    detail = (
-        c.framed_card(entries[selected].label, card_body(selected), expand=True)
-        if selected
-        else c.framed_card(
+    if open_folder:
+        inside = sum(
+            1
+            for entry in entries.values()
+            if folder_ops.is_inside(getattr(entry, "folder", "") or "", open_folder)
+        )
+        inside += sum(
+            1
+            for path in known_folders
+            if path != open_folder and folder_ops.is_inside(path, open_folder)
+        )
+        detail = c.framed_card(
+            lib.path_label(open_folder),
+            lib.folder_card(
+                open_folder,
+                folders,
+                inside=inside,
+                on_rename=rename_folder,
+                on_move=move_folder,
+                on_delete=delete_folder,
+            ),
+            expand=True,
+        )
+    elif selected:
+        detail = c.framed_card(entries[selected].label, card_body(selected), expand=True)
+    else:
+        detail = c.framed_card(
             spec.label, c.empty_hint("Выберите запись в списке слева."), expand=True
         )
-    )
 
     return screen(
         app,

@@ -10,13 +10,14 @@ from __future__ import annotations
 import flet as ft
 
 from core.config import ConfigError
+from core.config import folders as folder_ops
 from core.config.introspect import PatchError, append_entry, patch_scalar, remove_entry
 from core.staff import element_staff, soldier
 from ui import theme as t
 from ui.shell import aside_block, screen
 from ui.state import ROUTES, AppState
-from ui.views.materiel import NO_FOLDER, grouped
 from ui.widgets import common as c
+from ui.widgets import library as lib
 
 ROUTE = ROUTES["troops"]
 
@@ -47,13 +48,23 @@ NEW_TROOP: dict[str, object] = {
 }
 
 
-def build(app: AppState, troop_id: str = "") -> ft.View:
+def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
     store = app.store
     config = app.config
     troops = config.troops.troops
     folders = list(config.troops.folders)
 
     names = list(troops)
+    known_folders = folder_ops.tree(folders)
+    open_folder = folder if folder in known_folders else ""
+    if folder:
+        app.selected_troop_folder = open_folder
+    elif troop_id:
+        app.selected_troop_folder = ""
+    else:
+        open_folder = app.selected_troop_folder
+        open_folder = open_folder if open_folder in known_folders else ""
+
     selected = troop_id or app.selected_troop
     if selected not in troops:
         selected = names[0] if names else ""
@@ -81,7 +92,12 @@ def build(app: AppState, troop_id: str = "") -> ft.View:
 
     def go(name: str = "") -> None:
         app.selected_troop = name
+        app.selected_troop_folder = ""
         app.go(f"{ROUTE}?troop_id={name}" if name else ROUTE)
+
+    def go_folder(path: str) -> None:
+        app.selected_troop_folder = path
+        app.go(f"{ROUTE}?folder={path}")
 
     def set_field(name: str, key: str, value: object) -> None:
         try:
@@ -139,22 +155,60 @@ def build(app: AppState, troop_id: str = "") -> ft.View:
             app.notify(f"Удалён тип «{name}»")
             go()
 
+    # -- папки --------------------------------------------------------------
     def create_folder() -> None:
-        base, index = "Новая папка", 2
-        name = base
-        while name in folders:
-            name, index = f"{base} {index}", index + 1
-        data = store.raw(SECTION)
-        data.setdefault("folders", []).append(name)
+        raw = store.raw(SECTION)
         try:
-            store.save(SECTION, data)
-        except ConfigError as error:
-            error_holder.content = c.error_banner(str(error))
-            app.refresh(error_holder)
+            patched, path = folder_ops.create(
+                store.raw_text(SECTION), raw, open_folder, "Новая папка"
+            )
+        except (ConfigError, PatchError):
+            say("Не удалось создать папку — проверьте troops.yaml.")
             return
-        app.reload_config()
-        app.notify(f"Создана папка «{name}»")
-        go(selected)
+        if write(patched):
+            app.notify(f"Создана папка «{path}»")
+            go_folder(path)
+
+    def rename_folder(new_name: str) -> None:
+        if not open_folder or not new_name.strip():
+            return
+        raw = store.raw(SECTION)
+        try:
+            patched, path = folder_ops.rename(
+                store.raw_text(SECTION), raw, SECTION, open_folder, new_name
+            )
+        except (ConfigError, PatchError):
+            say("Не удалось переименовать папку.")
+            return
+        if write(patched):
+            go_folder(path)
+
+    def move_folder(new_parent: str) -> None:
+        if not open_folder:
+            return
+        raw = store.raw(SECTION)
+        try:
+            patched, path = folder_ops.move(
+                store.raw_text(SECTION), raw, SECTION, open_folder, new_parent
+            )
+        except (ConfigError, PatchError):
+            say("Папку нельзя перенести внутрь самой себя.")
+            return
+        if write(patched):
+            go_folder(path)
+
+    def delete_folder() -> None:
+        if not open_folder:
+            return
+        raw = store.raw(SECTION)
+        try:
+            patched = folder_ops.remove(store.raw_text(SECTION), raw, SECTION, open_folder)
+        except (ConfigError, PatchError):
+            say("Не удалось удалить папку.")
+            return
+        if write(patched):
+            app.notify(f"Удалена папка «{open_folder}»")
+            go_folder(folder_ops.parent_of(open_folder))
 
     def reset_library() -> None:
         try:
@@ -168,24 +222,6 @@ def build(app: AppState, troop_id: str = "") -> ft.View:
         go()
 
     # -- список -------------------------------------------------------------
-    def folder_row(title: str, count: int) -> ft.Control:
-        return ft.Container(
-            content=ft.Row(
-                [
-                    ft.Icon(ft.Icons.FOLDER_OUTLINED, size=15, color=t.TEXT_MUTED),
-                    t.caption(title),
-                    c.spacer(),
-                    ft.Text(str(count), style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED)),
-                ],
-                spacing=8,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            height=t.TABLE_HEAD_H,
-            bgcolor=t.SURFACE_ALT,
-            padding=ft.Padding.symmetric(horizontal=t.PAD_ROW_X),
-            border=t.border_bottom(t.BORDER_INNER),
-        )
-
     def troop_row(name: str, *, last: bool) -> ft.Control:
         entry = troops[name]
         values = soldier(name, config)
@@ -243,16 +279,25 @@ def build(app: AppState, troop_id: str = "") -> ft.View:
                 actions,
             ],
             height=t.TABLE_ROW_TALL_H,
-            bgcolor=t.ROW_EXPANDED if name == selected else None,
+            bgcolor=t.ROW_EXPANDED if name == selected and not open_folder else None,
             last=last,
             on_click=lambda: go(name),
         )
 
     rows: list[ft.Control] = []
-    for folder, folder_names in grouped(troops, folders):
-        rows.append(folder_row(folder, len(folder_names)))
+    for path, folder_names in lib.folder_entries(troops, folders):
+        if path or folder_names:
+            rows.append(
+                lib.folder_header(
+                    path,
+                    len(folder_names),
+                    selected=bool(path) and path == open_folder,
+                    on_click=(lambda p=path: go_folder(p)) if path else None,
+                )
+            )
         if not folder_names:
-            rows.append(c.empty_hint("Папка пуста."))
+            if path:
+                rows.append(c.empty_hint("Папка пуста."))
             continue
         rows.extend(
             troop_row(name, last=index == len(folder_names) - 1)
@@ -299,7 +344,7 @@ def build(app: AppState, troop_id: str = "") -> ft.View:
         )
         weapon_options = [(key, item.label) for key, item in config.weapons.weapons.items()]
         gear_options = [(key, item.label) for key, item in config.gear.gear.items()]
-        folder_options = [("", NO_FOLDER), *[(f, f) for f in folders]]
+        folder_options = lib.folder_options(folders)
 
         kit = c.flow(
             [
@@ -334,7 +379,7 @@ def build(app: AppState, troop_id: str = "") -> ft.View:
                     width=FIELD_W,
                 ),
                 c.labeled(
-                    "Боекомплект",
+                    "Боекомплект · справочно",
                     c.number_field(
                         entry.ammo,
                         lambda value: set_field(name, "ammo", int(value)),
@@ -400,7 +445,7 @@ def build(app: AppState, troop_id: str = "") -> ft.View:
                     c.labeled(
                         "Папка",
                         c.select(
-                            entry.folder if entry.folder in folders else "",
+                            entry.folder if entry.folder in known_folders else "",
                             folder_options,
                             lambda value: set_field(name, "folder", value),
                             width=FIELD_W,
@@ -419,11 +464,33 @@ def build(app: AppState, troop_id: str = "") -> ft.View:
             expand=True,
         )
 
-    detail = (
-        c.framed_card(troops[selected].label, card_body(selected), expand=True)
-        if selected
-        else c.framed_card("Тип солдата", c.empty_hint("Выберите тип в списке слева."), expand=True)
-    )
+    if open_folder:
+        inside = sum(
+            1 for entry in troops.values() if folder_ops.is_inside(entry.folder or "", open_folder)
+        )
+        inside += sum(
+            1
+            for path in known_folders
+            if path != open_folder and folder_ops.is_inside(path, open_folder)
+        )
+        detail = c.framed_card(
+            lib.path_label(open_folder),
+            lib.folder_card(
+                open_folder,
+                folders,
+                inside=inside,
+                on_rename=rename_folder,
+                on_move=move_folder,
+                on_delete=delete_folder,
+            ),
+            expand=True,
+        )
+    elif selected:
+        detail = c.framed_card(troops[selected].label, card_body(selected), expand=True)
+    else:
+        detail = c.framed_card(
+            "Тип солдата", c.empty_hint("Выберите тип в списке слева."), expand=True
+        )
 
     # -- из чего складывается штат -----------------------------------------
     staffed = [
