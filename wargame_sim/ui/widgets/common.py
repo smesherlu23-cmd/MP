@@ -86,7 +86,7 @@ def primary_button(
         label,
         on_click,
         bgcolor=t.TEXT,
-        color=t.TEXT_ON_DARK,
+        color=t.TEXT_INVERSE,
         border_color=None,
         height=height,
         icon=icon,
@@ -135,7 +135,7 @@ def tertiary_button(
     *,
     icon: str | None = None,
     height: int = t.BUTTON_H,
-    color: str = t.TEXT_2,
+    color: str | None = None,
     tooltip: str = "",
     disabled: bool = False,
 ) -> ft.Control:
@@ -144,7 +144,7 @@ def tertiary_button(
         label,
         on_click,
         bgcolor=None,
-        color=color,
+        color=color or t.TEXT_2,
         border_color=None,
         height=height,
         icon=icon,
@@ -164,13 +164,13 @@ def icon_button(
     *,
     size: int = t.BUTTON_H,
     icon_size: int = 17,
-    color: str = t.TEXT_2,
+    color: str | None = None,
     tooltip: str = "",
     bordered: bool = True,
 ) -> ft.Control:
     """Иконочная кнопка — квадрат со стороной ``size``."""
     return ft.Container(
-        content=ft.Icon(icon, size=icon_size, color=color),
+        content=ft.Icon(icon, size=icon_size, color=color or t.TEXT_2),
         width=size,
         height=size,
         bgcolor=t.CARD_BG if bordered else None,
@@ -231,12 +231,12 @@ def card_header(
     *,
     trailing: Sequence[ft.Control] = (),
     icon: str | None = None,
-    icon_color: str = t.LOSS,
+    icon_color: str | None = None,
 ) -> ft.Control:
     """Шапка карточки: заголовок слева, контролы справа."""
     left: list[ft.Control] = []
     if icon:
-        left.append(ft.Icon(icon, size=17, color=icon_color))
+        left.append(ft.Icon(icon, size=17, color=icon_color or t.LOSS))
     left.append(t.card_title(title))
     return ft.Container(
         content=ft.Row(
@@ -293,7 +293,7 @@ def framed_card(
     trailing: Sequence[ft.Control] = (),
     footer: ft.Control | None = None,
     icon: str | None = None,
-    icon_color: str = t.LOSS,
+    icon_color: str | None = None,
     expand: bool | int = False,
     width: int | None = None,
 ) -> ft.Container:
@@ -431,7 +431,7 @@ def bar(
     *,
     maximum: float = 100.0,
     display: ft.Control | None = None,
-    color: str = t.TEXT,
+    color: str | None = None,
     expand: bool | int = True,
 ) -> ft.Control:
     """Метрика стороны: подпись и значение сверху, полоса снизу."""
@@ -446,7 +446,7 @@ def bar(
                 spacing=6,
                 vertical_alignment=ft.CrossAxisAlignment.END,
             ),
-            _bar_track(ratio, color),
+            _bar_track(ratio, color or t.TEXT),
         ],
         spacing=3,
         tight=True,
@@ -638,6 +638,14 @@ def select(
         expand=True,
         trailing_icon=ft.Icons.EXPAND_MORE,
         selected_trailing_icon=ft.Icons.EXPAND_LESS,
+        # Само меню рисует Flutter, а не наша вёрстка: без этих двух строк
+        # в тёмной теме список раскрывался белым прямоугольником.
+        bgcolor=t.SURFACE_ALT,
+        menu_style=ft.MenuStyle(
+            bgcolor=t.SURFACE_ALT,
+            shadow_color=t.CANVAS,
+            side=ft.BorderSide(1, t.BORDER),
+        ),
     )
 
     def handle(*_: object) -> None:
@@ -757,9 +765,9 @@ def divider(*, vertical_margin: int = 8) -> ft.Control:
     )
 
 
-def note(value: str, *, size: int = t.SIZE_ROW, color: str = t.TEXT_3) -> ft.Control:
+def note(value: str, *, size: int = t.SIZE_ROW, color: str | None = None) -> ft.Control:
     """Пояснительный абзац."""
-    return ft.Text(value, style=t.sans(size=size, color=color, height=1.55))
+    return ft.Text(value, style=t.sans(size=size, color=color or t.TEXT_3, height=1.55))
 
 
 def empty_hint(value: str) -> ft.Control:

@@ -7,6 +7,7 @@ Flet-окно в тестах не запускается — экраны ст�
 from __future__ import annotations
 
 import shutil
+from dataclasses import fields
 from pathlib import Path
 
 import flet as ft
@@ -23,7 +24,7 @@ from ui import theme as t
 from ui.app import ROUTE_TABLE, resolve
 from ui.state import CONFIG_YAML, ROUTES, AppState
 from ui.views import archive, config_editor, materiel, troops, unit_editor
-from ui.widgets import journal
+from ui.widgets import common, journal
 from ui.widgets.common import number_field
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -604,3 +605,145 @@ def test_force_allocation_is_a_tree(app: AppState) -> None:
     for child in children:
         assert _has(view, child.name)
     assert f"сторона a · {battalion.scale}" in _labels(view)
+
+
+# --------------------------------------------------------------------------
+# Тёмная тема (§10)
+# --------------------------------------------------------------------------
+def _colors(node: object) -> set[str]:
+    """Все цвета, которые экран реально назначил контролам."""
+    found: set[str] = set()
+    for control in _walk(node):
+        for attribute in ("bgcolor", "color", "icon_color", "cursor_color"):
+            value = getattr(control, attribute, None)
+            if isinstance(value, str) and value.startswith("#"):
+                found.add(value.upper())
+        style = getattr(control, "style", None) or getattr(control, "text_style", None)
+        value = getattr(style, "color", None)
+        if isinstance(value, str) and value.startswith("#"):
+            found.add(value.upper())
+    return found
+
+
+@pytest.fixture()
+def light_theme():
+    """Любой тест волен переключить палитру — вернём её на место."""
+    yield
+    t.apply(False)
+
+
+def test_palette_swap_reaches_every_token(light_theme) -> None:
+    """apply() раскладывает палитру по всем константам модуля, а не по части."""
+    light = {field.name: getattr(t.LIGHT, field.name) for field in fields(t.LIGHT)}
+    t.apply(True)
+    for name, value in light.items():
+        if name == "name":
+            continue
+        assert getattr(t, name.upper()) != value, f"{name} остался светлым"
+    assert t.is_dark() is True
+
+
+def _palette_values(palette: t.Palette) -> set[str]:
+    return {
+        getattr(palette, field.name).upper() for field in fields(palette) if field.name != "name"
+    }
+
+
+def test_dark_theme_repaints_the_battle_console(app: AppState, light_theme) -> None:
+    """Пульт боя в тёмной теме перекрашивается целиком."""
+    app.start_battle()
+    route = ROUTES["battle"].format(id=app.scenario.id)
+    light_colors = _colors(resolve(app, route))
+
+    t.apply(True)
+    dark_colors = _colors(resolve(app, route))
+
+    assert light_colors and dark_colors
+    # Светлые лестницы частично совпадают по значениям с тёмными (один и тот
+    # же серый бывает описанием там и плейсхолдером тут), поэтому сверяемся
+    # не с пересечением, а с тем, что осталось только от светлой палитры.
+    leaked = dark_colors & (_palette_values(t.LIGHT) - _palette_values(t.DARK))
+    assert not leaked, f"цвета не переключились: {sorted(leaked)}"
+
+
+@pytest.mark.parametrize("route_name", ["home", "units", "battle_setup", "batch", "config"])
+@pytest.mark.parametrize("dark", [False, True])
+def test_every_screen_uses_only_palette_colors(
+    app: AppState, route_name: str, dark: bool, light_theme
+) -> None:
+    """Ни одного цвета «россыпью»: всё, что красится, берётся из палитры.
+
+    Тот же тест ловит и цвет, вписанный в экран руками: он не совпадёт ни
+    с одним значением действующей палитры.
+    """
+    t.apply(dark)
+    palette = t.DARK if dark else t.LIGHT
+    used = _colors(resolve(app, ROUTES[route_name]))
+    assert used
+    assert used <= _palette_values(palette), (
+        f"цвета мимо палитры: {sorted(used - _palette_values(palette))}"
+    )
+
+
+def test_default_arguments_do_not_freeze_the_light_palette(light_theme) -> None:
+    """Цвет по умолчанию берётся в момент вызова, а не при импорте модуля.
+
+    Аргумент по умолчанию вычисляется один раз при импорте: если оставить
+    там t.TEXT, светлая тема застынет в каждом заголовке навсегда.
+    """
+    t.apply(True)
+    assert t.text("x").color == t.DARK.text
+    assert t.sans().color == t.DARK.text
+    assert t.caption("x").style.color == t.DARK.text_muted
+    assert t.border().top.color == t.DARK.border
+    assert common.note("x").style.color == t.DARK.text_3
+
+
+def test_flet_theme_follows_the_palette(light_theme) -> None:
+    """Материальная тема Flutter меняется вместе с палитрой."""
+    assert t.flet_theme().canvas_color == t.LIGHT.content_bg
+    assert t.theme_mode() == ft.ThemeMode.LIGHT
+    t.apply(True)
+    assert t.flet_theme().canvas_color == t.DARK.content_bg
+    assert t.flet_theme().color_scheme.surface == t.DARK.card_bg
+    assert t.theme_mode() == ft.ThemeMode.DARK
+
+
+def test_theme_choice_survives_a_restart(tmp_path: Path) -> None:
+    """Выбранную тему приложение помнит между запусками."""
+    config_dir = tmp_path / "config"
+    shutil.copytree(PROJECT_ROOT / "config", config_dir)
+    data_dir = tmp_path / "data"
+
+    first = AppState(page=None, store=ConfigStore(config_dir), data_dir=data_dir)
+    assert first.dark_theme is False
+    first.toggle_theme()
+    assert first.dark_theme is True
+
+    again = AppState(page=None, store=ConfigStore(config_dir), data_dir=data_dir)
+    assert again.dark_theme is True
+
+
+def test_broken_settings_file_does_not_break_startup(tmp_path: Path) -> None:
+    """Битый файл настроек — это светлая тема, а не падение приложения."""
+    config_dir = tmp_path / "config"
+    shutil.copytree(PROJECT_ROOT / "config", config_dir)
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "ui.json").write_text("{не json", encoding="utf-8")
+
+    state = AppState(page=None, store=ConfigStore(config_dir), data_dir=data_dir)
+    assert state.dark_theme is False
+
+
+def test_charts_follow_the_palette(app: AppState, light_theme) -> None:
+    """Графики рисует matplotlib, и он тоже обязан знать о тёмной теме."""
+    from ui import charts
+
+    batch = run_batch(app.scenario, app.config, runs=4, processes=1)
+    light_png = charts.losses_histogram(batch)
+    t.apply(True)
+    dark_png = charts.losses_histogram(batch)
+
+    assert light_png and dark_png
+    assert light_png != dark_png

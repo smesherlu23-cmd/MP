@@ -118,10 +118,7 @@ def main(page: ft.Page) -> None:
     page.title = TITLE
     page.padding = 0
     page.spacing = 0
-    page.bgcolor = t.CONTENT_BG
     page.fonts = dict(t.FONT_FILES)
-    page.theme_mode = ft.ThemeMode.LIGHT
-    page.theme = ft.Theme(font_family=t.SANS)
     page.window.width = 1600
     page.window.height = 1000
     page.window.min_width = 1280
@@ -134,6 +131,21 @@ def main(page: ft.Page) -> None:
     # анимирует навигацию, а рамка у нас одинаковая на всех экранах —
     # анимировать нечего. Меняем содержимое, а не сам View.
     root = ft.View(route=ROUTES["home"], padding=0, spacing=0, bgcolor=t.CONTENT_BG)
+
+    def paint(dark: bool) -> None:
+        """Переключить палитру и всё, что красит не наша вёрстка.
+
+        Темы Flutter задаются обе сразу: ``theme_mode`` только выбирает,
+        какую из них взять, и без второй половины выпадающее меню в тёмной
+        теме осталось бы белым.
+        """
+        t.apply(dark)
+        theme = t.flet_theme()
+        page.theme = theme
+        page.dark_theme = theme
+        page.theme_mode = t.theme_mode()
+        page.bgcolor = t.CONTENT_BG
+        root.bgcolor = t.CONTENT_BG
 
     def render() -> None:
         view = resolve(app, page.route or ROUTES["home"])
@@ -158,7 +170,7 @@ def main(page: ft.Page) -> None:
             navigate(history.pop(), remember=False)
 
     def switch_theme(dark: bool) -> None:
-        page.theme_mode = ft.ThemeMode.DARK if dark else ft.ThemeMode.LIGHT
+        paint(dark)
         render()
 
     app.notifier = notify
@@ -166,6 +178,7 @@ def main(page: ft.Page) -> None:
     app.theme_switcher = switch_theme
     page.on_route_change = lambda *_: render()
     page.on_view_pop = lambda *_: back()
+    paint(app.dark_theme)  # запомненная с прошлого запуска тема
     render()
 
 

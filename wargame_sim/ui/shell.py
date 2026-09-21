@@ -55,13 +55,13 @@ def nav_item(
     return ft.Container(
         content=ft.Row(
             [
-                ft.Icon(item.icon, size=18, color=t.TEXT_ON_DARK if active else t.TEXT_2),
+                ft.Icon(item.icon, size=18, color=t.TEXT_INVERSE if active else t.TEXT_2),
                 ft.Text(
                     item.label,
                     style=t.sans(
                         size=t.SIZE_BODY,
                         weight=t.W500 if active else t.W400,
-                        color=t.TEXT_ON_DARK if active else t.TEXT_2,
+                        color=t.TEXT_INVERSE if active else t.TEXT_2,
                     ),
                     expand=True,
                 ),
@@ -90,7 +90,7 @@ def nav_child(label: str, route: str, active: bool, go: Callable[[str], None]) -
         ),
         height=t.NAV_SUB_H,
         padding=ft.Padding.only(left=30, right=8),
-        bgcolor="#DDD7CC" if active else None,
+        bgcolor=t.NAV_ACTIVE if active else None,
         border_radius=t.R_FIELD,
         alignment=ft.Alignment.CENTER_LEFT,
         on_click=lambda *_: go(route),

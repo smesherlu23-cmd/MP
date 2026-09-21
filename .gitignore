@@ -11,3 +11,6 @@ wargame_sim/data/results/*.md
 wargame_sim/data/results/*.csv
 wargame_sim/data/results/*.html
 !wargame_sim/data/results/.gitkeep
+
+# Настройки интерфейса — локальный выбор пользователя, не часть проекта.
+wargame_sim/data/ui.json

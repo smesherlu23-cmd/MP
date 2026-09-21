@@ -70,11 +70,11 @@ def outcome_badge(result: BattleResult) -> ft.Control:
             [
                 ft.Text(
                     title,
-                    style=t.sans(size=t.SIZE_TITLE, weight=t.W600, color=t.TEXT_ON_DARK),
+                    style=t.sans(size=t.SIZE_TITLE, weight=t.W600, color=t.TEXT_INVERSE),
                 ),
                 ft.Text(
                     f"{result.end_reason} · ход {result.turns}",
-                    style=t.mono(size=t.SIZE_META, color=t.TEXT_ON_DARK),
+                    style=t.mono(size=t.SIZE_META, color=t.TEXT_INVERSE),
                     opacity=0.75,
                 ),
             ],
