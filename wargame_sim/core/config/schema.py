@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.config.curve import Curve
+from core.models.enums import Echelon
 
 Strict = ConfigDict(extra="forbid")
 
@@ -111,6 +112,10 @@ class OrdersConfig(BaseModel):
 
     schema_version: int = 1
     orders: dict[str, OrderEntry] = Field(min_length=1)
+    #: Множитель к ``task.turns`` по масштабу отряда: взвод решает за
+    #: минуты, батальон — за часы. У батальона он равен единице, поэтому
+    #: калибровка батальонного боя от этого поля не зависит.
+    scale_turns: dict[Echelon, float] = Field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------
@@ -120,6 +125,9 @@ class ElementTypeDefaults(BaseModel):
     model_config = Strict
 
     personnel_full: int = Field(ge=0)
+    #: Масштаб группы этого типа: рота, взвод, отделение… Деление выдаёт
+    #: подгруппам ступень ниже, поэтому подпись в дереве берётся отсюда.
+    echelon: Echelon = Echelon.COMPANY
     attack: float = Field(ge=0, le=100)
     defense: float = Field(ge=0, le=100)
     #: Какая техника и сколько её по штату у этого типа элемента.
@@ -409,6 +417,9 @@ class SupplyBody(BaseModel):
     fuel: FuelSupply
     equipment: EquipmentSupply
     source_efficiency_curve: Curve
+    #: Доля обычного подвоза для отряда, у которого тыла нет по штату
+    #: (взвод, отделение): его снабжает старшая часть.
+    external_supply_share: float = Field(default=0.0, ge=0, le=1)
 
 
 class SupplyConfig(BaseModel):

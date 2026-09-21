@@ -1,4 +1,4 @@
-"""Список подразделений: таблица батальонов и операции над ними."""
+"""Список подразделений: таблица отрядов любого масштаба и операции над ними."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 import flet as ft
 
 from core.models import Battalion, Side, new_id
-from core.samples import make_battalion
+from core.samples import make_battalion, make_platoon
 from core.storage import StorageError, delete_file, load_battalion
 from ui import theme as t
 from ui.shell import screen
@@ -18,8 +18,9 @@ from ui.widgets import common as c
 ROUTE = ROUTES["units"]
 
 COLUMNS: tuple[c.Col, ...] = (
-    c.Col("Батальон", expand=True),
-    c.Col("Элем.", 80, numeric=True),
+    c.Col("Отряд", expand=True),
+    c.Col("Масштаб", 90),
+    c.Col("Групп", 70, numeric=True),
     c.Col("Л/с", 90, numeric=True),
     c.Col("Техника", 90, numeric=True),
     c.Col("Мораль", 80, numeric=True),
@@ -42,8 +43,14 @@ def build(app: AppState) -> ft.View:
         app.notify(f"Создан «{battalion.name}»")
         app.go(ROUTES["unit"].format(id=battalion.id))
 
+    def create_platoon() -> None:
+        battalion = make_platoon(new_id("vzv"), "Новый взвод", Side.A, app.config)
+        app.save_unit(battalion)
+        app.notify(f"Создан «{battalion.name}»")
+        app.go(ROUTES["unit"].format(id=battalion.id))
+
     def create_empty() -> None:
-        battalion = Battalion(id=new_id("bat"), name="Пустой батальон", side=Side.A, elements=[])
+        battalion = Battalion(id=new_id("bat"), name="Пустой отряд", side=Side.A, elements=[])
         app.save_unit(battalion)
         app.go(ROUTES["unit"].format(id=battalion.id))
 
@@ -87,10 +94,10 @@ def build(app: AppState) -> ft.View:
         refresh()
 
     def add_template(type_name: str) -> None:
-        """Шаблон элемента добавляется в первый батальон списка."""
+        """Шаблон группы добавляется в первый отряд списка."""
         units = app.units()
         if not units:
-            message.value = "Сначала создайте батальон — шаблон некуда положить."
+            message.value = "Сначала создайте отряд — шаблон некуда положить."
             app.refresh(message)
             return
         app.go(ROUTES["unit"].format(id=units[0][1].id))
@@ -133,6 +140,7 @@ def build(app: AppState) -> ft.View:
             COLUMNS,
             [
                 t.text(battalion.name, size=t.SIZE_BODY, weight=t.W500),
+                t.text(str(battalion.scale), size=t.SIZE_ROW, color=t.TEXT_3),
                 t.num(str(len(battalion.elements))),
                 t.num(str(battalion.personnel_current)),
                 t.num(str(battalion.vehicles_current)),
@@ -163,7 +171,7 @@ def build(app: AppState) -> ft.View:
 
     templates = c.card(
         [
-            t.card_title("Типовые шаблоны элементов"),
+            t.card_title("Типовые шаблоны групп"),
             c.flow(
                 [
                     c.chip(entry.label, lambda key=key: add_template(key))
@@ -190,7 +198,7 @@ def build(app: AppState) -> ft.View:
                 spacing=t.GAP_SM,
             ),
             c.note(
-                "Импортированный батальон появится в списке и станет доступен "
+                "Импортированный отряд появится в списке и станет доступен "
                 "как сторона A или B."
             ),
             message,
@@ -202,15 +210,16 @@ def build(app: AppState) -> ft.View:
         app,
         active="units",
         title="Подразделения",
-        subtitle="Батальоны, из которых собираются бои",
+        subtitle="Отряды любого масштаба, из которых собираются бои",
         actions=[
             c.tertiary_button("Импорт JSON", do_import, icon=ft.Icons.UPLOAD_FILE),
-            c.secondary_button("Создать пустой", create_empty),
-            c.primary_button("Создать типовой", create_typical, icon=ft.Icons.ADD),
+            c.secondary_button("Пустой", create_empty),
+            c.secondary_button("Взвод", create_platoon),
+            c.primary_button("Батальон", create_typical, icon=ft.Icons.ADD),
         ],
         body=ft.Column(
             [
-                c.framed_card("Батальоны", body, expand=True),
+                c.framed_card("Отряды", body, expand=True),
                 ft.Row(
                     [templates, import_card],
                     spacing=t.GAP,

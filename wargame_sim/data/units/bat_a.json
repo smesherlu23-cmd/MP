@@ -1,13 +1,16 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "bat_a",
   "name": "1-й батальон",
   "side": "A",
+  "scale": "батальон",
   "elements": [
     {
       "id": "штаб_1",
       "name": "Штаб батальона",
       "type": "штаб",
+      "echelon": "взвод",
+      "parent": null,
       "personnel_full": 35,
       "personnel_current": 35,
       "vehicles": [],
@@ -30,6 +33,8 @@
       "id": "стрелковая_рота_2",
       "name": "1-я рота",
       "type": "стрелковая_рота",
+      "echelon": "рота",
+      "parent": null,
       "personnel_full": 120,
       "personnel_current": 120,
       "vehicles": [
@@ -59,6 +64,8 @@
       "id": "стрелковая_рота_3",
       "name": "2-я рота",
       "type": "стрелковая_рота",
+      "echelon": "рота",
+      "parent": null,
       "personnel_full": 120,
       "personnel_current": 120,
       "vehicles": [
@@ -88,6 +95,8 @@
       "id": "стрелковая_рота_4",
       "name": "3-я рота",
       "type": "стрелковая_рота",
+      "echelon": "рота",
+      "parent": null,
       "personnel_full": 120,
       "personnel_current": 120,
       "vehicles": [
@@ -117,6 +126,8 @@
       "id": "миномётная_батарея_5",
       "name": "Миномётная батарея",
       "type": "миномётная_батарея",
+      "echelon": "рота",
+      "parent": null,
       "personnel_full": 60,
       "personnel_current": 60,
       "vehicles": [],
@@ -139,6 +150,8 @@
       "id": "разведвзвод_6",
       "name": "Разведвзвод",
       "type": "разведвзвод",
+      "echelon": "взвод",
+      "parent": null,
       "personnel_full": 30,
       "personnel_current": 30,
       "vehicles": [],
@@ -161,6 +174,8 @@
       "id": "бронегруппа_7",
       "name": "Бронегруппа",
       "type": "бронегруппа",
+      "echelon": "взвод",
+      "parent": null,
       "personnel_full": 40,
       "personnel_current": 40,
       "vehicles": [
@@ -190,6 +205,8 @@
       "id": "тыл_8",
       "name": "Тыл",
       "type": "тыл",
+      "echelon": "взвод",
+      "parent": null,
       "personnel_full": 45,
       "personnel_current": 45,
       "vehicles": [

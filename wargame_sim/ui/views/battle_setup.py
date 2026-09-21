@@ -11,7 +11,7 @@ import random
 
 import flet as ft
 
-from core import preview
+from core import formation, preview
 from core.models import (
     MAX_SEED,
     Battalion,
@@ -27,6 +27,7 @@ from ui import theme as t
 from ui.shell import scenario_aside, screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
+from ui.widgets import orbat as ob
 
 ROUTE = ROUTES["battle_setup"]
 
@@ -132,7 +133,11 @@ def build(app: AppState) -> ft.View:
                 ],
                 height=t.TABLE_ROW_H - 2,
             ),
-            line("Элементов", str(len(a.elements)), str(len(b.elements))),
+            line(
+                "Групп в бою",
+                str(len(a.engaged_elements)),
+                str(len(b.engaged_elements)),
+            ),
             line("Личный состав", str(a.personnel_current), str(b.personnel_current)),
             line("Техника", str(a.vehicles_current), str(b.vehicles_current)),
             line("Мораль", f"{sa['morale']:.0f}", f"{sb['morale']:.0f}"),
@@ -363,38 +368,42 @@ def build(app: AppState) -> ft.View:
 
     # -- наряд сил ----------------------------------------------------------
     def set_engaged(side: Side, element_id: str, engaged: bool) -> None:
+        """Ввести группу в бой или отвести — вместе со всеми подгруппами."""
         battalion = scenario.battalion(side)
-        element = battalion.element(element_id)
-        if element is None:
+        if battalion.element(element_id) is None:
             return
-        element.engaged = engaged
+        formation.set_engaged(battalion, element_id, engaged)
         touch()
 
     def force_column(side: Side) -> ft.Control:
         battalion = scenario.battalion(side)
         key = "A" if side == Side.A else "B"
         rows: list[ft.Control] = []
-        for element in battalion.elements:
+        for element in battalion.ordered_elements:
+            roll = battalion.rollup(element.id)
+            engaged_here = roll.engaged > 0
             rows.append(
                 ft.Container(
                     content=ft.Row(
                         [
+                            ft.Container(width=battalion.depth_of(element) * ob.INDENT),
                             ft.Text(
                                 element.name,
                                 style=t.sans(
                                     size=t.SIZE_ROW,
-                                    color=t.TEXT if element.engaged else t.TEXT_PLACEHOLDER,
+                                    weight=t.W500 if roll.leaves > 1 else t.W400,
+                                    color=t.TEXT if engaged_here else t.TEXT_PLACEHOLDER,
                                 ),
                                 expand=True,
                                 no_wrap=True,
                             ),
                             ft.Text(
-                                f"{element.personnel_current} чел.",
+                                f"{element.echelon} · {roll.personnel_current} чел.",
                                 style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED),
                             ),
                             c.toggle(
                                 "",
-                                element.engaged,
+                                engaged_here,
                                 lambda value, e=element.id, s=side: set_engaged(s, e, value),
                             ),
                         ],
@@ -409,10 +418,10 @@ def build(app: AppState) -> ft.View:
             [
                 ft.Row(
                     [
-                        t.caption(f"Сторона {key}"),
+                        t.caption(f"Сторона {key} · {battalion.scale}"),
                         c.spacer(),
                         ft.Text(
-                            f"{len(engaged)} из {len(battalion.elements)} · "
+                            f"{len(engaged)} из {len(battalion.leaf_elements)} · "
                             f"{battalion.personnel_current} чел.",
                             style=t.mono(size=t.SIZE_META, color=t.TEXT_3),
                         ),
@@ -430,8 +439,9 @@ def build(app: AppState) -> ft.View:
         [
             t.card_title("Наряд сил"),
             c.note(
-                "Выключенный элемент остаётся в резерве: он не стреляет и по нему "
-                "не стреляют. Ввести его в бой можно прямо на пульте, на любом ходу."
+                "Выключенная группа остаётся в резерве: она не стреляет и по ней "
+                "не стреляют. Выключение старшей группы уводит в резерв и все её "
+                "подгруппы; ввести их в бой можно прямо на пульте, на любом ходу."
             ),
             ft.Row(
                 [force_column(Side.A), force_column(Side.B)],

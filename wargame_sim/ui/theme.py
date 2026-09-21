@@ -11,38 +11,173 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, fields
+
 import flet as ft
+
 
 # --------------------------------------------------------------------------
 # Цвета
 # --------------------------------------------------------------------------
-CANVAS = "#E9E5DD"  # полотно за окном приложения
-CONTENT_BG = "#F2EFE9"  # фон контентной области
-SIDEBAR_BG = "#E7E2D9"  # фон боковой навигации
-SURFACE_ALT = "#F7F4EE"  # верхняя полоса, вложенные поля, строки стороны B
-CARD_BG = "#FBFAF6"  # фон карточки
-ROW_EXPANDED = "#F0EDE6"  # фон раскрытой строки
-SEGMENT_BG = "#EDEAE4"  # фон сегментированного переключателя
-TRACK = "#E4DFD6"  # дорожка полосы прогресса
+@dataclass(frozen=True)
+class Palette:
+    """Полный набор цветов одной темы.
 
-BORDER = "#DBD5CA"  # основная граница
-BORDER_INNER = "#EFEBE3"  # граница между строками таблиц
-BORDER_CARD = "#EAE5DC"  # граница внутри карточки (итоги)
+    Поля названы как константы модуля в нижнем регистре: ``apply()``
+    раскладывает палитру по глобальным именам, и экраны по-прежнему пишут
+    ``t.CARD_BG``, не зная, светлая сейчас тема или тёмная.
+    """
 
-TEXT = "#191815"  # основной текст
-TEXT_ON_DARK = "#F7F4EE"  # текст на тёмном
-TEXT_2 = "#57534B"  # текст второго уровня
-TEXT_3 = "#6B665D"  # описания
-TEXT_MUTED = "#8A857B"  # подписи и метаданные
-TEXT_PLACEHOLDER = "#A0998D"  # плейсхолдеры и прочерки
-TOGGLE_OFF = "#D6D0C5"  # выключенный переключатель
+    name: str
+    canvas: str  # полотно за окном приложения
+    content_bg: str  # фон контентной области
+    sidebar_bg: str  # фон боковой навигации
+    nav_active: str  # плашка активного подпункта навигации
+    surface_alt: str  # верхняя полоса, вложенные поля, строки стороны B
+    card_bg: str  # фон карточки
+    row_expanded: str  # фон раскрытой (выбранной) строки
+    segment_bg: str  # фон сегментированного переключателя
+    track: str  # дорожка полосы прогресса
+    border: str  # основная граница
+    border_inner: str  # граница между строками таблиц
+    border_card: str  # граница внутри карточки (итоги)
+    text: str  # основной текст; им же залиты основная кнопка и активный пункт
+    text_inverse: str  # текст и значки поверх заливки цветом text
+    text_2: str  # текст второго уровня
+    text_3: str  # описания
+    text_muted: str  # подписи и метаданные
+    text_placeholder: str  # плейсхолдеры и прочерки
+    toggle_off: str  # выключенный переключатель
+    loss: str  # потери и тревога
+    loss_hover: str  # ссылка при наведении
+    warn: str  # подавление
+    ok: str  # «бой идёт»
+    neutral_b: str  # сторона B в диаграммах
+    neutral_draw: str  # ничья в диаграммах
 
-LOSS = "#A83E28"  # потери и тревога
-LOSS_HOVER = "#7E2C1B"  # ссылка при наведении
-WARN = "#A9761B"  # подавление
-OK = "#4E6B52"  # «бой идёт»
-NEUTRAL_B = "#8A857B"  # сторона B в диаграммах
-NEUTRAL_DRAW = "#D6D0C5"  # ничья в диаграммах
+    @property
+    def dark(self) -> bool:
+        return self is DARK
+
+
+#: Светлая тема — бумага дизайн-хендоффа, значения взяты как есть.
+LIGHT = Palette(
+    name="светлая",
+    canvas="#E9E5DD",
+    content_bg="#F2EFE9",
+    sidebar_bg="#E7E2D9",
+    nav_active="#DDD7CC",
+    surface_alt="#F7F4EE",
+    card_bg="#FBFAF6",
+    row_expanded="#F0EDE6",
+    segment_bg="#EDEAE4",
+    track="#E4DFD6",
+    border="#DBD5CA",
+    border_inner="#EFEBE3",
+    border_card="#EAE5DC",
+    text="#191815",
+    text_inverse="#F7F4EE",
+    text_2="#57534B",
+    text_3="#6B665D",
+    text_muted="#8A857B",
+    text_placeholder="#A0998D",
+    toggle_off="#D6D0C5",
+    loss="#A83E28",
+    loss_hover="#7E2C1B",
+    warn="#A9761B",
+    ok="#4E6B52",
+    neutral_b="#8A857B",
+    neutral_draw="#D6D0C5",
+)
+
+#: Тёмная тема — та же бумага при свете лампы, а не чёрный терминал: тот же
+#: тёплый тон, перевёрнутая лестница светлот. Порядок слоёв сохранён —
+#: карточка светлее содержимого, содержимое светлее полотна, — поэтому
+#: вёрстка читается одинаково в обеих темах.
+#: Акценты подняты по светлоте: на тёмном фоне прежний кирпичный #A83E28
+#: не читается, а разница «потери / подавление» обязана оставаться видимой.
+DARK = Palette(
+    name="тёмная",
+    canvas="#100F0E",
+    content_bg="#171614",
+    sidebar_bg="#131211",
+    nav_active="#2A2724",
+    surface_alt="#201E1B",
+    card_bg="#232120",
+    row_expanded="#2C2926",
+    segment_bg="#1B1A18",
+    track="#332F2B",
+    border="#3B3733",
+    border_inner="#2B2926",
+    border_card="#322E2A",
+    text="#EDE9E1",
+    text_inverse="#171614",
+    text_2="#BEB8AC",
+    text_3="#A49D92",
+    text_muted="#847E74",
+    text_placeholder="#6B665D",
+    toggle_off="#3E3A35",
+    loss="#E07359",
+    loss_hover="#F28F76",
+    warn="#D8A445",
+    ok="#83A98A",
+    neutral_b="#847E74",
+    neutral_draw="#4A4641",
+)
+
+#: Действующая палитра. Меняется только через :func:`apply`.
+palette: Palette = LIGHT
+
+CANVAS: str = LIGHT.canvas
+CONTENT_BG: str = LIGHT.content_bg
+SIDEBAR_BG: str = LIGHT.sidebar_bg
+NAV_ACTIVE: str = LIGHT.nav_active
+SURFACE_ALT: str = LIGHT.surface_alt
+CARD_BG: str = LIGHT.card_bg
+ROW_EXPANDED: str = LIGHT.row_expanded
+SEGMENT_BG: str = LIGHT.segment_bg
+TRACK: str = LIGHT.track
+
+BORDER: str = LIGHT.border
+BORDER_INNER: str = LIGHT.border_inner
+BORDER_CARD: str = LIGHT.border_card
+
+TEXT: str = LIGHT.text
+TEXT_INVERSE: str = LIGHT.text_inverse
+TEXT_2: str = LIGHT.text_2
+TEXT_3: str = LIGHT.text_3
+TEXT_MUTED: str = LIGHT.text_muted
+TEXT_PLACEHOLDER: str = LIGHT.text_placeholder
+TOGGLE_OFF: str = LIGHT.toggle_off
+
+LOSS: str = LIGHT.loss
+LOSS_HOVER: str = LIGHT.loss_hover
+WARN: str = LIGHT.warn
+OK: str = LIGHT.ok
+NEUTRAL_B: str = LIGHT.neutral_b
+NEUTRAL_DRAW: str = LIGHT.neutral_draw
+
+
+def apply(dark: bool) -> Palette:
+    """Переключить палитру: разложить её по константам модуля.
+
+    Экраны берут цвет по имени в момент отрисовки (``t.CARD_BG``), поэтому
+    после переключения достаточно перестроить содержимое — искать цвета по
+    файлам не нужно. Значения по умолчанию у функций модуля намеренно
+    ``None``: аргумент по умолчанию вычисляется один раз при импорте и
+    заморозил бы светлую тему навсегда.
+    """
+    global palette
+    palette = DARK if dark else LIGHT
+    for field in fields(palette):
+        if field.name != "name":
+            globals()[field.name.upper()] = getattr(palette, field.name)
+    return palette
+
+
+def is_dark() -> bool:
+    return palette.dark
+
 
 # --------------------------------------------------------------------------
 # Типографика
@@ -134,7 +269,7 @@ def _family(base: str, weight: ft.FontWeight) -> str:
 def sans(
     size: int = SIZE_BODY,
     weight: ft.FontWeight = W400,
-    color: str = TEXT,
+    color: str | None = None,
     *,
     height: float | None = None,
     spacing: float | None = None,
@@ -143,7 +278,7 @@ def sans(
     return ft.TextStyle(
         font_family=_family(SANS, weight),
         size=size,
-        color=color,
+        color=color or TEXT,
         height=height,
         letter_spacing=spacing,
     )
@@ -152,7 +287,7 @@ def sans(
 def mono(
     size: int = SIZE_ROW,
     weight: ft.FontWeight = W400,
-    color: str = TEXT,
+    color: str | None = None,
     *,
     height: float | None = None,
     spacing: float | None = None,
@@ -161,7 +296,7 @@ def mono(
     return ft.TextStyle(
         font_family=_family(MONO, weight),
         size=size,
-        color=color,
+        color=color or TEXT,
         height=height,
         letter_spacing=spacing,
     )
@@ -171,7 +306,7 @@ def text(
     value: str,
     size: int = SIZE_BODY,
     weight: ft.FontWeight = W400,
-    color: str = TEXT,
+    color: str | None = None,
     *,
     height: float | None = None,
     expand: bool | int = False,
@@ -183,7 +318,7 @@ def text(
         value,
         font_family=_family(SANS, weight),
         size=size,
-        color=color,
+        color=color or TEXT,
         height=height,
         expand=expand,
         text_align=align,
@@ -195,7 +330,7 @@ def num(
     value: str,
     size: int = SIZE_ROW,
     weight: ft.FontWeight = W400,
-    color: str = TEXT,
+    color: str | None = None,
     *,
     expand: bool | int = False,
     align: ft.TextAlign | None = ft.TextAlign.RIGHT,
@@ -205,33 +340,89 @@ def num(
     return ft.Text(
         value,
         size=size,
-        color=color,
+        color=color or TEXT,
         expand=expand,
         text_align=align,
-        style=mono(size=size, weight=weight, color=color, spacing=spacing),
+        style=mono(size=size, weight=weight, color=color or TEXT, spacing=spacing),
     )
 
 
-def caption(value: str, color: str = TEXT_MUTED, size: int = SIZE_LABEL) -> ft.Text:
+def caption(value: str, color: str | None = None, size: int = SIZE_LABEL) -> ft.Text:
     """Подпись поля или шапка таблицы: моно, разрядка, верхний регистр."""
-    return ft.Text(value.upper(), style=mono(size=size, color=color, spacing=0.6))
+    return ft.Text(value.upper(), style=mono(size=size, color=color or TEXT_MUTED, spacing=0.6))
 
 
-def card_title(value: str, color: str = TEXT_MUTED) -> ft.Text:
+def card_title(value: str, color: str | None = None) -> ft.Text:
     """Заголовок карточки: моно 11, разрядка .1em, верхний регистр."""
-    return ft.Text(value.upper(), style=mono(size=SIZE_META, color=color, spacing=1.1))
+    return ft.Text(
+        value.upper(), style=mono(size=SIZE_META, color=color or TEXT_MUTED, spacing=1.1)
+    )
 
 
-def border(color: str = BORDER, width: int = 1) -> ft.Border:
-    return ft.Border.all(width, color)
+def border(color: str | None = None, width: int = 1) -> ft.Border:
+    return ft.Border.all(width, color or BORDER)
 
 
-def border_bottom(color: str = BORDER_INNER, width: int = 1) -> ft.Border:
-    return ft.Border.only(bottom=ft.BorderSide(width, color))
+def border_bottom(color: str | None = None, width: int = 1) -> ft.Border:
+    return ft.Border.only(bottom=ft.BorderSide(width, color or BORDER_INNER))
 
 
-def border_top(color: str = BORDER_INNER, width: int = 1) -> ft.Border:
-    return ft.Border.only(top=ft.BorderSide(width, color))
+def border_top(color: str | None = None, width: int = 1) -> ft.Border:
+    return ft.Border.only(top=ft.BorderSide(width, color or BORDER_INNER))
+
+
+
+def flet_theme() -> ft.Theme:
+    """Материальная тема Flutter под действующую палитру.
+
+    Нужна для того, что рисует не наша вёрстка, а сам Flutter: выпадающее
+    меню списка, подсказка, всплывающее сообщение, полоса прокрутки. Без
+    неё тёмный экран получал бы белое меню — та самая полумера, из-за
+    которой «тёмная тема» была видна только на кнопке переключения.
+    """
+    scheme = ft.ColorScheme(
+        primary=TEXT,
+        on_primary=TEXT_INVERSE,
+        secondary=TEXT_2,
+        on_secondary=TEXT_INVERSE,
+        surface=CARD_BG,
+        on_surface=TEXT,
+        surface_tint=ft.Colors.TRANSPARENT,
+        error=LOSS,
+        on_error=TEXT_INVERSE,
+        outline=BORDER,
+        outline_variant=BORDER_INNER,
+        shadow=CANVAS,
+        inverse_surface=TEXT,
+        on_inverse_surface=TEXT_INVERSE,
+    )
+    return ft.Theme(
+        font_family=SANS,
+        color_scheme=scheme,
+        canvas_color=CONTENT_BG,
+        card_bgcolor=CARD_BG,
+        divider_color=BORDER,
+        hint_color=TEXT_PLACEHOLDER,
+        disabled_color=TEXT_PLACEHOLDER,
+        scrollbar_theme=ft.ScrollbarTheme(
+            thumb_color=TRACK,
+            track_color=ft.Colors.TRANSPARENT,
+            thickness=6,
+            radius=R_BAR,
+        ),
+        tooltip_theme=ft.TooltipTheme(
+            text_style=sans(size=SIZE_ROW, color=TEXT_INVERSE),
+        ),
+        snackbar_theme=ft.SnackBarTheme(
+            bgcolor=TEXT,
+            content_text_style=sans(size=SIZE_BODY, color=TEXT_INVERSE),
+        ),
+    )
+
+
+def theme_mode() -> ft.ThemeMode:
+    """Режим страницы под действующую палитру."""
+    return ft.ThemeMode.DARK if palette.dark else ft.ThemeMode.LIGHT
 
 
 #: Шрифты приложения. Файлы лежат в ``wargame_sim/assets/fonts`` и грузятся

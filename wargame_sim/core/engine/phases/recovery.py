@@ -10,8 +10,22 @@ from core.log import BattleLog
 PHASE = "recovery"
 
 
+def _has_supply_source(state: BattleState, side: str, config: AppConfig) -> bool:
+    """Есть ли тыл в штате отряда — живой или уже выбитый."""
+    for element in state.side(side).battalion.elements:
+        entry = config.element_types.element_types.get(element.type)
+        if entry is not None and entry.supply_source:
+            return True
+    return False
+
+
 def _supply_efficiency(state: BattleState, side: str, config: AppConfig) -> float:
-    """Эффективность подвоза: считается по живым тыловым элементам."""
+    """Эффективность подвоза: считается по живым тыловым элементам.
+
+    Если тыла нет **по штату** — а у взвода и отделения его и не бывает, —
+    подвоз идёт от старшей части долей ``external_supply_share``. Это не то
+    же, что выбитый тыл: там подвоз обрывается совсем, и это событие боя.
+    """
     best = 0.0
     for element in state.elements(side):
         entry = config.element_types.element_types.get(element.type)
@@ -19,6 +33,8 @@ def _supply_efficiency(state: BattleState, side: str, config: AppConfig) -> floa
             continue
         health = 100.0 * element.personnel_ratio * (1.0 - element.suppression / 100.0)
         best = max(best, config.sup.source_efficiency_curve(health))
+    if best == 0.0 and not _has_supply_source(state, side, config):
+        return config.sup.external_supply_share
     return best
 
 

@@ -37,6 +37,62 @@ class IntelLevel(StrEnum):
     FULL = "полные"
 
 
+class Echelon(StrEnum):
+    """Масштаб группы — от звена до полка.
+
+    Порядок объявления значим: деление группы выдаёт подгруппам следующую
+    ступень вниз, поэтому рота делится на взводы, а взвод — на отделения
+    без единого числа в коде.
+    """
+
+    TEAM = "звено"
+    SQUAD = "отделение"
+    PLATOON = "взвод"
+    COMPANY = "рота"
+    BATTALION = "батальон"
+    REGIMENT = "полк"
+
+
+#: Ступени по возрастанию — источник правды для «уровнем ниже/выше».
+ECHELON_ORDER: tuple[Echelon, ...] = (
+    Echelon.TEAM,
+    Echelon.SQUAD,
+    Echelon.PLATOON,
+    Echelon.COMPANY,
+    Echelon.BATTALION,
+    Echelon.REGIMENT,
+)
+
+
+#: Окончание порядкового числительного по роду слова: «1-й взвод», но
+#: «1-я рота» и «1-е отделение». Нужен только для имён по умолчанию.
+ECHELON_ORDINAL: dict[Echelon, str] = {
+    Echelon.TEAM: "-е",
+    Echelon.SQUAD: "-е",
+    Echelon.PLATOON: "-й",
+    Echelon.COMPANY: "-я",
+    Echelon.BATTALION: "-й",
+    Echelon.REGIMENT: "-й",
+}
+
+
+def echelon_ordinal(index: int, echelon: Echelon) -> str:
+    """«1-й взвод», «2-я рота», «3-е отделение» — имя подгруппы по умолчанию."""
+    return f"{index}{ECHELON_ORDINAL[echelon]} {echelon}"
+
+
+def echelon_below(echelon: Echelon) -> Echelon:
+    """Ступень ниже; ниже звена не опускаемся."""
+    index = ECHELON_ORDER.index(echelon)
+    return ECHELON_ORDER[max(0, index - 1)]
+
+
+def echelon_above(echelon: Echelon) -> Echelon:
+    """Ступень выше; выше полка не поднимаемся."""
+    index = ECHELON_ORDER.index(echelon)
+    return ECHELON_ORDER[min(len(ECHELON_ORDER) - 1, index + 1)]
+
+
 class Order(StrEnum):
     ATTACK = "атака"
     DEFENCE = "оборона"

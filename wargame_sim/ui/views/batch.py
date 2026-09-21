@@ -53,13 +53,15 @@ DIST_COLUMNS: tuple[c.Col, ...] = (
 )
 
 
-def big_number(value: str, label: str, *, color: str = t.TEXT) -> ft.Control:
+def big_number(value: str, label: str, *, color: str | None = None) -> ft.Control:
     """Крупное число вероятности с подписью под ним."""
     return ft.Column(
         [
             ft.Text(
                 value,
-                style=t.mono(size=t.SIZE_BIG_NUM, weight=t.W600, color=color, spacing=-0.6),
+                style=t.mono(
+                    size=t.SIZE_BIG_NUM, weight=t.W600, color=color or t.TEXT, spacing=-0.6
+                ),
             ),
             ft.Text(label, style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3)),
         ],

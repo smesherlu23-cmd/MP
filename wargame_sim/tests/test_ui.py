@@ -7,6 +7,7 @@ Flet-окно в тестах не запускается — экраны ст�
 from __future__ import annotations
 
 import shutil
+from dataclasses import fields
 from pathlib import Path
 
 import flet as ft
@@ -23,7 +24,7 @@ from ui import theme as t
 from ui.app import ROUTE_TABLE, resolve
 from ui.state import CONFIG_YAML, ROUTES, AppState
 from ui.views import archive, config_editor, materiel, troops, unit_editor
-from ui.widgets import journal
+from ui.widgets import common, journal
 from ui.widgets.common import number_field
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -510,3 +511,239 @@ def test_order_choices_cover_every_order(app: AppState) -> None:
     assert "приказ" in labels
     for order in Order:
         assert str(order).casefold() in labels
+
+
+# --------------------------------------------------------------------------
+# Боевой порядок деревом (§4.2)
+# --------------------------------------------------------------------------
+def test_battle_console_shows_the_order_of_battle(app: AppState) -> None:
+    """Пульт боя показывает дерево групп, а не плоскую таблицу элементов."""
+    app.start_battle()
+    view = resolve(app, ROUTES["battle"].format(id=app.scenario.id))
+    assert _has(view, "Боевой порядок")
+    assert "группа" in _labels(view)
+    assert "масштаб" in _labels(view)
+
+
+def test_selected_group_gets_its_commands(app: AppState) -> None:
+    """Выбранная группа открывает в подвале действия над ней."""
+    engine = app.start_battle()
+    target = next(
+        element for element in engine.state.battalion("A").leaf_elements if element.has_vehicles
+    )
+    route = ROUTES["battle"].format(id=app.scenario.id)
+
+    app.selected_group = None
+    assert _has(resolve(app, route), "Выберите группу — её можно разделить, свести или дать ей приказ")
+
+    app.selected_group = ("A", target.id)
+    view = resolve(app, route)
+    assert _has(view, "Разделить")
+    assert _has(view, "Отделить технику")
+
+
+def test_split_group_shows_its_subgroups(app: AppState) -> None:
+    """После деления подгруппы видны в дереве, а старшая группа — их суммой."""
+    engine = app.start_battle()
+    target = next(
+        element for element in engine.state.battalion("A").leaf_elements if element.has_vehicles
+    )
+    children = engine.split("A", target.id, 3)
+
+    route = ROUTES["battle"].format(id=app.scenario.id)
+    app.selected_group = ("A", children[0].id)
+    view = resolve(app, route)
+    for child in children:
+        assert _has(view, child.name)
+    # у подгруппы сводить нечего, а у старшей группы — есть
+    assert _has(view, "Свести") is False
+    assert _has(view, "Разделить") is True
+
+    app.selected_group = ("A", target.id)
+    merged_view = resolve(app, route)
+    assert _has(merged_view, "Свести") is True
+    assert _has(merged_view, "Разделить") is False
+
+
+def test_collapsed_group_hides_its_subgroups(app: AppState) -> None:
+    """Свёрнутая группа прячет всё своё поддерево."""
+    engine = app.start_battle()
+    target = next(
+        element for element in engine.state.battalion("A").leaf_elements if element.has_vehicles
+    )
+    children = engine.split("A", target.id, 2)
+    route = ROUTES["battle"].format(id=app.scenario.id)
+
+    assert _has(resolve(app, route), children[0].name)
+    app.collapsed_groups.add(("A", target.id))
+    assert _has(resolve(app, route), children[0].name) is False
+    assert _has(resolve(app, route), target.name)
+
+
+def test_unit_editor_offers_scale_and_reshaping(app: AppState) -> None:
+    """Конструктор даёт масштаб отряда и перестроение групп."""
+    _, battalion = app.units()[0]
+    app.expanded_element = battalion.elements[1].id
+    view = unit_editor.build(app, battalion.id)
+
+    assert "масштаб отряда" in _labels(view)
+    assert _has(view, "Перестроить")
+    assert _has(view, "Разделить")
+    assert "самостоятельная" in _labels(view)
+
+
+def test_force_allocation_is_a_tree(app: AppState) -> None:
+    """Наряд сил на экране подготовки показывает дерево и масштаб отряда."""
+    from core import formation
+
+    battalion = app.scenario.battalion_a
+    target = next(element for element in battalion.elements if element.has_vehicles)
+    children = formation.split(battalion, target.id, 2)
+
+    view = resolve(app, ROUTES["battle_setup"])
+    assert _has(view, "Наряд сил")
+    for child in children:
+        assert _has(view, child.name)
+    assert f"сторона a · {battalion.scale}" in _labels(view)
+
+
+# --------------------------------------------------------------------------
+# Тёмная тема (§10)
+# --------------------------------------------------------------------------
+def _colors(node: object) -> set[str]:
+    """Все цвета, которые экран реально назначил контролам."""
+    found: set[str] = set()
+    for control in _walk(node):
+        for attribute in ("bgcolor", "color", "icon_color", "cursor_color"):
+            value = getattr(control, attribute, None)
+            if isinstance(value, str) and value.startswith("#"):
+                found.add(value.upper())
+        style = getattr(control, "style", None) or getattr(control, "text_style", None)
+        value = getattr(style, "color", None)
+        if isinstance(value, str) and value.startswith("#"):
+            found.add(value.upper())
+    return found
+
+
+@pytest.fixture()
+def light_theme():
+    """Любой тест волен переключить палитру — вернём её на место."""
+    yield
+    t.apply(False)
+
+
+def test_palette_swap_reaches_every_token(light_theme) -> None:
+    """apply() раскладывает палитру по всем константам модуля, а не по части."""
+    light = {field.name: getattr(t.LIGHT, field.name) for field in fields(t.LIGHT)}
+    t.apply(True)
+    for name, value in light.items():
+        if name == "name":
+            continue
+        assert getattr(t, name.upper()) != value, f"{name} остался светлым"
+    assert t.is_dark() is True
+
+
+def _palette_values(palette: t.Palette) -> set[str]:
+    return {
+        getattr(palette, field.name).upper() for field in fields(palette) if field.name != "name"
+    }
+
+
+def test_dark_theme_repaints_the_battle_console(app: AppState, light_theme) -> None:
+    """Пульт боя в тёмной теме перекрашивается целиком."""
+    app.start_battle()
+    route = ROUTES["battle"].format(id=app.scenario.id)
+    light_colors = _colors(resolve(app, route))
+
+    t.apply(True)
+    dark_colors = _colors(resolve(app, route))
+
+    assert light_colors and dark_colors
+    # Светлые лестницы частично совпадают по значениям с тёмными (один и тот
+    # же серый бывает описанием там и плейсхолдером тут), поэтому сверяемся
+    # не с пересечением, а с тем, что осталось только от светлой палитры.
+    leaked = dark_colors & (_palette_values(t.LIGHT) - _palette_values(t.DARK))
+    assert not leaked, f"цвета не переключились: {sorted(leaked)}"
+
+
+@pytest.mark.parametrize("route_name", ["home", "units", "battle_setup", "batch", "config"])
+@pytest.mark.parametrize("dark", [False, True])
+def test_every_screen_uses_only_palette_colors(
+    app: AppState, route_name: str, dark: bool, light_theme
+) -> None:
+    """Ни одного цвета «россыпью»: всё, что красится, берётся из палитры.
+
+    Тот же тест ловит и цвет, вписанный в экран руками: он не совпадёт ни
+    с одним значением действующей палитры.
+    """
+    t.apply(dark)
+    palette = t.DARK if dark else t.LIGHT
+    used = _colors(resolve(app, ROUTES[route_name]))
+    assert used
+    assert used <= _palette_values(palette), (
+        f"цвета мимо палитры: {sorted(used - _palette_values(palette))}"
+    )
+
+
+def test_default_arguments_do_not_freeze_the_light_palette(light_theme) -> None:
+    """Цвет по умолчанию берётся в момент вызова, а не при импорте модуля.
+
+    Аргумент по умолчанию вычисляется один раз при импорте: если оставить
+    там t.TEXT, светлая тема застынет в каждом заголовке навсегда.
+    """
+    t.apply(True)
+    assert t.text("x").color == t.DARK.text
+    assert t.sans().color == t.DARK.text
+    assert t.caption("x").style.color == t.DARK.text_muted
+    assert t.border().top.color == t.DARK.border
+    assert common.note("x").style.color == t.DARK.text_3
+
+
+def test_flet_theme_follows_the_palette(light_theme) -> None:
+    """Материальная тема Flutter меняется вместе с палитрой."""
+    assert t.flet_theme().canvas_color == t.LIGHT.content_bg
+    assert t.theme_mode() == ft.ThemeMode.LIGHT
+    t.apply(True)
+    assert t.flet_theme().canvas_color == t.DARK.content_bg
+    assert t.flet_theme().color_scheme.surface == t.DARK.card_bg
+    assert t.theme_mode() == ft.ThemeMode.DARK
+
+
+def test_theme_choice_survives_a_restart(tmp_path: Path) -> None:
+    """Выбранную тему приложение помнит между запусками."""
+    config_dir = tmp_path / "config"
+    shutil.copytree(PROJECT_ROOT / "config", config_dir)
+    data_dir = tmp_path / "data"
+
+    first = AppState(page=None, store=ConfigStore(config_dir), data_dir=data_dir)
+    assert first.dark_theme is False
+    first.toggle_theme()
+    assert first.dark_theme is True
+
+    again = AppState(page=None, store=ConfigStore(config_dir), data_dir=data_dir)
+    assert again.dark_theme is True
+
+
+def test_broken_settings_file_does_not_break_startup(tmp_path: Path) -> None:
+    """Битый файл настроек — это светлая тема, а не падение приложения."""
+    config_dir = tmp_path / "config"
+    shutil.copytree(PROJECT_ROOT / "config", config_dir)
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "ui.json").write_text("{не json", encoding="utf-8")
+
+    state = AppState(page=None, store=ConfigStore(config_dir), data_dir=data_dir)
+    assert state.dark_theme is False
+
+
+def test_charts_follow_the_palette(app: AppState, light_theme) -> None:
+    """Графики рисует matplotlib, и он тоже обязан знать о тёмной теме."""
+    from ui import charts
+
+    batch = run_batch(app.scenario, app.config, runs=4, processes=1)
+    light_png = charts.losses_histogram(batch)
+    t.apply(True)
+    dark_png = charts.losses_histogram(batch)
+
+    assert light_png and dark_png
+    assert light_png != dark_png

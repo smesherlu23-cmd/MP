@@ -19,7 +19,7 @@ LINKS: tuple[tuple[str, str, str, str], ...] = (
         ROUTES["units"],
         ft.Icons.GROUPS_OUTLINED,
         "Подразделения",
-        "Создать и отредактировать батальоны",
+        "Создать и отредактировать отряды",
     ),
     (
         ROUTES["batch"],

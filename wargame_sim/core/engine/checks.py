@@ -153,7 +153,7 @@ def update_disengage(state: BattleState, config: AppConfig) -> None:
 
 
 def check_task(state: BattleState, config: AppConfig, log: BattleLog) -> None:
-    """Выполнение боевой задачи по приказу батальона (§6.3)."""
+    """Выполнение боевой задачи по приказу отряда (§6.3)."""
     checks_cfg = config.cbt.checks
     for side in SIDES:
         side_state = state.side(side)
@@ -173,8 +173,13 @@ def check_task(state: BattleState, config: AppConfig, log: BattleLog) -> None:
             ) or has_withdrawn(state, str(enemy_state.battalion.side), config)
             detail = [("состояние противника", 1.0 if done else 0.0)]
         elif task.kind == "hold_turns":
-            done = side_state.turns_held >= task.turns
-            detail = [("выстоял ходов", float(side_state.turns_held)), ("нужно", float(task.turns))]
+            needed = config.task_turns(task.turns, battalion.scale)
+            done = side_state.turns_held >= needed
+            detail = [
+                ("выстоял ходов", float(side_state.turns_held)),
+                ("нужно", float(needed)),
+                (f"масштаб:{battalion.scale}", float(needed) / task.turns if task.turns else 1.0),
+            ]
         elif task.kind == "ambush":
             start_personnel = sum(enemy_state.initial_personnel.values())
             inflicted = (
@@ -230,7 +235,7 @@ def check_task(state: BattleState, config: AppConfig, log: BattleLog) -> None:
 
 
 def check_battalions(state: BattleState, config: AppConfig, log: BattleLog) -> None:
-    """Разгром, отступление и паника на уровне батальона."""
+    """Разгром, отступление и паника на уровне отряда."""
     checks_cfg = config.cbt.checks
     element_types = config.element_types.element_types
 

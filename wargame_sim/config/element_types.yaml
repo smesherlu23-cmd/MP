@@ -11,6 +11,7 @@
 # anti_tank        — доля огня, работающая по технике (0..1);
 # detection        — множитель собственного обнаружения;
 # stealth          — множитель собственной заметности (меньше — скрытнее);
+# defaults.echelon — масштаб группы: отделение, взвод, рота, батальон, полк;
 # defaults         — стартовые значения полей при добавлении из шаблона;
 #                    vehicle_type/vehicle_count — штатная техника типа
 #                    (запись из vehicles.yaml и сколько её по штату).
@@ -39,6 +40,7 @@ element_types:
     stealth: 1.00
     defaults:
       personnel_full: 120
+      echelon: рота
       attack: 42
       defense: 45
       vehicle_type: БТР
@@ -64,6 +66,7 @@ element_types:
     stealth: 0.85
     defaults:
       personnel_full: 35
+      echelon: взвод
       attack: 8
       defense: 25
   миномётная_батарея:
@@ -87,6 +90,7 @@ element_types:
     stealth: 0.80
     defaults:
       personnel_full: 60
+      echelon: рота
       attack: 65
       defense: 22
   разведвзвод:
@@ -110,6 +114,7 @@ element_types:
     stealth: 0.55
     defaults:
       personnel_full: 30
+      echelon: взвод
       attack: 20
       defense: 28
   бронегруппа:
@@ -133,6 +138,7 @@ element_types:
     stealth: 1.20
     defaults:
       personnel_full: 40
+      echelon: взвод
       attack: 75
       defense: 70
       vehicle_type: БМП
@@ -158,6 +164,7 @@ element_types:
     stealth: 0.95
     defaults:
       personnel_full: 45
+      echelon: взвод
       attack: 5
       defense: 30
       vehicle_type: Грузовик
@@ -182,5 +189,6 @@ element_types:
     stealth: 0.90
     defaults:
       personnel_full: 35
+      echelon: взвод
       attack: 22
       defense: 40

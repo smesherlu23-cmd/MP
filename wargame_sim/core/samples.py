@@ -9,6 +9,7 @@ from __future__ import annotations
 from core.config import AppConfig, load_config
 from core.models import (
     Battalion,
+    Echelon,
     Element,
     Environment,
     Order,
@@ -40,6 +41,8 @@ def make_element(
     experience: int = 2,
     morale: float = 75.0,
     with_vehicles: bool = True,
+    echelon: Echelon | None = None,
+    parent: str | None = None,
 ) -> Element:
     """Элемент со стартовыми значениями из ``element_types.yaml``."""
     entry = config.element_type(type_name)
@@ -60,6 +63,8 @@ def make_element(
         id=element_id,
         name=name,
         type=type_name,
+        echelon=echelon or defaults.echelon,
+        parent=parent,
         personnel_full=staff.personnel if staff else defaults.personnel_full,
         personnel_current=staff.personnel if staff else defaults.personnel_full,
         attack=staff.attack if staff else defaults.attack,
@@ -98,6 +103,7 @@ def make_battalion(
         id=battalion_id,
         name=name,
         side=side,
+        scale=Echelon.BATTALION,
         elements=elements,
         commander_influence=60.0,
         communications=85.0,
@@ -131,6 +137,120 @@ def make_scenario(
         name=name,
         battalion_a=battalion_a,
         battalion_b=battalion_b,
+        environment=environment or Environment(),
+        master_seed=seed,
+    )
+
+
+#: Мотострелковый взвод: три отделения и приданное танковое звено.
+#: Показывает, что программа считает бой любого масштаба, а техника
+#: живёт отдельной группой, а не полем внутри пехоты.
+PLATOON_COMPOSITION: tuple[tuple[str, str, int], ...] = (
+    ("стрелковая_рота", "1-е отделение", 9),
+    ("стрелковая_рота", "2-е отделение", 9),
+    ("стрелковая_рота", "3-е отделение", 9),
+)
+
+
+def make_platoon(
+    battalion_id: str,
+    name: str,
+    side: Side,
+    config: AppConfig | None = None,
+    *,
+    order: Order = Order.ATTACK,
+    experience: int = 2,
+    morale: float = 75.0,
+    task: str = "",
+    vehicle_type: str = "БТР",
+    vehicle_count: int = 3,
+) -> Battalion:
+    """Взвод: управление, три отделения и звено техники отдельной группой."""
+    config = config or load_config()
+    head = make_element(
+        "штаб",
+        name,
+        "vzvod",
+        config,
+        experience=experience,
+        morale=morale,
+        with_vehicles=False,
+        echelon=Echelon.PLATOON,
+    )
+    # Управление взвода — это сама группа: воюют её подгруппы, поэтому
+    # собственные числа она получит сведением, а не руками.
+    elements = [head]
+    for index, (type_name, element_name, personnel) in enumerate(
+        PLATOON_COMPOSITION, start=1
+    ):
+        squad = make_element(
+            type_name,
+            element_name,
+            f"otd_{index}",
+            config,
+            experience=experience,
+            morale=morale,
+            with_vehicles=False,
+            echelon=Echelon.SQUAD,
+            parent=head.id,
+        )
+        squad.personnel_current = 0
+        squad.personnel_full = personnel
+        squad.personnel_current = personnel
+        elements.append(squad)
+    crew = config.vehicle(vehicle_type).crew * vehicle_count
+    armour = make_element(
+        "бронегруппа",
+        "Бронегруппа",
+        "bron",
+        config,
+        experience=experience,
+        morale=morale,
+        with_vehicles=False,
+        echelon=Echelon.TEAM,
+        parent=head.id,
+    )
+    armour.personnel_current = 0
+    armour.personnel_full = crew
+    armour.personnel_current = crew
+    armour.vehicles = [
+        VehicleGroup(
+            vehicle_type=vehicle_type, count_full=vehicle_count, count_current=vehicle_count
+        )
+    ]
+    elements.append(armour)
+    head.personnel_current = 0
+    head.personnel_full = sum(item.personnel_full for item in elements[1:])
+    head.personnel_current = head.personnel_full
+    return Battalion(
+        id=battalion_id,
+        name=name,
+        side=side,
+        scale=Echelon.PLATOON,
+        elements=elements,
+        commander_influence=60.0,
+        communications=85.0,
+        order=order,
+        task=task,
+    )
+
+
+def make_small_scenario(
+    config: AppConfig | None = None,
+    *,
+    name: str = "Встречный бой взводов",
+    seed: int = 42,
+    order_a: Order = Order.ATTACK,
+    order_b: Order = Order.DEFENCE,
+    environment: Environment | None = None,
+) -> Scenario:
+    """Демонстрация малого масштаба: взвод против взвода."""
+    config = config or load_config()
+    return Scenario(
+        id="scn_platoon",
+        name=name,
+        battalion_a=make_platoon("vzv_a", "1-й взвод", Side.A, config, order=order_a),
+        battalion_b=make_platoon("vzv_b", "2-й взвод", Side.B, config, order=order_b),
         environment=environment or Environment(),
         master_seed=seed,
     )

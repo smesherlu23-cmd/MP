@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,10 @@ CONFIG_FIELDS = "fields"
 CONFIG_YAML = "yaml"
 
 #: Порог морали для блока «Требует внимания».
+#: Настройки интерфейса рядом с данными: оформление — не часть боя,
+#: поэтому в сценарий и в подразделения оно не лезет.
+SETTINGS_FILE = "ui.json"
+
 DEFAULT_ALARM_MORALE = 70
 
 #: Число прогонов массового моделирования по умолчанию.
@@ -81,6 +86,7 @@ class AppState:
         self.page = page
         self.store = store or ConfigStore()
         self.data_dir = data_dir
+        self.settings_path = (data_dir or UNITS_DIR.parent) / SETTINGS_FILE
         self.units_dir = (data_dir / "units") if data_dir else UNITS_DIR
         self.scenarios_dir = (data_dir / "scenarios") if data_dir else SCENARIOS_DIR
         self.results_dir = (data_dir / "results") if data_dir else RESULTS_DIR
@@ -113,6 +119,14 @@ class AppState:
         self.selected_troop: str = ""
         #: Открытая папка в сборке юнитов.
         self.selected_troop_folder: str = ""
+        #: Выбранная группа на пульте боя: ``("A", "rota_1")``. Пока она
+        #: выбрана, в подвале дерева показаны действия над ней.
+        self.selected_group: tuple[str, str] | None = None
+        #: Свёрнутые группы дерева — по умолчанию раскрыто всё, поэтому
+        #: храним именно свёрнутые, а не раскрытые.
+        self.collapsed_groups: set[tuple[str, str]] = set()
+        #: На сколько частей делит кнопка «Разделить».
+        self.split_parts: int = 2
         #: Фильтр стороны в таблицах элементов, отдельно для пульта и итога.
         self.run_side_filter: str = SIDE_BOTH
         self.result_side_filter: str = SIDE_BOTH
@@ -136,8 +150,9 @@ class AppState:
         self.batch_runs: int = DEFAULT_RUNS
         self.batch_seed: int = self.scenario.master_seed
         self.batch_processes: int = 0
-        #: Тёмная тема — по умолчанию светлая, как в макете.
-        self.dark_theme: bool = False
+        #: Тёмная тема. Выбор запоминается между запусками: тема — это
+        #: не настройка боя, переспрашивать её каждый раз незачем.
+        self.dark_theme: bool = bool(self._settings().get("dark_theme", False))
 
     # -- конфигурация -------------------------------------------------------
     @property
@@ -171,9 +186,31 @@ class AppState:
         if self.navigator is not None:
             self.navigator(route)
 
+    # -- настройки интерфейса ----------------------------------------------
+    def _settings(self) -> dict[str, Any]:
+        """Настройки интерфейса; битый или отсутствующий файл — не беда."""
+        try:
+            data = json.loads(self.settings_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _save_settings(self, **values: Any) -> None:
+        data = {**self._settings(), **values}
+        try:
+            self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+            self.settings_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+        except OSError:
+            # Настройка оформления не стоит того, чтобы ронять приложение,
+            # если каталог данных вдруг недоступен на запись.
+            pass
+
     def toggle_theme(self) -> None:
         """Переключить светлую и тёмную тему и перерисовать текущий экран."""
         self.dark_theme = not self.dark_theme
+        self._save_settings(dark_theme=self.dark_theme)
         if self.theme_switcher is not None:
             self.theme_switcher(self.dark_theme)
 
@@ -191,7 +228,7 @@ class AppState:
 
     # -- мат.часть ----------------------------------------------------------
     def materiel_usage(self, section: str, name: str) -> list[str]:
-        """Где используется запись библиотеки: типы, солдаты, батальоны."""
+        """Где используется запись библиотеки: типы, солдаты, отряды."""
         config = self.config
         places: list[str] = []
 
@@ -205,7 +242,7 @@ class AppState:
                     for element in battalion.elements
                     for group in element.vehicles
                 ):
-                    places.append(f"батальон «{battalion.name}»")
+                    places.append(f"отряд «{battalion.name}»")
         elif section == "weapons":
             for troop_name, troop in config.troops.troops.items():
                 if name in (troop.weapon, troop.secondary):

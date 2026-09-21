@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from core.models.enums import Order
+from core.models.enums import Echelon, Order
 
-SCHEMA_VERSION = 1
+#: 2 — у элемента появились родитель и ступень (дерево групп).
+SCHEMA_VERSION = 2
 
 
 class VehicleGroup(BaseModel):
@@ -39,13 +40,22 @@ class VehicleGroup(BaseModel):
 
 
 class Element(BaseModel):
-    """Строевая единица батальона: рота, батарея, взвод, штаб, тыл."""
+    """Группа отряда: рота, взвод, отделение, штаб, тыл, звено техники.
+
+    Группа с подгруппами сама огня не ведёт — дерутся её листья (§4.2).
+    """
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     id: str
     name: str
     type: str
+    #: Масштаб группы: отделение, взвод, рота… Деление выдаёт подгруппам
+    #: ступень ниже, поэтому дерево читается без подписей вручную.
+    echelon: Echelon = Echelon.COMPANY
+    #: id старшей группы или None у корневой. Группа с детьми сама не
+    #: воюет — дерутся её листья, а она показывает их сумму.
+    parent: str | None = None
     personnel_full: int = Field(ge=0)
     personnel_current: int = Field(ge=0)
     vehicles: list[VehicleGroup] = Field(default_factory=list)
