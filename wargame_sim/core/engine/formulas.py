@@ -184,9 +184,16 @@ def firepower(
     accuracy: float,
     first_strike: float = 1.0,
 ) -> tuple[float, Factors]:
-    """Огневая мощь элемента с расшифровкой модификаторов."""
+    """Огневая мощь элемента с расшифровкой модификаторов.
+
+    Местность сюда не входит намеренно: она влияет на обмен ровно один раз,
+    через укрытие (:func:`cover`). Раньше лес резал огонь, поднимал
+    устойчивость и ещё поглощал потери — три множителя в одну сторону
+    складывались в ×0.21, и на любой местности кроме равнины атака теряла
+    смысл. Асимметрия «обороняться легче» живёт там, где ей и место: в
+    приказах и укреплениях.
+    """
     order = config.order(order_name)
-    terrain = config.terrain_entry(str(environment.terrain))
     weather = config.weather_entry(str(environment.weather))
     time_of_day = config.time_entry(str(environment.time_of_day))
 
@@ -199,7 +206,6 @@ def firepower(
     factors.extend(state_factors, prefix="сост:")
 
     factors.mul(f"приказ:{order_name}", order.attack)
-    factors.mul(f"местность:{environment.terrain}", terrain.attack)
     factors.mul(f"погода:{environment.weather}", weather.accuracy)
     factors.mul(f"время:{environment.time_of_day}", time_of_day.accuracy)
     factors.mul("командир", commander_factor(battalion, config))
@@ -219,9 +225,13 @@ def resilience(
     *,
     order_name: str,
 ) -> tuple[float, Factors]:
-    """Устойчивость элемента с расшифровкой модификаторов."""
+    """Устойчивость элемента с расшифровкой модификаторов.
+
+    Местности здесь тоже нет — см. :func:`firepower`. Остаются приказ и
+    укрепления: первое симметрично по смыслу, второе задаётся каждой
+    стороне отдельно, поэтому окоп помогает тому, кто его вырыл.
+    """
     order = config.order(order_name)
-    terrain = config.terrain_entry(str(environment.terrain))
     fortification = environment.fortification(str(battalion.side))
 
     factors = Factors()
@@ -233,14 +243,18 @@ def resilience(
     factors.extend(state_factors, prefix="сост:")
 
     factors.mul(f"приказ:{order_name}", order.defense)
-    factors.mul(f"местность:{environment.terrain}", terrain.defense)
     factors.mul(f"укрепление:{fortification}", config.cbt.curves.fortification(fortification))
 
     return element.defense * factors.value, factors
 
 
 def cover(battalion: Battalion, environment: Environment, config: AppConfig) -> float:
-    """Доля потерь, поглощаемая укрытием: местность плюс укрепления."""
+    """Доля потерь, поглощаемая укрытием: местность плюс укрепления.
+
+    Единственное место, где местность входит в обмен потерями. Она
+    симметрична — лес укрывает обоих, — и поэтому меняет не исход, а цену
+    и длительность боя. Перевес обороны делают приказ и укрепления.
+    """
     terrain = config.terrain_entry(str(environment.terrain))
     fortification = environment.fortification(str(battalion.side))
     total = terrain.cover + config.cbt.curves.fortification_cover(fortification)

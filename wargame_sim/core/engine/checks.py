@@ -7,13 +7,26 @@ from core.engine.phases.casualties import apply_personnel_loss, apply_vehicle_lo
 from core.engine.rng import RngStreams
 from core.engine.state import SIDES, BattleState, TurnData, element_key
 from core.log import BattleLog
-from core.models import BattalionState, ContactLevel, IntelLevel, Order
+from core.models import BattalionState, ContactLevel, Element, IntelLevel, Order
 
 PHASE = "checks"
 
 
-def _set_order(state: BattleState, side: str, element, order: Order) -> None:
+def _set_order(
+    state: BattleState,
+    side: str,
+    element: Element,
+    order: Order,
+    config: AppConfig | None = None,
+) -> None:
+    """Сменить приказ элемента; смена стоит готовности, как и команда ГМ."""
     element.order = order
+    if config is None or not config.tog.readiness:
+        return
+    limits = config.cbt.readiness
+    element.readiness = max(
+        limits.min, min(limits.max, element.readiness - limits.order_change_cost)
+    )
 
 
 def has_withdrawn(state: BattleState, side: str, config: AppConfig) -> bool:
@@ -60,7 +73,7 @@ def check_morale_states(
                 # Брошенная при панике техника достаётся противнику целой —
                 # экипаж уходит своим ходом, поэтому потерь в л/с здесь нет.
                 abandoned = sum(apply_vehicle_loss(state, side, element, abandoned).values())
-                _set_order(state, side, element, Order.PANIC)
+                _set_order(state, side, element, Order.PANIC, config)
                 element.alive = False
                 state.side(side).panicked_elements += 1
                 turn_data.casualties[key] = turn_data.casualties.get(key, 0) + lost
@@ -94,7 +107,7 @@ def check_morale_states(
             current_order = state.battalion(side).order_for(element)
             if element.morale < thresholds.retreat and current_order != Order.RETREAT:
                 before_order = str(current_order)
-                _set_order(state, side, element, Order.RETREAT)
+                _set_order(state, side, element, Order.RETREAT, config)
                 log.add(
                     turn=state.turn,
                     phase=PHASE,

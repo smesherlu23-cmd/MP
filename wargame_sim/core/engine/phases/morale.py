@@ -1,7 +1,10 @@
 """Фаза 10 — мораль (§6.2).
 
-Отрицательная часть изменения делится на устойчивость (приказ × опыт),
-положительная — начисляется как есть.
+Давление на мораль делится на устойчивость: приказ × опыт × командир.
+Положительных слагаемых «просто так» нет — единственный плюс даёт успех
+своей стороны в ходу, и его надо заработать. Иначе рота под огнём набирает
+мораль каждый ход: командир и опыт начисляли по +2.4, а потери за ход
+снимали 0.7, и мораль ползла вверх у тех, кого расстреливают.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from core.config import AppConfig
 from core.engine.formulas import clamp
 from core.engine.state import SIDES, BattleState, TurnData, element_key, other_side
 from core.log import BattleLog
+from core.models import Element
 
 PHASE = "morale"
 
@@ -24,6 +28,50 @@ def _side_success(state: BattleState, turn_data: TurnData) -> dict[str, float]:
         ]
         shares[side] = sum(own) / len(own) if own else 0.0
     return {side: clamp(shares[other_side(side)] - shares[side], -1.0, 1.0) for side in SIDES}
+
+
+def _wear_cohesion(
+    state: BattleState,
+    element: Element,
+    key: str,
+    loss_share: float,
+    suppression_gain: float,
+    config: AppConfig,
+    log: BattleLog,
+) -> None:
+    """Потери и подавление рвут слаженность.
+
+    Считается здесь же, где давление на мораль: входные величины те же, а
+    заводить ради этого отдельную фазу — менять §6.1 без нужды. Собирается
+    слаженность обратно в фазе восстановления и только вне контакта.
+    """
+    cohesion_cfg = config.cbt.cohesion
+    drop = (
+        cohesion_cfg.loss_per_casualty_share * loss_share
+        + cohesion_cfg.loss_per_suppression * suppression_gain
+    )
+    if drop <= 0:
+        return
+    before = element.cohesion
+    element.cohesion = clamp(before - drop, cohesion_cfg.min, cohesion_cfg.max)
+    if element.cohesion == before:
+        return
+    log.add(
+        turn=state.turn,
+        phase=PHASE,
+        actor=key,
+        event="cohesion_lost",
+        before={"cohesion": before},
+        after={"cohesion": element.cohesion},
+        breakdown=[
+            ("от потерь", -cohesion_cfg.loss_per_casualty_share * loss_share),
+            ("от подавления", -cohesion_cfg.loss_per_suppression * suppression_gain),
+        ],
+        text=(
+            f"{element.name}: слаженность {before:.0f}→{element.cohesion:.0f} "
+            f"({-drop:+.1f})."
+        ),
+    )
 
 
 def run(state: BattleState, turn_data: TurnData, config: AppConfig, log: BattleLog) -> None:
@@ -45,27 +93,26 @@ def run(state: BattleState, turn_data: TurnData, config: AppConfig, log: BattleL
             suppression_gain = turn_data.suppression_gain.get(key, 0.0)
             vehicle_loss_share = turn_data.vehicle_loss_share.get(key, 0.0)
 
-            negative = (
+            pressure = (
                 weights.k1_casualties * loss_share
                 + weights.k2_suppression * suppression_gain
                 + weights.k3_vehicle_losses * vehicle_loss_share
                 + (0.0 if has_hq else weights.k4_no_hq)
             )
-            resistance = order.morale_resistance * experience.morale_resistance
-            negative /= resistance if resistance > 0 else 1.0
-
-            commander_term = (
-                weights.k5_commander * battalion.commander_influence
+            commander_hold = (
+                morale_cfg.commander_resistance(battalion.commander_influence)
                 if config.tog.commander_influence
-                else 0.0
+                else 1.0
             )
-            positive = (
-                commander_term
-                + weights.k6_experience * experience.morale_bonus
-                + weights.k7_side_success * max(success[side], 0.0)
+            resistance = (
+                order.morale_resistance * experience.morale_resistance * commander_hold
             )
+            negative = pressure / resistance if resistance > 0 else pressure
 
+            positive = weights.k7_side_success * max(success[side], 0.0)
             delta = positive - negative
+
+            _wear_cohesion(state, element, key, loss_share, suppression_gain, config, log)
             before = element.morale
             element.morale = clamp(before + delta, morale_cfg.min, morale_cfg.max)
             if element.morale == before:
@@ -83,10 +130,11 @@ def run(state: BattleState, turn_data: TurnData, config: AppConfig, log: BattleL
                     ("k2·подавление", -weights.k2_suppression * suppression_gain),
                     ("k3·потери техники", -weights.k3_vehicle_losses * vehicle_loss_share),
                     ("k4·вне связи со штабом", 0.0 if has_hq else -weights.k4_no_hq),
-                    ("устойчивость", resistance),
-                    ("k5·командир", commander_term),
-                    ("k6·опыт", weights.k6_experience * experience.morale_bonus),
-                    ("k7·успех стороны", weights.k7_side_success * max(success[side], 0.0)),
+                    ("давление на мораль", -pressure),
+                    ("устойчивость:приказ", order.morale_resistance),
+                    ("устойчивость:опыт", experience.morale_resistance),
+                    ("устойчивость:командир", commander_hold),
+                    ("k7·успех стороны", positive),
                     ("итого", delta),
                 ],
                 text=(

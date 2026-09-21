@@ -194,6 +194,7 @@ class BattleEngine:
         side_state.personnel_lost.setdefault(element.id, 0)
         side_state.vehicles_lost.setdefault(element.id, 0)
         side_state.in_contact[element.id] = False
+        self._spend_readiness([element], self.config.cbt.readiness.commit_cost)
 
         self.log.add(
             turn=self.state.turn,
@@ -243,6 +244,7 @@ class BattleEngine:
         after = str(battalion.order_for(element))
         if before == after:
             return False
+        self._spend_readiness([element], self.config.cbt.readiness.order_change_cost)
 
         self.log.add(
             turn=self.state.turn,
@@ -254,6 +256,20 @@ class BattleEngine:
             text=f"«{element.name}»: приказ {before} → {after}.",
         )
         return True
+
+    # -- цена команды -------------------------------------------------------
+    def _spend_readiness(self, elements: list[Element], cost: float) -> None:
+        """Снять готовность с групп, которых коснулась команда.
+
+        Перестроение посреди боя не бесплатно: подразделение перестаёт быть
+        готовым действовать сразу. Готовность входит в K_сост и в бросок
+        инициативы, поэтому дробить силы под огнём — решение с ценой.
+        """
+        if not self.config.tog.readiness or cost <= 0:
+            return
+        limits = self.config.cbt.readiness
+        for element in elements:
+            element.readiness = max(limits.min, min(limits.max, element.readiness - cost))
 
     # -- перестроение -------------------------------------------------------
     def split(
@@ -279,6 +295,7 @@ class BattleEngine:
             battalion, element_id, parts, shares=shares, names=names
         )
         self._rehome_registry(side, parent, children)
+        self._spend_readiness(children, self.config.cbt.readiness.split_cost)
         self.log.add(
             turn=self.state.turn,
             phase="command",
@@ -307,6 +324,7 @@ class BattleEngine:
             raise formation.FormationError(f"группы «{element_id}» в отряде нет")
         children = formation.detach_vehicles(battalion, element_id, self.config)
         self._rehome_registry(side, parent, children)
+        self._spend_readiness(children, self.config.cbt.readiness.split_cost)
         foot, crew = children
         self.log.add(
             turn=self.state.turn,
@@ -337,6 +355,7 @@ class BattleEngine:
         names = [leaf.name for leaf in leaves]
         merged = formation.merge(battalion, element_id)
         self._collect_registry(side, merged, leaves)
+        self._spend_readiness([merged], self.config.cbt.readiness.merge_cost)
         self.log.add(
             turn=self.state.turn,
             phase="command",
@@ -442,10 +461,16 @@ class BattleEngine:
         withdrawn = {
             side: checks.has_withdrawn(self.state, side, self.config) for side in SIDES
         }
-        defeated = {
-            side: states[side] in DEFEATED_STATES or withdrawn[side] for side in SIDES
-        }
         tasks = {side: self.state.side(side).task_completed for side in SIDES}
+        # Выполненная задача снимает «поражение по выходу из боя». Засада и
+        # отход тем и заканчиваются, что сторона уходит: считать это
+        # поражением — значит объявлять проигравшим того, кто сделал ровно
+        # то, что ему приказали. Разгром и паника задачей не отменяются.
+        defeated = {
+            side: states[side] in DEFEATED_STATES
+            or (withdrawn[side] and not tasks[side])
+            for side in SIDES
+        }
 
         def reason_for(side: str) -> EndReason:
             if withdrawn[side]:
