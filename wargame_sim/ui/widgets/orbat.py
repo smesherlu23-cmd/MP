@@ -126,9 +126,14 @@ def tree_row(
     selected: bool = False,
     on_select: Callable[[], None] | None = None,
     on_toggle: Callable[[], None] | None = None,
+    menu: Sequence[c.MenuItem] = (),
     last: bool = False,
 ) -> ft.Control:
-    """Строка дерева: лист показывает себя, старшая группа — сумму подгрупп."""
+    """Строка дерева: лист показывает себя, старшая группа — сумму подгрупп.
+
+    Действия над группой доступны прямо здесь, по правой кнопке: искать их
+    кнопками по экрану не надо.
+    """
     element = node.element
     roll = battalion.rollup(element.id)
     reserve = roll.in_reserve
@@ -174,6 +179,7 @@ def tree_row(
         bgcolor=t.ROW_EXPANDED if selected else (t.SURFACE_ALT if node.side == "B" else None),
         last=last,
         on_click=on_select,
+        menu=menu,
     )
 
 

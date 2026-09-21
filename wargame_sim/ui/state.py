@@ -103,6 +103,10 @@ class AppState:
         self.batch_cancelled = False
         self.batch_progress: tuple[int, int] = (0, 0)
         self.notifier: Callable[[str], None] | None = None
+        #: Показать и закрыть модальное окно. Ставит роутер — состояние
+        #: про flet по-прежнему ничего не знает.
+        self.dialog_opener: Callable[[Any], None] | None = None
+        self.dialog_closer: Callable[[], None] | None = None
         self.navigator: Callable[[str], None] | None = None
         self.theme_switcher: Callable[[bool], None] | None = None
 
@@ -213,6 +217,15 @@ class AppState:
         self._save_settings(dark_theme=self.dark_theme)
         if self.theme_switcher is not None:
             self.theme_switcher(self.dark_theme)
+
+    def show_dialog(self, dialog: Any) -> None:
+        """Открыть модальное окно; без запущенного окна — тихо ничего."""
+        if self.dialog_opener is not None:
+            self.dialog_opener(dialog)
+
+    def close_dialog(self) -> None:
+        if self.dialog_closer is not None:
+            self.dialog_closer()
 
     def refresh(self, *controls: Any) -> None:
         """Обновить контролы, если приложение действительно запущено.

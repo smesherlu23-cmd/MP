@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 
 import flet as ft
 
@@ -371,9 +372,14 @@ def table_row(
     bgcolor: str | None = None,
     last: bool = False,
     on_click: Callable[[], None] | None = None,
+    menu: Sequence[MenuItem] = (),
 ) -> ft.Control:
-    """Строка таблицы."""
-    return ft.Container(
+    """Строка таблицы.
+
+    С ``on_click`` или ``menu`` строка становится живой: курсор,
+    подсветка под курсором и меню по правой кнопке (см. :func:`interactive`).
+    """
+    row = ft.Container(
         content=ft.Row(
             [_cell(cell, col) for col, cell in zip(columns, cells, strict=False)],
             spacing=t.GAP_SM,
@@ -385,6 +391,87 @@ def table_row(
         border=None if last else t.border_bottom(t.BORDER_INNER),
         on_click=None if on_click is None else (lambda *_: on_click()),
     )
+    if on_click is None and not menu:
+        return row
+    return interactive(row, on_click=on_click, menu=menu)
+
+
+# --------------------------------------------------------------------------
+# Живая строка: курсор, подсветка, меню по правой кнопке
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class MenuItem:
+    """Пункт контекстного меню строки."""
+
+    label: str
+    action: Callable[[], None]
+    icon: str | None = None
+    #: Разрушительное действие — подписывается цветом потерь.
+    danger: bool = False
+
+
+def _menu_entry(item: MenuItem) -> ft.PopupMenuItem:
+    color = t.LOSS if item.danger else t.TEXT
+    return ft.PopupMenuItem(
+        content=ft.Row(
+            [
+                ft.Icon(item.icon, size=15, color=color) if item.icon else ft.Container(width=0),
+                ft.Text(item.label, style=t.sans(size=t.SIZE_ROW, color=color)),
+            ],
+            spacing=8,
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        height=t.MENU_ITEM_H,
+        on_click=lambda *_: item.action(),
+    )
+
+
+def interactive(
+    row: ft.Container,
+    *,
+    on_click: Callable[[], None] | None = None,
+    menu: Sequence[MenuItem] = (),
+    hover: bool = True,
+) -> ft.Control:
+    """Сделать строку живой.
+
+    Три вещи, которых в интерфейсе не было вовсе: курсор-указатель над
+    кликабельным, подсветка под курсором и меню по правой кнопке. Без них
+    кликабельное неотличимо от некликабельного, и действия приходится
+    искать кнопками по экрану.
+
+    Подсветка меняет ``bgcolor`` самой строки, поэтому выбранная строка
+    (у неё свой фон) под курсором не перекрашивается — иначе выбор
+    «мигал» бы при каждом движении мыши.
+    """
+    base = row.bgcolor
+    if hover and base != t.ROW_EXPANDED:
+
+        def enter(*_: object) -> None:
+            row.bgcolor = t.ROW_HOVER
+            safe_update(row)
+
+        def leave(*_: object) -> None:
+            row.bgcolor = base
+            safe_update(row)
+
+    else:
+        enter = leave = None
+
+    node: ft.Control = ft.GestureDetector(
+        content=row,
+        mouse_cursor=ft.MouseCursor.CLICK if on_click else ft.MouseCursor.BASIC,
+        on_enter=enter,
+        on_exit=leave,
+    )
+    if menu:
+        node = ft.ContextMenu(
+            content=node,
+            secondary_items=[_menu_entry(item) for item in menu],
+            secondary_trigger=ft.ContextMenuTrigger.DOWN,
+        )
+    return node
 
 
 def table(
@@ -610,6 +697,11 @@ def number_field(
     field.on_blur = handle
     field.on_submit = handle
     return shell
+
+
+def share_label(value: float) -> str:
+    """Доля в предпросмотре деления: «1», «3» — без хвоста из нулей."""
+    return _bound(value)
 
 
 def _bound(value: float) -> str:

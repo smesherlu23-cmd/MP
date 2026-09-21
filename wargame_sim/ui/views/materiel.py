@@ -22,6 +22,7 @@ from ui import theme as t
 from ui.shell import aside_block, screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
+from ui.widgets import dialogs as dlg
 from ui.widgets import library as lib
 
 ROUTE = ROUTES["materiel"]
@@ -374,33 +375,53 @@ def build(
             go()
 
     # -- папки --------------------------------------------------------------
-    def create_folder() -> None:
-        """Новая папка появляется внутри открытой — так делается вложенность."""
-        raw = store.raw(spec.key)
-        try:
-            patched, path = folder_ops.create(
-                store.raw_text(spec.key), raw, open_folder, "Новая папка"
-            )
-        except (ConfigError, PatchError):
-            say("Не удалось создать папку — проверьте файл библиотеки.")
-            return
-        if write(patched):
-            app.notify(f"Создана папка «{path}»")
-            go_folder(path)
+    def create_folder(parent: str = "") -> None:
+        """Новая папка появляется внутри указанной — так делается вложенность."""
 
-    def rename_folder(new_name: str) -> None:
-        if not open_folder or not new_name.strip():
+        def make(name: str) -> None:
+            raw = store.raw(spec.key)
+            try:
+                patched, path = folder_ops.create(store.raw_text(spec.key), raw, parent, name)
+            except (ConfigError, PatchError):
+                say("Не удалось создать папку — проверьте файл библиотеки.")
+                return
+            if write(patched):
+                app.notify(f"Создана папка «{path}»")
+                go_folder(path)
+
+        dlg.ask_name(
+            app,
+            "Новая папка" + (f" в «{folder_ops.name_of(parent)}»" if parent else ""),
+            "Имя папки",
+            "",
+            confirm_label="Создать",
+            on_confirm=make,
+        )
+
+    def ask_rename_folder(path: str) -> None:
+        dlg.ask_name(
+            app,
+            f"Переименовать «{folder_ops.name_of(path)}»",
+            "Имя папки",
+            folder_ops.name_of(path),
+            confirm_label="Переименовать",
+            on_confirm=lambda name: rename_folder(name, path),
+        )
+
+    def rename_folder(new_name: str, path: str = "") -> None:
+        target = path or open_folder
+        if not target or not new_name.strip():
             return
         raw = store.raw(spec.key)
         try:
-            patched, path = folder_ops.rename(
-                store.raw_text(spec.key), raw, spec.key, open_folder, new_name
+            patched, moved = folder_ops.rename(
+                store.raw_text(spec.key), raw, spec.key, target, new_name
             )
         except (ConfigError, PatchError):
             say("Не удалось переименовать папку.")
             return
         if write(patched):
-            go_folder(path)
+            go_folder(moved)
 
     def move_folder(new_parent: str) -> None:
         if not open_folder:
@@ -416,18 +437,30 @@ def build(
         if write(patched):
             go_folder(path)
 
-    def delete_folder() -> None:
-        if not open_folder:
+    def delete_folder(path: str = "") -> None:
+        target = path or open_folder
+        if not target:
             return
+        dlg.confirm(
+            app,
+            f"Удалить папку «{folder_ops.name_of(target)}»?",
+            "Записи и вложенные папки поднимутся на уровень выше — ничего "
+            "не пропадёт, но структура изменится.",
+            confirm_label="Удалить",
+            danger=True,
+            on_confirm=lambda: _delete_folder(target),
+        )
+
+    def _delete_folder(target: str) -> None:
         raw = store.raw(spec.key)
         try:
-            patched = folder_ops.remove(store.raw_text(spec.key), raw, spec.key, open_folder)
+            patched = folder_ops.remove(store.raw_text(spec.key), raw, spec.key, target)
         except (ConfigError, PatchError):
             say("Не удалось удалить папку.")
             return
         if write(patched):
-            app.notify(f"Удалена папка «{open_folder}»")
-            go_folder(folder_ops.parent_of(open_folder))
+            app.notify(f"Удалена папка «{target}»")
+            go_folder(folder_ops.parent_of(target))
 
     def reset_library() -> None:
         try:
@@ -441,6 +474,59 @@ def build(
         go()
 
     # -- список -------------------------------------------------------------
+    def folder_menu(path: str) -> list[c.MenuItem]:
+        """Действия над папкой — по правой кнопке прямо на её строке."""
+        if not path:
+            return [
+                c.MenuItem(
+                    "Создать папку",
+                    lambda: create_folder(""),
+                    icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
+                )
+            ]
+        return [
+            c.MenuItem(
+                "Переименовать…",
+                lambda: ask_rename_folder(path),
+                icon=ft.Icons.EDIT_OUTLINED,
+            ),
+            c.MenuItem(
+                "Создать вложенную…",
+                lambda: create_folder(path),
+                icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
+            ),
+            c.MenuItem(
+                "Удалить папку…",
+                lambda: delete_folder(path),
+                icon=ft.Icons.DELETE_OUTLINE,
+                danger=True,
+            ),
+        ]
+
+    def entry_menu(name: str) -> list[c.MenuItem]:
+        return [
+            c.MenuItem("Открыть", lambda: go(name), icon=ft.Icons.OPEN_IN_NEW),
+            c.MenuItem("Копировать", lambda: duplicate(name), icon=ft.Icons.CONTENT_COPY),
+            c.MenuItem(
+                "Удалить…", lambda: ask_remove(name), icon=ft.Icons.DELETE_OUTLINE, danger=True
+            ),
+        ]
+
+    def ask_remove(name: str) -> None:
+        places = app.materiel_usage(spec.key, name)
+        if places:
+            say(f"«{name}» ещё используется: {', '.join(places[:3])}. Сначала замените.")
+            return
+        dlg.confirm(
+            app,
+            f"Удалить «{entries[name].label}»?",
+            "Запись исчезнет из библиотеки. Вернуть её можно только сбросом "
+            "библиотеки к эталону.",
+            confirm_label="Удалить",
+            danger=True,
+            on_confirm=lambda: remove(name),
+        )
+
     def entry_row(name: str, *, last: bool) -> ft.Control:
         entry = entries[name]
         actions = ft.Row(
@@ -455,7 +541,7 @@ def build(
                 ),
                 c.icon_button(
                     ft.Icons.DELETE_OUTLINE,
-                    lambda: remove(name),
+                    lambda: ask_remove(name),
                     size=t.BUTTON_XS_H,
                     icon_size=15,
                     color=t.LOSS,
@@ -480,6 +566,7 @@ def build(
             bgcolor=t.ROW_EXPANDED if name == selected and not open_folder else None,
             last=last,
             on_click=lambda: go(name),
+            menu=entry_menu(name),
         )
 
     rows: list[ft.Control] = []
@@ -491,6 +578,7 @@ def build(
                     len(folder_names),
                     selected=bool(path) and path == open_folder,
                     on_click=(lambda p=path: go_folder(p)) if path else None,
+                    menu=folder_menu(path),
                 )
             )
         if not folder_names:
@@ -513,7 +601,9 @@ def build(
         ft.Column([c.table_head(spec.columns), body], spacing=0, expand=True),
         trailing=[
             c.secondary_button(
-                "Создать папку", create_folder, icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
+                "Создать папку",
+                lambda: create_folder(open_folder),
+                icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
                 height=t.BUTTON_SM_H,
             )
         ],

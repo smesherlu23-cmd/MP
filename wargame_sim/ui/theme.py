@@ -36,6 +36,7 @@ class Palette:
     surface_alt: str  # верхняя полоса, вложенные поля, строки стороны B
     card_bg: str  # фон карточки
     row_expanded: str  # фон раскрытой (выбранной) строки
+    row_hover: str  # фон строки под курсором
     segment_bg: str  # фон сегментированного переключателя
     track: str  # дорожка полосы прогресса
     border: str  # основная граница
@@ -70,6 +71,7 @@ LIGHT = Palette(
     surface_alt="#F7F4EE",
     card_bg="#FBFAF6",
     row_expanded="#F0EDE6",
+    row_hover="#F5F2EC",
     segment_bg="#EDEAE4",
     track="#E4DFD6",
     border="#DBD5CA",
@@ -105,6 +107,7 @@ DARK = Palette(
     surface_alt="#201E1B",
     card_bg="#232120",
     row_expanded="#2C2926",
+    row_hover="#272522",
     segment_bg="#1B1A18",
     track="#332F2B",
     border="#3B3733",
@@ -135,6 +138,7 @@ NAV_ACTIVE: str = LIGHT.nav_active
 SURFACE_ALT: str = LIGHT.surface_alt
 CARD_BG: str = LIGHT.card_bg
 ROW_EXPANDED: str = LIGHT.row_expanded
+ROW_HOVER: str = LIGHT.row_hover
 SEGMENT_BG: str = LIGHT.segment_bg
 TRACK: str = LIGHT.track
 
@@ -219,6 +223,7 @@ TABLE_HEAD_H = 26
 TABLE_ROW_H = 28
 TABLE_ROW_TALL_H = 42
 CARD_FOOTER_H = 32
+MENU_ITEM_H = 34  # пункт контекстного меню
 BAR_H = 4
 BAR_STACKED_H = 10
 TOGGLE_W = 36

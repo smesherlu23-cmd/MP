@@ -534,11 +534,14 @@ def test_selected_group_gets_its_commands(app: AppState) -> None:
     route = ROUTES["battle"].format(id=app.scenario.id)
 
     app.selected_group = None
-    assert _has(resolve(app, route), "Выберите группу — её можно разделить, свести или дать ей приказ")
+    assert _has(
+        resolve(app, route),
+        "Щелчок выбирает группу, правая кнопка открывает действия над ней",
+    )
 
     app.selected_group = ("A", target.id)
     view = resolve(app, route)
-    assert _has(view, "Разделить")
+    assert _has(view, "Разделить…")
     assert _has(view, "Отделить технику")
 
 
@@ -557,12 +560,12 @@ def test_split_group_shows_its_subgroups(app: AppState) -> None:
         assert _has(view, child.name)
     # у подгруппы сводить нечего, а у старшей группы — есть
     assert _has(view, "Свести") is False
-    assert _has(view, "Разделить") is True
+    assert _has(view, "Разделить…") is True
 
     app.selected_group = ("A", target.id)
     merged_view = resolve(app, route)
     assert _has(merged_view, "Свести") is True
-    assert _has(merged_view, "Разделить") is False
+    assert _has(merged_view, "Разделить…") is False
 
 
 def test_collapsed_group_hides_its_subgroups(app: AppState) -> None:

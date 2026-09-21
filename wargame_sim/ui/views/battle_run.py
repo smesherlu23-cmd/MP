@@ -15,6 +15,7 @@ from ui import theme as t
 from ui.shell import scenario_aside, screen
 from ui.state import ALL, SIDE_A, SIDE_B, SIDE_BOTH, AppState
 from ui.widgets import common as c
+from ui.widgets import dialogs as dlg
 from ui.widgets import journal as j
 from ui.widgets import orbat as ob
 from ui.widgets.battalion import side_panel
@@ -162,11 +163,24 @@ def build(app: AppState, battle_id: str) -> ft.View:
         redraw_all()
 
     def split_group(side: str, element_id: str) -> None:
-        def work() -> None:
-            children = engine.split(side, element_id, app.split_parts)
-            app.selected_group = (side, children[0].id)
+        """Открыть окно деления: доли и предпросмотр до, а не после."""
+        battalion = engine.state.battalion(side)
+        element = battalion.element(element_id)
+        if element is None:
+            return
 
-        guarded(work)
+        def apply_split(parts: int, shares: list[float]) -> None:
+            app.split_parts = parts
+
+            def work() -> None:
+                children = engine.split(side, element_id, parts, shares=shares)
+                app.selected_group = (side, children[0].id)
+
+            guarded(work)
+
+        dlg.split_group(
+            app, battalion, element, on_split=apply_split, parts=app.split_parts
+        )
 
     def detach_group(side: str, element_id: str) -> None:
         def work() -> None:
@@ -197,9 +211,55 @@ def build(app: AppState, battle_id: str) -> ft.View:
                 engine.withdraw(side, leaf.id)
         redraw_all()
 
-    def set_parts(value: int) -> None:
-        app.split_parts = value
-        redraw_tree()
+    def group_menu(side: str, element: object) -> list[c.MenuItem]:
+        """Что можно сделать с группой — по правой кнопке, а не поиском кнопок."""
+        if engine.finished:
+            return []
+        battalion = engine.state.battalion(side)
+        leaf = battalion.is_leaf(element)
+        roll = battalion.rollup(element.id)
+        items: list[c.MenuItem] = []
+        if leaf and element.engaged and element.alive:
+            items.append(
+                c.MenuItem(
+                    "Разделить…",
+                    lambda: split_group(side, element.id),
+                    icon=ft.Icons.CALL_SPLIT,
+                )
+            )
+            if element.has_vehicles:
+                items.append(
+                    c.MenuItem(
+                        "Отделить технику",
+                        lambda: detach_group(side, element.id),
+                        icon=ft.Icons.DIRECTIONS_CAR_OUTLINED,
+                    )
+                )
+        if not leaf:
+            items.append(
+                c.MenuItem(
+                    "Свести подгруппы",
+                    lambda: merge_group(side, element.id),
+                    icon=ft.Icons.MERGE,
+                )
+            )
+        if roll.engaged < roll.leaves:
+            items.append(
+                c.MenuItem(
+                    "Ввести в бой",
+                    lambda: commit_branch(side, element.id),
+                    icon=ft.Icons.PLAY_ARROW,
+                )
+            )
+        elif engine.turn == 0:
+            items.append(
+                c.MenuItem(
+                    "Отвести в резерв",
+                    lambda: withdraw_branch(side, element.id),
+                    icon=ft.Icons.PAUSE,
+                )
+            )
+        return items
 
     # -- дерево групп -------------------------------------------------------
     def visible_sides() -> tuple[str, ...]:
@@ -225,6 +285,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
                         selected=app.selected_group == node.key,
                         on_select=lambda s=side, e=node.element.id: select(s, e),
                         on_toggle=lambda s=side, e=node.element.id: toggle_branch(s, e),
+                        menu=group_menu(side, node.element),
                         last=index == len(nodes) - 1,
                     )
                 )
@@ -243,7 +304,12 @@ def build(app: AppState, battle_id: str) -> ft.View:
         picked = selected()
         if picked is None:
             return c.card_footer(
-                [ob.hint("Выберите группу — её можно разделить, свести или дать ей приказ")]
+                [
+                    ob.hint(
+                        "Щелчок выбирает группу, правая кнопка открывает "
+                        "действия над ней"
+                    )
+                ]
             )
         side, element = picked
         battalion = engine.state.battalion(side)
@@ -265,10 +331,9 @@ def build(app: AppState, battle_id: str) -> ft.View:
                         size=t.SIZE_META,
                     )
                 )
-                actions.append(ob.parts_switch(app.split_parts, set_parts))
                 actions.append(
                     c.secondary_button(
-                        "Разделить",
+                        "Разделить…",
                         lambda s=side, e=element.id: split_group(s, e),
                         height=t.BUTTON_XS_H,
                     )

@@ -127,6 +127,12 @@ def main(page: ft.Page) -> None:
     def notify(message: str) -> None:
         page.show_dialog(ft.SnackBar(content=ft.Text(message)))
 
+    def open_dialog(dialog: ft.Control) -> None:
+        page.show_dialog(dialog)
+
+    def close_dialog() -> None:
+        page.pop_dialog()
+
     # Один-единственный View на всё приложение: при замене стека Flutter
     # анимирует навигацию, а рамка у нас одинаковая на всех экранах —
     # анимировать нечего. Меняем содержимое, а не сам View.
@@ -174,6 +180,8 @@ def main(page: ft.Page) -> None:
         render()
 
     app.notifier = notify
+    app.dialog_opener = open_dialog
+    app.dialog_closer = close_dialog
     app.navigator = navigate
     app.theme_switcher = switch_theme
     page.on_route_change = lambda *_: render()
