@@ -91,9 +91,15 @@ def ask_name(
     confirm_label: str,
     on_confirm: Callable[[str], None],
 ) -> None:
-    """Спросить имя — при создании и при переименовании."""
+    """Спросить имя — при создании и при переименовании.
+
+    Курсор сразу в поле, Enter подтверждает: окно из одного поля, в котором
+    надо сперва прицелиться мышью, — это лишний щелчок на каждую папку.
+    Escape закрывает окно — его ловит обработчик клавиатуры приложения.
+    """
     holder = {"value": value}
-    field, _ = c.text_field(value, lambda text: holder.update(value=text), expand=True)
+    field, raw = c.text_field(value, lambda text: holder.update(value=text), expand=True)
+    raw.autofocus = True
 
     def accept() -> None:
         name = holder["value"].strip()
@@ -101,6 +107,8 @@ def ask_name(
             return
         app.close_dialog()
         on_confirm(name)
+
+    raw.on_submit = lambda *_: (holder.update(value=raw.value or ""), accept())
 
     app.show_dialog(
         _frame(

@@ -267,28 +267,38 @@ def build(
 ) -> ft.View:
     spec = LIBRARIES.get(library) or LIBRARIES["vehicles"]
     store = app.store
-    entries = entries_of(app, spec)
-    folders = folders_of(app, spec)
 
-    names = list(entries)
-    known_folders = folder_ops.tree(folders)
+    # Состояние экрана живёт здесь и перечитывается `reload()`. Раньше любая
+    # правка звала `app.go` — экран собирался заново, прокрутка и фокус
+    # уезжали в начало: переименовал запись в середине длинного списка —
+    # ищи её сначала.
+    entries: dict[str, Any] = {}
+    folders: list[str] = []
+    known_folders: list[str] = []
     # Справа показывается либо запись, либо папка — что выбрали последним.
-    open_folder = folder if folder in known_folders else ""
-    if folder:
-        app.selected_folder[spec.key] = open_folder
-    elif item:
-        app.selected_folder[spec.key] = ""
-    else:
-        open_folder = app.selected_folder.get(spec.key, "")
-        open_folder = open_folder if open_folder in known_folders else ""
-
+    open_folder = folder if folder else ("" if item else app.selected_folder.get(spec.key, ""))
     selected = item or app.selected_materiel.get(spec.key, "")
-    if selected not in entries:
-        selected = names[0] if names else ""
-    app.selected_materiel[spec.key] = selected
+    query = ""
 
     message = ft.Text(style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3))
     error_holder = ft.Container()
+    list_holder = ft.Container(expand=True)
+    detail_holder = ft.Container(expand=True)
+    count = ft.Text(style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED))
+
+    def reload() -> None:
+        """Перечитать библиотеку и выправить выбор под новое содержимое."""
+        nonlocal entries, folders, known_folders, selected, open_folder
+        entries = entries_of(app, spec)
+        folders = folders_of(app, spec)
+        known_folders = folder_ops.tree(folders)
+        open_folder = open_folder if open_folder in known_folders else ""
+        if selected not in entries:
+            selected = next(iter(entries), "")
+        app.selected_materiel[spec.key] = selected
+        app.selected_folder[spec.key] = open_folder
+
+    reload()
 
     def say(text: str) -> None:
         message.value = text
@@ -305,17 +315,27 @@ def build(
         app.reload_config()
         error_holder.content = None
         app.refresh(error_holder)
+        reload()
+        render()
         return True
 
     def go(name: str = "") -> None:
-        app.selected_materiel[spec.key] = name
-        app.selected_folder[spec.key] = ""
-        suffix = f"?item={name}" if name else ""
-        app.go(ROUTE.format(library=spec.key) + suffix)
+        nonlocal selected, open_folder
+        selected = name or selected
+        open_folder = ""
+        reload()
+        render()
 
     def go_folder(path: str) -> None:
-        app.selected_folder[spec.key] = path
-        app.go(ROUTE.format(library=spec.key) + f"?folder={path}")
+        nonlocal open_folder
+        open_folder = path
+        reload()
+        render()
+
+    def set_query(text: str) -> None:
+        nonlocal query
+        query = text
+        render()
 
     # -- правки -------------------------------------------------------------
     def set_field(name: str, key: str, value: object) -> None:
@@ -569,43 +589,82 @@ def build(
             menu=entry_menu(name),
         )
 
-    rows: list[ft.Control] = []
-    for path, folder_names in lib.folder_entries(entries, folders):
-        if path or folder_names:
-            rows.append(
-                lib.folder_header(
-                    path,
-                    len(folder_names),
-                    selected=bool(path) and path == open_folder,
-                    on_click=(lambda p=path: go_folder(p)) if path else None,
-                    menu=folder_menu(path),
-                )
+    def found() -> list[str]:
+        """Записи под текущий поиск: по названию, ключу, классу и папке."""
+        return [
+            name
+            for name, entry in entries.items()
+            if c.matches(
+                query,
+                entry.label,
+                name,
+                str(getattr(entry, spec.class_attr, "")),
+                entry.folder or "",
             )
-        if not folder_names:
-            if path:
-                rows.append(c.empty_hint("Папка пуста."))
-            continue
-        rows.extend(
-            entry_row(name, last=index == len(folder_names) - 1)
-            for index, name in enumerate(folder_names)
-        )
+        ]
 
-    body: ft.Control = (
-        ft.Column(rows, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
-        if names
-        else c.empty_hint("Библиотека пуста — создайте первую запись.")
+    def list_body() -> ft.Control:
+        """Дерево папок, а при поиске — плоский список найденного.
+
+        Во время поиска папки не показываются намеренно: искать по всей
+        библиотеке и при этом раскладывать находки по папкам — значит
+        снова заставить пользователя искать глазами.
+        """
+        if not entries:
+            return c.empty_hint("Библиотека пуста — создайте первую запись.")
+        if query:
+            names = found()
+            if not names:
+                return c.empty_hint(f"По запросу «{query}» ничего не нашлось.")
+            rows = [
+                entry_row(name, last=index == len(names) - 1)
+                for index, name in enumerate(names)
+            ]
+            return ft.Column(rows, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+
+        rows = []
+        for path, folder_names in lib.folder_entries(entries, folders):
+            if path or folder_names:
+                rows.append(
+                    lib.folder_header(
+                        path,
+                        len(folder_names),
+                        selected=bool(path) and path == open_folder,
+                        on_click=(lambda p=path: go_folder(p)) if path else None,
+                        menu=folder_menu(path),
+                    )
+                )
+            if not folder_names:
+                if path:
+                    rows.append(c.empty_hint("Папка пуста."))
+                continue
+            rows.extend(
+                entry_row(name, last=index == len(folder_names) - 1)
+                for index, name in enumerate(folder_names)
+            )
+        return ft.Column(rows, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+
+    def count_label() -> str:
+        return f"найдено {len(found())} из {len(entries)}" if query else str(len(entries))
+
+    search, focus_search = c.search_box(
+        query, set_query, placeholder=f"Поиск: {spec.item_word}", width=220
     )
+    app.bind("Ctrl+F", focus_search)
+    app.bind("Ctrl+N", create)
 
     list_card = c.framed_card(
-        f"{spec.label} · {len(names)}",
-        ft.Column([c.table_head(spec.columns), body], spacing=0, expand=True),
+        spec.label,
+        ft.Column([c.table_head(spec.columns), list_holder], spacing=0, expand=True),
         trailing=[
+            search,
+            count,
             c.secondary_button(
                 "Создать папку",
                 lambda: create_folder(open_folder),
                 icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
                 height=t.BUTTON_SM_H,
-            )
+            ),
         ],
         footer=c.card_footer(
             [
@@ -714,35 +773,45 @@ def build(
             expand=True,
         )
 
-    if open_folder:
-        inside = sum(
-            1
-            for entry in entries.values()
-            if folder_ops.is_inside(getattr(entry, "folder", "") or "", open_folder)
-        )
-        inside += sum(
-            1
-            for path in known_folders
-            if path != open_folder and folder_ops.is_inside(path, open_folder)
-        )
-        detail = c.framed_card(
-            lib.path_label(open_folder),
-            lib.folder_card(
-                open_folder,
-                folders,
-                inside=inside,
-                on_rename=rename_folder,
-                on_move=move_folder,
-                on_delete=delete_folder,
-            ),
-            expand=True,
-        )
-    elif selected:
-        detail = c.framed_card(entries[selected].label, card_body(selected), expand=True)
-    else:
-        detail = c.framed_card(
+    def detail_card() -> ft.Control:
+        """Справа — карточка папки или карточка записи, смотря что выбрано."""
+        if open_folder:
+            inside = sum(
+                1
+                for entry in entries.values()
+                if folder_ops.is_inside(getattr(entry, "folder", "") or "", open_folder)
+            )
+            inside += sum(
+                1
+                for path in known_folders
+                if path != open_folder and folder_ops.is_inside(path, open_folder)
+            )
+            return c.framed_card(
+                lib.path_label(open_folder),
+                lib.folder_card(
+                    open_folder,
+                    folders,
+                    inside=inside,
+                    on_rename=rename_folder,
+                    on_move=move_folder,
+                    on_delete=delete_folder,
+                ),
+                expand=True,
+            )
+        if selected:
+            return c.framed_card(entries[selected].label, card_body(selected), expand=True)
+        return c.framed_card(
             spec.label, c.empty_hint("Выберите запись в списке слева."), expand=True
         )
+
+    def render() -> None:
+        """Перерисовать список и карточку — экран при этом остаётся на месте."""
+        list_holder.content = list_body()
+        detail_holder.content = detail_card()
+        count.value = count_label()
+        app.refresh(list_holder, detail_holder, count)
+
+    render()
 
     return screen(
         app,
@@ -761,10 +830,12 @@ def build(
         ),
         actions=[
             c.tertiary_button("Сбросить библиотеку", reset_library, icon=ft.Icons.RESTORE),
-            c.primary_button(f"Создать {spec.item_word}", create, icon=ft.Icons.ADD),
+            c.primary_button(
+                f"Создать {spec.item_word}", create, icon=ft.Icons.ADD, tooltip="Ctrl+N"
+            ),
         ],
         body=ft.Column(
-            [message, error_holder, c.columns(list_card, detail, right_width=420)],
+            [message, error_holder, c.columns(list_card, detail_holder, right_width=420)],
             spacing=t.GAP_SM,
             expand=True,
         ),

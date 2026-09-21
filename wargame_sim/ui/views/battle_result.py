@@ -100,22 +100,39 @@ def defeated_note(result: BattleResult) -> str:
 
 
 def build(app: AppState, battle_id: str) -> ft.View:
-    result = app.result or (app.engine.result() if app.engine else None)
+    # Итог собирается только по законченному бою. У незаконченного движок
+    # подставит «ничью по лимиту ходов» — и экран покажет конец, которого
+    # не было. Проверка стоит здесь, а не в кнопке: на этот маршрут ведут
+    # ещё подпункт навигации и карточка с главной.
+    engine = app.engine
+    unfinished = engine is not None and not engine.finished
+    result = app.result or (engine.result() if engine is not None and engine.finished else None)
     if result is None:
         return screen(
             app,
             active="battle",
             active_child="result",
             title="Итог боя",
-            subtitle="Бой ещё не проводился",
+            subtitle=f"Бой идёт, ход {engine.turn}" if unfinished else "Бой ещё не проводился",
             actions=[
                 c.primary_button(
+                    "К пульту боя",
+                    lambda: app.go(ROUTES["battle"].format(id=battle_id)),
+                    icon=ft.Icons.SHIELD_OUTLINED,
+                )
+                if unfinished
+                else c.primary_button(
                     "К настройке боя",
                     lambda: app.go(ROUTES["battle_setup"]),
                     icon=ft.Icons.TUNE,
                 )
             ],
-            body=c.empty_hint("Сначала проведите бой — итог появится здесь."),
+            body=c.empty_hint(
+                "Бой ещё идёт. Итог складывается по законченному бою: "
+                "победитель, причина и остаточная боеспособность."
+                if unfinished
+                else "Сначала проведите бой — итог появится здесь."
+            ),
         )
 
     config = app.config

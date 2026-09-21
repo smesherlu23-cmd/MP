@@ -431,6 +431,10 @@ def build(app: AppState, battle_id: str) -> ft.View:
     def few_turns() -> None:
         run_in_background(lambda: engine.run_turns(FEW_TURNS))
 
+    # Ход — самое частое действие за столом, поэтому оно на клавиатуре.
+    app.bind("Ctrl+Enter", step)
+    app.bind("Ctrl+Shift+Enter", few_turns)
+
     def to_the_end() -> None:
         def work() -> None:
             engine.run()
@@ -582,8 +586,10 @@ def build(app: AppState, battle_id: str) -> ft.View:
         mono_subtitle=True,
         leading_extra=[ft.Container(width=8), indicator],
         actions=[
-            c.primary_button("Шаг", step, icon=ft.Icons.SKIP_NEXT),
-            c.secondary_button(f"+{FEW_TURNS} ходов", few_turns),
+            c.primary_button("Шаг", step, icon=ft.Icons.SKIP_NEXT, tooltip="Ctrl+Enter"),
+            c.secondary_button(
+                f"+{FEW_TURNS} ходов", few_turns, tooltip="Ctrl+Shift+Enter"
+            ),
             c.secondary_button("До конца", to_the_end),
             c.icon_button(ft.Icons.REPLAY, restart, tooltip="Начать заново с тем же сидом"),
             c.secondary_button("Итог", show_result, icon=ft.Icons.ASSESSMENT_OUTLINED),

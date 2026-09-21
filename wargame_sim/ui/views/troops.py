@@ -53,26 +53,32 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
     store = app.store
     config = app.config
     troops = config.troops.troops
-    folders = list(config.troops.folders)
-
-    names = list(troops)
-    known_folders = folder_ops.tree(folders)
-    open_folder = folder if folder in known_folders else ""
-    if folder:
-        app.selected_troop_folder = open_folder
-    elif troop_id:
-        app.selected_troop_folder = ""
-    else:
-        open_folder = app.selected_troop_folder
-        open_folder = open_folder if open_folder in known_folders else ""
-
+    folders: list[str] = []
+    known_folders: list[str] = []
+    open_folder = folder if folder else ("" if troop_id else app.selected_troop_folder)
     selected = troop_id or app.selected_troop
-    if selected not in troops:
-        selected = names[0] if names else ""
-    app.selected_troop = selected
+    query = ""
 
     message = ft.Text(style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3))
     error_holder = ft.Container()
+    list_holder = ft.Container(expand=True)
+    detail_holder = ft.Container(expand=True)
+    count = ft.Text(style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED))
+
+    def reload() -> None:
+        """Перечитать типы солдат и выправить выбор под новое содержимое."""
+        nonlocal config, troops, folders, known_folders, selected, open_folder
+        config = app.config
+        troops = config.troops.troops
+        folders = list(config.troops.folders)
+        known_folders = folder_ops.tree(folders)
+        open_folder = open_folder if open_folder in known_folders else ""
+        if selected not in troops:
+            selected = next(iter(troops), "")
+        app.selected_troop = selected
+        app.selected_troop_folder = open_folder
+
+    reload()
 
     def say(text: str) -> None:
         message.value = text
@@ -89,16 +95,27 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
         app.reload_config()
         error_holder.content = None
         app.refresh(error_holder)
+        reload()
+        render()
         return True
 
     def go(name: str = "") -> None:
-        app.selected_troop = name
-        app.selected_troop_folder = ""
-        app.go(f"{ROUTE}?troop_id={name}" if name else ROUTE)
+        nonlocal selected, open_folder
+        selected = name or selected
+        open_folder = ""
+        reload()
+        render()
 
     def go_folder(path: str) -> None:
-        app.selected_troop_folder = path
-        app.go(f"{ROUTE}?folder={path}")
+        nonlocal open_folder
+        open_folder = path
+        reload()
+        render()
+
+    def set_query(text: str) -> None:
+        nonlocal query
+        query = text
+        render()
 
     def set_field(name: str, key: str, value: object) -> None:
         try:
@@ -375,43 +392,82 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
             menu=troop_menu(name),
         )
 
-    rows: list[ft.Control] = []
-    for path, folder_names in lib.folder_entries(troops, folders):
-        if path or folder_names:
-            rows.append(
-                lib.folder_header(
-                    path,
-                    len(folder_names),
-                    selected=bool(path) and path == open_folder,
-                    on_click=(lambda p=path: go_folder(p)) if path else None,
-                    menu=folder_menu(path),
-                )
+    def found() -> list[str]:
+        """Типы под текущий поиск: по названию, ключу, оружию и папке."""
+        return [
+            name
+            for name, entry in troops.items()
+            if c.matches(
+                query,
+                entry.label,
+                name,
+                config.gear_entry(entry.gear).label,
+                config.weapon(entry.weapon).label,
+                entry.folder or "",
             )
-        if not folder_names:
-            if path:
-                rows.append(c.empty_hint("Папка пуста."))
-            continue
-        rows.extend(
-            troop_row(name, last=index == len(folder_names) - 1)
-            for index, name in enumerate(folder_names)
-        )
+        ]
 
-    body: ft.Control = (
-        ft.Column(rows, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
-        if names
-        else c.empty_hint("Типов солдат пока нет — создайте первый.")
+    def list_body() -> ft.Control:
+        """Дерево папок, а при поиске — плоский список найденного."""
+        if not troops:
+            return c.empty_hint("Типов солдат пока нет — создайте первый.")
+        if query:
+            names = found()
+            if not names:
+                return c.empty_hint(f"По запросу «{query}» ничего не нашлось.")
+            return ft.Column(
+                [
+                    troop_row(name, last=index == len(names) - 1)
+                    for index, name in enumerate(names)
+                ],
+                spacing=0,
+                scroll=ft.ScrollMode.AUTO,
+                expand=True,
+            )
+
+        rows: list[ft.Control] = []
+        for path, folder_names in lib.folder_entries(troops, folders):
+            if path or folder_names:
+                rows.append(
+                    lib.folder_header(
+                        path,
+                        len(folder_names),
+                        selected=bool(path) and path == open_folder,
+                        on_click=(lambda p=path: go_folder(p)) if path else None,
+                        menu=folder_menu(path),
+                    )
+                )
+            if not folder_names:
+                if path:
+                    rows.append(c.empty_hint("Папка пуста."))
+                continue
+            rows.extend(
+                troop_row(name, last=index == len(folder_names) - 1)
+                for index, name in enumerate(folder_names)
+            )
+        return ft.Column(rows, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+
+    def count_label() -> str:
+        return f"найдено {len(found())} из {len(troops)}" if query else str(len(troops))
+
+    search, focus_search = c.search_box(
+        query, set_query, placeholder="Поиск: тип солдата", width=220
     )
+    app.bind("Ctrl+F", focus_search)
+    app.bind("Ctrl+N", create)
 
     list_card = c.framed_card(
-        f"Типы солдат · {len(names)}",
-        ft.Column([c.table_head(COLUMNS), body], spacing=0, expand=True),
+        "Типы солдат",
+        ft.Column([c.table_head(COLUMNS), list_holder], spacing=0, expand=True),
         trailing=[
+            search,
+            count,
             c.secondary_button(
                 "Создать папку",
                 lambda: create_folder(open_folder),
                 icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
                 height=t.BUTTON_SM_H,
-            )
+            ),
         ],
         footer=c.card_footer(
             [
@@ -556,33 +612,45 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
             expand=True,
         )
 
-    if open_folder:
-        inside = sum(
-            1 for entry in troops.values() if folder_ops.is_inside(entry.folder or "", open_folder)
-        )
-        inside += sum(
-            1
-            for path in known_folders
-            if path != open_folder and folder_ops.is_inside(path, open_folder)
-        )
-        detail = c.framed_card(
-            lib.path_label(open_folder),
-            lib.folder_card(
-                open_folder,
-                folders,
-                inside=inside,
-                on_rename=rename_folder,
-                on_move=move_folder,
-                on_delete=delete_folder,
-            ),
-            expand=True,
-        )
-    elif selected:
-        detail = c.framed_card(troops[selected].label, card_body(selected), expand=True)
-    else:
-        detail = c.framed_card(
+    def detail_card() -> ft.Control:
+        """Справа — карточка папки или карточка типа, смотря что выбрано."""
+        if open_folder:
+            inside = sum(
+                1
+                for entry in troops.values()
+                if folder_ops.is_inside(entry.folder or "", open_folder)
+            )
+            inside += sum(
+                1
+                for path in known_folders
+                if path != open_folder and folder_ops.is_inside(path, open_folder)
+            )
+            return c.framed_card(
+                lib.path_label(open_folder),
+                lib.folder_card(
+                    open_folder,
+                    folders,
+                    inside=inside,
+                    on_rename=rename_folder,
+                    on_move=move_folder,
+                    on_delete=delete_folder,
+                ),
+                expand=True,
+            )
+        if selected:
+            return c.framed_card(troops[selected].label, card_body(selected), expand=True)
+        return c.framed_card(
             "Тип солдата", c.empty_hint("Выберите тип в списке слева."), expand=True
         )
+
+    def render() -> None:
+        """Перерисовать список и карточку — экран при этом остаётся на месте."""
+        list_holder.content = list_body()
+        detail_holder.content = detail_card()
+        count.value = count_label()
+        app.refresh(list_holder, detail_holder, count)
+
+    render()
 
     # -- из чего складывается штат -----------------------------------------
     staffed = [
@@ -617,10 +685,10 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
         aside=aside,
         actions=[
             c.tertiary_button("Сбросить типы", reset_library, icon=ft.Icons.RESTORE),
-            c.primary_button("Создать тип", create, icon=ft.Icons.ADD),
+            c.primary_button("Создать тип", create, icon=ft.Icons.ADD, tooltip="Ctrl+N"),
         ],
         body=ft.Column(
-            [message, error_holder, c.columns(list_card, detail, right_width=420)],
+            [message, error_holder, c.columns(list_card, detail_holder, right_width=420)],
             spacing=t.GAP_SM,
             expand=True,
         ),

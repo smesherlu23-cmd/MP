@@ -700,6 +700,70 @@ def number_field(
     return shell
 
 
+def search_box(
+    value: str,
+    on_change: Callable[[str], None],
+    *,
+    placeholder: str = "Поиск",
+    width: int = 260,
+) -> tuple[ft.Control, Callable[[], None]]:
+    """Поле поиска и функция «поставить в него курсор».
+
+    Контрол создаётся **один раз** и сам управляет крестиком. Пересобирать
+    его на каждый символ нельзя: новый `TextField` теряет фокус, и набрать
+    больше одной буквы становится невозможно.
+    """
+    field, raw = text_field(value, on_change, placeholder=placeholder, expand=True)
+
+    def clear() -> None:
+        raw.value = ""
+        safe_update(raw)
+        changed("")
+
+    clear_button = icon_button(
+        ft.Icons.CLOSE, clear, size=t.BUTTON_XS_H, icon_size=14, tooltip="Очистить поиск"
+    )
+    clear_button.visible = bool(value)
+
+    def changed(text: str) -> None:
+        clear_button.visible = bool(text)
+        safe_update(clear_button)
+        on_change(text)
+
+    raw.on_change = lambda *_: changed(raw.value or "")
+
+    def focus() -> None:
+        """Поставить курсор в поле — на это повешен Ctrl+F."""
+        with contextlib.suppress(RuntimeError, AssertionError):
+            raw.focus()
+
+    box = ft.Container(
+        content=ft.Row(
+            [ft.Icon(ft.Icons.SEARCH, size=17, color=t.TEXT_MUTED), field, clear_button],
+            spacing=6,
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        height=t.BUTTON_H,
+        width=width,
+        padding=ft.Padding.only(left=10, right=4),
+        bgcolor=t.CARD_BG,
+        border=ft.Border.all(1, t.BORDER),
+        border_radius=t.R_BUTTON,
+        alignment=ft.Alignment.CENTER_LEFT,
+    )
+    return box, focus
+
+
+def matches(query: str, *fields: str) -> bool:
+    """Все слова запроса встречаются хоть в одном из полей записи."""
+    words = query.casefold().split()
+    if not words:
+        return True
+    haystack = " ".join(field.casefold() for field in fields)
+    return all(word in haystack for word in words)
+
+
 def share_label(value: float) -> str:
     """Доля в предпросмотре деления: «1», «3» — без хвоста из нулей."""
     return _bound(value)

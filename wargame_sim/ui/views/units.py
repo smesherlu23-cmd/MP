@@ -37,6 +37,9 @@ def build(app: AppState) -> ft.View:
     def refresh() -> None:
         app.go(ROUTE)
 
+    def bind_shortcuts() -> None:
+        app.bind("Ctrl+N", create_typical)
+
     def create_typical() -> None:
         battalion = make_battalion(new_id("bat"), "Новый батальон", Side.A, app.config)
         app.save_unit(battalion)
@@ -303,6 +306,7 @@ def build(app: AppState) -> ft.View:
         width=420,
     )
 
+    bind_shortcuts()
     broken = app.broken_units()
     warnings: list[ft.Control] = []
     if broken:
@@ -322,7 +326,9 @@ def build(app: AppState) -> ft.View:
             c.tertiary_button("Импорт JSON", pick_import, icon=ft.Icons.UPLOAD_FILE),
             c.secondary_button("Пустой", create_empty),
             c.secondary_button("Взвод", create_platoon),
-            c.primary_button("Батальон", create_typical, icon=ft.Icons.ADD),
+            c.primary_button(
+                "Батальон", create_typical, icon=ft.Icons.ADD, tooltip="Ctrl+N"
+            ),
         ],
         body=ft.Column(
             [

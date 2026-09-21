@@ -10,6 +10,7 @@ import json
 import shutil
 from dataclasses import fields
 from pathlib import Path
+from types import SimpleNamespace
 
 import flet as ft
 import pytest
@@ -378,7 +379,8 @@ def test_attention_rows_are_sorted_and_capped(app: AppState) -> None:
 def test_materiel_lists_every_library(app: AppState, library: str, title: str) -> None:
     view = materiel.build(app, library)
     entries = materiel.entries_of(app, materiel.LIBRARIES[library])
-    assert _has(view, f"{title} · {len(entries)}")
+    assert _has(view, title)
+    assert _has(view, str(len(entries))), "счётчик записей в шапке карточки"
     assert _has(view, f"Мат.часть · {title}")
 
 
@@ -1098,3 +1100,154 @@ def test_import_offers_a_file_dialog(app: AppState, tmp_path: Path) -> None:
 
     assert asked and asked[0][1] == ("json",)
     assert len(app.units()) == before + 1
+
+
+# --------------------------------------------------------------------------
+# Точечная перерисовка, поиск и клавиатура
+# --------------------------------------------------------------------------
+def _routes_taken(app: AppState) -> list[str]:
+    """Перехват переходов: точечная перерисовка обязана обходиться без них."""
+    taken: list[str] = []
+    app.navigator = taken.append
+    return taken
+
+
+def test_editing_a_library_does_not_rebuild_the_screen(app: AppState) -> None:
+    """Правка записи перерисовывает список, а не уводит экран на новый круг."""
+    view = materiel.build(app, "vehicles")
+    taken = _routes_taken(app)
+    before = materiel.entries_of(app, materiel.LIBRARIES["vehicles"])
+
+    _menu_action(view, "Копировать")()
+
+    assert taken == [], "экран собрался заново — прокрутка и фокус уехали"
+    after = materiel.entries_of(app, materiel.LIBRARIES["vehicles"])
+    assert len(after) == len(before) + 1
+    copied = next(name for name in after if name not in before)
+    assert after[copied].label in _texts(view), "список не обновился"
+
+
+def test_folder_click_does_not_rebuild_the_screen(app: AppState) -> None:
+    """Выбор папки тоже перерисовка, а не переход."""
+    from core.config import folders as folder_ops
+
+    store = app.store
+    patched, _ = folder_ops.create(
+        store.raw_text("weapons"), store.raw("weapons"), "", "Гранатомёты"
+    )
+    store.save_text("weapons", patched)
+    app.reload_config()
+
+    view = materiel.build(app, "weapons")
+    taken = _routes_taken(app)
+    _menu_action(view, "Открыть")()
+
+    assert taken == []
+
+
+def test_search_filters_the_library(app: AppState) -> None:
+    """Поиск сужает список и честно показывает, сколько нашлось."""
+    view = materiel.build(app, "vehicles")
+    entries = materiel.entries_of(app, materiel.LIBRARIES["vehicles"])
+    target = next(iter(entries.values()))
+
+    _search(view)(target.label)
+    shown = _texts(view)
+
+    assert f"найдено 1 из {len(entries)}" in shown
+    assert target.label in shown
+    others = [entry.label for entry in entries.values() if entry.label != target.label]
+    assert all(label not in shown for label in others)
+
+
+def test_search_that_finds_nothing_says_so(app: AppState) -> None:
+    """Пустой результат — это сообщение, а не пустая таблица."""
+    view = materiel.build(app, "gear")
+    _search(view)("зззз")
+    assert any("ничего не нашлось" in text for text in _texts(view))
+
+
+def test_search_field_survives_typing(app: AppState) -> None:
+    """Поле поиска не пересобирается: иначе фокус теряется на первой букве."""
+    view = materiel.build(app, "vehicles")
+    before = _search_control(view)
+    _search(view)("т")
+    assert _search_control(view) is before
+
+
+def _search_control(node: object) -> object:
+    """Сам TextField поиска — по подсказке внутри него."""
+    for control in _walk(node):
+        hint = getattr(control, "hint_text", None)
+        if isinstance(hint, str) and hint.startswith("Поиск"):
+            return control
+    raise AssertionError("поля поиска нет на экране")
+
+
+def _search(node: object):
+    """Набрать текст в поле поиска так, как это делает пользователь."""
+    field = _search_control(node)
+
+    def type_in(text: str) -> None:
+        field.value = text
+        field.on_change(None)
+
+    return type_in
+
+
+def test_shortcuts_belong_to_the_screen(app: AppState) -> None:
+    """Горячие клавиши снимаются вместе с экраном, а не копятся."""
+    resolve(app, ROUTES["materiel"].format(library="vehicles"))
+    assert "Ctrl+F" in app.shortcuts
+    assert "Ctrl+N" in app.shortcuts
+
+    resolve(app, ROUTES["home"])
+    assert app.shortcuts == {}, "Ctrl+F с библиотеки продолжал бы работать на главной"
+
+
+def test_ctrl_enter_takes_a_turn(app: AppState) -> None:
+    """Самое частое действие боя доступно с клавиатуры."""
+    engine = app.start_battle()
+    resolve(app, ROUTES["battle"].format(id=app.scenario.id))
+
+    assert app.press("Ctrl+Enter") is True
+    assert engine.turn == 1
+    assert app.press("Ctrl+Shift+Enter") is True
+    assert engine.turn == 6
+
+
+def test_unknown_shortcut_is_not_swallowed(app: AppState) -> None:
+    """Чужое сочетание возвращает False — его разберёт роутер."""
+    resolve(app, ROUTES["home"])
+    assert app.press("Ctrl+7") is False
+
+
+def test_key_name_reads_modifiers(app: AppState) -> None:
+    """Cmd приравнен к Ctrl: на macOS модификатор действий — он."""
+    from ui.app import key_name
+
+    def make(**kw: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            key=kw.get("key", "Enter"),
+            shift=kw.get("shift", False),
+            ctrl=kw.get("ctrl", False),
+            alt=kw.get("alt", False),
+            meta=kw.get("meta", False),
+        )
+    assert key_name(make(ctrl=True)) == "Ctrl+Enter"
+    assert key_name(make(meta=True)) == "Ctrl+Enter"
+    assert key_name(make(ctrl=True, shift=True)) == "Ctrl+Shift+Enter"
+    assert key_name(make(key="Escape")) == "Escape"
+
+
+def test_result_route_does_not_invent_an_outcome(app: AppState) -> None:
+    """На маршрут итога ведут ещё навигация и главная — проверка стоит там."""
+    engine = app.start_battle()
+    engine.run_turns(3)
+    view = resolve(app, ROUTES["battle_result"].format(id=app.scenario.id))
+    shown = _texts(view)
+
+    assert app.result is None
+    assert not any("Ничья" in text for text in shown)
+    assert f"Бой идёт, ход {engine.turn}" in shown
+    assert _has(view, "К пульту боя")

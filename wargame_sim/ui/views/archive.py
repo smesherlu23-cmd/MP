@@ -300,28 +300,10 @@ def build(app: AppState) -> ft.View:
     outcome_switch = ft.Container(
         content=c.segmented(OUTCOME_OPTIONS, app.archive_outcome, set_outcome)
     )
-    search_input, search_field = c.text_field(
-        app.archive_query,
-        set_query,
-        placeholder="Поиск по сценарию или сиду",
-        width=260,
-        nested=True,
+    search, focus_search = c.search_box(
+        app.archive_query, set_query, placeholder="Поиск по сценарию или сиду"
     )
-    search_field.on_change = lambda *_: set_query(search_field.value or "")
-    search = ft.Container(
-        content=ft.Row(
-            [ft.Icon(ft.Icons.SEARCH, size=17, color=t.TEXT_MUTED), search_input],
-            spacing=6,
-            tight=True,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        ),
-        height=t.BUTTON_H,
-        padding=ft.Padding.only(left=10),
-        bgcolor=t.CARD_BG,
-        border=ft.Border.all(1, t.BORDER),
-        border_radius=t.R_BUTTON,
-        alignment=ft.Alignment.CENTER_LEFT,
-    )
+    app.bind("Ctrl+F", focus_search)
 
     render_results()
     render_scenarios()

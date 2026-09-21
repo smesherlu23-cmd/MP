@@ -16,7 +16,7 @@ import flet as ft
 
 from core.config import ConfigError
 from ui import theme as t
-from ui.shell import screen
+from ui.shell import NAV, screen
 from ui.state import ROUTES, AppState
 from ui.views import (
     archive,
@@ -52,8 +52,31 @@ ROUTE_TABLE: tuple[tuple[re.Pattern[str], Builder], ...] = (
 )
 
 
+#: Ctrl+1…8 — разделы навигации по порядку, как в браузере или мессенджере.
+SECTION_KEYS: tuple[str, ...] = tuple(str(index + 1) for index in range(len(NAV)))
+
+
+def key_name(event: ft.KeyboardEvent) -> str:
+    """Сочетание в виде «Ctrl+Shift+Enter».
+
+    Cmd приравнен к Ctrl: на macOS модификатор действий — он.
+    """
+    parts: list[str] = []
+    if event.ctrl or event.meta:
+        parts.append("Ctrl")
+    if event.alt:
+        parts.append("Alt")
+    if event.shift:
+        parts.append("Shift")
+    parts.append(event.key)
+    return "+".join(parts)
+
+
 def resolve(app: AppState, route: str) -> ft.View:
     """Построить экран по маршруту; неизвестный маршрут — понятная заглушка."""
+    # Горячие клавиши принадлежат экрану: старые снимаются вместе с ним,
+    # иначе Ctrl+F с библиотеки продолжал бы работать в бою.
+    app.shortcuts.clear()
     parsed = urlparse(route or "/")
     path = parsed.path or "/"
     query = {key: values[0] for key, values in parse_qs(parsed.query).items()}
@@ -224,6 +247,22 @@ def main(page: ft.Page) -> None:
         paint(dark)
         render()
 
+    def on_key(event: ft.KeyboardEvent) -> None:
+        """Горячие клавиши окна.
+
+        Все сочетания — с модификатором либо Escape: обработчик один на всё
+        окно и не знает, стоит ли курсор в текстовом поле, а `Пробел` без
+        модификатора попадал бы сюда прямо во время набора.
+        """
+        keys = key_name(event)
+        if keys == "Escape":
+            close_dialog()
+            return
+        if app.press(keys):
+            return
+        if keys.startswith("Ctrl+") and event.key in SECTION_KEYS:
+            navigate(NAV[SECTION_KEYS.index(event.key)].route)
+
     app.notifier = notify
     app.dialog_opener = open_dialog
     app.dialog_closer = close_dialog
@@ -231,6 +270,7 @@ def main(page: ft.Page) -> None:
     app.file_asker = ask_file
     app.navigator = navigate
     app.theme_switcher = switch_theme
+    page.on_keyboard_event = on_key
     page.on_route_change = lambda *_: render()
     page.on_view_pop = lambda *_: back()
     paint(app.dark_theme)  # запомненная с прошлого запуска тема

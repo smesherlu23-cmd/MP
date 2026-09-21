@@ -123,6 +123,9 @@ class AppState:
         self.directory_asker: DirectoryAsker | None = None
         self.file_asker: FileAsker | None = None
         self.navigator: Callable[[str], None] | None = None
+        #: Горячие клавиши текущего экрана: «Ctrl+Enter» → что сделать.
+        #: Экран заполняет её в `build`, роутер чистит перед сборкой.
+        self.shortcuts: dict[str, Callable[[], None]] = {}
         self.theme_switcher: Callable[[bool], None] | None = None
 
         # -- экранное состояние редизайна -----------------------------------
@@ -229,6 +232,23 @@ class AppState:
         self._save_settings(dark_theme=self.dark_theme)
         if self.theme_switcher is not None:
             self.theme_switcher(self.dark_theme)
+
+    def bind(self, keys: str, action: Callable[[], None]) -> None:
+        """Повесить действие экрана на горячую клавишу.
+
+        Все сочетания экранов — с модификатором: обработчик клавиатуры
+        общий на всё окно, и `Пробел` или `Del` без модификатора попадал
+        бы в него прямо во время набора текста в поле.
+        """
+        self.shortcuts[keys] = action
+
+    def press(self, keys: str) -> bool:
+        """Нажать сочетание. True — если его кто-то обработал."""
+        action = self.shortcuts.get(keys)
+        if action is None:
+            return False
+        action()
+        return True
 
     def show_dialog(self, dialog: Any) -> None:
         """Открыть модальное окно; без запущенного окна — тихо ничего."""
