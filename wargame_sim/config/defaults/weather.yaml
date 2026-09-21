@@ -1,4 +1,9 @@
 # Модификаторы погоды.
+#
+# accuracy сдержанный по той же причине, что и укрытие местности: снижение
+# общей летальности играет за обороняющегося — ему достаточно выстоять, —
+# поэтому широкий разброс превращает непогоду в автоматическую победу
+# обороны.
 # detection — заметность; accuracy — точность огня;
 # fatigue   — прирост усталости; vehicles — работоспособность техники.
 schema_version: 1
@@ -10,16 +15,16 @@ weather:
     vehicles: 1.00
   дождь:
     detection: 0.85
-    accuracy: 0.90
+    accuracy: 0.95
     fatigue: 1.15
     vehicles: 0.92
   снег:
     detection: 0.80
-    accuracy: 0.85
-    fatigue: 1.30
+    accuracy: 0.92
+    fatigue: 1.18
     vehicles: 0.85
   туман:
     detection: 0.55
-    accuracy: 0.75
+    accuracy: 0.88
     fatigue: 1.05
     vehicles: 0.95

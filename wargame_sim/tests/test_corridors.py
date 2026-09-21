@@ -26,6 +26,7 @@ from collections import Counter
 
 import pytest
 
+from core.batch import run_batch
 from core.config import AppConfig
 from core.engine import BattleEngine
 from core.engine.phases import recovery
@@ -45,45 +46,44 @@ from core.samples import make_battalion, make_scenario
 #: хватает, чтобы отличить «бывает» от «не бывает никогда».
 RUNS = 60
 
+#: Для условий боя выборка больше: в самых тяжёлых (ночь, снег, застройка)
+#: атака побеждает в 6–10% случаев, и на шестидесяти прогонах тест «победы
+#: бывают» сам иногда падал бы на пустом месте.
+ENVIRONMENT_RUNS = 120
+
 
 class Outcome:
-    """Итоги серии прогонов — то, по чему судят о коридоре."""
+    """Итоги серии прогонов — то, по чему судят о коридоре.
 
-    def __init__(self, config: AppConfig, runs: int = RUNS, **scenario_kwargs) -> None:
-        self.wins_a = 0
-        self.wins_b = 0
-        self.turns: list[int] = []
-        self.reasons: Counter[str] = Counter()
-        self.winner_power: list[float] = []
-        self.losses: list[float] = []
-        self.limit = 0
-        for seed in range(runs):
-            scenario = make_scenario(config, seed=seed, **scenario_kwargs)
-            engine = BattleEngine(scenario, config, verbose=False)
-            result = engine.run()
-            winner = str(result.winner)
-            self.wins_a += winner == "A"
-            self.wins_b += winner == "B"
-            self.turns.append(result.turns)
-            self.reasons[str(result.end_reason)] += 1
-            self.losses.append(result.side_b.personnel_loss_ratio)
-            self.limit = scenario.environment.max_turns
-            if winner in ("A", "B"):
-                self.winner_power.append(engine.state.battalion(winner).combat_power)
+    Считается через :func:`core.batch.run_batch`, то есть в несколько
+    процессов: последовательный цикл на тех же выборках занимал полчаса, а
+    набор тестов, который никто не гоняет, ничего не охраняет.
+    """
+
+    def __init__(
+        self,
+        config: AppConfig,
+        runs: int = RUNS,
+        *,
+        base_seed: int = 1,
+        **scenario_kwargs,
+    ) -> None:
+        scenario = make_scenario(config, **scenario_kwargs)
+        batch = run_batch(scenario, config, runs=runs, base_seed=base_seed, processes=None)
         self.runs = runs
-
-    @property
-    def attack_wins(self) -> float:
-        return self.wins_a / self.runs
-
-    @property
-    def mean_turns(self) -> float:
-        return statistics.mean(self.turns)
-
-    @property
-    def spread(self) -> int:
-        ordered = sorted(self.turns)
-        return ordered[9 * self.runs // 10] - ordered[self.runs // 10]
+        self.limit = scenario.environment.max_turns
+        self.attack_wins = batch.win_probability_a
+        self.wins_a = round(batch.win_probability_a * runs)
+        self.wins_b = round(batch.win_probability_b * runs)
+        self.mean_turns = batch.turns.mean
+        self.spread = batch.turns.p90 - batch.turns.p10
+        self.max_turns = batch.turns.maximum
+        self.reasons: Counter[str] = Counter(batch.end_reasons)
+        self.winner_power = [
+            record.combat_power_a if str(record.winner) == "A" else record.combat_power_b
+            for record in batch.records
+            if str(record.winner) in ("A", "B")
+        ]
 
     @property
     def decided_by_clock(self) -> float:
@@ -228,6 +228,20 @@ def test_reserve_and_rear_can_rest(scenario: Scenario, config: AppConfig) -> Non
 # --------------------------------------------------------------------------
 # Коридоры исхода: статистика, поэтому @slow
 # --------------------------------------------------------------------------
+def _assert_not_degenerate(outcome: Outcome, tag: str) -> None:
+    """Условия боя меняют его цену, но не отменяют сам бой.
+
+    Проверяется вырожденность, а не точное число: у атаки должны быть
+    победы, у длительности — разброс, а исход не может целиком сводиться к
+    одной причине. Ровно это и было сломано: в лесу атака не побеждала ни
+    разу за 150 прогонов, и каждый бой длился ровно шестнадцать ходов.
+    """
+    assert outcome.wins_a > 0, f"{tag}: атака не побеждает ни разу — {outcome}"
+    assert outcome.attack_wins <= 0.60, f"{tag}: условия ничего не меняют — {outcome}"
+    assert outcome.spread >= 2, f"{tag}: длительность без разброса — {outcome}"
+
+
+
 @pytest.mark.slow
 def test_defence_has_the_edge_at_parity(config: AppConfig) -> None:
     """При равных силах обороняющийся сильнее, но атака выигрывает не «никогда».
@@ -251,7 +265,7 @@ def test_battle_is_decided_by_combat_not_by_the_clock(config: AppConfig) -> None
     outcome = Outcome(config)
     assert outcome.decided_by_clock <= 0.45, str(outcome)
     assert outcome.spread >= 3, f"длительность без разброса: {outcome!s}"
-    assert max(outcome.turns) < outcome.limit, "бои упираются в предел ходов"
+    assert outcome.max_turns < outcome.limit, "бои упираются в предел ходов"
 
 
 @pytest.mark.slow
@@ -276,36 +290,58 @@ def test_terrain_is_a_gradient(config: AppConfig, terrain: Terrain) -> None:
     16 ходов. Причина — местность входила в обмен трижды (огонь,
     устойчивость, укрытие) и попадала точно в колено кривой обвала.
     """
-    outcome = Outcome(config, environment=Environment(terrain=terrain))
-    assert 0.02 <= outcome.attack_wins <= 0.60, f"{terrain}: {outcome}"
+    outcome = Outcome(
+        config, runs=ENVIRONMENT_RUNS, environment=Environment(terrain=terrain)
+    )
+    _assert_not_degenerate(outcome, str(terrain))
 
 
 @pytest.mark.slow
 @pytest.mark.parametrize("weather", list(Weather))
 def test_weather_is_a_gradient(config: AppConfig, weather: Weather) -> None:
-    outcome = Outcome(config, environment=Environment(weather=weather))
-    assert 0.02 <= outcome.attack_wins <= 0.60, f"{weather}: {outcome}"
+    outcome = Outcome(
+        config, runs=ENVIRONMENT_RUNS, environment=Environment(weather=weather)
+    )
+    _assert_not_degenerate(outcome, str(weather))
 
 
 @pytest.mark.slow
 @pytest.mark.parametrize("time_of_day", list(TimeOfDay))
 def test_time_of_day_is_a_gradient(config: AppConfig, time_of_day: TimeOfDay) -> None:
     """Ночная атака тяжелее дневной, но возможна."""
-    outcome = Outcome(config, environment=Environment(time_of_day=time_of_day))
-    assert 0.02 <= outcome.attack_wins <= 0.60, f"{time_of_day}: {outcome}"
+    outcome = Outcome(
+        config, runs=ENVIRONMENT_RUNS, environment=Environment(time_of_day=time_of_day)
+    )
+    _assert_not_degenerate(outcome, str(time_of_day))
 
 
 @pytest.mark.slow
 @pytest.mark.parametrize("order", [o for o in Order if o is not Order.PANIC])
-def test_every_order_can_both_win_and_lose(config: AppConfig, order: Order) -> None:
-    """У каждого приказа есть и победы, и поражения.
+def test_no_order_has_a_predetermined_outcome(config: AppConfig, order: Order) -> None:
+    """Исход приказа зависит от того, кто напротив, а не предрешён заранее.
 
     «Засада всегда побеждает» и «отступление всегда проигрывает» — это не
-    механика, а её отсутствие: исход предрешён до первого броска.
+    механика, а её отсутствие: результат известен до первого броска.
+
+    Проверяются обе пары сразу, и приказу достаточно выиграть в одной, а
+    проиграть в другой. Иначе тест ловил бы не поломку, а свойство пары:
+    закрепление против обороны по построению даёт ничью (оба выполняют
+    «выстоять»), а удачный отход от наступающего — тоже ничью, потому что
+    противник одновременно выполняет свою задачу и занимает позицию.
     """
-    outcome = Outcome(config, order_a=order)
-    assert outcome.wins_a > 0, f"{order}: не выигрывает никогда — {outcome}"
-    assert outcome.wins_a < outcome.runs, f"{order}: не проигрывает никогда — {outcome}"
+    against_attack = Outcome(config, order_a=order, order_b=Order.ATTACK)
+    against_defence = Outcome(config, order_a=order, order_b=Order.DEFENCE)
+    wins = against_attack.wins_a + against_defence.wins_a
+    losses = against_attack.wins_b + against_defence.wins_b
+
+    assert wins > 0, (
+        f"{order}: не выигрывает ни у кого — "
+        f"против атаки {against_attack}; против обороны {against_defence}"
+    )
+    assert losses > 0, (
+        f"{order}: не проигрывает никому — "
+        f"против атаки {against_attack}; против обороны {against_defence}"
+    )
 
 
 @pytest.mark.slow
@@ -319,14 +355,11 @@ def test_experience_is_a_scale_not_a_switch(config: AppConfig) -> None:
     """
     wins: list[float] = []
     for level in (1, 2, 3, 4):
-        won = 0
-        for seed in range(RUNS):
-            scenario = make_scenario(config, seed=seed)
-            for element in scenario.battalion_a.elements:
-                element.experience = level
-            result = BattleEngine(scenario, config, verbose=False).run()
-            won += str(result.winner) == "A"
-        wins.append(won / RUNS)
+        scenario = make_scenario(config)
+        for element in scenario.battalion_a.elements:
+            element.experience = level
+        batch = run_batch(scenario, config, runs=RUNS, base_seed=1, processes=None)
+        wins.append(batch.win_probability_a)
 
     assert wins == sorted(wins), f"опыт должен помогать монотонно: {wins}"
     middle = [value for value in wins if 0.10 <= value <= 0.90]

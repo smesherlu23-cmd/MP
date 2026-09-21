@@ -512,6 +512,15 @@ class BattleEngine:
             return f"Бой окончен на ходу {self.state.turn}: ничья ({reason})."
         battalion = self.state.battalion(str(winner))
         loser = self.state.battalion(other_side(str(winner)))
+        if reason == EndReason.TASK:
+            # Победу по задаче одерживает победитель, а не проигравший:
+            # «1-й взвод задача» в строке про победу 2-го взвода читалось
+            # как будто задачу выполнил проигравший.
+            return (
+                f"Бой окончен на ходу {self.state.turn}: победа стороны {winner} "
+                f"({battalion.name}) — задача выполнена, {loser.name} её сорвать "
+                f"не смог."
+            )
         return (
             f"Бой окончен на ходу {self.state.turn}: победа стороны {winner} "
             f"({battalion.name}) — {loser.name} {reason}."
