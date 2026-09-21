@@ -53,7 +53,7 @@ class Rollup:
 
 
 class Battalion(BaseModel):
-    """Сторона боя: набор элементов плюс общебатальонные параметры."""
+    """Сторона боя: дерево групп плюс общие параметры отряда."""
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
@@ -220,7 +220,7 @@ class Battalion(BaseModel):
         return [element for element in self.engaged_elements if element.alive]
 
     def order_for(self, element: Element) -> Order:
-        """Приказ элемента; если не задан — приказ батальона (§4.4)."""
+        """Приказ группы; если не задан — приказ отряда (§4.4)."""
         return element.order or self.order
 
     # -- агрегаты (только для чтения, считаются на лету) --------------------

@@ -98,7 +98,7 @@ def nav_child(label: str, route: str, active: bool, go: Callable[[str], None]) -
 
 
 def children_for(section: str, app: AppState) -> list[tuple[str, str, str]]:
-    """Подпункты активного раздела: фазы боя, открытый батальон, разделы конфига."""
+    """Подпункты активного раздела: фазы боя, открытый отряд, разделы конфига."""
     if section == "battle":
         battle_id = app.scenario.id
         return [
@@ -146,7 +146,7 @@ def sidebar(
     brand = ft.Column(
         [
             ft.Text("Симулятор боя", style=t.sans(size=t.SIZE_TITLE, weight=t.W600)),
-            t.caption("Батальонный уровень"),
+            t.caption("От отделения до полка"),
         ],
         spacing=2,
         tight=True,

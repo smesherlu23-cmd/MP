@@ -40,7 +40,10 @@ class VehicleGroup(BaseModel):
 
 
 class Element(BaseModel):
-    """Строевая единица батальона: рота, батарея, взвод, штаб, тыл."""
+    """Группа отряда: рота, взвод, отделение, штаб, тыл, звено техники.
+
+    Группа с подгруппами сама огня не ведёт — дерутся её листья (§4.2).
+    """
 
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 

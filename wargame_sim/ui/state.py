@@ -113,6 +113,14 @@ class AppState:
         self.selected_troop: str = ""
         #: Открытая папка в сборке юнитов.
         self.selected_troop_folder: str = ""
+        #: Выбранная группа на пульте боя: ``("A", "rota_1")``. Пока она
+        #: выбрана, в подвале дерева показаны действия над ней.
+        self.selected_group: tuple[str, str] | None = None
+        #: Свёрнутые группы дерева — по умолчанию раскрыто всё, поэтому
+        #: храним именно свёрнутые, а не раскрытые.
+        self.collapsed_groups: set[tuple[str, str]] = set()
+        #: На сколько частей делит кнопка «Разделить».
+        self.split_parts: int = 2
         #: Фильтр стороны в таблицах элементов, отдельно для пульта и итога.
         self.run_side_filter: str = SIDE_BOTH
         self.result_side_filter: str = SIDE_BOTH
@@ -191,7 +199,7 @@ class AppState:
 
     # -- мат.часть ----------------------------------------------------------
     def materiel_usage(self, section: str, name: str) -> list[str]:
-        """Где используется запись библиотеки: типы, солдаты, батальоны."""
+        """Где используется запись библиотеки: типы, солдаты, отряды."""
         config = self.config
         places: list[str] = []
 
@@ -205,7 +213,7 @@ class AppState:
                     for element in battalion.elements
                     for group in element.vehicles
                 ):
-                    places.append(f"батальон «{battalion.name}»")
+                    places.append(f"отряд «{battalion.name}»")
         elif section == "weapons":
             for troop_name, troop in config.troops.troops.items():
                 if name in (troop.weapon, troop.secondary):

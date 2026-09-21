@@ -336,12 +336,15 @@ class Col:
 
 
 def _cell(control: ft.Control, col: Col) -> ft.Control:
+    # Клип обязателен: длинное имя группы иначе вылезает поверх соседней
+    # колонки, и строка читается как каша (поймано на дереве отряда).
     return ft.Container(
         content=control,
         width=col.width,
         expand=col.expand,
         padding=ft.Padding.only(left=col.pad_left) if col.pad_left else None,
         alignment=ft.Alignment.CENTER_RIGHT if col.numeric else ft.Alignment.CENTER_LEFT,
+        clip_behavior=ft.ClipBehavior.HARD_EDGE,
     )
 
 

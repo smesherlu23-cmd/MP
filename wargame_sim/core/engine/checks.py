@@ -153,7 +153,7 @@ def update_disengage(state: BattleState, config: AppConfig) -> None:
 
 
 def check_task(state: BattleState, config: AppConfig, log: BattleLog) -> None:
-    """Выполнение боевой задачи по приказу батальона (§6.3)."""
+    """Выполнение боевой задачи по приказу отряда (§6.3)."""
     checks_cfg = config.cbt.checks
     for side in SIDES:
         side_state = state.side(side)
@@ -235,7 +235,7 @@ def check_task(state: BattleState, config: AppConfig, log: BattleLog) -> None:
 
 
 def check_battalions(state: BattleState, config: AppConfig, log: BattleLog) -> None:
-    """Разгром, отступление и паника на уровне батальона."""
+    """Разгром, отступление и паника на уровне отряда."""
     checks_cfg = config.cbt.checks
     element_types = config.element_types.element_types
 

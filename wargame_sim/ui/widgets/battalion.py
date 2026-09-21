@@ -1,35 +1,18 @@
-"""Панели и таблицы по батальону. Все числа приходят из core."""
+"""Карточки и сводки по отряду. Все числа приходят из core.
+
+Дерево групп живёт отдельно, в :mod:`ui.widgets.orbat`.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 import flet as ft
 
 from core.config import AppConfig
-from core.models import Battalion, Element, Order
+from core.models import Battalion, Element
 from ui import theme as t
 from ui.widgets import common as c
-
-#: Колонки таблицы элементов на пульте боя.
-#: Приказ элемента: пусто — как у батальона.
-ORDER_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("", "по батальону"),
-    *((str(order), str(order)) for order in Order),
-)
-
-RUN_COLUMNS: tuple[c.Col, ...] = (
-    c.Col("С", 26),
-    c.Col("Элемент", expand=True),
-    c.Col("Тип", 130),
-    c.Col("Л/с", 78, numeric=True),
-    c.Col("Техн.", 60, numeric=True),
-    c.Col("Мораль", 56, numeric=True),
-    c.Col("Подавл.", 60, numeric=True),
-    c.Col("Устал.", 56, numeric=True),
-    c.Col("Боезап.", 62, numeric=True),
-    c.Col("Приказ", 160, pad_left=10),
-)
 
 
 def side_letter(side: str) -> ft.Control:
@@ -41,82 +24,6 @@ def type_label(element: Element, config: AppConfig) -> str:
     """Человеческое название типа элемента вместо ключа конфига."""
     entry = config.element_types.element_types.get(element.type)
     return entry.label.lower() if entry else element.type
-
-
-def element_row(
-    element: Element,
-    battalion: Battalion,
-    config: AppConfig,
-    *,
-    side: str,
-    last: bool = False,
-    on_order: Callable[[Order | None], None] | None = None,
-) -> ft.Control:
-    """Строка элемента на пульте боя.
-
-    Если передан ``on_order``, приказ можно сменить прямо здесь — это и
-    есть управление частями по ходу боя.
-    """
-    suppression = element.suppression
-    # Подавление выше 20 выделяется — это то, что ГМ должен заметить первым.
-    high = suppression > 20
-    return c.table_row(
-        RUN_COLUMNS,
-        [
-            side_letter(side),
-            t.text(element.name, size=t.SIZE_ROW, no_wrap=True),
-            t.text(type_label(element, config), size=t.SIZE_META, color=t.TEXT_3, no_wrap=True),
-            c.fraction(element.personnel_current, element.personnel_full),
-            c.fraction(element.vehicles_current, element.vehicles_full)
-            if element.has_vehicles
-            else c.dash(),
-            t.num(f"{element.morale:.0f}"),
-            t.num(
-                f"{suppression:.0f}",
-                weight=t.W500 if high else t.W400,
-                color=t.WARN if high else t.TEXT,
-            ),
-            t.num(f"{element.fatigue:.0f}"),
-            t.num(f"{element.ammo:.0f}"),
-            c.select(
-                str(element.order or ""),
-                ORDER_OPTIONS,
-                lambda value: on_order(Order(value) if value else None),
-                width=160,
-                height=t.BUTTON_XS_H,
-                size=t.SIZE_META,
-                nested=side == "B",
-            )
-            if on_order is not None
-            else t.text(str(battalion.order_for(element)), size=t.SIZE_META, color=t.TEXT_3),
-        ],
-        height=t.TABLE_ROW_H + (8 if on_order is not None else 0),
-        bgcolor=t.SURFACE_ALT if side == "B" else None,
-        last=last,
-    )
-
-
-def reserve_row(element: Element, *, side: str, on_commit: Callable[[], None]) -> ft.Control:
-    """Строка резерва: элемент ждёт, пока его введут в бой."""
-    return c.table_row(
-        RUN_COLUMNS,
-        [
-            side_letter(side),
-            t.text(element.name, size=t.SIZE_ROW, color=t.TEXT_3, no_wrap=True),
-            t.text("в резерве", size=t.SIZE_META, color=t.TEXT_PLACEHOLDER, no_wrap=True),
-            c.fraction(element.personnel_current, element.personnel_full),
-            c.fraction(element.vehicles_current, element.vehicles_full)
-            if element.has_vehicles
-            else c.dash(),
-            c.dash(),
-            c.dash(),
-            c.dash(),
-            c.dash(),
-            c.secondary_button("Ввести в бой", on_commit, height=t.BUTTON_XS_H),
-        ],
-        height=t.TABLE_ROW_H + 8,
-        bgcolor=t.SURFACE_ALT if side == "B" else None,
-    )
 
 
 def side_panel(battalion: Battalion, side: str, *, losses: int, vehicle_losses: int) -> ft.Control:

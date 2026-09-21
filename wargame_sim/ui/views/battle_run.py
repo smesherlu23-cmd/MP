@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import flet as ft
 
-from core.models import BattalionState
+from core.formation import FormationError
+from core.models import BattalionState, Order
 from ui import theme as t
 from ui.shell import scenario_aside, screen
 from ui.state import ALL, SIDE_A, SIDE_B, SIDE_BOTH, AppState
 from ui.widgets import common as c
 from ui.widgets import journal as j
-from ui.widgets.battalion import RUN_COLUMNS, element_row, reserve_row, side_panel
+from ui.widgets import orbat as ob
+from ui.widgets.battalion import side_panel
 
 ROUTE = "/battle/{id}"
 
@@ -68,7 +70,8 @@ def build(app: AppState, battle_id: str) -> ft.View:
     config = app.config
 
     panels = ft.Container()
-    elements_body = ft.Container(expand=True)
+    tree_body = ft.Container(expand=True)
+    tree_footer = ft.Container()
     elements_count = ft.Text(style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED))
     attention = ft.Container()
     journal_body = ft.Container(expand=True)
@@ -120,83 +123,189 @@ def build(app: AppState, battle_id: str) -> ft.View:
         )
         app.refresh(panels)
 
-    def change_order(side: str, element_id: str, order) -> None:
+    # -- управление группами ------------------------------------------------
+    def selected() -> tuple[str, object] | None:
+        """Выбранная группа, если она ещё существует."""
+        if app.selected_group is None:
+            return None
+        side, element_id = app.selected_group
+        element = engine.state.battalion(side).element(element_id)
+        if element is None:
+            app.selected_group = None
+            return None
+        return side, element
+
+    def select(side: str, element_id: str) -> None:
+        key = (side, element_id)
+        app.selected_group = None if app.selected_group == key else key
+        redraw_tree()
+
+    def toggle_branch(side: str, element_id: str) -> None:
+        key = (side, element_id)
+        if key in app.collapsed_groups:
+            app.collapsed_groups.discard(key)
+        else:
+            app.collapsed_groups.add(key)
+        redraw_tree()
+
+    def guarded(work) -> None:
+        """Выполнить команду, показав понятную причину отказа."""
+        try:
+            work()
+        except FormationError as exc:
+            app.notify(str(exc))
+            return
+        redraw_all()
+
+    def change_order(side: str, element_id: str, order: Order | None) -> None:
         engine.set_order(side, element_id, order)
         redraw_all()
 
-    def commit_reserve(side: str, element_id: str) -> None:
-        engine.commit(side, element_id)
+    def split_group(side: str, element_id: str) -> None:
+        def work() -> None:
+            children = engine.split(side, element_id, app.split_parts)
+            app.selected_group = (side, children[0].id)
+
+        guarded(work)
+
+    def detach_group(side: str, element_id: str) -> None:
+        def work() -> None:
+            children = engine.detach_vehicles(side, element_id)
+            app.selected_group = (side, children[-1].id)
+
+        guarded(work)
+
+    def merge_group(side: str, element_id: str) -> None:
+        def work() -> None:
+            engine.merge(side, element_id)
+            app.collapsed_groups.discard((side, element_id))
+            app.selected_group = (side, element_id)
+
+        guarded(work)
+
+    def commit_branch(side: str, element_id: str) -> None:
+        battalion = engine.state.battalion(side)
+        for leaf in battalion.leaves_of(element_id):
+            if not leaf.engaged:
+                engine.commit(side, leaf.id)
         redraw_all()
 
-    def redraw_elements() -> None:
+    def withdraw_branch(side: str, element_id: str) -> None:
+        battalion = engine.state.battalion(side)
+        for leaf in battalion.leaves_of(element_id):
+            if leaf.engaged:
+                engine.withdraw(side, leaf.id)
+        redraw_all()
+
+    def set_parts(value: int) -> None:
+        app.split_parts = value
+        redraw_tree()
+
+    # -- дерево групп -------------------------------------------------------
+    def visible_sides() -> tuple[str, ...]:
+        if app.run_side_filter == SIDE_BOTH:
+            return ("A", "B")
+        return (app.run_side_filter,)
+
+    def redraw_tree() -> None:
         rows: list[ft.Control] = []
-        sides = (
-            ("A", "B")
-            if app.run_side_filter == SIDE_BOTH
-            else (app.run_side_filter,)
-        )
-        pairs = [
-            (side, element)
-            for side in sides
-            for element in engine.state.battalion(side).engaged_elements
-        ]
-        for index, (side, element) in enumerate(pairs):
-            rows.append(
-                element_row(
-                    element,
-                    engine.state.battalion(side),
-                    config,
-                    side=side,
-                    last=index == len(pairs) - 1,
-                    on_order=(
-                        lambda order, s=side, e=element.id: change_order(s, e, order)
+        engaged = reserve = 0
+        sides = visible_sides()
+        for side in sides:
+            battalion = engine.state.battalion(side)
+            if len(sides) > 1:
+                rows.append(ob.side_header(battalion, side))
+            nodes = ob.nodes(battalion, side, app.collapsed_groups)
+            for index, node in enumerate(nodes):
+                rows.append(
+                    ob.tree_row(
+                        node,
+                        battalion,
+                        config,
+                        selected=app.selected_group == node.key,
+                        on_select=lambda s=side, e=node.element.id: select(s, e),
+                        on_toggle=lambda s=side, e=node.element.id: toggle_branch(s, e),
+                        last=index == len(nodes) - 1,
                     )
-                    if not engine.finished
-                    else None,
                 )
-            )
+            engaged += len(battalion.engaged_elements)
+            reserve += len(battalion.reserve_elements)
 
-        reserve = [
-            (side, element)
-            for side in sides
-            for element in engine.state.battalion(side).reserve_elements
-        ]
-        if reserve:
-            rows.append(
-                ft.Container(
-                    content=ft.Row(
-                        [
-                            t.caption("Резерв"),
-                            c.spacer(),
-                            ft.Text(
-                                "не стреляет и по нему не стреляют",
-                                style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
-                            ),
-                        ],
-                        spacing=8,
-                    ),
-                    height=t.TABLE_HEAD_H,
-                    bgcolor=t.SURFACE_ALT,
-                    padding=ft.Padding.symmetric(horizontal=t.PAD_ROW_X),
-                    border=t.border_bottom(t.BORDER_INNER),
-                )
-            )
-            rows.extend(
-                reserve_row(
-                    element,
-                    side=side,
-                    on_commit=lambda s=side, e=element.id: commit_reserve(s, e),
-                )
-                for side, element in reserve
-            )
+        tree_body.content = ft.Column(rows, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+        elements_count.value = f"в бою {engaged}" + (
+            f" · резерв {reserve}" if reserve else ""
+        )
+        tree_footer.content = command_strip()
+        app.refresh(tree_body, elements_count, tree_footer)
 
-        elements_body.content = ft.Column(
-            rows, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True
-        )
-        elements_count.value = (
-            f"строк {len(pairs)}" + (f" · резерв {len(reserve)}" if reserve else "")
-        )
-        app.refresh(elements_body, elements_count)
+    def command_strip() -> ft.Control:
+        """Подвал дерева: что можно сделать с выбранной группой."""
+        picked = selected()
+        if picked is None:
+            return c.card_footer(
+                [ob.hint("Выберите группу — её можно разделить, свести или дать ей приказ")]
+            )
+        side, element = picked
+        battalion = engine.state.battalion(side)
+        leaf = battalion.is_leaf(element)
+        roll = battalion.rollup(element.id)
+        actions: list[ft.Control] = [ob.selection_label(element, battalion), c.spacer()]
+
+        if not engine.finished:
+            if leaf and element.engaged and element.alive:
+                actions.append(
+                    c.select(
+                        str(element.order or ""),
+                        ob.ORDER_OPTIONS,
+                        lambda value, s=side, e=element.id: change_order(
+                            s, e, Order(value) if value else None
+                        ),
+                        width=132,
+                        height=t.BUTTON_XS_H,
+                        size=t.SIZE_META,
+                    )
+                )
+                actions.append(ob.parts_switch(app.split_parts, set_parts))
+                actions.append(
+                    c.secondary_button(
+                        "Разделить",
+                        lambda s=side, e=element.id: split_group(s, e),
+                        height=t.BUTTON_XS_H,
+                    )
+                )
+                if element.has_vehicles:
+                    actions.append(
+                        c.secondary_button(
+                            "Отделить технику",
+                            lambda s=side, e=element.id: detach_group(s, e),
+                            height=t.BUTTON_XS_H,
+                        )
+                    )
+            if not leaf:
+                actions.append(
+                    c.secondary_button(
+                        "Свести",
+                        lambda s=side, e=element.id: merge_group(s, e),
+                        height=t.BUTTON_XS_H,
+                    )
+                )
+            if roll.engaged < roll.leaves:
+                actions.append(
+                    c.primary_button(
+                        "Ввести в бой",
+                        lambda s=side, e=element.id: commit_branch(s, e),
+                        height=t.BUTTON_XS_H,
+                    )
+                )
+            elif engine.turn == 0:
+                actions.append(
+                    c.secondary_button(
+                        "В резерв",
+                        lambda s=side, e=element.id: withdraw_branch(s, e),
+                        height=t.BUTTON_XS_H,
+                    )
+                )
+        return c.card_footer(actions)
 
     def redraw_attention() -> None:
         rows = j.attention_rows(
@@ -225,7 +334,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
     def redraw_all() -> None:
         redraw_indicator()
         redraw_panels()
-        redraw_elements()
+        redraw_tree()
         redraw_attention()
         redraw_journal()
 
@@ -272,7 +381,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
     def set_side_filter(value: str) -> None:
         app.run_side_filter = value
         side_switch.content = c.segmented(SIDE_OPTIONS, value, set_side_filter)
-        redraw_elements()
+        redraw_tree()
         app.refresh(side_switch)
 
     def set_journal(attribute: str, value: str) -> None:
@@ -329,10 +438,11 @@ def build(app: AppState, battle_id: str) -> ft.View:
     rebuild_journal_controls()
     redraw_all()
 
-    elements_card = c.framed_card(
-        "Элементы",
-        ft.Column([c.table_head(RUN_COLUMNS), elements_body], spacing=0, expand=True),
+    tree_card = c.framed_card(
+        "Боевой порядок",
+        ft.Column([c.table_head(ob.TREE_COLUMNS), tree_body], spacing=0, expand=True),
         trailing=[side_switch, elements_count],
+        footer=tree_footer,
         expand=True,
     )
 
@@ -344,7 +454,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         expand=True,
     )
 
-    left = ft.Column([panels, elements_card], spacing=t.GAP, expand=True)
+    left = ft.Column([panels, tree_card], spacing=t.GAP, expand=True)
     right = ft.Column([attention, journal_card], spacing=t.GAP, expand=True)
 
     body = ft.Column(
@@ -390,5 +500,5 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
 
 def battle_state_label(state: BattalionState) -> str:
-    """Подпись состояния батальона для панелей."""
+    """Подпись состояния отряда для панелей."""
     return str(state)

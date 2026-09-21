@@ -38,7 +38,7 @@ EVENT_LABELS: dict[str, str] = {
     "panic": "паника",
     "retreat_order": "переход к отступлению",
     "element_destroyed": "элемент небоеспособен",
-    "battalion_routed": "разгром батальона",
+    "battalion_routed": "разгром отряда",
     "task_completed": "задача выполнена",
 }
 
