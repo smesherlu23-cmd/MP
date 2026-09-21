@@ -28,7 +28,7 @@ from core.report import (  # noqa: E402
     result_csv,
     result_markdown,
 )
-from core.samples import make_scenario  # noqa: E402
+from core.samples import make_scenario, make_small_scenario  # noqa: E402
 from core.storage import (  # noqa: E402
     StorageError,
     load_scenario,
@@ -67,6 +67,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="записать демонстрационный сценарий в data/scenarios",
     )
     parser.add_argument(
+        "--small",
+        action="store_true",
+        help="демо малого масштаба: взвод против взвода с бронегруппой",
+    )
+    parser.add_argument(
         "--symmetric",
         action="store_true",
         help="демо-сценарий из двух одинаковых батальонов (проверка баланса)",
@@ -88,7 +93,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.scenario:
             scenario = load_scenario(args.scenario)
         else:
-            scenario = make_scenario(config, symmetric=args.symmetric)
+            scenario = (
+                make_small_scenario(config)
+                if args.small
+                else make_scenario(config, symmetric=args.symmetric)
+            )
     except StorageError as error:
         print(f"Сценарий не загружен: {error}", file=sys.stderr)
         return 2

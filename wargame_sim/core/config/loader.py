@@ -127,6 +127,15 @@ class AppConfig(BaseModel):
             )
         return entry
 
+    def task_turns(self, turns: int, scale) -> int:
+        """Сколько ходов держать задачу отряду такого масштаба.
+
+        Меньше одного хода задача не бывает: иначе «оборона» отделения
+        выполнялась бы ещё до первого выстрела.
+        """
+        share = self.orders.scale_turns.get(scale, 1.0)
+        return max(1, round(turns * share)) if turns else turns
+
     def element_type(self, name: str):
         entry = self.element_types.element_types.get(name)
         if entry is None:

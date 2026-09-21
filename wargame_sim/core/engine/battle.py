@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from core import formation
 from core.config import AppConfig, load_config
 from core.engine import checks
 from core.engine.phases import (
@@ -34,6 +35,8 @@ from core.log import BattleLog
 from core.models import (
     BattalionState,
     BattleResult,
+    ContactLevel,
+    Element,
     ElementReport,
     EndReason,
     Order,
@@ -252,6 +255,168 @@ class BattleEngine:
         )
         return True
 
+    # -- перестроение -------------------------------------------------------
+    def split(
+        self,
+        side: str,
+        element_id: str,
+        parts: int = 2,
+        *,
+        shares: list[float] | None = None,
+        names: list[str] | None = None,
+    ) -> list[Element]:
+        """Разделить группу на подгруппы прямо по ходу боя.
+
+        Подгруппы получают свою долю людей, машин **и своей доли уже
+        понесённых потерь**, поэтому «потеряно + в строю» по каждой стороне
+        сходится с исходным и после деления (§4.2).
+        """
+        battalion = self.state.battalion(side)
+        parent = battalion.element(element_id)
+        if parent is None:
+            raise formation.FormationError(f"группы «{element_id}» в отряде нет")
+        children = formation.split(
+            battalion, element_id, parts, shares=shares, names=names
+        )
+        self._rehome_registry(side, parent, children)
+        self.log.add(
+            turn=self.state.turn,
+            phase="command",
+            actor=element_key(side, parent),
+            event="group_split",
+            before={"parts": 1, "personnel": parent.personnel_current},
+            after={
+                "parts": len(children),
+                "personnel": [child.personnel_current for child in children],
+            },
+            text=(
+                f"«{parent.name}» разделена на {len(children)}: "
+                + ", ".join(
+                    f"{child.name} — {child.personnel_current} чел." for child in children
+                )
+                + "."
+            ),
+        )
+        return children
+
+    def detach_vehicles(self, side: str, element_id: str) -> list[Element]:
+        """Отделить технику группы в самостоятельный отряд."""
+        battalion = self.state.battalion(side)
+        parent = battalion.element(element_id)
+        if parent is None:
+            raise formation.FormationError(f"группы «{element_id}» в отряде нет")
+        children = formation.detach_vehicles(battalion, element_id, self.config)
+        self._rehome_registry(side, parent, children)
+        foot, crew = children
+        self.log.add(
+            turn=self.state.turn,
+            phase="command",
+            actor=element_key(side, parent),
+            event="vehicles_detached",
+            before={"personnel": parent.personnel_current, "vehicles": parent.vehicles_current},
+            after={
+                "пехота": foot.personnel_current,
+                "экипажи": crew.personnel_current,
+                "техника": crew.vehicles_current,
+            },
+            text=(
+                f"Техника «{parent.name}» выделена отдельно: "
+                f"{crew.vehicles_current} ед. и {crew.personnel_current} чел. экипажей; "
+                f"пехота ({foot.personnel_current} чел.) осталась спешенной."
+            ),
+        )
+        return children
+
+    def merge(self, side: str, element_id: str) -> Element:
+        """Свести подгруппы обратно в группу вместе с их учётом потерь."""
+        battalion = self.state.battalion(side)
+        parent = battalion.element(element_id)
+        if parent is None:
+            raise formation.FormationError(f"группы «{element_id}» в отряде нет")
+        leaves = battalion.leaves_of(element_id)
+        names = [leaf.name for leaf in leaves]
+        merged = formation.merge(battalion, element_id)
+        self._collect_registry(side, merged, leaves)
+        self.log.add(
+            turn=self.state.turn,
+            phase="command",
+            actor=element_key(side, merged),
+            event="group_merged",
+            before={"parts": len(leaves)},
+            after={"parts": 1, "personnel": merged.personnel_current},
+            text=(
+                f"Сведены в «{merged.name}» ({merged.personnel_current} чел.): "
+                + ", ".join(names)
+                + "."
+            ),
+        )
+        return merged
+
+    # -- реестр при перестроении -------------------------------------------
+    def _rehome_registry(self, side: str, parent: Element, children: list[Element]) -> None:
+        """Раздать учёт старшей группы её подгруппам.
+
+        Потери раскладываются по тем же долям, что и люди, а «на начало» у
+        подгруппы получается «потеряно + в строю» — ровно то равенство, на
+        котором держится проверка баланса.
+        """
+        side_state = self.state.side(side)
+        enemy_state = self.state.enemy(side)
+        engaged = parent.id in side_state.initial_personnel
+        contact = enemy_state.contact.pop(parent.id, ContactLevel.NONE)
+        in_contact = side_state.in_contact.pop(parent.id, False)
+
+        personnel_lost = side_state.personnel_lost.pop(parent.id, 0)
+        vehicles_lost = side_state.vehicles_lost.pop(parent.id, 0)
+        side_state.initial_personnel.pop(parent.id, None)
+        side_state.initial_vehicles.pop(parent.id, None)
+        if not engaged:
+            return
+
+        weights = [float(child.personnel_current) for child in children]
+        vehicle_weights = [float(child.vehicles_current) for child in children]
+        lost_personnel = formation.apportion(personnel_lost, weights)
+        lost_vehicles = formation.apportion(vehicles_lost, vehicle_weights)
+        for index, child in enumerate(children):
+            side_state.personnel_lost[child.id] = lost_personnel[index]
+            side_state.vehicles_lost[child.id] = lost_vehicles[index]
+            side_state.initial_personnel[child.id] = (
+                child.personnel_current + lost_personnel[index]
+            )
+            side_state.initial_vehicles[child.id] = child.vehicles_current + lost_vehicles[index]
+            side_state.in_contact[child.id] = in_contact
+            enemy_state.contact[child.id] = contact
+
+    def _collect_registry(self, side: str, parent: Element, leaves: list[Element]) -> None:
+        """Собрать учёт подгрупп обратно в сведённую группу."""
+        side_state = self.state.side(side)
+        enemy_state = self.state.enemy(side)
+        levels = list(ContactLevel)
+        personnel_lost = vehicles_lost = 0
+        initial_personnel = initial_vehicles = 0
+        in_contact = False
+        best = ContactLevel.NONE
+        engaged = False
+        for leaf in leaves:
+            if leaf.id in side_state.initial_personnel:
+                engaged = True
+            personnel_lost += side_state.personnel_lost.pop(leaf.id, 0)
+            vehicles_lost += side_state.vehicles_lost.pop(leaf.id, 0)
+            initial_personnel += side_state.initial_personnel.pop(leaf.id, 0)
+            initial_vehicles += side_state.initial_vehicles.pop(leaf.id, 0)
+            in_contact = in_contact or side_state.in_contact.pop(leaf.id, False)
+            level = enemy_state.contact.pop(leaf.id, ContactLevel.NONE)
+            if levels.index(level) > levels.index(best):
+                best = level
+        if not engaged:
+            return
+        side_state.personnel_lost[parent.id] = personnel_lost
+        side_state.vehicles_lost[parent.id] = vehicles_lost
+        side_state.initial_personnel[parent.id] = initial_personnel
+        side_state.initial_vehicles[parent.id] = initial_vehicles
+        side_state.in_contact[parent.id] = in_contact
+        enemy_state.contact[parent.id] = best
+
     def run(self, max_turns: int | None = None) -> BattleResult:
         """Прогнать бой до конца и вернуть результат."""
         limit = max_turns or self.state.environment.max_turns
@@ -333,8 +498,10 @@ class BattleEngine:
         battalion = side_state.battalion
         start_personnel = sum(side_state.initial_personnel.values())
         start_vehicles = sum(side_state.initial_vehicles.values())
-        end_personnel = sum(element.personnel_current for element in battalion.elements)
-        end_vehicles = sum(element.vehicles_current for element in battalion.elements)
+        # По листьям: старшая группа — это её подгруппы, а не ещё одна единица.
+        leaves = battalion.leaf_elements
+        end_personnel = sum(element.personnel_current for element in leaves)
+        end_vehicles = sum(element.vehicles_current for element in leaves)
         lost_personnel = side_state.total_personnel_lost()
         lost_vehicles = side_state.total_vehicles_lost()
 
@@ -359,7 +526,7 @@ class BattleEngine:
                 equipment=round(element.equipment, 2),
                 order=str(battalion.order_for(element)),
             )
-            for element in battalion.elements
+            for element in leaves
         ]
 
         return SideReport(
