@@ -126,7 +126,13 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
     # -- действия -----------------------------------------------------------
     def export(kind: str) -> None:
-        directory = Path(app.results_dir)
+        """Отчёт об исходе — в папку, которую выберет ГМ."""
+        app.ask_directory(
+            f"Куда выгрузить отчёт ({kind.upper()})",
+            lambda directory: _write(kind, directory),
+        )
+
+    def _write(kind: str, directory: Path) -> None:
         stem = f"{result.scenario_id}_{result.master_seed}"
         if kind == "md":
             path = write_text(directory / f"{stem}.md", result_markdown(result))
@@ -134,7 +140,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
             path = write_text(directory / f"{stem}.html", result_html(result))
         else:
             path = write_text(directory / f"{stem}.csv", result_csv(result))
-        app.notify(f"Выгружено: {path.name}")
+        app.notify(f"Выгружено: {path}")
 
     def to_archive() -> None:
         path = app.save_result(result)

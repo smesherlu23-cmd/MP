@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +29,13 @@ from core.storage import (
     scan_battalions,
     scan_results,
 )
+
+#: Спросить у пользователя папку: заголовок, начальный каталог, что делать
+#: с выбранным. Роутер подставляет сюда `ft.FilePicker`.
+DirectoryAsker = Callable[[str, str, Callable[[str], None]], None]
+
+#: То же для файла, плюс список допустимых расширений.
+FileAsker = Callable[[str, str, tuple[str, ...], Callable[[str], None]], None]
 
 #: Значение фильтра «без ограничения».
 ALL = "*"
@@ -111,6 +118,10 @@ class AppState:
         #: про flet по-прежнему ничего не знает.
         self.dialog_opener: Callable[[Any], None] | None = None
         self.dialog_closer: Callable[[], None] | None = None
+        #: Спросить папку или файл системным окном. Тоже ставит роутер:
+        #: `ft.FilePicker` — это flet, а состояние про flet не знает.
+        self.directory_asker: DirectoryAsker | None = None
+        self.file_asker: FileAsker | None = None
         self.navigator: Callable[[str], None] | None = None
         self.theme_switcher: Callable[[bool], None] | None = None
 
@@ -227,6 +238,48 @@ class AppState:
     def close_dialog(self) -> None:
         if self.dialog_closer is not None:
             self.dialog_closer()
+
+    # -- выбор папки и файла ------------------------------------------------
+    def export_dir(self) -> Path:
+        """Куда выгружали в прошлый раз; по умолчанию — каталог результатов."""
+        remembered = self._settings().get("export_dir")
+        if isinstance(remembered, str) and remembered:
+            path = Path(remembered)
+            if path.is_dir():
+                return path
+        return self.results_dir
+
+    def ask_directory(self, title: str, on_pick: Callable[[Path], None]) -> None:
+        """Спросить папку системным окном и запомнить выбор.
+
+        Без запущенного окна спрашивать некого — тогда пишем туда же, куда
+        писали раньше, чтобы выгрузка из теста или скрипта не молчала.
+        """
+        initial = self.export_dir()
+        if self.directory_asker is None:
+            on_pick(initial)
+            return
+
+        def picked(chosen: str) -> None:
+            path = Path(chosen)
+            self._save_settings(export_dir=str(path))
+            on_pick(path)
+
+        self.directory_asker(title, str(initial), picked)
+
+    def ask_file(
+        self,
+        title: str,
+        on_pick: Callable[[Path], None],
+        *,
+        extensions: Sequence[str] = (),
+    ) -> None:
+        """Спросить файл системным окном; без окна выбирать нечего."""
+        if self.file_asker is None:
+            return
+        self.file_asker(
+            title, str(self.export_dir()), tuple(extensions), lambda chosen: on_pick(Path(chosen))
+        )
 
     def refresh(self, *controls: Any) -> None:
         """Обновить контролы, если приложение действительно запущено.

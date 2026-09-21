@@ -6,6 +6,7 @@ Flet-окно в тестах не запускается — экраны ст�
 
 from __future__ import annotations
 
+import json
 import shutil
 from dataclasses import fields
 from pathlib import Path
@@ -996,3 +997,104 @@ def test_broken_unit_file_is_reported_not_hidden(app: AppState) -> None:
     assert "broken.json" in broken[0][0].name
 
     assert "не читается файлов: 1" in " ".join(_texts(units_view.build(app))).casefold()
+
+
+# --------------------------------------------------------------------------
+# Выбор папки и файла системным окном
+# --------------------------------------------------------------------------
+def _picker(app: AppState, chosen: Path) -> list[tuple[str, str]]:
+    """Подменить системное окно выбора: запомнить вопрос, ответить `chosen`."""
+    asked: list[tuple[str, str]] = []
+
+    def ask(title: str, initial: str, on_pick) -> None:
+        asked.append((title, initial))
+        on_pick(str(chosen))
+
+    app.directory_asker = ask
+    return asked
+
+
+def test_export_asks_where_to_put_the_file(app: AppState, tmp_path: Path) -> None:
+    """Выгрузка отряда кладёт файл в выбранную папку, а не рядом с оригиналом."""
+    from ui.views import units as units_view
+
+    target = tmp_path / "выгрузка"
+    target.mkdir()
+    asked = _picker(app, target)
+
+    _, battalion = app.units()[0]
+    _menu_action(units_view.build(app), "Выгрузить JSON")()
+
+    assert len(asked) == 1
+    assert battalion.name in asked[0][0]
+    written = list(target.glob("*.json"))
+    assert len(written) == 1
+    assert json.loads(written[0].read_text(encoding="utf-8"))["id"] == battalion.id
+
+
+def test_chosen_folder_is_remembered(app: AppState, tmp_path: Path) -> None:
+    """Выбранная папка предлагается в следующий раз, а не сбрасывается."""
+    from ui.views import units as units_view
+
+    target = tmp_path / "отчёты"
+    target.mkdir()
+    asked = _picker(app, target)
+
+    _menu_action(units_view.build(app), "Выгрузить JSON")()
+    _menu_action(units_view.build(app), "Выгрузить JSON")()
+
+    assert asked[0][1] == str(app.results_dir), "первый раз — каталог результатов"
+    assert asked[1][1] == str(target), "второй раз — где выгружали в прошлый"
+    assert app.export_dir() == target
+
+
+def test_report_export_lands_in_the_chosen_folder(app: AppState, tmp_path: Path) -> None:
+    """Отчёт об исходе пишется туда, куда указали, во всех трёх форматах."""
+    from ui.views import battle_result
+
+    engine = app.start_battle()
+    engine.run()
+    app.result = engine.result()
+    target = tmp_path / "итоги"
+    target.mkdir()
+    _picker(app, target)
+
+    view = battle_result.build(app, app.scenario.id)
+    for label in ("Markdown", "HTML", "CSV"):
+        _click_by_label(view, label)()
+
+    assert {path.suffix for path in target.iterdir()} == {".md", ".html", ".csv"}
+
+
+def test_without_a_window_export_falls_back_to_results(app: AppState) -> None:
+    """Без запущенного окна спрашивать некого — пишем в каталог результатов."""
+    from ui.views import units as units_view
+
+    app.directory_asker = None
+    _menu_action(units_view.build(app), "Выгрузить JSON")()
+
+    assert list(app.results_dir.glob("*.json"))
+
+
+def test_import_offers_a_file_dialog(app: AppState, tmp_path: Path) -> None:
+    """«Обзор» открывает выбор файла и загружает выбранный отряд."""
+    from ui.views import units as units_view
+
+    _, battalion = app.units()[0]
+    source = tmp_path / "гость.json"
+    source.write_text(
+        json.dumps(battalion.model_dump(mode="json"), ensure_ascii=False), encoding="utf-8"
+    )
+
+    asked: list[tuple[str, tuple[str, ...]]] = []
+
+    def ask(title: str, initial: str, extensions: tuple[str, ...], on_pick) -> None:
+        asked.append((title, extensions))
+        on_pick(str(source))
+
+    app.file_asker = ask
+    before = len(app.units())
+    _click_by_label(units_view.build(app), "Обзор…")()
+
+    assert asked and asked[0][1] == ("json",)
+    assert len(app.units()) == before + 1

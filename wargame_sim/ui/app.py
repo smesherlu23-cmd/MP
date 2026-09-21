@@ -136,7 +136,52 @@ def main(page: ft.Page) -> None:
     # Один-единственный View на всё приложение: при замене стека Flutter
     # анимирует навигацию, а рамка у нас одинаковая на всех экранах —
     # анимировать нечего. Меняем содержимое, а не сам View.
-    root = ft.View(route=ROUTES["home"], padding=0, spacing=0, bgcolor=t.CONTENT_BG)
+    #
+    # `FilePicker` — сервис, а не контрол: он живёт в `services` вида и
+    # переживает смену содержимого, поэтому окно выбора папки открывается
+    # с любого экрана.
+    picker = ft.FilePicker()
+    root = ft.View(
+        route=ROUTES["home"],
+        padding=0,
+        spacing=0,
+        bgcolor=t.CONTENT_BG,
+        services=[picker],
+    )
+
+    def ask_directory(title: str, initial: str, on_pick: Callable[[str], None]) -> None:
+        """Системное окно выбора папки. Методы пикера — корутины."""
+
+        async def work() -> None:
+            chosen = await picker.get_directory_path(
+                dialog_title=title, initial_directory=initial
+            )
+            if chosen:
+                on_pick(chosen)
+            else:
+                notify("Выгрузка отменена.")
+
+        page.run_task(work)
+
+    def ask_file(
+        title: str,
+        initial: str,
+        extensions: tuple[str, ...],
+        on_pick: Callable[[str], None],
+    ) -> None:
+        async def work() -> None:
+            files = await picker.pick_files(
+                dialog_title=title,
+                initial_directory=initial,
+                allowed_extensions=list(extensions) or None,
+                file_type=ft.FilePickerFileType.CUSTOM
+                if extensions
+                else ft.FilePickerFileType.ANY,
+            )
+            if files and files[0].path:
+                on_pick(files[0].path)
+
+        page.run_task(work)
 
     def paint(dark: bool) -> None:
         """Переключить палитру и всё, что красит не наша вёрстка.
@@ -182,6 +227,8 @@ def main(page: ft.Page) -> None:
     app.notifier = notify
     app.dialog_opener = open_dialog
     app.dialog_closer = close_dialog
+    app.directory_asker = ask_directory
+    app.file_asker = ask_file
     app.navigator = navigate
     app.theme_switcher = switch_theme
     page.on_route_change = lambda *_: render()

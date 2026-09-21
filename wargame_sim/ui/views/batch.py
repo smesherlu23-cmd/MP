@@ -197,13 +197,20 @@ def build(app: AppState) -> ft.View:
         if app.batch is None:
             app.notify("Сначала запустите прогоны.")
             return
-        directory = Path(app.results_dir)
+        app.ask_directory(
+            f"Куда выгрузить сводку ({kind.upper()})",
+            lambda directory: _write(kind, directory),
+        )
+
+    def _write(kind: str, directory: Path) -> None:
+        if app.batch is None:
+            return
         stem = f"batch_{app.batch.scenario_id}_{app.batch.base_seed}"
         if kind == "md":
             path = write_text(directory / f"{stem}.md", batch_markdown(app.batch))
         else:
             path = write_text(directory / f"{stem}.csv", batch_csv(app.batch))
-        app.notify(f"Выгружено: {path.name}")
+        app.notify(f"Выгружено: {path}")
 
     def use_seed(record: RunRecord) -> None:
         """Подставить сид прогона в настройку боя — прогон повторится точно."""

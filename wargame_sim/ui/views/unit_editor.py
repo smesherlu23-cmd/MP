@@ -231,9 +231,13 @@ def build(app: AppState, unit_id: str) -> ft.View:
         app.go(ROUTES["unit"].format(id=copy.id))
 
     def export_unit() -> None:
-        target = unit_path.with_name(f"{unit_path.stem}_export.json")
-        write_json(target, battalion.model_dump(mode="json"))
-        app.notify(f"Выгружено: {target.name}")
+        def write(directory) -> None:
+            target = write_json(
+                directory / f"{unit_path.stem}.json", battalion.model_dump(mode="json")
+            )
+            app.notify(f"Выгружено: {target}")
+
+        app.ask_directory(f"Куда выгрузить «{battalion.name}»", write)
 
     def element_menu(element: Element) -> list[c.MenuItem]:
         """Действия над группой — по правой кнопке, не в раскрытой панели."""

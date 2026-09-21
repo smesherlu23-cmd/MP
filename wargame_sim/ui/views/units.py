@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import flet as ft
 
 from core.models import Battalion, Side, new_id
 from core.samples import make_battalion, make_element, make_platoon
-from core.storage import StorageError, delete_file, load_battalion
+from core.storage import StorageError, delete_file, load_battalion, write_json
 from ui import theme as t
 from ui.shell import screen
 from ui.state import ROUTES, AppState
@@ -80,22 +79,31 @@ def build(app: AppState) -> ft.View:
         refresh()
 
     def export(path: Path, battalion: Battalion) -> None:
-        target = path.with_name(f"{path.stem}_export.json")
-        target.write_text(
-            json.dumps(battalion.model_dump(mode="json"), ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        """Выгрузить отряд в папку, которую выберет ГМ."""
+        app.ask_directory(
+            f"Куда выгрузить «{battalion.name}»",
+            lambda directory: _write(directory / f"{path.stem}.json", battalion),
         )
+
+    def _write(target: Path, battalion: Battalion) -> None:
+        write_json(target, battalion.model_dump(mode="json"))
         message.value = f"Выгружено: {target}"
         app.refresh(message)
+
+    def pick_import() -> None:
+        """Выбрать файл отряда системным окном."""
+        app.ask_file("Выберите файл подразделения", load_from, extensions=("json",))
 
     def do_import() -> None:
         raw = import_path["value"].strip()
         if not raw:
-            message.value = "Укажите путь к файлу подразделения."
-            app.refresh(message)
+            pick_import()
             return
+        load_from(Path(raw))
+
+    def load_from(source: Path) -> None:
         try:
-            battalion = load_battalion(Path(raw))
+            battalion = load_battalion(source)
         except StorageError as error:
             message.value = str(error)
             app.refresh(message)
@@ -278,12 +286,17 @@ def build(app: AppState) -> ft.View:
         [
             t.card_title("Импорт"),
             ft.Row(
-                [path_field, c.primary_button("Загрузить", do_import)],
+                [
+                    path_field,
+                    c.secondary_button("Обзор…", pick_import, icon=ft.Icons.FOLDER_OPEN_OUTLINED),
+                    c.primary_button("Загрузить", do_import),
+                ],
                 spacing=t.GAP_SM,
             ),
             c.note(
-                "Импортированный отряд появится в списке и станет доступен "
-                "как сторона A или B."
+                "«Обзор» открывает системное окно выбора файла; путь можно и "
+                "вписать руками. Импортированный отряд появится в списке и "
+                "станет доступен как сторона A или B."
             ),
             message,
         ],
@@ -306,7 +319,7 @@ def build(app: AppState) -> ft.View:
         title="Подразделения",
         subtitle="Отряды любого масштаба, из которых собираются бои",
         actions=[
-            c.tertiary_button("Импорт JSON", do_import, icon=ft.Icons.UPLOAD_FILE),
+            c.tertiary_button("Импорт JSON", pick_import, icon=ft.Icons.UPLOAD_FILE),
             c.secondary_button("Пустой", create_empty),
             c.secondary_button("Взвод", create_platoon),
             c.primary_button("Батальон", create_typical, icon=ft.Icons.ADD),

@@ -515,11 +515,14 @@ def build(app: AppState, battle_id: str) -> ft.View:
     def export_journal() -> None:
         from core.storage import write_text
 
-        path = write_text(
-            app.results_dir / f"journal_{scenario.id}_{engine.master_seed}.md",
-            engine.log.to_markdown(),
-        )
-        app.notify(f"Журнал выгружен: {path.name}")
+        def write(directory) -> None:
+            path = write_text(
+                directory / f"journal_{scenario.id}_{engine.master_seed}.md",
+                engine.log.to_markdown(),
+            )
+            app.notify(f"Журнал выгружен: {path}")
+
+        app.ask_directory("Куда выгрузить журнал боя", write)
 
     side_switch = ft.Container(
         content=c.segmented(SIDE_OPTIONS, app.run_side_filter, set_side_filter)
