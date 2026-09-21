@@ -17,6 +17,7 @@ from ui import theme as t
 from ui.shell import screen
 from ui.state import ALL, ROUTES, AppState
 from ui.widgets import common as c
+from ui.widgets import dialogs as dlg
 
 ROUTE = ROUTES["archive"]
 
@@ -52,6 +53,9 @@ def matches(result: BattleResult, query: str, outcome: str) -> bool:
 
 def build(app: AppState) -> ft.View:
     results_body = ft.Container(expand=True)
+    #: Битые файлы результатов: молча пропускать их — значит врать, что
+    #: боя не было.
+    broken_holder = ft.Container()
     results_title = ft.Text(style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED, spacing=1.1))
     scenarios_body = ft.Container(expand=True)
 
@@ -75,15 +79,23 @@ def build(app: AppState) -> ft.View:
         app.notify(f"Загружен сценарий «{scenario.name}»")
         app.go(ROUTES["battle_setup"])
 
+    def ask_remove(path: Path, label: str, what: str) -> None:
+        """Спросить перед удалением: файл с диска возврату не подлежит.
+
+        Раньше это были два щелчка по одной кнопке с подписью «Точно?» —
+        приём из терминала, а не из настольного приложения: подтверждение
+        приходилось угадывать по сменившейся надписи.
+        """
+        dlg.confirm(
+            app,
+            f"Удалить {what} «{label}»?",
+            f"Файл {path.name} будет удалён с диска. Отменить это нельзя.",
+            confirm_label="Удалить",
+            danger=True,
+            on_confirm=lambda: remove(path, label),
+        )
+
     def remove(path: Path, label: str) -> None:
-        """Удаление в два щелчка: файл с диска возврату не подлежит."""
-        token = str(path)
-        if app.pending_delete != token:
-            app.pending_delete = token
-            app.notify(f"Удалить «{label}»? Нажмите ещё раз.")
-            app.go(ROUTE)
-            return
-        app.pending_delete = ""
         delete_file(path)
         app.notify(f"Удалено: {label}")
         app.go(ROUTE)
@@ -113,17 +125,9 @@ def build(app: AppState) -> ft.View:
                     icon=ft.Icons.REPLAY,
                     height=t.BUTTON_XS_H,
                 ),
-                c.secondary_button(
-                    "Точно?" if app.pending_delete == str(path) else "",
-                    lambda: remove(path, result.scenario_name),
-                    icon=None if app.pending_delete == str(path) else ft.Icons.DELETE_OUTLINE,
-                    height=t.BUTTON_XS_H,
-                    tooltip="Удалить запись",
-                )
-                if app.pending_delete == str(path)
-                else c.icon_button(
+                c.icon_button(
                     ft.Icons.DELETE_OUTLINE,
-                    lambda: remove(path, result.scenario_name),
+                    lambda: ask_remove(path, result.scenario_name, "запись о бое"),
                     size=t.BUTTON_XS_H,
                     icon_size=15,
                     color=t.LOSS,
@@ -151,9 +155,25 @@ def build(app: AppState) -> ft.View:
             ],
             height=t.TABLE_ROW_TALL_H,
             last=last,
+            on_click=lambda: open_result(result),
+            menu=[
+                c.MenuItem("Открыть", lambda: open_result(result), icon=ft.Icons.OPEN_IN_NEW),
+                c.MenuItem(
+                    f"Повтор по сиду {result.master_seed}",
+                    lambda: replay(result),
+                    icon=ft.Icons.REPLAY,
+                ),
+                c.MenuItem(
+                    "Удалить…",
+                    lambda: ask_remove(path, result.scenario_name, "запись о бое"),
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    danger=True,
+                ),
+            ],
         )
 
     def render_results() -> None:
+        broken = app.broken_results()
         found = [
             (path, result)
             for path, result in app.results()
@@ -170,16 +190,29 @@ def build(app: AppState) -> ft.View:
                 scroll=ft.ScrollMode.AUTO,
                 expand=True,
             )
+        elif broken:
+            results_body.content = c.empty_hint(
+                f"Читаемых записей нет, а нечитаемых файлов {len(broken)} — "
+                "см. предупреждение над таблицей."
+            )
         else:
             results_body.content = c.empty_hint(
                 "Ничего не найдено — снимите фильтр или очистите поиск."
             )
-        app.refresh(results_body, results_title)
+        broken_holder.content = (
+            c.warn_banner(
+                f"Не читается файлов результатов: {len(broken)}. Их нет в таблице. "
+                + "; ".join(f"{path.name} — {reason}" for path, reason in broken[:2])
+            )
+            if broken
+            else None
+        )
+        app.refresh(results_body, results_title, broken_holder)
 
     # -- сценарии -----------------------------------------------------------
     def scenario_block(path: Path, scenario: Scenario, *, last: bool) -> ft.Control:
         environment = scenario.environment
-        return ft.Container(
+        block = ft.Container(
             content=ft.Column(
                 [
                     ft.Row(
@@ -214,10 +247,8 @@ def build(app: AppState) -> ft.View:
                                 height=t.BUTTON_SM_H,
                             ),
                             c.tertiary_button(
-                                "Точно удалить?"
-                                if app.pending_delete == str(path)
-                                else "Удалить",
-                                lambda: remove(path, scenario.name),
+                                "Удалить",
+                                lambda: ask_remove(path, scenario.name, "сценарий"),
                                 height=t.BUTTON_SM_H,
                                 color=t.LOSS,
                             ),
@@ -230,6 +261,23 @@ def build(app: AppState) -> ft.View:
             ),
             padding=ft.Padding.symmetric(vertical=14, horizontal=t.PAD_CARD),
             border=None if last else t.border_bottom(t.BORDER_INNER),
+        )
+        return c.interactive(
+            block,
+            menu=[
+                c.MenuItem(
+                    "Открыть в подготовке",
+                    lambda: open_scenario(scenario),
+                    icon=ft.Icons.OPEN_IN_NEW,
+                ),
+                c.MenuItem(
+                    "Удалить…",
+                    lambda: ask_remove(path, scenario.name, "сценарий"),
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    danger=True,
+                ),
+            ],
+            hover=False,
         )
 
     def render_scenarios() -> None:
@@ -332,5 +380,9 @@ def build(app: AppState) -> ft.View:
         title="Архив",
         subtitle="Сценарии и проведённые бои; любой можно повторить",
         actions=[search],
-        body=c.columns(results_card, scenarios_card, right_width=400),
+        body=ft.Column(
+            [broken_holder, c.columns(results_card, scenarios_card, right_width=400)],
+            spacing=t.GAP,
+            expand=True,
+        ),
     )

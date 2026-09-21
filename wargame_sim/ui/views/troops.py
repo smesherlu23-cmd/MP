@@ -17,6 +17,7 @@ from ui import theme as t
 from ui.shell import aside_block, screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
+from ui.widgets import dialogs as dlg
 from ui.widgets import library as lib
 
 ROUTE = ROUTES["troops"]
@@ -156,12 +157,22 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
             go()
 
     # -- папки --------------------------------------------------------------
-    def create_folder() -> None:
+    def create_folder(parent: str = "") -> None:
+        dlg.ask_name(
+            app,
+            "Новая папка" if not parent else f"Папка внутри «{folder_ops.name_of(parent)}»",
+            "Имя папки",
+            "Новая папка",
+            confirm_label="Создать",
+            on_confirm=lambda name: _create_folder(parent, name),
+        )
+
+    def _create_folder(parent: str, name: str) -> None:
+        if not name.strip():
+            return
         raw = store.raw(SECTION)
         try:
-            patched, path = folder_ops.create(
-                store.raw_text(SECTION), raw, open_folder, "Новая папка"
-            )
+            patched, path = folder_ops.create(store.raw_text(SECTION), raw, parent, name)
         except (ConfigError, PatchError):
             say("Не удалось создать папку — проверьте troops.yaml.")
             return
@@ -169,19 +180,30 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
             app.notify(f"Создана папка «{path}»")
             go_folder(path)
 
-    def rename_folder(new_name: str) -> None:
-        if not open_folder or not new_name.strip():
+    def ask_rename_folder(path: str) -> None:
+        dlg.ask_name(
+            app,
+            f"Переименовать «{folder_ops.name_of(path)}»",
+            "Имя папки",
+            folder_ops.name_of(path),
+            confirm_label="Переименовать",
+            on_confirm=lambda name: rename_folder(name, path),
+        )
+
+    def rename_folder(new_name: str, path: str = "") -> None:
+        target = path or open_folder
+        if not target or not new_name.strip():
             return
         raw = store.raw(SECTION)
         try:
-            patched, path = folder_ops.rename(
-                store.raw_text(SECTION), raw, SECTION, open_folder, new_name
+            patched, moved = folder_ops.rename(
+                store.raw_text(SECTION), raw, SECTION, target, new_name
             )
         except (ConfigError, PatchError):
             say("Не удалось переименовать папку.")
             return
         if write(patched):
-            go_folder(path)
+            go_folder(moved)
 
     def move_folder(new_parent: str) -> None:
         if not open_folder:
@@ -197,18 +219,30 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
         if write(patched):
             go_folder(path)
 
-    def delete_folder() -> None:
-        if not open_folder:
+    def delete_folder(path: str = "") -> None:
+        target = path or open_folder
+        if not target:
             return
+        dlg.confirm(
+            app,
+            f"Удалить папку «{folder_ops.name_of(target)}»?",
+            "Типы и вложенные папки поднимутся на уровень выше — ничего "
+            "не пропадёт, но структура изменится.",
+            confirm_label="Удалить",
+            danger=True,
+            on_confirm=lambda: _delete_folder(target),
+        )
+
+    def _delete_folder(target: str) -> None:
         raw = store.raw(SECTION)
         try:
-            patched = folder_ops.remove(store.raw_text(SECTION), raw, SECTION, open_folder)
+            patched = folder_ops.remove(store.raw_text(SECTION), raw, SECTION, target)
         except (ConfigError, PatchError):
             say("Не удалось удалить папку.")
             return
         if write(patched):
-            app.notify(f"Удалена папка «{open_folder}»")
-            go_folder(folder_ops.parent_of(open_folder))
+            app.notify(f"Удалена папка «{target}»")
+            go_folder(folder_ops.parent_of(target))
 
     def reset_library() -> None:
         try:
@@ -222,6 +256,62 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
         go()
 
     # -- список -------------------------------------------------------------
+    def folder_menu(path: str) -> list[c.MenuItem]:
+        """Действия над папкой — по правой кнопке прямо на её строке."""
+        if not path:
+            return [
+                c.MenuItem(
+                    "Создать папку",
+                    lambda: create_folder(""),
+                    icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
+                )
+            ]
+        return [
+            c.MenuItem(
+                "Переименовать…",
+                lambda: ask_rename_folder(path),
+                icon=ft.Icons.EDIT_OUTLINED,
+            ),
+            c.MenuItem(
+                "Создать вложенную…",
+                lambda: create_folder(path),
+                icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
+            ),
+            c.MenuItem(
+                "Удалить папку…",
+                lambda: delete_folder(path),
+                icon=ft.Icons.DELETE_OUTLINE,
+                danger=True,
+            ),
+        ]
+
+    def troop_menu(name: str) -> list[c.MenuItem]:
+        return [
+            c.MenuItem("Открыть", lambda: go(name), icon=ft.Icons.OPEN_IN_NEW),
+            c.MenuItem("Копировать", lambda: duplicate(name), icon=ft.Icons.CONTENT_COPY),
+            c.MenuItem(
+                "Удалить…", lambda: ask_remove(name), icon=ft.Icons.DELETE_OUTLINE, danger=True
+            ),
+        ]
+
+    def ask_remove(name: str) -> None:
+        places = app.materiel_usage(SECTION, name)
+        if places:
+            say(f"«{name}» стоит в составе: {', '.join(places[:3])}. Сначала уберите из состава.")
+            return
+        if len(troops) == 1:
+            say("Это последний тип солдата — его нельзя удалить.")
+            return
+        dlg.confirm(
+            app,
+            f"Удалить «{troops[name].label}»?",
+            "Тип исчезнет из библиотеки. Вернуть его можно только сбросом "
+            "библиотеки к эталону.",
+            confirm_label="Удалить",
+            danger=True,
+            on_confirm=lambda: remove(name),
+        )
+
     def troop_row(name: str, *, last: bool) -> ft.Control:
         entry = troops[name]
         values = soldier(name, config)
@@ -237,7 +327,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
                 ),
                 c.icon_button(
                     ft.Icons.DELETE_OUTLINE,
-                    lambda: remove(name),
+                    lambda: ask_remove(name),
                     size=t.BUTTON_XS_H,
                     icon_size=15,
                     color=t.LOSS,
@@ -282,6 +372,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
             bgcolor=t.ROW_EXPANDED if name == selected and not open_folder else None,
             last=last,
             on_click=lambda: go(name),
+            menu=troop_menu(name),
         )
 
     rows: list[ft.Control] = []
@@ -293,6 +384,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
                     len(folder_names),
                     selected=bool(path) and path == open_folder,
                     on_click=(lambda p=path: go_folder(p)) if path else None,
+                    menu=folder_menu(path),
                 )
             )
         if not folder_names:
@@ -316,7 +408,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
         trailing=[
             c.secondary_button(
                 "Создать папку",
-                create_folder,
+                lambda: create_folder(open_folder),
                 icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
                 height=t.BUTTON_SM_H,
             )

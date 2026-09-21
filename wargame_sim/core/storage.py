@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -87,6 +88,35 @@ def save_model(instance: BaseModel, path: Path) -> Path:
     return write_json(path, instance.model_dump(mode="json"))
 
 
+@dataclass(frozen=True)
+class Scan(Generic[T]):
+    """Содержимое каталога: что прочиталось и что не прочиталось.
+
+    Молча пропускать битый файл нельзя: для ГМ подразделение просто
+    исчезает из списка, и он не знает, что файл на диске есть, но не
+    читается. Поэтому причина отказа доходит до интерфейса.
+    """
+
+    items: list[tuple[Path, T]]
+    broken: list[tuple[Path, str]]
+
+
+def scan_models(
+    model: type[T], directory: Path, *, newest_first: bool = False
+) -> Scan[T]:
+    """Прочитать все JSON каталога, запомнив причину по каждому отказу."""
+    items: list[tuple[Path, T]] = []
+    broken: list[tuple[Path, str]] = []
+    if not directory.exists():
+        return Scan(items, broken)
+    for path in sorted(directory.glob("*.json"), reverse=newest_first):
+        try:
+            items.append((path, load_model(model, path)))
+        except StorageError as error:
+            broken.append((path, str(error)))
+    return Scan(items, broken)
+
+
 # -- подразделения ----------------------------------------------------------
 def save_battalion(battalion: Battalion, directory: Path | None = None) -> Path:
     directory = directory or UNITS_DIR
@@ -98,16 +128,14 @@ def load_battalion(path: Path) -> Battalion:
     return load_model(Battalion, path)
 
 
+def scan_battalions(directory: Path | None = None) -> Scan[Battalion]:
+    """Подразделения и причины по нечитаемым файлам."""
+    return scan_models(Battalion, directory or UNITS_DIR)
+
+
 def list_battalions(directory: Path | None = None) -> list[tuple[Path, Battalion]]:
-    """Все сохранённые подразделения; повреждённые файлы пропускаются."""
-    directory = directory or UNITS_DIR
-    items: list[tuple[Path, Battalion]] = []
-    for path in sorted(directory.glob("*.json")):
-        try:
-            items.append((path, load_battalion(path)))
-        except StorageError:
-            continue
-    return items
+    """Только читаемые подразделения; про остальные спросите `scan_battalions`."""
+    return scan_battalions(directory).items
 
 
 def delete_file(path: Path) -> None:
@@ -126,15 +154,12 @@ def load_scenario(path: Path) -> Scenario:
     return load_model(Scenario, path)
 
 
+def scan_scenarios(directory: Path | None = None) -> Scan[Scenario]:
+    return scan_models(Scenario, directory or SCENARIOS_DIR)
+
+
 def list_scenarios(directory: Path | None = None) -> list[tuple[Path, Scenario]]:
-    directory = directory or SCENARIOS_DIR
-    items: list[tuple[Path, Scenario]] = []
-    for path in sorted(directory.glob("*.json")):
-        try:
-            items.append((path, load_scenario(path)))
-        except StorageError:
-            continue
-    return items
+    return scan_scenarios(directory).items
 
 
 # -- результаты -------------------------------------------------------------
@@ -148,15 +173,13 @@ def load_result(path: Path) -> BattleResult:
     return load_model(BattleResult, path)
 
 
+def scan_results(directory: Path | None = None) -> Scan[BattleResult]:
+    """Результаты — новые сверху — и причины по нечитаемым файлам."""
+    return scan_models(BattleResult, directory or RESULTS_DIR, newest_first=True)
+
+
 def list_results(directory: Path | None = None) -> list[tuple[Path, BattleResult]]:
-    directory = directory or RESULTS_DIR
-    items: list[tuple[Path, BattleResult]] = []
-    for path in sorted(directory.glob("*.json"), reverse=True):
-        try:
-            items.append((path, load_result(path)))
-        except StorageError:
-            continue
-    return items
+    return scan_results(directory).items
 
 
 def save_batch(batch: BatchResult, path: Path) -> Path:

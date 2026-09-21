@@ -15,14 +15,15 @@ import flet as ft
 from ui import theme as t
 
 
-def safe_update(control: ft.Control) -> None:
-    """Обновить контрол, если он уже показан на странице.
+def safe_update(*controls: ft.Control) -> None:
+    """Обновить контролы, которые уже показаны на странице.
 
     Экраны собираются до того, как попадают в стек View, поэтому часть
     обновлений происходит, когда обновлять ещё нечего — это не ошибка.
     """
-    with contextlib.suppress(RuntimeError):
-        control.update()
+    for control in controls:
+        with contextlib.suppress(RuntimeError):
+            control.update()
 
 
 # --------------------------------------------------------------------------
@@ -882,6 +883,23 @@ def error_banner(message: str) -> ft.Control:
         ),
         bgcolor=t.CARD_BG,
         border=ft.Border.all(1, t.LOSS),
+        border_radius=t.R_CARD,
+        padding=t.PAD_CARD,
+    )
+
+
+def warn_banner(message: str) -> ft.Control:
+    """Предупреждение: сделать можно, но ГМ обязан об этом знать."""
+    return ft.Container(
+        content=ft.Row(
+            [
+                ft.Icon(ft.Icons.WARNING_AMBER_OUTLINED, color=t.WARN, size=18),
+                ft.Text(message, style=t.sans(size=t.SIZE_ROW, color=t.TEXT_2), expand=True),
+            ],
+            spacing=t.GAP_SM,
+        ),
+        bgcolor=t.SURFACE_ALT,
+        border=ft.Border.all(1, t.WARN),
         border_radius=t.R_CARD,
         padding=t.PAD_CARD,
     )

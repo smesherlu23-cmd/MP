@@ -19,6 +19,7 @@ from core.storage import (
     save_battalion,
     save_result,
     save_scenario,
+    scan_battalions,
 )
 
 
@@ -95,3 +96,23 @@ def test_battalion_rejects_duplicate_element_ids(scenario) -> None:
     elements = [scenario.battalion_a.elements[0], scenario.battalion_a.elements[0]]
     with pytest.raises(ValueError, match="повторяющиеся id"):
         Battalion(id="x", name="x", elements=elements)
+
+
+def test_broken_file_is_reported_not_swallowed(tmp_path: Path, scenario) -> None:
+    """Нечитаемый файл попадает в `broken`, а не исчезает из списка молча.
+
+    Молчаливый пропуск выглядел для ГМ как «подразделение пропало»:
+    файл на диске есть, а в списке его нет, и почему — неизвестно.
+    """
+    save_battalion(scenario.battalion_a, tmp_path)
+    (tmp_path / "broken.json").write_text("{не json", encoding="utf-8")
+    (tmp_path / "future.json").write_text('{"schema_version": 999}', encoding="utf-8")
+
+    scan = scan_battalions(tmp_path)
+    assert [battalion.id for _, battalion in scan.items] == [scenario.battalion_a.id]
+    assert {path.name for path, _ in scan.broken} == {"broken.json", "future.json"}
+    assert any("повреждённый JSON" in reason for _, reason in scan.broken)
+    assert any("999" in reason for _, reason in scan.broken)
+
+    # Старый список по-прежнему отдаёт только читаемое.
+    assert len(list_battalions(tmp_path)) == 1

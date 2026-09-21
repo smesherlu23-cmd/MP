@@ -591,7 +591,7 @@ def test_unit_editor_offers_scale_and_reshaping(app: AppState) -> None:
 
     assert "масштаб отряда" in _labels(view)
     assert _has(view, "Перестроить")
-    assert _has(view, "Разделить")
+    assert _has(view, "Разделить…")
     assert "самостоятельная" in _labels(view)
 
 
@@ -750,3 +750,249 @@ def test_charts_follow_the_palette(app: AppState, light_theme) -> None:
 
     assert light_png and dark_png
     assert light_png != dark_png
+
+
+# --------------------------------------------------------------------------
+# Правая кнопка, диалоги и честность интерфейса
+# --------------------------------------------------------------------------
+def _menu_labels(node: object) -> set[str]:
+    """Подписи всех пунктов контекстных меню экрана."""
+    labels: set[str] = set()
+    for control in _walk(node):
+        for item in getattr(control, "secondary_items", None) or ():
+            for child in _walk(item):
+                value = getattr(child, "value", None)
+                if isinstance(value, str) and value:
+                    labels.add(value)
+    return labels
+
+
+def _menu_action(node: object, label: str):
+    """Обработчик пункта меню с такой подписью."""
+    for control in _walk(node):
+        for item in getattr(control, "secondary_items", None) or ():
+            if label in {
+                value
+                for child in _walk(item)
+                if isinstance(value := getattr(child, "value", None), str)
+            }:
+                return item.on_click
+    raise AssertionError(f"нет пункта меню «{label}»")
+
+
+def _click_by_label(node: object, label: str):
+    """Обработчик кнопки или плашки с такой подписью.
+
+    Берётся последнее совпадение: содержимое экрана идёт после навигации,
+    а подпункт навигации бывает подписан так же, как кнопка (например,
+    «Итог» на пульте боя).
+    """
+    found = [
+        control.on_click
+        for control in _walk(node)
+        if getattr(control, "on_click", None) is not None
+        and label
+        in {
+            value
+            for child in _walk(control)
+            if isinstance(value := getattr(child, "value", None), str)
+        }
+    ]
+    if not found:
+        raise AssertionError(f"нет кнопки «{label}»")
+    return found[-1]
+
+
+def _dialogs(app: AppState) -> list[object]:
+    """Перехват модальных окон: в тестах их некуда показывать."""
+    box: list[object] = []
+    app.dialog_opener = box.append
+    app.dialog_closer = lambda: None
+    return box
+
+
+def test_folder_row_carries_its_actions(app: AppState) -> None:
+    """Папка правится правой кнопкой по своей строке, а не поиском кнопок."""
+    from core.config import folders as folder_ops
+
+    store = app.store
+    patched, path = folder_ops.create(store.raw_text("vehicles"), store.raw("vehicles"), "", "Парк")
+    store.save_text("vehicles", patched)
+    app.reload_config()
+
+    view = materiel.build(app, "vehicles")
+    labels = _menu_labels(view)
+    assert "Переименовать…" in labels
+    assert "Создать вложенную…" in labels
+    assert "Удалить папку…" in labels
+    assert path == "Парк"
+
+
+def test_library_entry_row_carries_its_actions(app: AppState) -> None:
+    """У записи библиотеки — открыть, копировать, удалить по правой кнопке."""
+    labels = _menu_labels(materiel.build(app, "weapons"))
+    assert {"Открыть", "Копировать", "Удалить…"} <= labels
+
+
+def test_deleting_a_folder_asks_first(app: AppState) -> None:
+    """Удаление папки спрашивает, а не происходит по одному щелчку."""
+    from core.config import folders as folder_ops
+
+    store = app.store
+    patched, _ = folder_ops.create(store.raw_text("gear"), store.raw("gear"), "", "Склад")
+    store.save_text("gear", patched)
+    app.reload_config()
+    app.selected_folder["gear"] = "Склад"
+
+    box = _dialogs(app)
+    view = materiel.build(app, "gear")
+    _menu_action(view, "Удалить папку…")()
+
+    assert len(box) == 1, "диалог подтверждения не открылся"
+    assert box[0].title.value.startswith("Удалить папку «")
+    assert "Склад" in app.config.gear.folders, "папка удалилась до подтверждения"
+
+
+def test_split_dialog_previews_the_apportionment(app: AppState) -> None:
+    """Деление показывает доли и то, сколько людей уйдёт в каждую подгруппу."""
+    from core import formation
+    from ui.widgets import dialogs as dlg
+
+    battalion = app.scenario.battalion_a
+    element = battalion.leaf_elements[0]
+    box = _dialogs(app)
+    dlg.split_group(app, battalion, element, on_split=lambda parts, shares: None, parts=3)
+
+    assert len(box) == 1
+    texts = _texts(box[0])
+    expected = formation.apportion(element.personnel_current, [1.0, 1.0, 1.0])
+    assert str(element.personnel_current) in " ".join(texts)
+    for value in expected:
+        assert str(value) in texts
+
+
+def test_split_dialog_hands_over_the_shares(app: AppState) -> None:
+    """Выбранные доли доходят до деления, а не теряются по дороге."""
+    from ui.widgets import dialogs as dlg
+
+    battalion = app.scenario.battalion_a
+    element = battalion.leaf_elements[0]
+    taken: list[tuple[int, list[float]]] = []
+    box = _dialogs(app)
+    dlg.split_group(
+        app,
+        battalion,
+        element,
+        on_split=lambda parts, shares: taken.append((parts, shares)),
+        parts=2,
+    )
+
+    _click_by_label(box[0], "Разделить")()
+    assert taken == [(2, [1.0, 1.0])]
+
+
+def test_result_is_not_invented_before_the_battle_ends(app: AppState) -> None:
+    """«Итог» на пятом ходу не выдаёт ничью по лимиту ходов."""
+    engine = app.start_battle()
+    engine.run_turns(3)
+    assert not engine.finished
+
+    box = _dialogs(app)
+    view = resolve(app, ROUTES["battle"].format(id=app.scenario.id))
+    _click_by_label(view, "Итог")()
+
+    assert app.result is None, "итог собрался по незакончившемуся бою"
+    assert len(box) == 1
+    assert "не закончен" in box[0].title.value.casefold()
+
+
+def test_journal_shows_the_latest_records(app: AppState) -> None:
+    """Журнал показывает последние записи, а не первые два хода."""
+    engine = app.start_battle()
+    engine.run_turns(6)
+    entries = list(engine.log.entries)
+    assert len(entries) > journal.EntriesView().__dict__["_limit"]
+
+    view = journal.EntriesView()
+    view.render(entries, "events")
+    shown = view.__dict__["_window"]
+    assert shown[-1] is entries[-1], "последняя запись боя не показана"
+    assert shown[0] is not entries[0], "показано начало вместо конца"
+
+
+def test_journal_appends_instead_of_rebuilding(app: AppState) -> None:
+    """Новая запись добавляет одну плитку, а не перестраивает триста."""
+    engine = app.start_battle()
+    engine.run_turns(2)
+    view = journal.EntriesView()
+    view.render(list(engine.log.entries), "events")
+    tiles = view.__dict__["_tiles"]
+    before = list(tiles.controls)
+
+    element = engine.state.battalion("A").leaf_elements[0]
+    engine.set_order("A", element.id, Order.DEFENCE)
+    view.render(list(engine.log.entries), "events")
+
+    # Окно уже полное, поэтому одна плитка ушла с начала и одна пришла в конец,
+    # а всё между ними — те же самые объекты, а не новые.
+    assert tiles.controls[:-1] == before[1:], "старые плитки пересобрались заново"
+    assert tiles.controls[-1] is not before[-1]
+
+
+def test_changed_filter_rebuilds_the_journal(app: AppState) -> None:
+    """Смена фильтра — это другой список, и он собирается заново."""
+    engine = app.start_battle()
+    engine.run_turns(2)
+    entries = list(engine.log.entries)
+    view = journal.EntriesView()
+    view.render(entries, "events")
+    first = list(view.__dict__["_tiles"].controls)
+
+    view.render([entry for entry in entries if entry.turn == 2], "events")
+    assert view.__dict__["_tiles"].controls != first
+
+
+def test_template_chip_actually_adds_a_group(app: AppState) -> None:
+    """Плашка шаблона добавляет группу этого типа, а не открывает первый отряд."""
+    from ui.views import units as units_view
+
+    type_name = sorted(app.config.element_types.element_types)[0]
+    label = app.config.element_type(type_name).label
+
+    # Отрядов два, поэтому сначала спрашивают, куда класть.
+    box = _dialogs(app)
+    _click_by_label(units_view.build(app), label)()
+    assert len(box) == 1, "не спросил, в какой отряд добавлять"
+
+    target = app.units()[0][1]
+    before = len(target.elements)
+    _click_by_label(box[0], "Добавить")()
+
+    saved = app.unit(target.id)
+    assert saved is not None
+    assert len(saved[1].elements) == before + 1
+    assert saved[1].elements[-1].type == type_name
+
+
+def test_changing_the_scenario_starts_a_new_battle(app: AppState) -> None:
+    """Правка сценария не выдаётся за продолжение прежнего боя."""
+    engine = app.ensure_battle()
+    engine.run_turns(2)
+    assert app.ensure_battle() is engine
+
+    app.scenario.master_seed = app.scenario.master_seed + 1
+    fresh = app.ensure_battle()
+    assert fresh is not engine
+    assert fresh.state.turn == 0
+
+
+def test_broken_unit_file_is_reported_not_hidden(app: AppState) -> None:
+    """Нечитаемый файл подразделения виден на экране, а не исчезает молча."""
+    from ui.views import units as units_view
+
+    (app.units_dir / "broken.json").write_text("{не json", encoding="utf-8")
+    broken = app.broken_units()
+    assert len(broken) == 1
+    assert "broken.json" in broken[0][0].name
+
+    assert "не читается файлов: 1" in " ".join(_texts(units_view.build(app))).casefold()

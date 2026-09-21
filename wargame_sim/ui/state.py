@@ -22,12 +22,12 @@ from core.storage import (
     UNITS_DIR,
     StorageError,
     ensure_dirs,
-    list_battalions,
-    list_results,
     list_scenarios,
     save_battalion,
     save_result,
     save_scenario,
+    scan_battalions,
+    scan_results,
 )
 
 #: Значение фильтра «без ограничения».
@@ -97,6 +97,10 @@ class AppState:
 
         self.scenario: Scenario = make_scenario(self.config)
         self.engine: BattleEngine | None = None
+        #: Отпечаток сценария, по которому построен текущий бой. Пока он
+        #: совпадает, бой можно продолжать; разошёлся — сценарий правили,
+        #: и старый движок пришлось бы выдавать за новый.
+        self._battle_source: str = ""
         self.result: BattleResult | None = None
         self.batch: BatchResult | None = None
         self.batch_running = False
@@ -144,9 +148,6 @@ class AppState:
         #: Экран коэффициентов: раздел и способ правки.
         self.config_section: str = "combat"
         self.config_view: str = CONFIG_FIELDS
-        #: Что взведено на удаление: второй щелчок по той же кнопке
-        #: удаляет. Дешевле диалога и работает без запущенного окна.
-        self.pending_delete: str = ""
         #: Архив: фильтр по исходу и строка поиска.
         self.archive_outcome: str = ALL
         self.archive_query: str = ""
@@ -272,7 +273,11 @@ class AppState:
 
     # -- подразделения ------------------------------------------------------
     def units(self) -> list[tuple[Path, Battalion]]:
-        return list_battalions(self.units_dir)
+        return scan_battalions(self.units_dir).items
+
+    def broken_units(self) -> list[tuple[Path, str]]:
+        """Файлы подразделений, которые не читаются, и причина по каждому."""
+        return scan_battalions(self.units_dir).broken
 
     def unit(self, unit_id: str) -> tuple[Path, Battalion] | None:
         for path, battalion in self.units():
@@ -297,20 +302,34 @@ class AppState:
 
     # -- результаты ---------------------------------------------------------
     def results(self) -> list[tuple[Path, BattleResult]]:
-        return list_results(self.results_dir)
+        return scan_results(self.results_dir).items
+
+    def broken_results(self) -> list[tuple[Path, str]]:
+        return scan_results(self.results_dir).broken
 
     def save_result(self, result: BattleResult) -> Path:
         return save_result(result, self.results_dir)
 
     # -- бой ----------------------------------------------------------------
+    def scenario_fingerprint(self) -> str:
+        """Отпечаток сценария: по нему видно, что его правили после начала боя."""
+        return json.dumps(self.scenario.model_dump(mode="json"), sort_keys=True)
+
     def start_battle(self) -> BattleEngine:
         """Создать новый бой по текущему сценарию."""
         self.engine = BattleEngine(self.scenario, self.config)
+        self._battle_source = self.scenario_fingerprint()
         self.result = None
         return self.engine
 
     def ensure_battle(self) -> BattleEngine:
-        if self.engine is None:
+        """Текущий бой, но не чужой: правка сценария начинает бой заново.
+
+        Раньше сюда возвращался движок, построенный по прежнему сценарию —
+        новый сид или другое подразделение на пульте не появлялись, и
+        было непонятно, почему.
+        """
+        if self.engine is None or self._battle_source != self.scenario_fingerprint():
             return self.start_battle()
         return self.engine
 

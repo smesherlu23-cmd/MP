@@ -75,7 +75,8 @@ def build(app: AppState, battle_id: str) -> ft.View:
     tree_footer = ft.Container()
     elements_count = ft.Text(style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED))
     attention = ft.Container()
-    journal_body = ft.Container(expand=True)
+    #: Журнал дописывает новые записи, а не перестраивается целиком.
+    journal_view = j.EntriesView()
     journal_footer = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
     indicator = ft.Container()
     busy = ft.ProgressBar(visible=False, color=t.TEXT, bgcolor=t.TRACK, height=2)
@@ -382,7 +383,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
     def redraw_journal() -> None:
         entries = visible_entries()
-        journal_body.content = j.entries_list(entries, app.journal_detail)
+        journal_view.render(entries, app.journal_detail)
         journal_footer.controls = [
             ft.Text(
                 f"записей {len(engine.log)} · хеш {engine.log.digest()[:8]}",
@@ -394,7 +395,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
                 style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
             ),
         ]
-        app.refresh(journal_body, journal_footer)
+        app.refresh(journal_footer)
 
     def redraw_all() -> None:
         redraw_indicator()
@@ -404,7 +405,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         redraw_journal()
 
     # -- действия -----------------------------------------------------------
-    def run_in_background(work) -> None:
+    def run_in_background(work, then=None) -> None:
         """Длинные расчёты — в отдельном потоке, UI не блокируется (§10)."""
 
         def task() -> None:
@@ -414,6 +415,8 @@ def build(app: AppState, battle_id: str) -> ft.View:
                 busy.visible = False
                 redraw_all()
                 app.refresh(busy)
+            if then is not None:
+                then()
 
         busy.visible = True
         app.refresh(busy)
@@ -440,8 +443,31 @@ def build(app: AppState, battle_id: str) -> ft.View:
         app.go(ROUTE.format(id=battle_id))
 
     def show_result() -> None:
-        app.finish_battle()
-        app.go(f"/battle/{battle_id}/result")
+        """Итог — только по законченному бою.
+
+        Раньше кнопка показывала «ничья по лимиту ходов» на пятом ходу:
+        движок собирал результат из ещё не наступившего конца.
+        """
+        if engine.finished:
+            app.finish_battle()
+            app.go(f"/battle/{battle_id}/result")
+            return
+        dlg.confirm(
+            app,
+            "Бой ещё не закончен",
+            f"Идёт ход {engine.state.turn}. Итог складывается по законченному "
+            "бою: победитель, причина и остаточная боеспособность. Довести "
+            "бой до конца?",
+            confirm_label="Довести до конца",
+            on_confirm=finish_and_show,
+        )
+
+    def finish_and_show() -> None:
+        def work() -> None:
+            engine.run()
+            app.finish_battle()
+
+        run_in_background(work, then=lambda: app.go(f"/battle/{battle_id}/result"))
 
     def set_side_filter(value: str) -> None:
         app.run_side_filter = value
@@ -513,7 +539,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
     journal_card = c.framed_card(
         "Журнал",
-        journal_body,
+        journal_view.control,
         trailing=[journal_controls],
         footer=c.card_footer([journal_footer]),
         expand=True,

@@ -1,4 +1,4 @@
-"""Модальные окна: подтверждение, ввод имени, деление группы.
+"""Модальные окна: подтверждение, ввод имени, выбор, деление группы.
 
 Раньше их в интерфейсе не было вовсе — единственным «диалогом» был
 снек-бар. Из-за этого удаление папки происходило по одному щелчку без
@@ -23,6 +23,9 @@ from ui.widgets import common as c
 
 #: Ширина поля доли в диалоге деления.
 SHARE_W = 62
+
+#: Ширина списка выбора в диалоге `pick`.
+PICK_W = 380
 
 #: На сколько частей можно разделить группу одним действием.
 PARTS_CHOICES: tuple[tuple[str, str], ...] = (("2", "2"), ("3", "3"), ("4", "4"), ("5", "5"))
@@ -108,6 +111,52 @@ def ask_name(
                 c.primary_button(confirm_label, accept),
             ],
             width=400,
+        )
+    )
+
+
+def pick(
+    app,
+    title: str,
+    message: str,
+    options: Sequence[tuple[str, str]],
+    *,
+    confirm_label: str,
+    on_pick: Callable[[str], None],
+    value: str = "",
+) -> None:
+    """Спросить адресата действия — когда его нельзя угадать за ГМ."""
+    holder = {"value": value or (options[0][0] if options else "")}
+    body = ft.Column(
+        [
+            c.note(message),
+            c.select(
+                holder["value"],
+                list(options),
+                lambda picked: holder.update(value=picked),
+                width=PICK_W,
+            ),
+        ],
+        spacing=t.GAP_IN,
+        tight=True,
+    )
+
+    def accept() -> None:
+        chosen = holder["value"]
+        if not chosen:
+            return
+        app.close_dialog()
+        on_pick(chosen)
+
+    app.show_dialog(
+        _frame(
+            title,
+            body,
+            [
+                c.tertiary_button("Отмена", app.close_dialog),
+                c.primary_button(confirm_label, accept),
+            ],
+            width=440,
         )
     )
 

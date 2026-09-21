@@ -8,12 +8,13 @@ from pathlib import Path
 import flet as ft
 
 from core.models import Battalion, Side, new_id
-from core.samples import make_battalion, make_platoon
+from core.samples import make_battalion, make_element, make_platoon
 from core.storage import StorageError, delete_file, load_battalion
 from ui import theme as t
 from ui.shell import screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
+from ui.widgets import dialogs as dlg
 
 ROUTE = ROUTES["units"]
 
@@ -62,6 +63,17 @@ def build(app: AppState) -> ft.View:
         app.notify(f"Скопирован «{source.name}»")
         refresh()
 
+    def ask_remove(path: Path, battalion: Battalion) -> None:
+        dlg.confirm(
+            app,
+            f"Удалить «{battalion.name}»?",
+            f"Файл {path.name} будет удалён с диска. Отменить это нельзя — "
+            "если отряд ещё понадобится, сначала выгрузите его в JSON.",
+            confirm_label="Удалить",
+            danger=True,
+            on_confirm=lambda: remove(path, battalion),
+        )
+
     def remove(path: Path, battalion: Battalion) -> None:
         delete_file(path)
         app.notify(f"Удалён «{battalion.name}»")
@@ -94,13 +106,82 @@ def build(app: AppState) -> ft.View:
         refresh()
 
     def add_template(type_name: str) -> None:
-        """Шаблон группы добавляется в первый отряд списка."""
+        """Добавить группу этого типа в выбранный отряд.
+
+        Раньше любой шаблон просто открывал первый отряд списка — семь
+        разных плашек делали одно и то же и ничего не добавляли.
+        """
         units = app.units()
         if not units:
             message.value = "Сначала создайте отряд — шаблон некуда положить."
             app.refresh(message)
             return
-        app.go(ROUTES["unit"].format(id=units[0][1].id))
+        label = app.config.element_type(type_name).label
+        if len(units) == 1:
+            put_template(type_name, units[0][1].id)
+            return
+        dlg.pick(
+            app,
+            f"Куда добавить «{label}»?",
+            "Группа встанет в боевой порядок выбранного отряда, и он откроется "
+            "на правку.",
+            [(battalion.id, battalion.name) for _, battalion in units],
+            confirm_label="Добавить",
+            on_pick=lambda unit_id: put_template(type_name, unit_id),
+        )
+
+    def put_template(type_name: str, unit_id: str) -> None:
+        found = app.unit(unit_id)
+        if found is None:
+            return
+        battalion = found[1]
+        label = app.config.element_type(type_name).label
+        taken = {item.name for item in battalion.elements}
+        name, index = label, 2
+        while name in taken:
+            name, index = f"{label} {index}", index + 1
+        element = make_element(type_name, name, new_id(type_name), app.config)
+        battalion.elements = [*battalion.elements, element]
+        app.save_unit(battalion)
+        app.expanded_element = element.id
+        app.notify(f"«{element.name}» добавлена в «{battalion.name}»")
+        app.go(ROUTES["unit"].format(id=battalion.id))
+
+    def unit_menu(path: Path, battalion: Battalion) -> list[c.MenuItem]:
+        return [
+            c.MenuItem(
+                "Открыть",
+                lambda: app.go(ROUTES["unit"].format(id=battalion.id)),
+                icon=ft.Icons.OPEN_IN_NEW,
+            ),
+            c.MenuItem("Копировать", lambda: duplicate(battalion), icon=ft.Icons.CONTENT_COPY),
+            c.MenuItem(
+                "В бой стороной A",
+                lambda: use_in_battle(battalion, Side.A),
+                icon=ft.Icons.MILITARY_TECH,
+            ),
+            c.MenuItem("В бой стороной B", lambda: use_in_battle(battalion, Side.B)),
+            c.MenuItem(
+                "Выгрузить JSON", lambda: export(path, battalion), icon=ft.Icons.DOWNLOAD_OUTLINED
+            ),
+            c.MenuItem(
+                "Удалить…",
+                lambda: ask_remove(path, battalion),
+                icon=ft.Icons.DELETE_OUTLINE,
+                danger=True,
+            ),
+        ]
+
+    def use_in_battle(battalion: Battalion, side: Side) -> None:
+        copy = battalion.model_copy(deep=True)
+        copy.side = side
+        if side == Side.A:
+            app.scenario.battalion_a = copy
+        else:
+            app.scenario.battalion_b = copy
+        app.engine = None
+        app.notify(f"«{battalion.name}» назначен стороной {side}")
+        app.go(ROUTES["battle_setup"])
 
     def row(path: Path, battalion: Battalion, *, last: bool) -> ft.Control:
         actions = ft.Row(
@@ -127,7 +208,7 @@ def build(app: AppState) -> ft.View:
                 ),
                 c.icon_button(
                     ft.Icons.DELETE_OUTLINE,
-                    lambda: remove(path, battalion),
+                    lambda: ask_remove(path, battalion),
                     size=t.BUTTON_SM_H,
                     icon_size=16,
                     color=t.LOSS,
@@ -151,6 +232,8 @@ def build(app: AppState) -> ft.View:
             ],
             height=t.TABLE_ROW_TALL_H,
             last=last,
+            on_click=lambda: app.go(ROUTES["unit"].format(id=battalion.id)),
+            menu=unit_menu(path, battalion),
         )
 
     units = app.units()
@@ -172,6 +255,7 @@ def build(app: AppState) -> ft.View:
     templates = c.card(
         [
             t.card_title("Типовые шаблоны групп"),
+            c.note("Щелчок добавляет группу этого типа в отряд."),
             c.flow(
                 [
                     c.chip(entry.label, lambda key=key: add_template(key))
@@ -206,6 +290,16 @@ def build(app: AppState) -> ft.View:
         width=420,
     )
 
+    broken = app.broken_units()
+    warnings: list[ft.Control] = []
+    if broken:
+        details = "; ".join(f"{path.name} — {reason}" for path, reason in broken[:3])
+        warnings.append(
+            c.warn_banner(
+                f"Не читается файлов: {len(broken)}. Их нет в списке выше. {details}"
+            )
+        )
+
     return screen(
         app,
         active="units",
@@ -219,6 +313,7 @@ def build(app: AppState) -> ft.View:
         ],
         body=ft.Column(
             [
+                *warnings,
                 c.framed_card("Отряды", body, expand=True),
                 ft.Row(
                     [templates, import_card],

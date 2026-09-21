@@ -228,10 +228,3 @@ def selection_label(element: Element, battalion: Battalion) -> ft.Control:
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
-
-def parts_switch(value: int, on_change: Callable[[int], None]) -> ft.Control:
-    """На сколько частей делить: 2, 3 или 4."""
-    options: Sequence[tuple[str, str]] = (("2", "2"), ("3", "3"), ("4", "4"))
-    return c.segmented(
-        options, str(value), lambda raw: on_change(int(raw)), size=t.SIZE_META
-    )

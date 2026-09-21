@@ -138,26 +138,99 @@ def entry_tile(entry: LogEntry, detail: str, *, last: bool = False) -> ft.Contro
     )
 
 
-def entries_list(entries: Sequence[LogEntry], detail: str, *, limit: int = 300) -> ft.Control:
-    """Список записей с прокруткой внутри карточки."""
-    if not entries:
-        return c.empty_hint("Записей нет — измените фильтр или сделайте ход.")
-    shown = list(entries[:limit])
-    controls: list[ft.Control] = [
-        entry_tile(entry, detail, last=(index == len(shown) - 1))
-        for index, entry in enumerate(shown)
-    ]
-    if len(entries) > limit:
-        controls.append(
+class EntriesView:
+    """Журнал, который дописывает новое вместо полной перерисовки.
+
+    Показываются **последние** записи, а не первые: за бой их набегает
+    около 2600, и обрезка с начала оставляла ГМ первые два хода — после
+    очередного хода в журнале не было видно ровно того, что произошло.
+    Начало по-прежнему достаётся фильтром по ходу.
+
+    Запись журнала неизменна, поэтому и плитка неизменна: если список
+    вырос с конца — а так бывает всегда, кроме смены фильтра, — строятся
+    только новые плитки. Приказ или деление добавляют одну запись, и
+    раньше из-за неё перестраивались все триста.
+    """
+
+    def __init__(self, *, limit: int = 300) -> None:
+        self._limit = limit
+        self._detail = ""
+        #: Показанное окно записей и длина всего отфильтрованного списка.
+        self._window: list[LogEntry] = []
+        self._total = 0
+        self._notice = ft.Container(visible=False)
+        self._empty = ft.Container(visible=False)
+        self._tiles = ft.Column(spacing=0, tight=True)
+        self.control: ft.Control = ft.Column(
+            [self._notice, self._empty, self._tiles],
+            spacing=0,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
+
+    def render(self, entries: Sequence[LogEntry], detail: str) -> None:
+        """Обновить журнал под текущий фильтр и детальность."""
+        items = list(entries)
+        if detail == self._detail and self._is_growth(items):
+            self._append(items)
+        else:
+            self._rebuild(items, detail)
+        c.safe_update(self._notice, self._empty, self._tiles)
+
+    # -- внутреннее ---------------------------------------------------------
+    def _is_growth(self, items: Sequence[LogEntry]) -> bool:
+        """Тот же список, только длиннее: показанное окно совпало по объектам."""
+        if not self._window or len(items) < self._total:
+            return False
+        start = self._total - len(self._window)
+        window = items[start : self._total]
+        if len(window) != len(self._window):
+            return False
+        return all(new is old for new, old in zip(window, self._window, strict=True))
+
+    def _rebuild(self, items: Sequence[LogEntry], detail: str) -> None:
+        self._detail = detail
+        hidden = max(len(items) - self._limit, 0)
+        self._window = list(items[hidden:])
+        self._total = len(items)
+        self._tiles.controls = [entry_tile(entry, detail) for entry in self._window]
+        self._paint_notice(hidden, empty=not items)
+
+    def _append(self, items: Sequence[LogEntry]) -> None:
+        fresh = items[self._total :]
+        self._tiles.controls = [
+            *self._tiles.controls,
+            *(entry_tile(entry, self._detail) for entry in fresh),
+        ]
+        self._window = [*self._window, *fresh]
+        self._total = len(items)
+        extra = max(len(self._window) - self._limit, 0)
+        if extra:
+            self._tiles.controls = self._tiles.controls[extra:]
+            self._window = self._window[extra:]
+        self._paint_notice(self._total - len(self._window), empty=not items)
+
+    def _paint_notice(self, hidden: int, *, empty: bool) -> None:
+        self._empty.visible = empty
+        self._empty.content = (
+            c.empty_hint("Записей нет — измените фильтр или сделайте ход.")
+            if empty
+            else None
+        )
+        self._notice.visible = bool(hidden)
+        self._notice.content = (
             ft.Container(
                 content=ft.Text(
-                    f"показаны первые {limit} из {len(entries)} — сузьте фильтр",
+                    f"ранних записей скрыто: {hidden} — показаны последние "
+                    f"{len(self._window)}, начало смотрите фильтром по ходу",
                     style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_PLACEHOLDER),
                 ),
                 padding=ft.Padding.symmetric(vertical=8, horizontal=14),
+                border=t.border_bottom(t.BORDER_INNER),
             )
+            if hidden
+            else None
         )
-    return ft.Column(controls, spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
 
 
 def key_events(entries: Sequence[LogEntry], *, limit: int = 8) -> list[LogEntry]:

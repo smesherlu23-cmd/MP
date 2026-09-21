@@ -21,10 +21,12 @@ from core.models import (
     new_id,
 )
 from core.samples import make_element
+from core.storage import write_json
 from ui import theme as t
 from ui.shell import aside_block, screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
+from ui.widgets import dialogs as dlg
 from ui.widgets import orbat as ob
 from ui.widgets.battalion import summary_card, type_label
 
@@ -87,7 +89,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
             body=c.empty_hint("Выберите отряд в списке подразделений."),
         )
 
-    _, battalion = found
+    unit_path, battalion = found
     app.open_unit = (battalion.id, battalion.name)
     config = app.config
     toggles = config.tog
@@ -137,6 +139,22 @@ def build(app: AppState, unit_id: str) -> ft.View:
         app.expanded_element = element.id
         save_and_refresh()
 
+    def ask_remove_element(element: Element) -> None:
+        children = len(battalion.children_of(element.id))
+        dlg.confirm(
+            app,
+            f"Удалить «{element.name}»?",
+            (
+                f"Подгрупп внутри: {children} — они поднимутся на место "
+                "удалённой, как содержимое удалённой папки."
+            )
+            if children
+            else "Группа исчезнет из боевого порядка.",
+            confirm_label="Удалить",
+            danger=True,
+            on_confirm=lambda: remove_element(element),
+        )
+
     def remove_element(element: Element) -> None:
         # Подгруппы не теряются вместе с родителем: они поднимаются на его
         # место, как содержимое удалённой папки в библиотеках.
@@ -176,11 +194,20 @@ def build(app: AppState, unit_id: str) -> ft.View:
         save_and_refresh()
 
     def split_element(element: Element) -> None:
-        def work() -> None:
-            children = formation.split(battalion, element.id, app.split_parts)
-            app.expanded_element = children[0].id
+        """Деление — через окно с долями: видно, что достанется каждой части."""
 
-        reshape(work)
+        def apply_split(parts: int, shares: list[float]) -> None:
+            app.split_parts = parts
+
+            def work() -> None:
+                children = formation.split(battalion, element.id, parts, shares=shares)
+                app.expanded_element = children[0].id
+
+            reshape(work)
+
+        dlg.split_group(
+            app, battalion, element, on_split=apply_split, parts=app.split_parts
+        )
 
     def detach_element(element: Element) -> None:
         def work() -> None:
@@ -195,10 +222,54 @@ def build(app: AppState, unit_id: str) -> ft.View:
     def reassign_element(element: Element, parent_id: str) -> None:
         reshape(lambda: formation.reassign(battalion, element.id, parent_id or None))
 
-    def set_parts(value: int) -> None:
-        app.split_parts = value
-        elements_holder.controls = element_rows()
-        app.refresh(elements_holder)
+    def duplicate_unit() -> None:
+        copy = battalion.model_copy(deep=True)
+        copy.id = new_id("bat")
+        copy.name = f"{battalion.name} (копия)"
+        app.save_unit(copy)
+        app.notify(f"Скопирован «{battalion.name}»")
+        app.go(ROUTES["unit"].format(id=copy.id))
+
+    def export_unit() -> None:
+        target = unit_path.with_name(f"{unit_path.stem}_export.json")
+        write_json(target, battalion.model_dump(mode="json"))
+        app.notify(f"Выгружено: {target.name}")
+
+    def element_menu(element: Element) -> list[c.MenuItem]:
+        """Действия над группой — по правой кнопке, не в раскрытой панели."""
+        items = [
+            c.MenuItem(
+                "Свернуть" if app.expanded_element == element.id else "Правка",
+                lambda: toggle_expanded(element),
+                icon=ft.Icons.TUNE,
+            ),
+            c.MenuItem(
+                "Разделить…", lambda: split_element(element), icon=ft.Icons.CALL_SPLIT
+            ),
+        ]
+        if element.has_vehicles:
+            items.append(
+                c.MenuItem(
+                    "Отделить технику",
+                    lambda: detach_element(element),
+                    icon=ft.Icons.LOCAL_SHIPPING_OUTLINED,
+                )
+            )
+        if battalion.children_of(element.id):
+            items.append(
+                c.MenuItem(
+                    "Свести подгруппы", lambda: merge_element(element), icon=ft.Icons.MERGE
+                )
+            )
+        items.append(
+            c.MenuItem(
+                "Удалить…",
+                lambda: ask_remove_element(element),
+                icon=ft.Icons.DELETE_OUTLINE,
+                danger=True,
+            )
+        )
+        return items
 
     def parent_options(element: Element) -> list[tuple[str, str]]:
         """Кому группу можно подчинить: всем, кроме себя и своих подгрупп."""
@@ -306,10 +377,10 @@ def build(app: AppState, unit_id: str) -> ft.View:
         shape_row = ft.Row(
             [
                 t.caption("Перестроить"),
-                ob.parts_switch(app.split_parts, set_parts),
                 c.secondary_button(
-                    "Разделить",
+                    "Разделить…",
                     lambda e=element: split_element(e),
+                    icon=ft.Icons.CALL_SPLIT,
                     height=t.BUTTON_SM_H,
                 ),
                 c.secondary_button(
@@ -344,7 +415,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
                 c.spacer(),
                 c.tertiary_button(
                     "Удалить элемент",
-                    lambda e=element: remove_element(e),
+                    lambda e=element: ask_remove_element(e),
                     icon=ft.Icons.DELETE_OUTLINE,
                     color=t.LOSS,
                     height=t.BUTTON_SM_H,
@@ -477,6 +548,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
                     bgcolor=t.ROW_EXPANDED if expanded else None,
                     last=last and not expanded,
                     on_click=lambda e=element: toggle_expanded(e),
+                    menu=element_menu(element),
                 )
             )
             if expanded:
@@ -617,8 +689,20 @@ def build(app: AppState, unit_id: str) -> ft.View:
             c.divider(),
             ft.Row(
                 [
-                    c.secondary_button("Копировать", lambda: None, height=32, expand=True),
-                    c.secondary_button("Экспорт", lambda: None, height=32, expand=True),
+                    c.secondary_button(
+                        "Копировать",
+                        duplicate_unit,
+                        icon=ft.Icons.CONTENT_COPY,
+                        height=32,
+                        expand=True,
+                    ),
+                    c.secondary_button(
+                        "Экспорт",
+                        export_unit,
+                        icon=ft.Icons.DOWNLOAD_OUTLINED,
+                        height=32,
+                        expand=True,
+                    ),
                 ],
                 spacing=t.GAP_SM,
             ),
