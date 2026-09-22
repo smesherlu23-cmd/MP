@@ -1314,3 +1314,77 @@ def test_restart_asks_when_the_battle_has_started(app: AppState) -> None:
     assert "заново" in box[0].title.value.casefold()
     assert app.engine is engine, "бой перезапустился до подтверждения"
     assert engine.turn == 3
+
+
+# --------------------------------------------------------------------------
+# Таблицы под ширину окна
+# --------------------------------------------------------------------------
+def _tables() -> list[tuple[str, tuple[common.Col, ...], int]]:
+    """Все таблицы приложения и ширина правой колонки рядом с ними."""
+    from ui.views import archive as archive_view
+    from ui.views import unit_editor as editor_view
+    from ui.views import units as units_view
+    from ui.widgets import orbat as orbat_widget
+
+    tables = [
+        ("конструктор отряда", editor_view.COLUMNS, editor_view.SUMMARY_W),
+        ("пульт боя", orbat_widget.TREE_COLUMNS, 420),
+        ("сборка юнитов", troops.COLUMNS, troops.DETAIL_W),
+        ("архив", archive_view.RESULT_COLUMNS, archive_view.SCENARIOS_W),
+        ("подразделения", units_view.COLUMNS, 0),
+    ]
+    tables += [
+        (f"мат.часть · {spec.label}", spec.columns, materiel.DETAIL_W)
+        for spec in materiel.LIBRARIES.values()
+    ]
+    return tables
+
+
+def test_every_table_fits_the_smallest_window() -> None:
+    """Таблица не должна вылезать за край: прокрутки вбок у неё нет.
+
+    При 1280 полный набор колонок не помещался ни в конструкторе, ни в
+    библиотеках, ни в архиве — правые колонки просто срезались.
+    """
+    for name, columns, right in _tables():
+        available = t.content_width(t.WINDOW_MIN_W, right=right)
+        shown = common.fit_columns(columns, available)
+        left = available - common.columns_width(shown)
+        assert left >= common.NAME_MIN_W, f"{name}: на название остаётся {left} px"
+
+
+def test_wide_window_shows_every_column() -> None:
+    """На штатной ширине ничего не прячется — экономия только в узком окне."""
+    for name, columns, right in _tables():
+        available = t.content_width(t.WINDOW_W, right=right)
+        assert common.fit_columns(columns, available) == tuple(columns), name
+
+
+def test_narrow_window_drops_columns_on_a_real_screen(app: AppState) -> None:
+    """Экран действительно собирается с меньшим набором колонок."""
+    from ui.views import unit_editor as editor_view
+
+    unit = app.units()[0][1].id
+    app.window_width = t.WINDOW_W
+    wide = _labels(editor_view.build(app, unit))
+    app.window_width = t.WINDOW_MIN_W
+    narrow = _labels(editor_view.build(app, unit))
+
+    assert "устойч." in wide
+    assert "устойч." not in narrow, "узкое окно обязано убрать необязательную колонку"
+    assert "группа" in narrow and "л/с" in narrow, "обязательные колонки остались"
+
+
+def test_head_and_rows_never_diverge() -> None:
+    """Шапка и строки берут колонки из одного места и не расходятся."""
+    columns = (
+        common.Col("Имя", expand=True),
+        common.Col("A", 100),
+        common.Col("B", 100, optional=1),
+    )
+    table = common.Table.fit(columns, 320)
+    row = table.row([ft.Text("имя"), ft.Text("a"), ft.Text("b")])
+
+    head_cells = row.content.controls if hasattr(row, "content") else []
+    assert len(table.shown) == len(head_cells)
+    assert [cell.content.value for cell in head_cells] == ["имя", "a"]

@@ -142,10 +142,11 @@ def main(page: ft.Page) -> None:
     page.padding = 0
     page.spacing = 0
     page.fonts = dict(t.FONT_FILES)
-    page.window.width = 1600
-    page.window.height = 1000
-    page.window.min_width = 1280
-    page.window.min_height = 800
+    page.window.width = t.WINDOW_W
+    page.window.height = t.WINDOW_H
+    page.window.min_width = t.WINDOW_MIN_W
+    page.window.min_height = t.WINDOW_MIN_H
+    app.window_width = t.WINDOW_W
 
     def notify(message: str) -> None:
         page.show_dialog(ft.SnackBar(content=ft.Text(message)))
@@ -230,6 +231,14 @@ def main(page: ft.Page) -> None:
             page.views.append(root)
         page.update()
 
+    def resized(*_: object) -> None:
+        """Окно изменили — таблицы пересобирают набор колонок под ширину."""
+        width = int(page.window.width or t.WINDOW_W)
+        if width == app.window_width:
+            return
+        app.window_width = width
+        render()
+
     def navigate(route: str, *, remember: bool = True) -> None:
         current = page.route or ROUTES["home"]
         if route == current:
@@ -271,6 +280,7 @@ def main(page: ft.Page) -> None:
     app.navigator = navigate
     app.theme_switcher = switch_theme
     page.on_keyboard_event = on_key
+    page.on_resize = resized
     page.on_route_change = lambda *_: render()
     page.on_view_pop = lambda *_: back()
     paint(app.dark_theme)  # запомненная с прошлого запуска тема

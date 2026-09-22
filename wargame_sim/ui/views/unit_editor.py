@@ -37,18 +37,23 @@ ECHELON_OPTIONS: tuple[tuple[str, str], ...] = tuple(
     (str(level), str(level)) for level in ECHELON_ORDER
 )
 
+#: `optional` — очередь на скрытие в узком окне: чем больше, тем раньше
+#: колонка уходит. Имя, численность, приказ и раскрытие остаются всегда.
 COLUMNS: tuple[c.Col, ...] = (
     c.Col("Группа", expand=True),
-    c.Col("Тип", 130),
-    c.Col("Масштаб", 80),
+    c.Col("Тип", 130, optional=1),
+    c.Col("Масштаб", 80, optional=3),
     c.Col("Л/с", 90, numeric=True),
-    c.Col("Огн.", 70, numeric=True),
-    c.Col("Устойч.", 80, numeric=True),
-    c.Col("Опыт", 60, numeric=True),
-    c.Col("Мораль", 70, numeric=True),
+    c.Col("Огн.", 70, numeric=True, optional=4),
+    c.Col("Устойч.", 80, numeric=True, optional=5),
+    c.Col("Опыт", 60, numeric=True, optional=6),
+    c.Col("Мораль", 70, numeric=True, optional=2),
     c.Col("Приказ", 110, pad_left=14),
     c.Col("", 28),
 )
+
+#: Ширина правой колонки со сводкой.
+SUMMARY_W = 330
 
 #: Поля элемента в раскрытой панели: подпись, атрибут, диапазон, целое ли.
 ELEMENT_FIELDS: tuple[tuple[str, str, float, float, bool], ...] = (
@@ -95,6 +100,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
     config = app.config
     toggles = config.tog
 
+    table = c.Table.fit(COLUMNS, t.content_width(app.window_width, right=SUMMARY_W))
     summary_holder = ft.Container()
     elements_holder = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
     error_holder = ft.Container()
@@ -508,8 +514,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
             children = len(battalion.children_of(element.id))
             roll = battalion.rollup(element.id)
             rows.append(
-                c.table_row(
-                    COLUMNS,
+                table.row(
                     [
                         ft.Row(
                             [
@@ -668,7 +673,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
     elements_card = c.framed_card(
         f"Боевой порядок · групп {len(battalion.elements)}",
         ft.Column(
-            [templates_row, c.table_head(COLUMNS), elements_holder],
+            [templates_row, table.head(), elements_holder],
             spacing=0,
             expand=True,
         ),
@@ -736,7 +741,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
             "Правки",
             [c.note("Сохраняются сразу и тут же видны в сводке справа.", size=t.SIZE_META)],
         ),
-        body=c.columns(left, right, right_width=330),
+        body=c.columns(left, right, right_width=SUMMARY_W),
     )
 
 

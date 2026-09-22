@@ -19,18 +19,19 @@ ROUTE = ROUTES["units"]
 
 COLUMNS: tuple[c.Col, ...] = (
     c.Col("Отряд", expand=True),
-    c.Col("Масштаб", 90),
-    c.Col("Групп", 70, numeric=True),
+    c.Col("Масштаб", 90, optional=4),
+    c.Col("Групп", 70, numeric=True, optional=3),
     c.Col("Л/с", 90, numeric=True),
-    c.Col("Техника", 90, numeric=True),
-    c.Col("Мораль", 80, numeric=True),
-    c.Col("Опыт", 70, numeric=True),
+    c.Col("Техника", 90, numeric=True, optional=1),
+    c.Col("Мораль", 80, numeric=True, optional=2),
+    c.Col("Опыт", 70, numeric=True, optional=5),
     c.Col("Приказ", 120, pad_left=16),
     c.Col("", 200),
 )
 
 
 def build(app: AppState) -> ft.View:
+    table = c.Table.fit(COLUMNS, t.content_width(app.window_width))
     message = ft.Text(style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3))
     import_path = {"value": ""}
 
@@ -228,8 +229,7 @@ def build(app: AppState) -> ft.View:
             ],
             spacing=6,
         )
-        return c.table_row(
-            COLUMNS,
+        return table.row(
             [
                 t.text(battalion.name, size=t.SIZE_BODY, weight=t.W500),
                 t.text(str(battalion.scale), size=t.SIZE_ROW, color=t.TEXT_3),
@@ -250,7 +250,7 @@ def build(app: AppState) -> ft.View:
     units = app.units()
     if units:
         body: ft.Control = c.table(
-            COLUMNS,
+            table.shown,
             [
                 row(path, battalion, last=index == len(units) - 1)
                 for index, (path, battalion) in enumerate(units)
@@ -258,7 +258,7 @@ def build(app: AppState) -> ft.View:
         )
     else:
         body = ft.Column(
-            [c.table_head(COLUMNS), c.empty_hint("Подразделений пока нет — создайте первое.")],
+            [table.head(), c.empty_hint("Подразделений пока нет — создайте первое.")],
             spacing=0,
             expand=True,
         )

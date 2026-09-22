@@ -24,17 +24,20 @@ ROUTE = ROUTES["troops"]
 
 SECTION = "troops"
 
+#: Ширина правой карточки — по ней считается место под таблицу.
+DETAIL_W = 420
+
 #: Ширина поля в карточке.
 FIELD_W = 190
 
 COLUMNS: tuple[c.Col, ...] = (
     c.Col("Тип солдата", expand=True),
-    c.Col("Обмундирование", 150),
+    c.Col("Обмундирование", 150, optional=2),
     c.Col("Оружие", 136),
-    c.Col("Доп. оружие", 136),
-    c.Col("БК", 48, numeric=True),
+    c.Col("Доп. оружие", 136, optional=1),
+    c.Col("БК", 48, numeric=True, optional=4),
     c.Col("Огонь", 56, numeric=True),
-    c.Col("ПТ", 48, numeric=True),
+    c.Col("ПТ", 48, numeric=True, optional=3),
     c.Col("", 58),
 )
 
@@ -64,6 +67,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
     list_holder = ft.Container(expand=True)
     detail_holder = ft.Container(expand=True)
     count = ft.Text(style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED))
+    table = c.Table.fit(COLUMNS, t.content_width(app.window_width, right=DETAIL_W))
 
     def reload() -> None:
         """Перечитать типы солдат и выправить выбор под новое содержимое."""
@@ -364,8 +368,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
             ],
             spacing=4,
         )
-        return c.table_row(
-            COLUMNS,
+        return table.row(
             [
                 t.text(
                     entry.label,
@@ -469,7 +472,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
 
     list_card = c.framed_card(
         "Типы солдат",
-        ft.Column([c.table_head(COLUMNS), list_holder], spacing=0, expand=True),
+        ft.Column([table.head(), list_holder], spacing=0, expand=True),
         trailing=[
             search,
             count,
@@ -699,7 +702,11 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
             c.primary_button("Создать тип", create, icon=ft.Icons.ADD, tooltip="Ctrl+N"),
         ],
         body=ft.Column(
-            [message, error_holder, c.columns(list_card, detail_holder, right_width=420)],
+            [
+                message,
+                error_holder,
+                c.columns(list_card, detail_holder, right_width=DETAIL_W),
+            ],
             spacing=t.GAP_SM,
             expand=True,
         ),

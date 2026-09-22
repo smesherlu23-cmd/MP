@@ -26,15 +26,17 @@ ORDER_OPTIONS: tuple[tuple[str, str], ...] = (
     *((str(order), str(order)) for order in COMMAND_ORDERS),
 )
 
+#: Сторона, имя, численность, мораль и приказ остаются при любой ширине —
+#: без них пульт перестаёт быть пультом. Остальное уходит по очереди.
 TREE_COLUMNS: tuple[c.Col, ...] = (
     c.Col("С", 22),
     c.Col("Группа", expand=True),
-    c.Col("Масштаб", 84),
+    c.Col("Масштаб", 84, optional=3),
     c.Col("Л/с", 76, numeric=True),
-    c.Col("Техн.", 52, numeric=True),
+    c.Col("Техн.", 52, numeric=True, optional=2),
     c.Col("Мораль", 52, numeric=True),
-    c.Col("Подавл.", 56, numeric=True),
-    c.Col("Боезап.", 54, numeric=True),
+    c.Col("Подавл.", 56, numeric=True, optional=1),
+    c.Col("Боезап.", 54, numeric=True, optional=4),
     c.Col("Приказ", 128, pad_left=8),
 )
 
@@ -118,6 +120,7 @@ def _name_cell(node: Node, *, muted: bool, on_toggle: Callable[[], None] | None)
 
 
 def tree_row(
+    table: c.Table,
     node: Node,
     battalion: Battalion,
     *,
@@ -153,8 +156,7 @@ def tree_row(
         if node.is_leaf
         else c.dash()
     )
-    return c.table_row(
-        TREE_COLUMNS,
+    return table.row(
         [
             ft.Text(node.side, style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED)),
             _name_cell(node, muted=muted, on_toggle=on_toggle),

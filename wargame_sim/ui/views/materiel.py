@@ -30,6 +30,9 @@ ROUTE = ROUTES["materiel"]
 #: Подпись корня библиотеки.
 NO_FOLDER = lib.ROOT_LABEL
 
+#: Ширина правой карточки — по ней считается место под таблицу.
+DETAIL_W = 420
+
 #: Ширина поля в карточке.
 FIELD_W = 178
 
@@ -104,14 +107,14 @@ LIBRARIES: dict[str, Library] = {
         class_attr="vehicle_class",
         columns=(
             c.Col("Машина", expand=True),
-            c.Col("Класс", 104),
-            c.Col("Экипаж", 66, numeric=True),
+            c.Col("Класс", 104, optional=3),
+            c.Col("Экипаж", 66, numeric=True, optional=6),
             c.Col("Броня", 86, numeric=True),
             c.Col("Огонь", 64, numeric=True),
-            c.Col("ПТ", 56, numeric=True),
-            c.Col("Подв.", 60, numeric=True),
-            c.Col("Замет.", 62, numeric=True),
-            c.Col("Надёж.", 64, numeric=True),
+            c.Col("ПТ", 56, numeric=True, optional=1),
+            c.Col("Подв.", 60, numeric=True, optional=7),
+            c.Col("Замет.", 62, numeric=True, optional=5),
+            c.Col("Надёж.", 64, numeric=True, optional=4),
             c.Col("", 64),
         ),
         groups=(
@@ -176,12 +179,12 @@ LIBRARIES: dict[str, Library] = {
         class_attr="weapon_class",
         columns=(
             c.Col("Оружие", expand=True),
-            c.Col("Класс", 110),
-            c.Col("Расчёт", 66, numeric=True),
+            c.Col("Класс", 110, optional=3),
+            c.Col("Расчёт", 66, numeric=True, optional=5),
             c.Col("Огонь", 64, numeric=True),
             c.Col("ПТ", 56, numeric=True),
-            c.Col("Дальность", 84, numeric=True),
-            c.Col("Расход", 70, numeric=True),
+            c.Col("Дальность", 84, numeric=True, optional=4),
+            c.Col("Расход", 70, numeric=True, optional=2),
             c.Col("", 64),
         ),
         groups=(
@@ -221,10 +224,10 @@ LIBRARIES: dict[str, Library] = {
         class_attr="gear_class",
         columns=(
             c.Col("Комплект", expand=True),
-            c.Col("Класс", 110),
+            c.Col("Класс", 110, optional=3),
             c.Col("Защита", 70, numeric=True),
-            c.Col("Заметность", 90, numeric=True),
-            c.Col("Подвижность", 96, numeric=True),
+            c.Col("Заметность", 90, numeric=True, optional=2),
+            c.Col("Подвижность", 96, numeric=True, optional=4),
             c.Col("Усталость", 80, numeric=True),
             c.Col("", 64),
         ),
@@ -285,6 +288,9 @@ def build(
     list_holder = ft.Container(expand=True)
     detail_holder = ft.Container(expand=True)
     count = ft.Text(style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED))
+    # Набор колонок под ширину окна: горизонтальной прокрутки у таблиц нет,
+    # поэтому лишнее не обрезается по краю, а убирается целиком.
+    table = c.Table.fit(spec.columns, t.content_width(app.window_width, right=DETAIL_W))
 
     def reload() -> None:
         """Перечитать библиотеку и выправить выбор под новое содержимое."""
@@ -581,8 +587,7 @@ def build(
             ],
             spacing=4,
         )
-        return c.table_row(
-            spec.columns,
+        return table.row(
             [
                 t.text(
                     entry.label,
@@ -666,7 +671,7 @@ def build(
 
     list_card = c.framed_card(
         spec.label,
-        ft.Column([c.table_head(spec.columns), list_holder], spacing=0, expand=True),
+        ft.Column([table.head(), list_holder], spacing=0, expand=True),
         trailing=[
             search,
             count,
@@ -846,7 +851,11 @@ def build(
             ),
         ],
         body=ft.Column(
-            [message, error_holder, c.columns(list_card, detail_holder, right_width=420)],
+            [
+                message,
+                error_holder,
+                c.columns(list_card, detail_holder, right_width=DETAIL_W),
+            ],
             spacing=t.GAP_SM,
             expand=True,
         ),

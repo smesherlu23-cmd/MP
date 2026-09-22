@@ -32,12 +32,12 @@ OUTCOME_OPTIONS: tuple[tuple[str, str], ...] = (
 RESULT_COLUMNS: tuple[c.Col, ...] = (
     c.Col("Сценарий", expand=True),
     c.Col("Исход", 86),
-    c.Col("Причина", 110),
-    c.Col("Ходов", 58, numeric=True),
-    c.Col("Сид", 62, numeric=True),
+    c.Col("Причина", 110, optional=1),
+    c.Col("Ходов", 58, numeric=True, optional=3),
+    c.Col("Сид", 62, numeric=True, optional=2),
     c.Col("Потери A", 78, numeric=True),
     c.Col("Потери B", 78, numeric=True),
-    c.Col("", 190),
+    c.Col("", 72),
 )
 
 
@@ -51,8 +51,15 @@ def matches(result: BattleResult, query: str, outcome: str) -> bool:
     return needle in result.scenario_name.lower() or needle in str(result.master_seed)
 
 
+#: Ширина правой колонки со сценариями.
+SCENARIOS_W = 400
+
+
 def build(app: AppState) -> ft.View:
     results_body = ft.Container(expand=True)
+    table = c.Table.fit(
+        RESULT_COLUMNS, t.content_width(app.window_width, right=SCENARIOS_W)
+    )
     #: Битые файлы результатов: молча пропускать их — значит врать, что
     #: боя не было.
     broken_holder = ft.Container()
@@ -113,17 +120,18 @@ def build(app: AppState) -> ft.View:
     # -- проведённые бои ----------------------------------------------------
     def result_row(path: Path, result: BattleResult, *, last: bool) -> ft.Control:
         a, b = result.side_a.personnel_lost, result.side_b.personnel_lost
+        # Кнопки-значки, а не подписи: строка и так открывается щелчком, а
+        # полный набор действий лежит под правой кнопкой. Широкая колонка
+        # действий съедала место у названия сценария в узком окне.
         actions = ft.Row(
             [
                 c.spacer(),
-                c.secondary_button(
-                    "Открыть", lambda: open_result(result), height=t.BUTTON_XS_H
-                ),
-                c.secondary_button(
-                    "Повтор",
+                c.icon_button(
+                    ft.Icons.REPLAY,
                     lambda: replay(result),
-                    icon=ft.Icons.REPLAY,
-                    height=t.BUTTON_XS_H,
+                    size=t.BUTTON_XS_H,
+                    icon_size=15,
+                    tooltip=f"Повтор по сиду {result.master_seed}",
                 ),
                 c.icon_button(
                     ft.Icons.DELETE_OUTLINE,
@@ -136,8 +144,7 @@ def build(app: AppState) -> ft.View:
             ],
             spacing=6,
         )
-        return c.table_row(
-            RESULT_COLUMNS,
+        return table.row(
             [
                 t.text(result.scenario_name, size=t.SIZE_ROW, weight=t.W500, no_wrap=True),
                 t.text(
@@ -321,7 +328,7 @@ def build(app: AppState) -> ft.View:
                     padding=ft.Padding.symmetric(horizontal=t.PAD_CARD),
                     border=t.border_bottom(t.BORDER),
                 ),
-                ft.Column([c.table_head(RESULT_COLUMNS), results_body], spacing=0, expand=True),
+                ft.Column([table.head(), results_body], spacing=0, expand=True),
                 c.card_footer(
                     [
                         ft.Text(
@@ -363,7 +370,7 @@ def build(app: AppState) -> ft.View:
         subtitle="Сценарии и проведённые бои; любой можно повторить",
         actions=[search],
         body=ft.Column(
-            [broken_holder, c.columns(results_card, scenarios_card, right_width=400)],
+            [broken_holder, c.columns(results_card, scenarios_card, right_width=SCENARIOS_W)],
             spacing=t.GAP,
             expand=True,
         ),

@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import flet as ft
 
@@ -319,7 +320,14 @@ def framed_card(
 # Таблица
 # --------------------------------------------------------------------------
 class Col:
-    """Описание колонки таблицы."""
+    """Описание колонки таблицы.
+
+    ``optional`` — очередь на скрытие в узком окне: 0 значит «колонка
+    обязательна», больше ноля — тем раньше она уйдёт. Горизонтальной
+    прокрутки у таблиц нет, поэтому лишние колонки не обрезаются по краю,
+    а честно убираются: лучше пять читаемых колонок, чем девять, из
+    которых три срезаны.
+    """
 
     def __init__(
         self,
@@ -329,12 +337,67 @@ class Col:
         expand: bool | int = False,
         numeric: bool = False,
         pad_left: int = 0,
+        optional: int = 0,
     ) -> None:
         self.title = title
         self.width = width
         self.expand = expand
         self.numeric = numeric
         self.pad_left = pad_left
+        self.optional = optional
+
+
+#: Сколько пикселей оставить растяжимой колонке, чтобы название читалось.
+NAME_MIN_W = 140
+
+
+def columns_width(columns: Sequence[Col]) -> int:
+    """Сколько места занимает набор колонок без растяжимой."""
+    fixed = sum(col.width or 0 for col in columns if not col.expand)
+    return fixed + t.GAP_SM * max(len(columns) - 1, 0) + t.PAD_ROW_X * 2
+
+
+def fit_columns(columns: Sequence[Col], available: int) -> tuple[Col, ...]:
+    """Колонки, которые влезают в ``available`` пикселей.
+
+    Прячутся по очереди — сначала с наибольшим ``optional``. Обязательные
+    не трогаются никогда: если не влезают и они, показываем как есть.
+    """
+    kept = list(columns)
+    while columns_width(kept) + NAME_MIN_W > available:
+        droppable = [col for col in kept if col.optional]
+        if not droppable:
+            break
+        kept.remove(max(droppable, key=lambda col: col.optional))
+    return tuple(kept)
+
+
+@dataclass(frozen=True)
+class Table:
+    """Набор колонок, подогнанный под ширину окна.
+
+    Шапка и строки берутся отсюда, поэтому они не могут разойтись: ячейки
+    отбрасываются ровно те же, что и колонки.
+    """
+
+    columns: tuple[Col, ...]
+    shown: tuple[Col, ...]
+
+    @classmethod
+    def fit(cls, columns: Sequence[Col], available: int) -> Table:
+        return cls(tuple(columns), fit_columns(columns, available))
+
+    def head(self) -> ft.Control:
+        return table_head(self.shown)
+
+    def row(self, cells: Sequence[ft.Control], **kwargs: Any) -> ft.Control:
+        keep = {id(col) for col in self.shown}
+        picked = [
+            cell
+            for col, cell in zip(self.columns, cells, strict=False)
+            if id(col) in keep
+        ]
+        return table_row(self.shown, picked, **kwargs)
 
 
 def _cell(control: ft.Control, col: Col) -> ft.Control:

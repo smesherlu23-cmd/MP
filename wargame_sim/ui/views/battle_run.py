@@ -22,6 +22,9 @@ from ui.widgets.battalion import side_panel
 
 ROUTE = "/battle/{id}"
 
+#: Ширина правой колонки: «Требует внимания» и журнал.
+JOURNAL_W = 420
+
 #: Сколько ходов делает кнопка «+5 ходов».
 FEW_TURNS = 5
 
@@ -76,6 +79,10 @@ def build(app: AppState, battle_id: str) -> ft.View:
     attention = ft.Container()
     #: Журнал дописывает новые записи, а не перестраивается целиком.
     journal_view = j.EntriesView()
+    # Дерево под ширину окна: лишние колонки убираются, а не срезаются.
+    tree_table = c.Table.fit(
+        ob.TREE_COLUMNS, t.content_width(app.window_width, right=JOURNAL_W)
+    )
     journal_footer = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
     indicator = ft.Container()
     busy = ft.ProgressBar(visible=False, color=t.TEXT, bgcolor=t.TRACK, height=2)
@@ -277,6 +284,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
             for index, node in enumerate(nodes):
                 rows.append(
                     ob.tree_row(
+                        tree_table,
                         node,
                         battalion,
                         selected=app.selected_group == node.key,
@@ -553,7 +561,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
     tree_card = c.framed_card(
         "Боевой порядок",
-        ft.Column([c.table_head(ob.TREE_COLUMNS), tree_body], spacing=0, expand=True),
+        ft.Column([tree_table.head(), tree_body], spacing=0, expand=True),
         trailing=[side_switch, elements_count],
         footer=tree_footer,
         expand=True,
@@ -576,7 +584,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
             ft.Row(
                 [
                     ft.Container(content=left, expand=True),
-                    ft.Container(content=right, width=420),
+                    ft.Container(content=right, width=JOURNAL_W),
                 ],
                 spacing=t.GAP,
                 vertical_alignment=ft.CrossAxisAlignment.START,
