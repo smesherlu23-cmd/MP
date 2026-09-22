@@ -975,16 +975,25 @@ def test_journal_appends_instead_of_rebuilding(app: AppState) -> None:
 
 
 def test_changed_filter_rebuilds_the_journal(app: AppState) -> None:
-    """Смена фильтра — это другой список, и он собирается заново."""
+    """Смена фильтра — это другой список, и он собирается заново.
+
+    Проверяется показанное окно, а не объекты контролов: один ход даёт
+    больше записей, чем помещается в окно, поэтому «последние 300 всего
+    журнала» и «последние 300 второго хода» бывают одним и тем же набором.
+    """
     engine = app.start_battle()
     engine.run_turns(2)
     entries = list(engine.log.entries)
     view = journal.EntriesView()
     view.render(entries, "events")
-    first = list(view.__dict__["_tiles"].controls)
 
-    view.render([entry for entry in entries if entry.turn == 2], "events")
-    assert view.__dict__["_tiles"].controls != first
+    first_turn = [entry for entry in entries if entry.turn == 1]
+    view.render(first_turn, "events")
+    shown = view.__dict__["_window"]
+
+    assert shown, "после смены фильтра окно пустое"
+    assert all(entry.turn == 1 for entry in shown), "в окне остались записи чужого хода"
+    assert shown[-1] is first_turn[-1]
 
 
 def test_template_chip_actually_adds_a_group(app: AppState) -> None:

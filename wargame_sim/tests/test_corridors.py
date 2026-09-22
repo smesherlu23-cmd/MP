@@ -32,6 +32,8 @@ from core.engine import BattleEngine
 from core.engine.phases import recovery
 from core.engine.state import BattleState, SideState
 from core.models import (
+    Battalion,
+    Echelon,
     Environment,
     Order,
     Scenario,
@@ -40,7 +42,13 @@ from core.models import (
     TimeOfDay,
     Weather,
 )
-from core.samples import make_battalion, make_scenario
+from core.samples import (
+    make_battalion,
+    make_company,
+    make_element,
+    make_scenario,
+    make_small_scenario,
+)
 
 #: Прогонов на один коридор. 60 даёт стандартную ошибку около 6 п.п., чего
 #: хватает, чтобы отличить «бывает» от «не бывает никогда».
@@ -66,10 +74,12 @@ class Outcome:
         runs: int = RUNS,
         *,
         base_seed: int = 1,
+        scenario: Scenario | None = None,
         **scenario_kwargs,
     ) -> None:
-        scenario = make_scenario(config, **scenario_kwargs)
+        scenario = scenario or make_scenario(config, **scenario_kwargs)
         batch = run_batch(scenario, config, runs=runs, base_seed=base_seed, processes=None)
+        self.records = batch.records
         self.runs = runs
         self.limit = scenario.environment.max_turns
         self.attack_wins = batch.win_probability_a
@@ -378,3 +388,151 @@ def test_equal_sides_stay_even(config: AppConfig) -> None:
     outcome = Outcome(config, runs=200, symmetric=True)
     assert 0.42 <= outcome.attack_wins <= 0.58, str(outcome)
     assert outcome.wins_a + outcome.wins_b >= 0.9 * outcome.runs
+
+
+# --------------------------------------------------------------------------
+# Малый масштаб: взводы и отделения
+# --------------------------------------------------------------------------
+#: Сколько человек в отделении демонстрационной схватки.
+SQUAD_MEN = 9
+
+
+def _squads(side: str, count: int, order: Order, config: AppConfig) -> Battalion:
+    """Отряд из `count` отделений — без штаба и техники."""
+    elements = []
+    for index in range(count):
+        element = make_element(
+            "отделение",
+            f"{index + 1}-е отделение",
+            f"{side}_otd_{index + 1}",
+            config,
+            with_vehicles=False,
+            echelon=Echelon.SQUAD,
+        )
+        elements.append(element)
+    return Battalion(
+        id=f"bat_{side}",
+        name=f"Сторона {side}",
+        side=Side(side),
+        scale=Echelon.PLATOON,
+        elements=elements,
+        order=order,
+    )
+
+
+def _duel(config: AppConfig, squads_a: int, squads_b: int) -> Scenario:
+    return Scenario(
+        id="scn_duel",
+        name="Схватка отделений",
+        master_seed=1,
+        battalion_a=_squads("A", squads_a, Order.ATTACK, config),
+        battalion_b=_squads("B", squads_b, Order.DEFENCE, config),
+        environment=Environment(),
+    )
+
+
+def test_splitting_does_not_multiply_firepower(config: AppConfig) -> None:
+    """Деление роты на взводы не создаёт огонь из ничего.
+
+    Пока огневая мощь считалась от доли штата, а не от численности,
+    отделение в девять человек стреляло как рота в сто двадцать — и
+    деление роты на три взвода умножало её огонь в 2.21 раза. Кнопка
+    «Разделить» была не манёвром, а способом выиграть бой.
+    """
+    from core.engine import BattleEngine
+
+    def side_fire(split: bool) -> float:
+        scenario = make_scenario(config)
+        for battalion in (scenario.battalion_a, scenario.battalion_b):
+            battalion.elements = [
+                element for element in battalion.elements if element.type == "стрелковая_рота"
+            ][:1]
+            battalion.elements[0].parent = None
+        engine = BattleEngine(scenario, config, verbose=False)
+        if split:
+            engine.split("A", engine.state.battalion("A").leaf_elements[0].id, 3)
+        engine.step()
+        return sum(
+            value for key, value in engine.turn_data.fire.items() if key.startswith("A/")
+        )
+
+    whole, divided = side_fire(False), side_fire(True)
+    assert 0.85 <= divided / whole <= 1.15, (
+        f"деление изменило суммарный огонь в {divided / whole:.2f} раза"
+    )
+
+
+@pytest.mark.slow
+def test_numbers_decide_the_fight(config: AppConfig) -> None:
+    """Вдвое больше людей — вдвое лучше шансы, а не хуже.
+
+    Раньше численность в обмен не входила вовсе: три отделения по 18
+    человек против трёх по 9 давали стороне A 5% побед — она становилась
+    только более крупной мишенью.
+    """
+    even = Outcome(config, RUNS, scenario=_duel(config, 3, 3))
+    stronger = Outcome(config, RUNS, scenario=_duel(config, 6, 3))
+    assert stronger.attack_wins > even.attack_wins + 0.25, (
+        f"перевес вдвое почти ничего не даёт: {even.attack_wins:.0%} → "
+        f"{stronger.attack_wins:.0%}"
+    )
+
+
+@pytest.mark.slow
+def test_winning_with_odds_still_costs(config: AppConfig) -> None:
+    """Победа при перевесе стоит крови.
+
+    Главная жалоба к прежней модели: отряд с перевесом побеждал вообще без
+    потерь — при трёхкратном перевесе победитель терял 0.3 человека из
+    пятидесяти четырёх, а в 74% боёв не терял никого. Коридор двусторонний:
+    ноль означает, что победа даётся даром, а больше четверти — что перевес
+    перестал быть перевесом.
+    """
+    outcome = Outcome(config, RUNS, scenario=_duel(config, 6, 2))
+    winners = [record for record in outcome.records if str(record.winner) == "A"]
+    assert len(winners) >= RUNS * 0.7, "при трёхкратном перевесе атака обязана побеждать"
+
+    men = 6 * SQUAD_MEN
+    shares = [record.losses_a / men for record in winners]
+    mean_share = statistics.mean(shares)
+    untouched = sum(1 for record in winners if record.losses_a == 0) / len(winners)
+
+    assert 0.03 <= mean_share <= 0.25, f"потери победителя {mean_share:.1%}"
+    assert untouched <= 0.20, f"победа без единой потери в {untouched:.0%} боёв"
+
+
+@pytest.mark.slow
+def test_small_scale_is_decided_by_combat(config: AppConfig) -> None:
+    """Взвод против взвода решается боем, а не задачей обороны.
+
+    Задача «выстоять N ходов» масштабировалась вчетверо короче
+    батальонной, а длительность боя от масштаба почти не зависит — и
+    оборона выигрывала автоматически: 59% боёв кончались задачей, атака
+    побеждала в 11%.
+    """
+    outcome = Outcome(config, RUNS, scenario=make_small_scenario(config))
+    assert 0.15 <= outcome.attack_wins <= 0.50, str(outcome)
+    assert outcome.decided_by_clock <= 0.30, str(outcome)
+    assert outcome.spread >= 2, f"длительность без разброса: {outcome!s}"
+
+
+@pytest.mark.slow
+def test_company_scale_behaves_like_the_others(config: AppConfig) -> None:
+    """Рота против роты — верхняя граница обычного масштаба — считается так же.
+
+    Бои чаще всего идут взводами и отделениями, максимум ротами, поэтому
+    показатели на этом масштабе обязаны быть теми же, что у батальона:
+    решает бой, а не счётчик, и оборона имеет перевес, но не монополию.
+    """
+    scenario = Scenario(
+        id="scn_company",
+        name="Встречный бой рот",
+        master_seed=1,
+        battalion_a=make_company("rota_a", "1-я рота", Side.A, config, order=Order.ATTACK),
+        battalion_b=make_company("rota_b", "2-я рота", Side.B, config, order=Order.DEFENCE),
+        environment=Environment(),
+    )
+    outcome = Outcome(config, RUNS, scenario=scenario)
+    assert 0.12 <= outcome.attack_wins <= 0.50, str(outcome)
+    assert outcome.decided_by_clock <= 0.30, str(outcome)
+    assert outcome.max_turns < outcome.limit, "бои упираются в предел ходов"

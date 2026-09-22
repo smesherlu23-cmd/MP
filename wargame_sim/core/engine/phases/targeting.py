@@ -27,6 +27,11 @@ def _best_contact(state: BattleState, side: str) -> ContactLevel:
     return ContactLevel.NONE
 
 
+def _under_observation(state: BattleState, side: str) -> bool:
+    """Видит ли противник хоть кого-то из наших — значит, есть куда стрелять."""
+    return any(state.side(side).in_contact.values())
+
+
 def run(
     state: BattleState,
     turn_data: TurnData,
@@ -47,13 +52,22 @@ def run(
         for element in state.elements(enemy)
         if contact_map.get(element.id, ContactLevel.NONE) != ContactLevel.NONE
     ]
-    if not visible:
-        return
-
     share = contact_target_share(_best_contact(state, side), config)
-    available = max(1, math.ceil(share * len(state.elements(enemy)))) if share > 0 else 0
-    if available == 0:
-        return
+
+    if not visible or share <= 0:
+        # Наблюдение потеряно. Но если противник видит нас, мы
+        # отстреливаемся в его сторону — плохо, зато не даром. Без этого
+        # подавленная сторона переставала стрелять совсем, и победитель
+        # переставал платить ровно тогда, когда исход уже решён.
+        if not _under_observation(state, side):
+            return
+        visible = list(state.elements(enemy))
+        share = config.cbt.detection.return_fire.target_share
+        turn_data.blind_fire.add(side)
+        if not visible or share <= 0:
+            return
+
+    available = max(1, math.ceil(share * len(state.elements(enemy))))
 
     for attacker in state.elements(side):
         attacker_key = element_key(side, attacker)

@@ -9,6 +9,7 @@ from core.engine.formulas import (
     firepower,
     noise_range,
     resilience,
+    strength,
     vehicle_armour,
 )
 from core.engine.rng import RngStreams
@@ -62,8 +63,15 @@ def run(
         turn_data.fire[attacker_key] = value
         turn_data.breakdown[attacker_key] = factors.pairs()
         # Интенсивность огня — база для расхода боезапаса (§6.1, фаза 8).
+        # Численность отсюда делится обратно: расход на человека не зависит
+        # от размера подразделения. Иначе отделение почти не тратило бы
+        # боезапас (интенсивность 0.05 против 2.4 у батальона), и взвод
+        # доживал бой с 75% вместо 31%.
+        own_strength = strength(attacker, config)
         turn_data.fire_intensity[attacker_key] = (
-            value / attacker.attack if attacker.attack > 0 else 0.0
+            value / (attacker.attack * own_strength)
+            if attacker.attack > 0 and own_strength > 0
+            else 0.0
         )
         log.add(
             turn=state.turn,
@@ -111,7 +119,11 @@ def run(
     for target in state.elements(enemy):
         target_key = element_key(enemy, target)
         level = contact_map.get(target.id, ContactLevel.NONE)
-        accuracy = contact_accuracy(level, config)
+        accuracy = (
+            config.cbt.detection.return_fire.accuracy
+            if side in turn_data.blind_fire
+            else contact_accuracy(level, config)
+        )
         incoming = 0.0
         anti_tank = 0.0
         contributions: list[tuple[str, float]] = []

@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from core.config import AppConfig, ConfigError, ConfigStore
-from core.engine import BattleEngine
 from core.engine.formulas import (
     anti_tank_share,
     vehicle_armour,
@@ -110,19 +109,38 @@ def test_reliability_wears_vehicles_without_a_single_hit(config: AppConfig) -> N
     assert element.vehicles[0].condition < 100.0
 
 
-def test_swapping_vehicles_changes_the_battle(config_copy: ConfigStore, scenario) -> None:
-    """Перевооружение бронегруппы на танки меняет исход, а не только цифры."""
+def test_swapping_vehicles_changes_what_the_element_can_do(
+    config_copy: ConfigStore, scenario
+) -> None:
+    """Перевооружение бронегруппы на танки меняет её возможности.
+
+    Прежний тест сравнивал потери и длительность одного боя на одном сиде.
+    Он проходил не потому, что карточка влияет, а потому, что бой хаотичен:
+    на половине сидов те же два числа совпадали случайно. Проверяется то,
+    что действительно меняется от карточки, — противотанковые возможности
+    и защищённость (§4.1).
+
+    Огневая мощь в этот список не входит намеренно: она берётся из штатной
+    техники **типа** элемента, а не из его реальных групп, поэтому
+    перевооружение её не трогает.
+    """
     base = config_copy.get()
-    before = BattleEngine(scenario, base, verbose=False).run()
-
-    upgraded = scenario.model_copy(deep=True)
-    for element in upgraded.battalion_a.elements:
-        for group in element.vehicles:
-            if group.vehicle_type == "БМП":
-                group.vehicle_type = "Танк"
-    after = BattleEngine(upgraded, base, verbose=False).run()
-
-    assert (before.side_b.personnel_lost, before.turns) != (
-        after.side_b.personnel_lost,
-        after.turns,
+    battalion = scenario.battalion_a
+    element = next(
+        item
+        for item in battalion.elements
+        if item.vehicles and item.vehicles[0].vehicle_type == "БМП"
     )
+
+    before_at, _ = anti_tank_share(element, base)
+    before_armour, _ = vehicle_armour(element, battalion, base)
+
+    for group in element.vehicles:
+        group.vehicle_type = "Танк"
+
+    after_at, source = anti_tank_share(element, base)
+    after_armour, _ = vehicle_armour(element, battalion, base)
+
+    assert after_at > before_at, "танки обязаны поднять противотанковые возможности"
+    assert source == "техника", "лучший источник ПТ — теперь сами машины"
+    assert after_armour > before_armour, "танки обязаны держать огонь лучше"

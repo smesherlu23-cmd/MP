@@ -7,7 +7,7 @@ from pathlib import Path
 import flet as ft
 
 from core.models import Battalion, Side, new_id
-from core.samples import make_battalion, make_element, make_platoon
+from core.samples import make_battalion, make_company, make_element, make_platoon
 from core.storage import StorageError, delete_file, load_battalion, write_json
 from ui import theme as t
 from ui.shell import screen
@@ -49,6 +49,12 @@ def build(app: AppState) -> ft.View:
 
     def create_platoon() -> None:
         battalion = make_platoon(new_id("vzv"), "Новый взвод", Side.A, app.config)
+        app.save_unit(battalion)
+        app.notify(f"Создан «{battalion.name}»")
+        app.go(ROUTES["unit"].format(id=battalion.id))
+
+    def create_company() -> None:
+        battalion = make_company(new_id("rota"), "Новая рота", Side.A, app.config)
         app.save_unit(battalion)
         app.notify(f"Создан «{battalion.name}»")
         app.go(ROUTES["unit"].format(id=battalion.id))
@@ -326,6 +332,7 @@ def build(app: AppState) -> ft.View:
             c.tertiary_button("Импорт JSON", pick_import, icon=ft.Icons.UPLOAD_FILE),
             c.secondary_button("Пустой", create_empty),
             c.secondary_button("Взвод", create_platoon),
+            c.secondary_button("Рота", create_company),
             c.primary_button(
                 "Батальон", create_typical, icon=ft.Icons.ADD, tooltip="Ctrl+N"
             ),

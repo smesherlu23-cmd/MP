@@ -475,6 +475,21 @@ class ContactThresholds(BaseModel):
     полный: float
 
 
+class ReturnFireConfig(BaseModel):
+    """Ответный огонь вслепую — по тем, кто тебя видит.
+
+    Подавленный элемент теряет наблюдение и с `target_share: нет = 0`
+    переставал стрелять совсем: сторона с тринадцатью живыми людьми
+    становилась для противника абсолютно безопасной, и победитель
+    переставал платить ровно тогда, когда исход уже решён.
+    """
+
+    model_config = Strict
+
+    target_share: float = Field(ge=0, le=1)
+    accuracy: float = Field(ge=0, le=1)
+
+
 class DetectionConfig(BaseModel):
     model_config = Strict
 
@@ -485,6 +500,7 @@ class DetectionConfig(BaseModel):
     contact_thresholds: ContactThresholds
     target_share: dict[str, float]
     accuracy: dict[str, float]
+    return_fire: ReturnFireConfig
     intel_gain_per_turn: float = Field(ge=0)
     intel_levels: list[str] = Field(min_length=1)
 
@@ -586,6 +602,11 @@ class ReadinessConfig(BaseModel):
 class CombatBody(BaseModel):
     model_config = Strict
 
+    #: Сколько человек в одной «единице силы». Огневая мощь и устойчивость
+    #: элемента считаются от численности в этих единицах, поэтому бой
+    #: сравнивает силы, а не плотности: раньше отделение в девять человек
+    #: стреляло ровно как рота в сто двадцать.
+    strength_reference: float = Field(gt=0)
     casualties: CasualtiesConfig
     vehicles: VehiclesConfig
     detection: DetectionConfig

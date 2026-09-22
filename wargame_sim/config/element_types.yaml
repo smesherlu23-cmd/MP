@@ -17,6 +17,129 @@
 #                    (запись из vehicles.yaml и сколько её по штату).
 schema_version: 1
 element_types:
+  # --- малый масштаб ------------------------------------------------------
+  # Бои чаще идут взводами и отделениями, чем батальонами, а мельче
+  # разведвзвода в библиотеке ничего не было: ГМ брал роту и переписывал
+  # численность руками. Числа этих типов считаются по составу, как у всех
+  # остальных, — правка в библиотеке оружия видна сразу.
+  отделение:
+    staff_attack: 1.0
+    staff_defense: 1.0
+    composition:
+      Командир: 1
+      Пулемётчик: 1
+      Гранатомётчик: 1
+      Стрелок: 6
+    label: Стрелковое отделение
+    combat: true
+    hq: false
+    supply_source: false
+    recon: false
+    target_priority: 1.00
+    vulnerability: 1.00
+    anti_tank: 0.09
+    detection: 1.00
+    stealth: 1.00
+    defaults:
+      personnel_full: 9
+      echelon: отделение
+      attack: 38.2922
+      defense: 36.7000
+      vehicle_type: ""
+      vehicle_count: 0
+  звено:
+    staff_attack: 1.0
+    staff_defense: 1.0
+    composition:
+      Командир: 1
+      Пулемётчик: 1
+      Стрелок: 2
+    label: Звено
+    combat: true
+    hq: false
+    supply_source: false
+    recon: false
+    target_priority: 0.85
+    vulnerability: 1.05
+    anti_tank: 0.0
+    detection: 1.00
+    stealth: 0.90
+    defaults:
+      personnel_full: 4
+      echelon: звено
+      attack: 40.7000
+      defense: 36.7000
+      vehicle_type: ""
+      vehicle_count: 0
+  пулемётный_расчёт:
+    staff_attack: 1.0
+    staff_defense: 1.0
+    composition:
+      Расчёт_станкового: 3
+    label: Пулемётный расчёт
+    combat: true
+    hq: false
+    supply_source: false
+    recon: false
+    target_priority: 1.45
+    vulnerability: 1.15
+    anti_tank: 0.05
+    detection: 1.00
+    stealth: 1.10
+    defaults:
+      personnel_full: 3
+      echelon: звено
+      attack: 83.6000
+      defense: 36.7000
+      vehicle_type: ""
+      vehicle_count: 0
+  расчёт_ПТРК:
+    staff_attack: 1.0
+    staff_defense: 1.0
+    composition:
+      Оператор_ПТРК: 2
+      Стрелок: 1
+    label: Расчёт ПТРК
+    combat: true
+    hq: false
+    supply_source: false
+    recon: false
+    target_priority: 1.35
+    vulnerability: 1.15
+    anti_tank: 0.77
+    detection: 1.00
+    stealth: 1.05
+    defaults:
+      personnel_full: 3
+      echelon: звено
+      attack: 39.6000
+      defense: 36.7000
+      vehicle_type: ""
+      vehicle_count: 0
+  снайперская_пара:
+    staff_attack: 1.0
+    staff_defense: 1.0
+    composition:
+      Снайпер: 2
+    label: Снайперская пара
+    combat: true
+    hq: false
+    supply_source: false
+    recon: true
+    target_priority: 1.20
+    vulnerability: 1.30
+    anti_tank: 0.0
+    detection: 1.25
+    stealth: 0.55
+    defaults:
+      personnel_full: 2
+      echelon: звено
+      attack: 46.2000
+      defense: 24.6000
+      vehicle_type: ""
+      vehicle_count: 0
+
+  # --- батальонный масштаб ------------------------------------------------
   стрелковая_рота:
     staff_attack: 1.0001
     staff_defense: 1.2332
