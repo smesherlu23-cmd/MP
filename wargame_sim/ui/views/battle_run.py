@@ -15,11 +15,15 @@ from ui import theme as t
 from ui.shell import scenario_aside, screen
 from ui.state import ALL, SIDE_A, SIDE_B, SIDE_BOTH, AppState
 from ui.widgets import common as c
+from ui.widgets import dialogs as dlg
 from ui.widgets import journal as j
 from ui.widgets import orbat as ob
 from ui.widgets.battalion import side_panel
 
 ROUTE = "/battle/{id}"
+
+#: Ширина правой колонки: «Требует внимания» и журнал.
+JOURNAL_W = 420
 
 #: Сколько ходов делает кнопка «+5 ходов».
 FEW_TURNS = 5
@@ -67,14 +71,18 @@ def turn_indicator(turn: int, limit: int, finished: bool, outcome: str) -> ft.Co
 def build(app: AppState, battle_id: str) -> ft.View:
     engine = app.ensure_battle()
     scenario = app.scenario
-    config = app.config
 
     panels = ft.Container()
     tree_body = ft.Container(expand=True)
     tree_footer = ft.Container()
     elements_count = ft.Text(style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED))
     attention = ft.Container()
-    journal_body = ft.Container(expand=True)
+    #: Журнал дописывает новые записи, а не перестраивается целиком.
+    journal_view = j.EntriesView()
+    # Дерево под ширину окна: лишние колонки убираются, а не срезаются.
+    tree_table = c.Table.fit(
+        ob.TREE_COLUMNS, t.content_width(app.window_width, right=JOURNAL_W)
+    )
     journal_footer = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
     indicator = ft.Container()
     busy = ft.ProgressBar(visible=False, color=t.TEXT, bgcolor=t.TRACK, height=2)
@@ -155,18 +163,31 @@ def build(app: AppState, battle_id: str) -> ft.View:
         except FormationError as exc:
             app.notify(str(exc))
             return
+        app.save_battle()
         redraw_all()
 
     def change_order(side: str, element_id: str, order: Order | None) -> None:
         engine.set_order(side, element_id, order)
+        app.save_battle()
         redraw_all()
 
     def split_group(side: str, element_id: str) -> None:
-        def work() -> None:
-            children = engine.split(side, element_id, app.split_parts)
-            app.selected_group = (side, children[0].id)
+        """Открыть окно деления: доли и предпросмотр до, а не после."""
+        battalion = engine.state.battalion(side)
+        element = battalion.element(element_id)
+        if element is None:
+            return
 
-        guarded(work)
+        def apply_split(parts: int, shares: list[float]) -> None:
+            app.split_parts = parts
+
+            def work() -> None:
+                children = engine.split(side, element_id, parts, shares=shares)
+                app.selected_group = (side, children[0].id)
+
+            guarded(work)
+
+        dlg.split_group(app, element, on_split=apply_split, parts=app.split_parts)
 
     def detach_group(side: str, element_id: str) -> None:
         def work() -> None:
@@ -188,6 +209,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         for leaf in battalion.leaves_of(element_id):
             if not leaf.engaged:
                 engine.commit(side, leaf.id)
+        app.save_battle()
         redraw_all()
 
     def withdraw_branch(side: str, element_id: str) -> None:
@@ -195,11 +217,58 @@ def build(app: AppState, battle_id: str) -> ft.View:
         for leaf in battalion.leaves_of(element_id):
             if leaf.engaged:
                 engine.withdraw(side, leaf.id)
+        app.save_battle()
         redraw_all()
 
-    def set_parts(value: int) -> None:
-        app.split_parts = value
-        redraw_tree()
+    def group_menu(side: str, element: object) -> list[c.MenuItem]:
+        """Что можно сделать с группой — по правой кнопке, а не поиском кнопок."""
+        if engine.finished:
+            return []
+        battalion = engine.state.battalion(side)
+        leaf = battalion.is_leaf(element)
+        roll = battalion.rollup(element.id)
+        items: list[c.MenuItem] = []
+        if leaf and element.engaged and element.alive:
+            items.append(
+                c.MenuItem(
+                    "Разделить…",
+                    lambda: split_group(side, element.id),
+                    icon=ft.Icons.CALL_SPLIT,
+                )
+            )
+            if element.has_vehicles:
+                items.append(
+                    c.MenuItem(
+                        "Отделить технику",
+                        lambda: detach_group(side, element.id),
+                        icon=ft.Icons.DIRECTIONS_CAR_OUTLINED,
+                    )
+                )
+        if not leaf:
+            items.append(
+                c.MenuItem(
+                    "Свести подгруппы",
+                    lambda: merge_group(side, element.id),
+                    icon=ft.Icons.MERGE,
+                )
+            )
+        if roll.engaged < roll.leaves:
+            items.append(
+                c.MenuItem(
+                    "Ввести в бой",
+                    lambda: commit_branch(side, element.id),
+                    icon=ft.Icons.PLAY_ARROW,
+                )
+            )
+        elif engine.turn == 0:
+            items.append(
+                c.MenuItem(
+                    "Отвести в резерв",
+                    lambda: withdraw_branch(side, element.id),
+                    icon=ft.Icons.PAUSE,
+                )
+            )
+        return items
 
     # -- дерево групп -------------------------------------------------------
     def visible_sides() -> tuple[str, ...]:
@@ -219,12 +288,13 @@ def build(app: AppState, battle_id: str) -> ft.View:
             for index, node in enumerate(nodes):
                 rows.append(
                     ob.tree_row(
+                        tree_table,
                         node,
                         battalion,
-                        config,
                         selected=app.selected_group == node.key,
                         on_select=lambda s=side, e=node.element.id: select(s, e),
                         on_toggle=lambda s=side, e=node.element.id: toggle_branch(s, e),
+                        menu=group_menu(side, node.element),
                         last=index == len(nodes) - 1,
                     )
                 )
@@ -243,7 +313,12 @@ def build(app: AppState, battle_id: str) -> ft.View:
         picked = selected()
         if picked is None:
             return c.card_footer(
-                [ob.hint("Выберите группу — её можно разделить, свести или дать ей приказ")]
+                [
+                    ob.hint(
+                        "Щелчок выбирает группу, правая кнопка открывает "
+                        "действия над ней"
+                    )
+                ]
             )
         side, element = picked
         battalion = engine.state.battalion(side)
@@ -265,10 +340,9 @@ def build(app: AppState, battle_id: str) -> ft.View:
                         size=t.SIZE_META,
                     )
                 )
-                actions.append(ob.parts_switch(app.split_parts, set_parts))
                 actions.append(
                     c.secondary_button(
-                        "Разделить",
+                        "Разделить…",
                         lambda s=side, e=element.id: split_group(s, e),
                         height=t.BUTTON_XS_H,
                     )
@@ -317,7 +391,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
     def redraw_journal() -> None:
         entries = visible_entries()
-        journal_body.content = j.entries_list(entries, app.journal_detail)
+        journal_view.render(entries, app.journal_detail)
         journal_footer.controls = [
             ft.Text(
                 f"записей {len(engine.log)} · хеш {engine.log.digest()[:8]}",
@@ -329,7 +403,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
                 style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
             ),
         ]
-        app.refresh(journal_body, journal_footer)
+        app.refresh(journal_footer)
 
     def redraw_all() -> None:
         redraw_indicator()
@@ -339,16 +413,20 @@ def build(app: AppState, battle_id: str) -> ft.View:
         redraw_journal()
 
     # -- действия -----------------------------------------------------------
-    def run_in_background(work) -> None:
+    def run_in_background(work, then=None) -> None:
         """Длинные расчёты — в отдельном потоке, UI не блокируется (§10)."""
 
         def task() -> None:
             try:
                 work()
             finally:
+                # Снимок на границе хода: закрытое окно больше не стоит боя.
+                app.save_battle()
                 busy.visible = False
                 redraw_all()
                 app.refresh(busy)
+            if then is not None:
+                then()
 
         busy.visible = True
         app.refresh(busy)
@@ -363,6 +441,10 @@ def build(app: AppState, battle_id: str) -> ft.View:
     def few_turns() -> None:
         run_in_background(lambda: engine.run_turns(FEW_TURNS))
 
+    # Ход — самое частое действие за столом, поэтому оно на клавиатуре.
+    app.bind("Ctrl+Enter", step)
+    app.bind("Ctrl+Shift+Enter", few_turns)
+
     def to_the_end() -> None:
         def work() -> None:
             engine.run()
@@ -371,12 +453,55 @@ def build(app: AppState, battle_id: str) -> ft.View:
         run_in_background(work)
 
     def restart() -> None:
+        """Начать бой заново — но не по одному щелчку.
+
+        Кнопка стоит в верхней полосе между «До конца» и «Итог» и выглядит
+        безобидной стрелкой, а стирает весь проведённый бой.
+        """
+        if engine.turn == 0:
+            do_restart()
+            return
+        dlg.confirm(
+            app,
+            "Начать бой заново?",
+            f"Проведённые {engine.turn} ход(ов) пропадут: журнал, потери и "
+            "перестроения. Бой начнётся с того же сида и того же сценария.",
+            confirm_label="Начать заново",
+            danger=True,
+            on_confirm=do_restart,
+        )
+
+    def do_restart() -> None:
         app.start_battle()
+        app.save_battle()
         app.go(ROUTE.format(id=battle_id))
 
     def show_result() -> None:
-        app.finish_battle()
-        app.go(f"/battle/{battle_id}/result")
+        """Итог — только по законченному бою.
+
+        Раньше кнопка показывала «ничья по лимиту ходов» на пятом ходу:
+        движок собирал результат из ещё не наступившего конца.
+        """
+        if engine.finished:
+            app.finish_battle()
+            app.go(f"/battle/{battle_id}/result")
+            return
+        dlg.confirm(
+            app,
+            "Бой ещё не закончен",
+            f"Идёт ход {engine.state.turn}. Итог складывается по законченному "
+            "бою: победитель, причина и остаточная боеспособность. Довести "
+            "бой до конца?",
+            confirm_label="Довести до конца",
+            on_confirm=finish_and_show,
+        )
+
+    def finish_and_show() -> None:
+        def work() -> None:
+            engine.run()
+            app.finish_battle()
+
+        run_in_background(work, then=lambda: app.go(f"/battle/{battle_id}/result"))
 
     def set_side_filter(value: str) -> None:
         app.run_side_filter = value
@@ -424,11 +549,14 @@ def build(app: AppState, battle_id: str) -> ft.View:
     def export_journal() -> None:
         from core.storage import write_text
 
-        path = write_text(
-            app.results_dir / f"journal_{scenario.id}_{engine.master_seed}.md",
-            engine.log.to_markdown(),
-        )
-        app.notify(f"Журнал выгружен: {path.name}")
+        def write(directory) -> None:
+            path = write_text(
+                directory / f"journal_{scenario.id}_{engine.master_seed}.md",
+                engine.log.to_markdown(),
+            )
+            app.notify(f"Журнал выгружен: {path}")
+
+        app.ask_directory("Куда выгрузить журнал боя", write)
 
     side_switch = ft.Container(
         content=c.segmented(SIDE_OPTIONS, app.run_side_filter, set_side_filter)
@@ -440,7 +568,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
     tree_card = c.framed_card(
         "Боевой порядок",
-        ft.Column([c.table_head(ob.TREE_COLUMNS), tree_body], spacing=0, expand=True),
+        ft.Column([tree_table.head(), tree_body], spacing=0, expand=True),
         trailing=[side_switch, elements_count],
         footer=tree_footer,
         expand=True,
@@ -448,7 +576,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
     journal_card = c.framed_card(
         "Журнал",
-        journal_body,
+        journal_view.control,
         trailing=[journal_controls],
         footer=c.card_footer([journal_footer]),
         expand=True,
@@ -463,7 +591,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
             ft.Row(
                 [
                     ft.Container(content=left, expand=True),
-                    ft.Container(content=right, width=420),
+                    ft.Container(content=right, width=JOURNAL_W),
                 ],
                 spacing=t.GAP,
                 vertical_alignment=ft.CrossAxisAlignment.START,
@@ -488,8 +616,10 @@ def build(app: AppState, battle_id: str) -> ft.View:
         mono_subtitle=True,
         leading_extra=[ft.Container(width=8), indicator],
         actions=[
-            c.primary_button("Шаг", step, icon=ft.Icons.SKIP_NEXT),
-            c.secondary_button(f"+{FEW_TURNS} ходов", few_turns),
+            c.primary_button("Шаг", step, icon=ft.Icons.SKIP_NEXT, tooltip="Ctrl+Enter"),
+            c.secondary_button(
+                f"+{FEW_TURNS} ходов", few_turns, tooltip="Ctrl+Shift+Enter"
+            ),
             c.secondary_button("До конца", to_the_end),
             c.icon_button(ft.Icons.REPLAY, restart, tooltip="Начать заново с тем же сидом"),
             c.secondary_button("Итог", show_result, icon=ft.Icons.ASSESSMENT_OUTLINED),

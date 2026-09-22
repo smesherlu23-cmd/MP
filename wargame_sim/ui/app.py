@@ -16,7 +16,7 @@ import flet as ft
 
 from core.config import ConfigError
 from ui import theme as t
-from ui.shell import screen
+from ui.shell import NAV, screen
 from ui.state import ROUTES, AppState
 from ui.views import (
     archive,
@@ -52,8 +52,31 @@ ROUTE_TABLE: tuple[tuple[re.Pattern[str], Builder], ...] = (
 )
 
 
+#: Ctrl+1…8 — разделы навигации по порядку, как в браузере или мессенджере.
+SECTION_KEYS: tuple[str, ...] = tuple(str(index + 1) for index in range(len(NAV)))
+
+
+def key_name(event: ft.KeyboardEvent) -> str:
+    """Сочетание в виде «Ctrl+Shift+Enter».
+
+    Cmd приравнен к Ctrl: на macOS модификатор действий — он.
+    """
+    parts: list[str] = []
+    if event.ctrl or event.meta:
+        parts.append("Ctrl")
+    if event.alt:
+        parts.append("Alt")
+    if event.shift:
+        parts.append("Shift")
+    parts.append(event.key)
+    return "+".join(parts)
+
+
 def resolve(app: AppState, route: str) -> ft.View:
     """Построить экран по маршруту; неизвестный маршрут — понятная заглушка."""
+    # Горячие клавиши принадлежат экрану: старые снимаются вместе с ним,
+    # иначе Ctrl+F с библиотеки продолжал бы работать в бою.
+    app.shortcuts.clear()
     parsed = urlparse(route or "/")
     path = parsed.path or "/"
     query = {key: values[0] for key, values in parse_qs(parsed.query).items()}
@@ -119,18 +142,70 @@ def main(page: ft.Page) -> None:
     page.padding = 0
     page.spacing = 0
     page.fonts = dict(t.FONT_FILES)
-    page.window.width = 1600
-    page.window.height = 1000
-    page.window.min_width = 1280
-    page.window.min_height = 800
+    page.window.width = t.WINDOW_W
+    page.window.height = t.WINDOW_H
+    page.window.min_width = t.WINDOW_MIN_W
+    page.window.min_height = t.WINDOW_MIN_H
+    app.window_width = t.WINDOW_W
 
     def notify(message: str) -> None:
         page.show_dialog(ft.SnackBar(content=ft.Text(message)))
 
+    def open_dialog(dialog: ft.Control) -> None:
+        page.show_dialog(dialog)
+
+    def close_dialog() -> None:
+        page.pop_dialog()
+
     # Один-единственный View на всё приложение: при замене стека Flutter
     # анимирует навигацию, а рамка у нас одинаковая на всех экранах —
     # анимировать нечего. Меняем содержимое, а не сам View.
-    root = ft.View(route=ROUTES["home"], padding=0, spacing=0, bgcolor=t.CONTENT_BG)
+    #
+    # `FilePicker` — сервис, а не контрол: он живёт в `services` вида и
+    # переживает смену содержимого, поэтому окно выбора папки открывается
+    # с любого экрана.
+    picker = ft.FilePicker()
+    root = ft.View(
+        route=ROUTES["home"],
+        padding=0,
+        spacing=0,
+        bgcolor=t.CONTENT_BG,
+        services=[picker],
+    )
+
+    def ask_directory(title: str, initial: str, on_pick: Callable[[str], None]) -> None:
+        """Системное окно выбора папки. Методы пикера — корутины."""
+
+        async def work() -> None:
+            chosen = await picker.get_directory_path(
+                dialog_title=title, initial_directory=initial
+            )
+            if chosen:
+                on_pick(chosen)
+            else:
+                notify("Выгрузка отменена.")
+
+        page.run_task(work)
+
+    def ask_file(
+        title: str,
+        initial: str,
+        extensions: tuple[str, ...],
+        on_pick: Callable[[str], None],
+    ) -> None:
+        async def work() -> None:
+            files = await picker.pick_files(
+                dialog_title=title,
+                initial_directory=initial,
+                allowed_extensions=list(extensions) or None,
+                file_type=ft.FilePickerFileType.CUSTOM
+                if extensions
+                else ft.FilePickerFileType.ANY,
+            )
+            if files and files[0].path:
+                on_pick(files[0].path)
+
+        page.run_task(work)
 
     def paint(dark: bool) -> None:
         """Переключить палитру и всё, что красит не наша вёрстка.
@@ -156,6 +231,14 @@ def main(page: ft.Page) -> None:
             page.views.append(root)
         page.update()
 
+    def resized(*_: object) -> None:
+        """Окно изменили — таблицы пересобирают набор колонок под ширину."""
+        width = int(page.window.width or t.WINDOW_W)
+        if width == app.window_width:
+            return
+        app.window_width = width
+        render()
+
     def navigate(route: str, *, remember: bool = True) -> None:
         current = page.route or ROUTES["home"]
         if route == current:
@@ -173,9 +256,31 @@ def main(page: ft.Page) -> None:
         paint(dark)
         render()
 
+    def on_key(event: ft.KeyboardEvent) -> None:
+        """Горячие клавиши окна.
+
+        Все сочетания — с модификатором либо Escape: обработчик один на всё
+        окно и не знает, стоит ли курсор в текстовом поле, а `Пробел` без
+        модификатора попадал бы сюда прямо во время набора.
+        """
+        keys = key_name(event)
+        if keys == "Escape":
+            close_dialog()
+            return
+        if app.press(keys):
+            return
+        if keys.startswith("Ctrl+") and event.key in SECTION_KEYS:
+            navigate(NAV[SECTION_KEYS.index(event.key)].route)
+
     app.notifier = notify
+    app.dialog_opener = open_dialog
+    app.dialog_closer = close_dialog
+    app.directory_asker = ask_directory
+    app.file_asker = ask_file
     app.navigator = navigate
     app.theme_switcher = switch_theme
+    page.on_keyboard_event = on_key
+    page.on_resize = resized
     page.on_route_change = lambda *_: render()
     page.on_view_pop = lambda *_: back()
     paint(app.dark_theme)  # запомненная с прошлого запуска тема

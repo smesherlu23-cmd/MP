@@ -6,10 +6,12 @@ import flet as ft
 
 from core.models import BattleResult, Scenario
 from core.report import winner_label
+from core.storage import delete_battle
 from ui import theme as t
 from ui.shell import scenario_aside, screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
+from ui.widgets import dialogs as dlg
 
 ROUTE = ROUTES["home"]
 
@@ -201,6 +203,84 @@ def scenario_block(scenario: Scenario, app: AppState, *, last: bool) -> ft.Contr
     )
 
 
+def saved_battles_card(app: AppState) -> ft.Control | None:
+    """Незаконченные бои с диска — их можно поднять и продолжить.
+
+    Бой жил только в памяти, и закрытое окно стоило пятнадцати ходов.
+    Теперь он пишется на диск после каждого хода, а отсюда поднимается.
+    """
+    saved = [
+        (path, snapshot)
+        for path, snapshot in app.saved_battles()
+        if not snapshot.finished and snapshot.turn > 0
+    ]
+    if not saved:
+        return None
+
+    def resume(snapshot) -> None:
+        app.resume_battle(snapshot)
+        app.notify(f"Бой поднят с хода {snapshot.turn}")
+        app.go(ROUTES["battle"].format(id=snapshot.scenario.id))
+
+    def drop(path, snapshot) -> None:
+        dlg.confirm(
+            app,
+            f"Забыть бой «{snapshot.title}»?",
+            f"Сохранение с хода {snapshot.turn} будет удалено с диска. "
+            "Продолжить этот бой после этого не получится.",
+            confirm_label="Забыть",
+            danger=True,
+            on_confirm=lambda: _drop_battle(app, path),
+        )
+
+    rows = [
+        ft.Container(
+            content=ft.Row(
+                [
+                    ft.Column(
+                        [
+                            t.text(snapshot.title, size=t.SIZE_BODY, weight=t.W500),
+                            ft.Text(
+                                snapshot.summary,
+                                style=t.mono(size=t.SIZE_META, color=t.TEXT_3, height=1.5),
+                            ),
+                        ],
+                        spacing=2,
+                        tight=True,
+                        expand=True,
+                    ),
+                    c.secondary_button(
+                        "Продолжить",
+                        lambda s=snapshot: resume(s),
+                        icon=ft.Icons.PLAY_ARROW,
+                        height=t.BUTTON_SM_H,
+                    ),
+                    c.icon_button(
+                        ft.Icons.DELETE_OUTLINE,
+                        lambda p=path, s=snapshot: drop(p, s),
+                        size=t.BUTTON_SM_H,
+                        icon_size=15,
+                        color=t.LOSS,
+                        tooltip="Забыть сохранение",
+                    ),
+                ],
+                spacing=t.GAP_SM,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding.symmetric(vertical=10, horizontal=t.PAD_CARD),
+            border=None if snapshot is saved[-1][1] else t.border_bottom(t.BORDER_INNER),
+        )
+        for path, snapshot in saved
+    ]
+    return c.framed_card("Незаконченные бои", ft.Column(rows, spacing=0, tight=True))
+
+
+def _drop_battle(app: AppState, path) -> None:
+    delete_battle(path)
+    app.notify("Сохранение удалено")
+    app.go(ROUTES["home"])
+
+
 def build(app: AppState) -> ft.View:
     results = app.results()[:6]
     scenarios = app.scenarios()[:4]
@@ -227,9 +307,11 @@ def build(app: AppState) -> ft.View:
         expand=True,
     )
 
+    unfinished = saved_battles_card(app)
     left = ft.Column(
         [
             current_battle_card(app),
+            *([unfinished] if unfinished is not None else []),
             ft.Row(
                 [link_card(route, icon, title, hint, app) for route, icon, title, hint in LINKS],
                 spacing=t.GAP,

@@ -56,10 +56,16 @@ def folder_header(
     *,
     selected: bool,
     on_click: Callable[[], None] | None,
+    menu: Sequence[c.MenuItem] = (),
 ) -> ft.Control:
-    """Строка папки в списке: отступ по уровню, счётчик справа."""
+    """Строка папки в списке: отступ по уровню, счётчик справа.
+
+    Действия над папкой — по правой кнопке. Раньше их приходилось искать
+    в карточке справа: выбрать папку, перевести взгляд, найти поле имени,
+    стереть, напечатать, щёлкнуть мимо, чтобы сохранилось.
+    """
     title = name_of(path) if path else ROOT_LABEL
-    return ft.Container(
+    row = ft.Container(
         content=ft.Row(
             [
                 ft.Container(width=depth(path) * INDENT),
@@ -81,6 +87,9 @@ def folder_header(
         border=t.border_bottom(t.BORDER_INNER),
         on_click=None if on_click is None else (lambda *_: on_click()),
     )
+    if on_click is None and not menu:
+        return row
+    return c.interactive(row, on_click=on_click, menu=menu)
 
 
 def folder_card(

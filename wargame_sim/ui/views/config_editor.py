@@ -29,6 +29,7 @@ from ui import theme as t
 from ui.shell import aside_block, screen
 from ui.state import CONFIG_FIELDS, CONFIG_YAML, ROUTES, AppState
 from ui.widgets import common as c
+from ui.widgets import dialogs as dlg
 
 ROUTE = ROUTES["config"]
 
@@ -176,6 +177,28 @@ def build(app: AppState, section: str = "combat") -> ft.View:
         if write(editor.value or ""):
             say("Применено. Новые коэффициенты действуют со следующего расчёта.")
             render_changed()
+
+    def ask_reset_section() -> None:
+        dlg.confirm(
+            app,
+            f"Сбросить раздел «{SECTION_LABELS.get(section, section)}»?",
+            "Все правки коэффициентов этого раздела заменятся эталоном из "
+            "config/defaults. Вернуть их будет нечем.",
+            confirm_label="Сбросить",
+            danger=True,
+            on_confirm=reset_section,
+        )
+
+    def ask_reset_all() -> None:
+        dlg.confirm(
+            app,
+            "Сбросить все коэффициенты?",
+            "Каждый раздел конфигурации заменится эталоном из config/defaults — "
+            "вся калибровка, которую вы подбирали, пропадёт. Отменить нельзя.",
+            confirm_label="Сбросить всё",
+            danger=True,
+            on_confirm=reset_all,
+        )
 
     def reset_section() -> None:
         try:
@@ -434,8 +457,10 @@ def build(app: AppState, section: str = "combat") -> ft.View:
             ],
         ),
         actions=[
-            c.tertiary_button("Сбросить всё", reset_all),
-            c.secondary_button("Сбросить раздел", reset_section, icon=ft.Icons.RESTORE),
+            c.tertiary_button("Сбросить всё…", ask_reset_all),
+            c.secondary_button(
+                "Сбросить раздел…", ask_reset_section, icon=ft.Icons.RESTORE
+            ),
             c.primary_button(
                 "Применить",
                 apply_yaml,

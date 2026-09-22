@@ -36,6 +36,7 @@ class Palette:
     surface_alt: str  # верхняя полоса, вложенные поля, строки стороны B
     card_bg: str  # фон карточки
     row_expanded: str  # фон раскрытой (выбранной) строки
+    row_hover: str  # фон строки под курсором
     segment_bg: str  # фон сегментированного переключателя
     track: str  # дорожка полосы прогресса
     border: str  # основная граница
@@ -70,6 +71,7 @@ LIGHT = Palette(
     surface_alt="#F7F4EE",
     card_bg="#FBFAF6",
     row_expanded="#F0EDE6",
+    row_hover="#F5F2EC",
     segment_bg="#EDEAE4",
     track="#E4DFD6",
     border="#DBD5CA",
@@ -105,6 +107,7 @@ DARK = Palette(
     surface_alt="#201E1B",
     card_bg="#232120",
     row_expanded="#2C2926",
+    row_hover="#272522",
     segment_bg="#1B1A18",
     track="#332F2B",
     border="#3B3733",
@@ -135,6 +138,7 @@ NAV_ACTIVE: str = LIGHT.nav_active
 SURFACE_ALT: str = LIGHT.surface_alt
 CARD_BG: str = LIGHT.card_bg
 ROW_EXPANDED: str = LIGHT.row_expanded
+ROW_HOVER: str = LIGHT.row_hover
 SEGMENT_BG: str = LIGHT.segment_bg
 TRACK: str = LIGHT.track
 
@@ -205,6 +209,12 @@ SIZE_LABEL = 10  # подпись поля, шапка таблицы
 # --------------------------------------------------------------------------
 # Размеры
 # --------------------------------------------------------------------------
+#: Окно приложения: стартовый размер и минимум, ниже которого не ужать.
+WINDOW_W = 1600
+WINDOW_H = 1000
+WINDOW_MIN_W = 1280
+WINDOW_MIN_H = 800
+
 SIDEBAR_W = 212
 TOPBAR_H = 58
 NAV_ITEM_H = 34
@@ -219,6 +229,7 @@ TABLE_HEAD_H = 26
 TABLE_ROW_H = 28
 TABLE_ROW_TALL_H = 42
 CARD_FOOTER_H = 32
+MENU_ITEM_H = 34  # пункт контекстного меню
 BAR_H = 4
 BAR_STACKED_H = 10
 TOGGLE_W = 36
@@ -248,6 +259,20 @@ R_FIELD = 7
 R_SEGMENT = 5
 R_BAR = 2
 R_CHIP = 15
+
+
+def content_width(window: int | None, *, right: int = 0) -> int:
+    """Сколько пикселей остаётся содержимому при таком окне.
+
+    Из ширины окна уходят боковая навигация, поля контента и правая
+    колонка, если она есть. По этому числу таблица решает, сколько колонок
+    показать: при 1280 полный набор не помещался и правые колонки просто
+    обрезались, потому что горизонтальной прокрутки нет.
+    """
+    width = (window or WINDOW_W) - SIDEBAR_W - PAD_CONTENT_X * 2
+    if right:
+        width -= right + GAP
+    return max(width, 0)
 
 
 def _family(base: str, weight: ft.FontWeight) -> str:
@@ -313,7 +338,12 @@ def text(
     align: ft.TextAlign | None = None,
     no_wrap: bool = False,
 ) -> ft.Text:
-    """Текст основным шрифтом."""
+    """Текст основным шрифтом.
+
+    У `ft.Text` `overflow` по умолчанию `CLIP`: с `no_wrap` длинное
+    название режется посреди буквы, и понять, что оно обрезано, нельзя.
+    Поэтому там, где перенос запрещён, ставится многоточие.
+    """
     return ft.Text(
         value,
         font_family=_family(SANS, weight),
@@ -323,6 +353,8 @@ def text(
         expand=expand,
         text_align=align,
         no_wrap=no_wrap or None,
+        overflow=ft.TextOverflow.ELLIPSIS if no_wrap else ft.TextOverflow.CLIP,
+        tooltip=value if no_wrap else None,
     )
 
 
@@ -348,8 +380,18 @@ def num(
 
 
 def caption(value: str, color: str | None = None, size: int = SIZE_LABEL) -> ft.Text:
-    """Подпись поля или шапка таблицы: моно, разрядка, верхний регистр."""
-    return ft.Text(value.upper(), style=mono(size=size, color=color or TEXT_MUTED, spacing=0.6))
+    """Подпись поля или шапка таблицы: моно, разрядка, верхний регистр.
+
+    Шапка живёт в колонке фиксированной ширины, поэтому длинный заголовок
+    обязан обрываться многоточием, а не срезаться на полбукве.
+    """
+    return ft.Text(
+        value.upper(),
+        style=mono(size=size, color=color or TEXT_MUTED, spacing=0.6),
+        no_wrap=True,
+        overflow=ft.TextOverflow.ELLIPSIS,
+        tooltip=value,
+    )
 
 
 def card_title(value: str, color: str | None = None) -> ft.Text:

@@ -70,6 +70,10 @@ class Battalion(BaseModel):
     order: Order = Order.ATTACK
     task: str = ""
     state: BattalionState = BattalionState.FIGHTING
+    #: Боевая мощь на начало боя — база для «остаточной боеспособности».
+    #: До боя её нет, и тогда отряд по определению цел на 100%; движок
+    #: ставит её один раз, когда собирает состояние боя.
+    start_power: float | None = None
 
     @field_validator("elements")
     @classmethod
@@ -298,14 +302,9 @@ class Battalion(BaseModel):
     def readiness(self) -> float:
         return self._weighted("readiness")
 
-    def _power(self, *, with_suppression: bool) -> float:
-        engaged = self.engaged_elements
-        if not engaged:
-            return 0.0
-        potential = sum(element.attack * element.personnel_full for element in engaged)
-        if potential == 0:
-            return 0.0
-        actual = 0.0
+    def raw_power(self, *, with_suppression: bool = False) -> float:
+        """Сырая боевая мощь: численность × огонь × мораль × боезапас."""
+        total = 0.0
         for element in self.alive_elements:
             value = (
                 element.attack
@@ -315,17 +314,35 @@ class Battalion(BaseModel):
             )
             if with_suppression:
                 value *= 1.0 - element.suppression / 100.0
-            actual += value
-        return 100.0 * actual / potential
+            total += value
+        return total
+
+    def capture_start_power(self) -> None:
+        """Запомнить мощь на начало боя. Зовётся движком один раз."""
+        self.start_power = self.raw_power()
+
+    def _power(self, *, with_suppression: bool) -> float:
+        """Доля мощи от той, что была на начало боя, 0..100.
+
+        Раньше делилось на «штат при стопроцентной морали и полном
+        боезапасе», и нетронутый батальон показывал 75%: мораль стартует
+        с 75 и входила в числитель, а в знаменатель — нет. Строка
+        называлась «остаточная боеспособность», а числом была не доля от
+        своего начала, а индекс от недостижимого идеала.
+        """
+        base = self.start_power if self.start_power else self.raw_power()
+        if base <= 0:
+            return 0.0
+        return min(100.0 * self.raw_power(with_suppression=with_suppression) / base, 100.0)
 
     @property
     def combat_power(self) -> float:
         """Остаточная боеспособность, 0..100.
 
-        Доля исходной огневой мощи, которую батальон способен выдать, когда
-        придёт в себя: численность × мораль × боезапас. Подавление сюда не
-        входит — оно спадает за пару ходов и показывается отдельной строкой,
-        иначе любой батальон под огнём выглядел бы небоеспособным.
+        Доля боевой мощи, которую отряд сохранил от той, с которой вошёл
+        в бой: численность × мораль × боезапас. Подавление сюда не входит —
+        оно спадает за пару ходов и показывается отдельной строкой, иначе
+        любой отряд под огнём выглядел бы небоеспособным.
         """
         return self._power(with_suppression=False)
 

@@ -8,20 +8,23 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
+from typing import Any
 
 import flet as ft
 
 from ui import theme as t
 
 
-def safe_update(control: ft.Control) -> None:
-    """Обновить контрол, если он уже показан на странице.
+def safe_update(*controls: ft.Control) -> None:
+    """Обновить контролы, которые уже показаны на странице.
 
     Экраны собираются до того, как попадают в стек View, поэтому часть
     обновлений происходит, когда обновлять ещё нечего — это не ошибка.
     """
-    with contextlib.suppress(RuntimeError):
-        control.update()
+    for control in controls:
+        with contextlib.suppress(RuntimeError):
+            control.update()
 
 
 # --------------------------------------------------------------------------
@@ -317,7 +320,14 @@ def framed_card(
 # Таблица
 # --------------------------------------------------------------------------
 class Col:
-    """Описание колонки таблицы."""
+    """Описание колонки таблицы.
+
+    ``optional`` — очередь на скрытие в узком окне: 0 значит «колонка
+    обязательна», больше ноля — тем раньше она уйдёт. Горизонтальной
+    прокрутки у таблиц нет, поэтому лишние колонки не обрезаются по краю,
+    а честно убираются: лучше пять читаемых колонок, чем девять, из
+    которых три срезаны.
+    """
 
     def __init__(
         self,
@@ -327,12 +337,67 @@ class Col:
         expand: bool | int = False,
         numeric: bool = False,
         pad_left: int = 0,
+        optional: int = 0,
     ) -> None:
         self.title = title
         self.width = width
         self.expand = expand
         self.numeric = numeric
         self.pad_left = pad_left
+        self.optional = optional
+
+
+#: Сколько пикселей оставить растяжимой колонке, чтобы название читалось.
+NAME_MIN_W = 140
+
+
+def columns_width(columns: Sequence[Col]) -> int:
+    """Сколько места занимает набор колонок без растяжимой."""
+    fixed = sum(col.width or 0 for col in columns if not col.expand)
+    return fixed + t.GAP_SM * max(len(columns) - 1, 0) + t.PAD_ROW_X * 2
+
+
+def fit_columns(columns: Sequence[Col], available: int) -> tuple[Col, ...]:
+    """Колонки, которые влезают в ``available`` пикселей.
+
+    Прячутся по очереди — сначала с наибольшим ``optional``. Обязательные
+    не трогаются никогда: если не влезают и они, показываем как есть.
+    """
+    kept = list(columns)
+    while columns_width(kept) + NAME_MIN_W > available:
+        droppable = [col for col in kept if col.optional]
+        if not droppable:
+            break
+        kept.remove(max(droppable, key=lambda col: col.optional))
+    return tuple(kept)
+
+
+@dataclass(frozen=True)
+class Table:
+    """Набор колонок, подогнанный под ширину окна.
+
+    Шапка и строки берутся отсюда, поэтому они не могут разойтись: ячейки
+    отбрасываются ровно те же, что и колонки.
+    """
+
+    columns: tuple[Col, ...]
+    shown: tuple[Col, ...]
+
+    @classmethod
+    def fit(cls, columns: Sequence[Col], available: int) -> Table:
+        return cls(tuple(columns), fit_columns(columns, available))
+
+    def head(self) -> ft.Control:
+        return table_head(self.shown)
+
+    def row(self, cells: Sequence[ft.Control], **kwargs: Any) -> ft.Control:
+        keep = {id(col) for col in self.shown}
+        picked = [
+            cell
+            for col, cell in zip(self.columns, cells, strict=False)
+            if id(col) in keep
+        ]
+        return table_row(self.shown, picked, **kwargs)
 
 
 def _cell(control: ft.Control, col: Col) -> ft.Control:
@@ -371,9 +436,14 @@ def table_row(
     bgcolor: str | None = None,
     last: bool = False,
     on_click: Callable[[], None] | None = None,
+    menu: Sequence[MenuItem] = (),
 ) -> ft.Control:
-    """Строка таблицы."""
-    return ft.Container(
+    """Строка таблицы.
+
+    С ``on_click`` или ``menu`` строка становится живой: курсор,
+    подсветка под курсором и меню по правой кнопке (см. :func:`interactive`).
+    """
+    row = ft.Container(
         content=ft.Row(
             [_cell(cell, col) for col, cell in zip(columns, cells, strict=False)],
             spacing=t.GAP_SM,
@@ -385,6 +455,87 @@ def table_row(
         border=None if last else t.border_bottom(t.BORDER_INNER),
         on_click=None if on_click is None else (lambda *_: on_click()),
     )
+    if on_click is None and not menu:
+        return row
+    return interactive(row, on_click=on_click, menu=menu)
+
+
+# --------------------------------------------------------------------------
+# Живая строка: курсор, подсветка, меню по правой кнопке
+# --------------------------------------------------------------------------
+@dataclass(frozen=True)
+class MenuItem:
+    """Пункт контекстного меню строки."""
+
+    label: str
+    action: Callable[[], None]
+    icon: str | None = None
+    #: Разрушительное действие — подписывается цветом потерь.
+    danger: bool = False
+
+
+def _menu_entry(item: MenuItem) -> ft.PopupMenuItem:
+    color = t.LOSS if item.danger else t.TEXT
+    return ft.PopupMenuItem(
+        content=ft.Row(
+            [
+                ft.Icon(item.icon, size=15, color=color) if item.icon else ft.Container(width=0),
+                ft.Text(item.label, style=t.sans(size=t.SIZE_ROW, color=color)),
+            ],
+            spacing=8,
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        height=t.MENU_ITEM_H,
+        on_click=lambda *_: item.action(),
+    )
+
+
+def interactive(
+    row: ft.Container,
+    *,
+    on_click: Callable[[], None] | None = None,
+    menu: Sequence[MenuItem] = (),
+    hover: bool = True,
+) -> ft.Control:
+    """Сделать строку живой.
+
+    Три вещи, которых в интерфейсе не было вовсе: курсор-указатель над
+    кликабельным, подсветка под курсором и меню по правой кнопке. Без них
+    кликабельное неотличимо от некликабельного, и действия приходится
+    искать кнопками по экрану.
+
+    Подсветка меняет ``bgcolor`` самой строки, поэтому выбранная строка
+    (у неё свой фон) под курсором не перекрашивается — иначе выбор
+    «мигал» бы при каждом движении мыши.
+    """
+    base = row.bgcolor
+    if hover and base != t.ROW_EXPANDED:
+
+        def enter(*_: object) -> None:
+            row.bgcolor = t.ROW_HOVER
+            safe_update(row)
+
+        def leave(*_: object) -> None:
+            row.bgcolor = base
+            safe_update(row)
+
+    else:
+        enter = leave = None
+
+    node: ft.Control = ft.GestureDetector(
+        content=row,
+        mouse_cursor=ft.MouseCursor.CLICK if on_click else ft.MouseCursor.BASIC,
+        on_enter=enter,
+        on_exit=leave,
+    )
+    if menu:
+        node = ft.ContextMenu(
+            content=node,
+            secondary_items=[_menu_entry(item) for item in menu],
+            secondary_trigger=ft.ContextMenuTrigger.DOWN,
+        )
+    return node
 
 
 def table(
@@ -612,6 +763,75 @@ def number_field(
     return shell
 
 
+def search_box(
+    value: str,
+    on_change: Callable[[str], None],
+    *,
+    placeholder: str = "Поиск",
+    width: int = 260,
+) -> tuple[ft.Control, Callable[[], None]]:
+    """Поле поиска и функция «поставить в него курсор».
+
+    Контрол создаётся **один раз** и сам управляет крестиком. Пересобирать
+    его на каждый символ нельзя: новый `TextField` теряет фокус, и набрать
+    больше одной буквы становится невозможно.
+    """
+    field, raw = text_field(value, on_change, placeholder=placeholder, expand=True)
+
+    def clear() -> None:
+        raw.value = ""
+        safe_update(raw)
+        changed("")
+
+    clear_button = icon_button(
+        ft.Icons.CLOSE, clear, size=t.BUTTON_XS_H, icon_size=14, tooltip="Очистить поиск"
+    )
+    clear_button.visible = bool(value)
+
+    def changed(text: str) -> None:
+        clear_button.visible = bool(text)
+        safe_update(clear_button)
+        on_change(text)
+
+    raw.on_change = lambda *_: changed(raw.value or "")
+
+    def focus() -> None:
+        """Поставить курсор в поле — на это повешен Ctrl+F."""
+        with contextlib.suppress(RuntimeError, AssertionError):
+            raw.focus()
+
+    box = ft.Container(
+        content=ft.Row(
+            [ft.Icon(ft.Icons.SEARCH, size=17, color=t.TEXT_MUTED), field, clear_button],
+            spacing=6,
+            tight=True,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        height=t.BUTTON_H,
+        width=width,
+        padding=ft.Padding.only(left=10, right=4),
+        bgcolor=t.CARD_BG,
+        border=ft.Border.all(1, t.BORDER),
+        border_radius=t.R_BUTTON,
+        alignment=ft.Alignment.CENTER_LEFT,
+    )
+    return box, focus
+
+
+def matches(query: str, *fields: str) -> bool:
+    """Все слова запроса встречаются хоть в одном из полей записи."""
+    words = query.casefold().split()
+    if not words:
+        return True
+    haystack = " ".join(field.casefold() for field in fields)
+    return all(word in haystack for word in words)
+
+
+def share_label(value: float) -> str:
+    """Доля в предпросмотре деления: «1», «3» — без хвоста из нулей."""
+    return _bound(value)
+
+
 def _bound(value: float) -> str:
     return f"{int(value)}" if float(value).is_integer() else f"{value:g}"
 
@@ -790,6 +1010,23 @@ def error_banner(message: str) -> ft.Control:
         ),
         bgcolor=t.CARD_BG,
         border=ft.Border.all(1, t.LOSS),
+        border_radius=t.R_CARD,
+        padding=t.PAD_CARD,
+    )
+
+
+def warn_banner(message: str) -> ft.Control:
+    """Предупреждение: сделать можно, но ГМ обязан об этом знать."""
+    return ft.Container(
+        content=ft.Row(
+            [
+                ft.Icon(ft.Icons.WARNING_AMBER_OUTLINED, color=t.WARN, size=18),
+                ft.Text(message, style=t.sans(size=t.SIZE_ROW, color=t.TEXT_2), expand=True),
+            ],
+            spacing=t.GAP_SM,
+        ),
+        bgcolor=t.SURFACE_ALT,
+        border=ft.Border.all(1, t.WARN),
         border_radius=t.R_CARD,
         padding=t.PAD_CARD,
     )

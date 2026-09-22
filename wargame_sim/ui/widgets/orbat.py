@@ -13,8 +13,7 @@ from dataclasses import dataclass
 
 import flet as ft
 
-from core.config import AppConfig
-from core.models import Battalion, Element, Order
+from core.models import COMMAND_ORDERS, Battalion, Element
 from ui import theme as t
 from ui.widgets import common as c
 
@@ -24,18 +23,20 @@ INDENT = 14
 #: Приказ группы: пусто — как у отряда целиком.
 ORDER_OPTIONS: tuple[tuple[str, str], ...] = (
     ("", "по отряду"),
-    *((str(order), str(order)) for order in Order),
+    *((str(order), str(order)) for order in COMMAND_ORDERS),
 )
 
+#: Сторона, имя, численность, мораль и приказ остаются при любой ширине —
+#: без них пульт перестаёт быть пультом. Остальное уходит по очереди.
 TREE_COLUMNS: tuple[c.Col, ...] = (
     c.Col("С", 22),
     c.Col("Группа", expand=True),
-    c.Col("Масштаб", 84),
+    c.Col("Масштаб", 84, optional=3),
     c.Col("Л/с", 76, numeric=True),
-    c.Col("Техн.", 52, numeric=True),
+    c.Col("Техн.", 52, numeric=True, optional=2),
     c.Col("Мораль", 52, numeric=True),
-    c.Col("Подавл.", 56, numeric=True),
-    c.Col("Боезап.", 54, numeric=True),
+    c.Col("Подавл.", 56, numeric=True, optional=1),
+    c.Col("Боезап.", 54, numeric=True, optional=4),
     c.Col("Приказ", 128, pad_left=8),
 )
 
@@ -119,16 +120,21 @@ def _name_cell(node: Node, *, muted: bool, on_toggle: Callable[[], None] | None)
 
 
 def tree_row(
+    table: c.Table,
     node: Node,
     battalion: Battalion,
-    config: AppConfig,
     *,
     selected: bool = False,
     on_select: Callable[[], None] | None = None,
     on_toggle: Callable[[], None] | None = None,
+    menu: Sequence[c.MenuItem] = (),
     last: bool = False,
 ) -> ft.Control:
-    """Строка дерева: лист показывает себя, старшая группа — сумму подгрупп."""
+    """Строка дерева: лист показывает себя, старшая группа — сумму подгрупп.
+
+    Действия над группой доступны прямо здесь, по правой кнопке: искать их
+    кнопками по экрану не надо.
+    """
     element = node.element
     roll = battalion.rollup(element.id)
     reserve = roll.in_reserve
@@ -150,8 +156,7 @@ def tree_row(
         if node.is_leaf
         else c.dash()
     )
-    return c.table_row(
-        TREE_COLUMNS,
+    return table.row(
         [
             ft.Text(node.side, style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED)),
             _name_cell(node, muted=muted, on_toggle=on_toggle),
@@ -174,6 +179,7 @@ def tree_row(
         bgcolor=t.ROW_EXPANDED if selected else (t.SURFACE_ALT if node.side == "B" else None),
         last=last,
         on_click=on_select,
+        menu=menu,
     )
 
 
@@ -222,10 +228,3 @@ def selection_label(element: Element, battalion: Battalion) -> ft.Control:
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
-
-def parts_switch(value: int, on_change: Callable[[int], None]) -> ft.Control:
-    """На сколько частей делить: 2, 3 или 4."""
-    options: Sequence[tuple[str, str]] = (("2", "2"), ("3", "3"), ("4", "4"))
-    return c.segmented(
-        options, str(value), lambda raw: on_change(int(raw)), size=t.SIZE_META
-    )

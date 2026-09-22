@@ -40,12 +40,19 @@ def _supply_efficiency(state: BattleState, side: str, config: AppConfig) -> floa
 
 def run(state: BattleState, config: AppConfig, log: BattleLog) -> None:
     turn = state.turn
+    # На первом ходу восстанавливать нечего: бой ещё не начинался, а
+    # контакт не размечен — иначе все получают бесплатный тик подвоза,
+    # отдыха и готовности ещё до первого выстрела.
+    if turn <= 1:
+        return
     suppression_cfg = config.cbt.suppression
     fatigue_cfg = config.fat
     ammo_cfg = config.sup.ammo
     fuel_cfg = config.sup.fuel
     equipment_cfg = config.sup.equipment
     vehicles_cfg = config.cbt.vehicles
+    cohesion_cfg = config.cbt.cohesion
+    readiness_cfg = config.cbt.readiness
     morale_cfg = config.mor
 
     for side in SIDES:
@@ -53,6 +60,7 @@ def run(state: BattleState, config: AppConfig, log: BattleLog) -> None:
         efficiency = _supply_efficiency(state, side, config)
         for element in state.elements(side):
             key = element_key(side, element)
+            in_contact = side_state.contact_flag(element.id)
             experience = config.experience_level(element.experience)
             before = {
                 "suppression": element.suppression,
@@ -61,6 +69,8 @@ def run(state: BattleState, config: AppConfig, log: BattleLog) -> None:
                 "fuel": element.fuel,
                 "equipment": element.equipment,
                 "morale": element.morale,
+                "cohesion": element.cohesion,
+                "readiness": element.readiness,
             }
             factors: list[tuple[str, float]] = []
 
@@ -72,7 +82,7 @@ def run(state: BattleState, config: AppConfig, log: BattleLog) -> None:
             factors.append(("спад подавления", decay))
 
             # Отдых: работает, когда элемент не был в контакте в прошлом ходу
-            if config.tog.fatigue and not side_state.contact_flag(element.id):
+            if config.tog.fatigue and not in_contact:
                 rest = fatigue_cfg.recovery_per_turn * (
                     1.0 + fatigue_cfg.recovery_experience_weight * experience.combat
                 )
@@ -115,11 +125,40 @@ def run(state: BattleState, config: AppConfig, log: BattleLog) -> None:
             else:
                 factors.append(("подвоз боезапаса", 0.0))
 
-            # Естественное восстановление морали
-            element.morale = clamp(
-                element.morale + morale_cfg.recovery_per_turn, morale_cfg.min, morale_cfg.max
-            )
-            factors.append(("восстановление морали", morale_cfg.recovery_per_turn))
+            # Готовность и слаженность собираются только вне контакта:
+            # под огнём подразделение не перестраивается и не приводит
+            # себя в порядок — оно просто держится.
+            if config.tog.readiness and not in_contact:
+                before_readiness = element.readiness
+                element.readiness = clamp(
+                    element.readiness + readiness_cfg.recovery_per_turn,
+                    readiness_cfg.min,
+                    readiness_cfg.max,
+                )
+                if element.readiness != before_readiness:
+                    factors.append(("готовность", readiness_cfg.recovery_per_turn))
+
+            # Слаженность собирается только вне контакта: под огнём
+            # подразделение не перестраивается.
+            if not in_contact:
+                before_cohesion = element.cohesion
+                element.cohesion = clamp(
+                    element.cohesion + cohesion_cfg.recovery_per_turn,
+                    cohesion_cfg.min,
+                    cohesion_cfg.max,
+                )
+                if element.cohesion != before_cohesion:
+                    factors.append(("слаженность", cohesion_cfg.recovery_per_turn))
+
+            # Мораль приходит в себя только вне контакта — под огнём не
+            # рассыпаются, но и не рассветают. То же условие, что у отдыха.
+            if not in_contact:
+                element.morale = clamp(
+                    element.morale + morale_cfg.recovery_per_turn,
+                    morale_cfg.min,
+                    morale_cfg.max,
+                )
+                factors.append(("восстановление морали", morale_cfg.recovery_per_turn))
 
             after = {
                 "suppression": element.suppression,
@@ -128,6 +167,8 @@ def run(state: BattleState, config: AppConfig, log: BattleLog) -> None:
                 "fuel": element.fuel,
                 "equipment": element.equipment,
                 "morale": element.morale,
+                "cohesion": element.cohesion,
+                "readiness": element.readiness,
             }
             if before != after:
                 log.add(

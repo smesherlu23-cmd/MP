@@ -20,10 +20,11 @@ Strict = ConfigDict(extra="forbid")
 # terrain.yaml
 # --------------------------------------------------------------------------
 class TerrainEntry(BaseModel):
+    """Местность. В обмен потерями входит только ``cover`` — один раз и
+    симметрично; перевес обороны делают приказ и укрепления."""
+
     model_config = Strict
 
-    attack: float = Field(gt=0)
-    defense: float = Field(gt=0)
     detection: float = Field(gt=0)
     fatigue: float = Field(ge=0)
     speed: float = Field(gt=0)
@@ -305,7 +306,6 @@ class ExperienceEntry(BaseModel):
     detection: float = Field(gt=0)
     suppression_recovery: float = Field(gt=0)
     initiative: float = 0.0
-    morale_bonus: float = 0.0
 
 
 class ExperienceConfig(BaseModel):
@@ -325,8 +325,6 @@ class MoraleWeights(BaseModel):
     k2_suppression: float = Field(ge=0)
     k3_vehicle_losses: float = Field(ge=0)
     k4_no_hq: float = Field(ge=0)
-    k5_commander: float = Field(ge=0)
-    k6_experience: float = Field(ge=0)
     k7_side_success: float = Field(ge=0)
 
 
@@ -342,6 +340,9 @@ class MoraleBody(BaseModel):
 
     weights: MoraleWeights
     thresholds: MoraleThresholds
+    #: Во сколько раз командир держит мораль. Он именно держит, а не
+    #: начисляет: положительных слагаемых «просто так» в формуле нет.
+    commander_resistance: Curve
     recovery_per_turn: float = Field(ge=0)
     min: float = Field(ge=0, le=100)
     max: float = Field(ge=0, le=100)
@@ -546,6 +547,42 @@ class ChecksConfig(BaseModel):
     max_cover: float = Field(ge=0, lt=1)
 
 
+class CohesionConfig(BaseModel):
+    """Слаженность — способность подразделения действовать как целое.
+
+    До перекалибровки она была константой: разбитая рота считалась такой
+    же слаженной, как свежая. Ломают её потери и подавление, собирает
+    обратно — только время вне контакта.
+    """
+
+    model_config = Strict
+
+    loss_per_casualty_share: float = Field(ge=0)
+    loss_per_suppression: float = Field(ge=0)
+    recovery_per_turn: float = Field(ge=0)
+    min: float = Field(ge=0, le=100)
+    max: float = Field(ge=0, le=100)
+
+
+class ReadinessConfig(BaseModel):
+    """Готовность — способность выполнить новый приказ прямо сейчас.
+
+    Тратится на команды ГМ: смену приказа, деление, сведение, ввод
+    резерва. Так перестроение получает цену, а готовность — смысл:
+    раньше она стояла на месте весь бой.
+    """
+
+    model_config = Strict
+
+    order_change_cost: float = Field(ge=0)
+    split_cost: float = Field(ge=0)
+    merge_cost: float = Field(ge=0)
+    commit_cost: float = Field(ge=0)
+    recovery_per_turn: float = Field(ge=0)
+    min: float = Field(ge=0, le=100)
+    max: float = Field(ge=0, le=100)
+
+
 class CombatBody(BaseModel):
     model_config = Strict
 
@@ -555,6 +592,8 @@ class CombatBody(BaseModel):
     initiative: InitiativeConfig
     targeting: TargetingConfig
     suppression: SuppressionConfig
+    cohesion: CohesionConfig
+    readiness: ReadinessConfig
     curves: CombatCurves
     checks: ChecksConfig
 

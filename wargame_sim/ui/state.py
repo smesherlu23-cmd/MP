@@ -7,28 +7,38 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 from core.batch import run_batch
 from core.config import AppConfig, ConfigError, ConfigStore
 from core.engine import BattleEngine
-from core.models import BatchResult, Battalion, BattleResult, Scenario
+from core.models import BatchResult, Battalion, BattleResult, BattleSnapshot, Scenario
 from core.samples import make_scenario
 from core.storage import (
+    BATTLES_DIR,
     RESULTS_DIR,
     SCENARIOS_DIR,
     UNITS_DIR,
     StorageError,
     ensure_dirs,
-    list_battalions,
-    list_results,
     list_scenarios,
     save_battalion,
+    save_battle,
     save_result,
     save_scenario,
+    scan_battalions,
+    scan_battles,
+    scan_results,
 )
+
+#: Спросить у пользователя папку: заголовок, начальный каталог, что делать
+#: с выбранным. Роутер подставляет сюда `ft.FilePicker`.
+DirectoryAsker = Callable[[str, str, Callable[[str], None]], None]
+
+#: То же для файла, плюс список допустимых расширений.
+FileAsker = Callable[[str, str, tuple[str, ...], Callable[[str], None]], None]
 
 #: Значение фильтра «без ограничения».
 ALL = "*"
@@ -90,6 +100,7 @@ class AppState:
         self.units_dir = (data_dir / "units") if data_dir else UNITS_DIR
         self.scenarios_dir = (data_dir / "scenarios") if data_dir else SCENARIOS_DIR
         self.results_dir = (data_dir / "results") if data_dir else RESULTS_DIR
+        self.battles_dir = (data_dir / "battles") if data_dir else BATTLES_DIR
         ensure_dirs(data_dir)
 
         self.config_error: str | None = None
@@ -97,14 +108,32 @@ class AppState:
 
         self.scenario: Scenario = make_scenario(self.config)
         self.engine: BattleEngine | None = None
+        #: Отпечаток сценария, по которому построен текущий бой. Пока он
+        #: совпадает, бой можно продолжать; разошёлся — сценарий правили,
+        #: и старый движок пришлось бы выдавать за новый.
+        self._battle_source: str = ""
         self.result: BattleResult | None = None
         self.batch: BatchResult | None = None
         self.batch_running = False
         self.batch_cancelled = False
         self.batch_progress: tuple[int, int] = (0, 0)
         self.notifier: Callable[[str], None] | None = None
+        #: Показать и закрыть модальное окно. Ставит роутер — состояние
+        #: про flet по-прежнему ничего не знает.
+        self.dialog_opener: Callable[[Any], None] | None = None
+        self.dialog_closer: Callable[[], None] | None = None
+        #: Спросить папку или файл системным окном. Тоже ставит роутер:
+        #: `ft.FilePicker` — это flet, а состояние про flet не знает.
+        self.directory_asker: DirectoryAsker | None = None
+        self.file_asker: FileAsker | None = None
         self.navigator: Callable[[str], None] | None = None
+        #: Горячие клавиши текущего экрана: «Ctrl+Enter» → что сделать.
+        #: Экран заполняет её в `build`, роутер чистит перед сборкой.
+        self.shortcuts: dict[str, Callable[[], None]] = {}
         self.theme_switcher: Callable[[bool], None] | None = None
+        #: Ширина окна; 0 — окна нет (тест или скрипт), тогда берётся
+        #: стартовая. По ней таблицы решают, сколько колонок показать.
+        self.window_width: int = 0
 
         # -- экранное состояние редизайна -----------------------------------
         #: Раскрытый элемент в конструкторе — одновременно не больше одного.
@@ -140,9 +169,6 @@ class AppState:
         #: Экран коэффициентов: раздел и способ правки.
         self.config_section: str = "combat"
         self.config_view: str = CONFIG_FIELDS
-        #: Что взведено на удаление: второй щелчок по той же кнопке
-        #: удаляет. Дешевле диалога и работает без запущенного окна.
-        self.pending_delete: str = ""
         #: Архив: фильтр по исходу и строка поиска.
         self.archive_outcome: str = ALL
         self.archive_query: str = ""
@@ -214,6 +240,74 @@ class AppState:
         if self.theme_switcher is not None:
             self.theme_switcher(self.dark_theme)
 
+    def bind(self, keys: str, action: Callable[[], None]) -> None:
+        """Повесить действие экрана на горячую клавишу.
+
+        Все сочетания экранов — с модификатором: обработчик клавиатуры
+        общий на всё окно, и `Пробел` или `Del` без модификатора попадал
+        бы в него прямо во время набора текста в поле.
+        """
+        self.shortcuts[keys] = action
+
+    def press(self, keys: str) -> bool:
+        """Нажать сочетание. True — если его кто-то обработал."""
+        action = self.shortcuts.get(keys)
+        if action is None:
+            return False
+        action()
+        return True
+
+    def show_dialog(self, dialog: Any) -> None:
+        """Открыть модальное окно; без запущенного окна — тихо ничего."""
+        if self.dialog_opener is not None:
+            self.dialog_opener(dialog)
+
+    def close_dialog(self) -> None:
+        if self.dialog_closer is not None:
+            self.dialog_closer()
+
+    # -- выбор папки и файла ------------------------------------------------
+    def export_dir(self) -> Path:
+        """Куда выгружали в прошлый раз; по умолчанию — каталог результатов."""
+        remembered = self._settings().get("export_dir")
+        if isinstance(remembered, str) and remembered:
+            path = Path(remembered)
+            if path.is_dir():
+                return path
+        return self.results_dir
+
+    def ask_directory(self, title: str, on_pick: Callable[[Path], None]) -> None:
+        """Спросить папку системным окном и запомнить выбор.
+
+        Без запущенного окна спрашивать некого — тогда пишем туда же, куда
+        писали раньше, чтобы выгрузка из теста или скрипта не молчала.
+        """
+        initial = self.export_dir()
+        if self.directory_asker is None:
+            on_pick(initial)
+            return
+
+        def picked(chosen: str) -> None:
+            path = Path(chosen)
+            self._save_settings(export_dir=str(path))
+            on_pick(path)
+
+        self.directory_asker(title, str(initial), picked)
+
+    def ask_file(
+        self,
+        title: str,
+        on_pick: Callable[[Path], None],
+        *,
+        extensions: Sequence[str] = (),
+    ) -> None:
+        """Спросить файл системным окном; без окна выбирать нечего."""
+        if self.file_asker is None:
+            return
+        self.file_asker(
+            title, str(self.export_dir()), tuple(extensions), lambda chosen: on_pick(Path(chosen))
+        )
+
     def refresh(self, *controls: Any) -> None:
         """Обновить контролы, если приложение действительно запущено.
 
@@ -259,7 +353,11 @@ class AppState:
 
     # -- подразделения ------------------------------------------------------
     def units(self) -> list[tuple[Path, Battalion]]:
-        return list_battalions(self.units_dir)
+        return scan_battalions(self.units_dir).items
+
+    def broken_units(self) -> list[tuple[Path, str]]:
+        """Файлы подразделений, которые не читаются, и причина по каждому."""
+        return scan_battalions(self.units_dir).broken
 
     def unit(self, unit_id: str) -> tuple[Path, Battalion] | None:
         for path, battalion in self.units():
@@ -284,20 +382,64 @@ class AppState:
 
     # -- результаты ---------------------------------------------------------
     def results(self) -> list[tuple[Path, BattleResult]]:
-        return list_results(self.results_dir)
+        return scan_results(self.results_dir).items
+
+    def broken_results(self) -> list[tuple[Path, str]]:
+        return scan_results(self.results_dir).broken
 
     def save_result(self, result: BattleResult) -> Path:
         return save_result(result, self.results_dir)
 
     # -- бой ----------------------------------------------------------------
+    def scenario_fingerprint(self) -> str:
+        """Отпечаток сценария: по нему видно, что его правили после начала боя."""
+        return json.dumps(self.scenario.model_dump(mode="json"), sort_keys=True)
+
     def start_battle(self) -> BattleEngine:
         """Создать новый бой по текущему сценарию."""
         self.engine = BattleEngine(self.scenario, self.config)
+        self._battle_source = self.scenario_fingerprint()
         self.result = None
         return self.engine
 
-    def ensure_battle(self) -> BattleEngine:
+    # -- бой переживает закрытие окна ---------------------------------------
+    def save_battle(self) -> Path | None:
+        """Сохранить текущий бой. Зовётся после каждого хода и команды.
+
+        Снимок делается на границе хода, поэтому поднятый бой идёт теми же
+        бросками, что и непрерывный.
+        """
         if self.engine is None:
+            return None
+        try:
+            return save_battle(self.engine.snapshot(), self.battles_dir)
+        except OSError:
+            # Каталог данных может оказаться недоступен на запись; это не
+            # повод ронять бой, который ГМ ведёт прямо сейчас.
+            return None
+
+    def saved_battles(self) -> list[tuple[Path, BattleSnapshot]]:
+        return scan_battles(self.battles_dir).items
+
+    def broken_battles(self) -> list[tuple[Path, str]]:
+        return scan_battles(self.battles_dir).broken
+
+    def resume_battle(self, snapshot: BattleSnapshot) -> BattleEngine:
+        """Поднять сохранённый бой и сделать его текущим."""
+        self.scenario = snapshot.scenario.model_copy(deep=True)
+        self.engine = BattleEngine.from_snapshot(snapshot, self.config)
+        self._battle_source = self.scenario_fingerprint()
+        self.result = self.engine.result() if self.engine.finished else None
+        return self.engine
+
+    def ensure_battle(self) -> BattleEngine:
+        """Текущий бой, но не чужой: правка сценария начинает бой заново.
+
+        Раньше сюда возвращался движок, построенный по прежнему сценарию —
+        новый сид или другое подразделение на пульте не появлялись, и
+        было непонятно, почему.
+        """
+        if self.engine is None or self._battle_source != self.scenario_fingerprint():
             return self.start_battle()
         return self.engine
 

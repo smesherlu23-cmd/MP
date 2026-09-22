@@ -102,6 +102,9 @@ def test_reliability_wears_vehicles_without_a_single_hit(config: AppConfig) -> N
             "A": SideState(battalion=battalion),
             "B": SideState(battalion=make_battalion("bat_x", "B", Side.B, config)),
         },
+        # На первом ходу фаза восстановления не работает: бой ещё не
+        # начинался, и бесплатного тика подвоза и отдыха быть не должно.
+        turn=2,
     )
     recovery.run(state, config, BattleLog())
     assert element.vehicles[0].condition < 100.0

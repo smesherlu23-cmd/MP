@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from core.config import AppConfig
-from core.engine.rng import RngStreams
 from core.engine.state import SIDES, BattleState, TurnData, element_key, other_side
 from core.log import BattleLog
 from core.models import ContactLevel, IntelLevel
@@ -67,7 +66,6 @@ def run(
     state: BattleState,
     turn_data: TurnData,
     config: AppConfig,
-    rng: RngStreams,
     log: BattleLog,
 ) -> None:
     """Определить уровень контакта каждой стороны с элементами противника."""
@@ -123,15 +121,18 @@ def run(
                 ),
             )
 
-    # Кто из своих под наблюдением противника — нужно для усталости и отдыха.
+    # Кто из своих под наблюдением противника — от этого зависят отдых,
+    # восстановление морали и слаженности.
+    #
+    # Раньше здесь стояло «или моя сторона видит хоть кого-то» — и тогда в
+    # контакте оказывался весь отряд разом, включая тыл и резерв. Отдыхать
+    # не мог никто, усталость упиралась в 100 и переставала различать
+    # подразделения. В контакте тот, кого видит противник.
     for side in SIDES:
         enemy_contact = state.side(other_side(side)).contact
         for element in state.side(side).battalion.elements:
             visible = enemy_contact.get(element.id, ContactLevel.NONE) != ContactLevel.NONE
-            sees_enemy = any(
-                level != ContactLevel.NONE for level in state.side(side).contact.values()
-            )
-            flag = bool(element.alive and (visible or sees_enemy))
+            flag = bool(element.alive and element.engaged and visible)
             state.side(side).in_contact[element.id] = flag
             turn_data.in_contact[element_key(side, element)] = flag
         side_state = state.side(side)

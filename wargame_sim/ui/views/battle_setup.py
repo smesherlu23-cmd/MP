@@ -13,6 +13,7 @@ import flet as ft
 
 from core import formation, preview
 from core.models import (
+    COMMAND_ORDERS,
     MAX_SEED,
     Battalion,
     IntelLevel,
@@ -224,7 +225,7 @@ def build(app: AppState) -> ft.View:
                         "Приказ",
                         c.select(
                             str(battalion.order),
-                            [(str(order), str(order)) for order in Order],
+                            [(str(order), str(order)) for order in COMMAND_ORDERS],
                             lambda value, s=side: set_side(s, "order", Order(value)),
                             expand=True,
                         ),
@@ -412,6 +413,26 @@ def build(app: AppState) -> ft.View:
                     ),
                     height=t.TABLE_ROW_H + 6,
                 )
+            )
+            # Строка наряда сил кликабельна целиком: раньше попасть надо
+            # было ровно в тумблер справа.
+            rows[-1] = c.interactive(
+                rows[-1],
+                on_click=(
+                    lambda e=element.id, s=side, was=engaged_here: set_engaged(s, e, not was)
+                ),
+                menu=[
+                    c.MenuItem(
+                        "Отвести в резерв" if engaged_here else "Ввести в бой",
+                        lambda e=element.id, s=side, was=engaged_here: set_engaged(s, e, not was),
+                        icon=ft.Icons.PAUSE if engaged_here else ft.Icons.PLAY_ARROW,
+                    ),
+                    c.MenuItem(
+                        "Править в конструкторе",
+                        lambda b=battalion.id: app.go(ROUTES["unit"].format(id=b)),
+                        icon=ft.Icons.TUNE,
+                    ),
+                ],
             )
         engaged = battalion.engaged_elements
         return ft.Column(

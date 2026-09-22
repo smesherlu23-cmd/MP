@@ -228,7 +228,13 @@ def topbar(
 ) -> ft.Control:
     """Верхняя полоса: заголовок экрана слева, действия справа."""
     heading: list[ft.Control] = [
-        ft.Text(title, style=t.sans(size=t.SIZE_SCREEN, weight=t.W600), no_wrap=True)
+        ft.Text(
+            title,
+            style=t.sans(size=t.SIZE_SCREEN, weight=t.W600),
+            no_wrap=True,
+            overflow=ft.TextOverflow.ELLIPSIS,
+            tooltip=title,
+        )
     ]
     if subtitle:
         style = (
@@ -236,7 +242,15 @@ def topbar(
             if mono_subtitle
             else t.sans(size=t.SIZE_META, color=t.TEXT_3)
         )
-        heading.append(ft.Text(subtitle, style=style, no_wrap=True))
+        heading.append(
+            ft.Text(
+                subtitle,
+                style=style,
+                no_wrap=True,
+                overflow=ft.TextOverflow.ELLIPSIS,
+                tooltip=subtitle,
+            )
+        )
 
     return ft.Container(
         content=ft.Row(
@@ -268,12 +282,13 @@ def screen(
     aside: ft.Control | None = None,
     mono_subtitle: bool = False,
     leading_extra: Sequence[ft.Control] = (),
-    scrollable: bool = False,
 ) -> ft.View:
     """Собрать экран в общей рамке.
 
-    ``scrollable`` включает прокрутку контента: пульт боя обязан помещаться
-    целиком, остальные экраны могут прокручиваться на узком окне.
+    Прокрутки на уровне экрана нет намеренно: прокручивается содержимое
+    карточек — списки, журнал, поля раздела. Параметр `scrollable` здесь
+    был, но его не передавал ни один экран, и докстрока описывала
+    поведение, которого не существовало.
     """
     content_children: list[ft.Control] = []
     if app.config_error:
@@ -285,7 +300,6 @@ def screen(
             content_children,
             spacing=t.GAP,
             expand=True,
-            scroll=ft.ScrollMode.AUTO if scrollable else None,
         ),
         bgcolor=t.CONTENT_BG,
         padding=ft.Padding.only(

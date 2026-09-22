@@ -35,6 +35,7 @@ from core.log import BattleLog
 from core.models import (
     BattalionState,
     BattleResult,
+    BattleSnapshot,
     ContactLevel,
     Element,
     ElementReport,
@@ -42,6 +43,7 @@ from core.models import (
     Order,
     Scenario,
     SideReport,
+    SideSnapshot,
     Winner,
     new_id,
 )
@@ -106,6 +108,9 @@ class BattleEngine:
         for name in SIDES:
             battalion = self.scenario.battalion(name).copy_deep()
             battalion.state = BattalionState.FIGHTING
+            # База для «остаточной боеспособности»: доля считается от того,
+            # с чем отряд вошёл в бой, а не от недостижимого идеала.
+            battalion.capture_start_power()
             side_state = SideState(battalion=battalion)
             # Резерв в учёт не попадает: он войдёт, когда его введут в бой.
             for element in battalion.engaged_elements:
@@ -155,7 +160,7 @@ class BattleEngine:
         )
 
         recovery.run(self.state, config, log)
-        detection.run(self.state, self.turn_data, config, self.rng, log)
+        detection.run(self.state, self.turn_data, config, log)
         initiative.run(self.state, self.turn_data, config, self.rng, log)
 
         first = self.turn_data.first_side
@@ -194,6 +199,7 @@ class BattleEngine:
         side_state.personnel_lost.setdefault(element.id, 0)
         side_state.vehicles_lost.setdefault(element.id, 0)
         side_state.in_contact[element.id] = False
+        self._spend_readiness([element], self.config.cbt.readiness.commit_cost)
 
         self.log.add(
             turn=self.state.turn,
@@ -243,6 +249,7 @@ class BattleEngine:
         after = str(battalion.order_for(element))
         if before == after:
             return False
+        self._spend_readiness([element], self.config.cbt.readiness.order_change_cost)
 
         self.log.add(
             turn=self.state.turn,
@@ -254,6 +261,20 @@ class BattleEngine:
             text=f"«{element.name}»: приказ {before} → {after}.",
         )
         return True
+
+    # -- цена команды -------------------------------------------------------
+    def _spend_readiness(self, elements: list[Element], cost: float) -> None:
+        """Снять готовность с групп, которых коснулась команда.
+
+        Перестроение посреди боя не бесплатно: подразделение перестаёт быть
+        готовым действовать сразу. Готовность входит в K_сост и в бросок
+        инициативы, поэтому дробить силы под огнём — решение с ценой.
+        """
+        if not self.config.tog.readiness or cost <= 0:
+            return
+        limits = self.config.cbt.readiness
+        for element in elements:
+            element.readiness = max(limits.min, min(limits.max, element.readiness - cost))
 
     # -- перестроение -------------------------------------------------------
     def split(
@@ -279,6 +300,7 @@ class BattleEngine:
             battalion, element_id, parts, shares=shares, names=names
         )
         self._rehome_registry(side, parent, children)
+        self._spend_readiness(children, self.config.cbt.readiness.split_cost)
         self.log.add(
             turn=self.state.turn,
             phase="command",
@@ -307,6 +329,7 @@ class BattleEngine:
             raise formation.FormationError(f"группы «{element_id}» в отряде нет")
         children = formation.detach_vehicles(battalion, element_id, self.config)
         self._rehome_registry(side, parent, children)
+        self._spend_readiness(children, self.config.cbt.readiness.split_cost)
         foot, crew = children
         self.log.add(
             turn=self.state.turn,
@@ -337,6 +360,7 @@ class BattleEngine:
         names = [leaf.name for leaf in leaves]
         merged = formation.merge(battalion, element_id)
         self._collect_registry(side, merged, leaves)
+        self._spend_readiness([merged], self.config.cbt.readiness.merge_cost)
         self.log.add(
             turn=self.state.turn,
             phase="command",
@@ -442,10 +466,16 @@ class BattleEngine:
         withdrawn = {
             side: checks.has_withdrawn(self.state, side, self.config) for side in SIDES
         }
-        defeated = {
-            side: states[side] in DEFEATED_STATES or withdrawn[side] for side in SIDES
-        }
         tasks = {side: self.state.side(side).task_completed for side in SIDES}
+        # Выполненная задача снимает «поражение по выходу из боя». Засада и
+        # отход тем и заканчиваются, что сторона уходит: считать это
+        # поражением — значит объявлять проигравшим того, кто сделал ровно
+        # то, что ему приказали. Разгром и паника задачей не отменяются.
+        defeated = {
+            side: states[side] in DEFEATED_STATES
+            or (withdrawn[side] and not tasks[side])
+            for side in SIDES
+        }
 
         def reason_for(side: str) -> EndReason:
             if withdrawn[side]:
@@ -487,6 +517,15 @@ class BattleEngine:
             return f"Бой окончен на ходу {self.state.turn}: ничья ({reason})."
         battalion = self.state.battalion(str(winner))
         loser = self.state.battalion(other_side(str(winner)))
+        if reason == EndReason.TASK:
+            # Победу по задаче одерживает победитель, а не проигравший:
+            # «1-й взвод задача» в строке про победу 2-го взвода читалось
+            # как будто задачу выполнил проигравший.
+            return (
+                f"Бой окончен на ходу {self.state.turn}: победа стороны {winner} "
+                f"({battalion.name}) — задача выполнена, {loser.name} её сорвать "
+                f"не смог."
+            )
         return (
             f"Бой окончен на ходу {self.state.turn}: победа стороны {winner} "
             f"({battalion.name}) — {loser.name} {reason}."
@@ -556,6 +595,78 @@ class BattleEngine:
             suppression=round(battalion.suppression, 2),
             elements=elements,
         )
+
+    # -- снимок боя ---------------------------------------------------------
+    def snapshot(self) -> BattleSnapshot:
+        """Всё, из чего бой поднимается ровно там, где его бросили.
+
+        Делается на границе хода: потоки случайности заводятся на ключ с
+        номером хода и в законченный ход уже не возвращаются, поэтому
+        поднятый бой идёт теми же бросками, что и непрерывный.
+        """
+        return BattleSnapshot(
+            id=self.scenario.id,
+            scenario=self.scenario,
+            master_seed=self.master_seed,
+            turn=self.state.turn,
+            finished=self.state.finished,
+            winner=self.winner,
+            end_reason=self.end_reason,
+            sides={
+                name: SideSnapshot(
+                    battalion=side.battalion,
+                    initial_personnel=side.initial_personnel,
+                    initial_vehicles=side.initial_vehicles,
+                    personnel_lost=side.personnel_lost,
+                    vehicles_lost=side.vehicles_lost,
+                    contact=side.contact,
+                    in_contact=side.in_contact,
+                    intel_progress=side.intel_progress,
+                    intel_level=side.intel_level,
+                    turns_held=side.turns_held,
+                    disengage=side.disengage,
+                    inflicted_personnel=side.inflicted_personnel,
+                    task_completed=side.task_completed,
+                    first_contact_turn=side.first_contact_turn,
+                    panicked_elements=side.panicked_elements,
+                    destroyed_elements=side.destroyed_elements,
+                )
+                for name, side in self.state.sides.items()
+            },
+            log=list(self.log.entries),
+        )
+
+    @classmethod
+    def from_snapshot(
+        cls, snapshot: BattleSnapshot, config: AppConfig | None = None, *, verbose: bool = True
+    ) -> BattleEngine:
+        """Поднять бой из снимка."""
+        engine = cls(snapshot.scenario, config, seed=snapshot.master_seed, verbose=verbose)
+        for name, side in snapshot.sides.items():
+            state = engine.state.side(name)
+            state.battalion = side.battalion.copy_deep()
+            state.initial_personnel = dict(side.initial_personnel)
+            state.initial_vehicles = dict(side.initial_vehicles)
+            state.personnel_lost = dict(side.personnel_lost)
+            state.vehicles_lost = dict(side.vehicles_lost)
+            state.contact = dict(side.contact)
+            state.in_contact = dict(side.in_contact)
+            state.intel_progress = side.intel_progress
+            state.intel_level = side.intel_level
+            state.turns_held = side.turns_held
+            state.disengage = side.disengage
+            state.inflicted_personnel = side.inflicted_personnel
+            state.task_completed = side.task_completed
+            state.first_contact_turn = side.first_contact_turn
+            state.panicked_elements = side.panicked_elements
+            state.destroyed_elements = side.destroyed_elements
+        engine.state.turn = snapshot.turn
+        engine.state.finished = snapshot.finished
+        engine.winner = snapshot.winner
+        engine.end_reason = snapshot.end_reason
+        engine.log.restore(snapshot.log)
+        engine.turn_data = TurnData(turn=snapshot.turn)
+        return engine
 
     def result(self) -> BattleResult:
         """Собрать результат боя вместе с журналом."""
