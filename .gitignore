@@ -12,5 +12,9 @@ wargame_sim/data/results/*.csv
 wargame_sim/data/results/*.html
 !wargame_sim/data/results/.gitkeep
 
+# Сохранённые бои — рабочее состояние конкретного стола, не часть проекта.
+wargame_sim/data/battles/*.json
+!wargame_sim/data/battles/.gitkeep
+
 # Настройки интерфейса — локальный выбор пользователя, не часть проекта.
 wargame_sim/data/ui.json

@@ -35,6 +35,7 @@ from core.log import BattleLog
 from core.models import (
     BattalionState,
     BattleResult,
+    BattleSnapshot,
     ContactLevel,
     Element,
     ElementReport,
@@ -42,6 +43,7 @@ from core.models import (
     Order,
     Scenario,
     SideReport,
+    SideSnapshot,
     Winner,
     new_id,
 )
@@ -106,6 +108,9 @@ class BattleEngine:
         for name in SIDES:
             battalion = self.scenario.battalion(name).copy_deep()
             battalion.state = BattalionState.FIGHTING
+            # База для «остаточной боеспособности»: доля считается от того,
+            # с чем отряд вошёл в бой, а не от недостижимого идеала.
+            battalion.capture_start_power()
             side_state = SideState(battalion=battalion)
             # Резерв в учёт не попадает: он войдёт, когда его введут в бой.
             for element in battalion.engaged_elements:
@@ -590,6 +595,78 @@ class BattleEngine:
             suppression=round(battalion.suppression, 2),
             elements=elements,
         )
+
+    # -- снимок боя ---------------------------------------------------------
+    def snapshot(self) -> BattleSnapshot:
+        """Всё, из чего бой поднимается ровно там, где его бросили.
+
+        Делается на границе хода: потоки случайности заводятся на ключ с
+        номером хода и в законченный ход уже не возвращаются, поэтому
+        поднятый бой идёт теми же бросками, что и непрерывный.
+        """
+        return BattleSnapshot(
+            id=self.scenario.id,
+            scenario=self.scenario,
+            master_seed=self.master_seed,
+            turn=self.state.turn,
+            finished=self.state.finished,
+            winner=self.winner,
+            end_reason=self.end_reason,
+            sides={
+                name: SideSnapshot(
+                    battalion=side.battalion,
+                    initial_personnel=side.initial_personnel,
+                    initial_vehicles=side.initial_vehicles,
+                    personnel_lost=side.personnel_lost,
+                    vehicles_lost=side.vehicles_lost,
+                    contact=side.contact,
+                    in_contact=side.in_contact,
+                    intel_progress=side.intel_progress,
+                    intel_level=side.intel_level,
+                    turns_held=side.turns_held,
+                    disengage=side.disengage,
+                    inflicted_personnel=side.inflicted_personnel,
+                    task_completed=side.task_completed,
+                    first_contact_turn=side.first_contact_turn,
+                    panicked_elements=side.panicked_elements,
+                    destroyed_elements=side.destroyed_elements,
+                )
+                for name, side in self.state.sides.items()
+            },
+            log=list(self.log.entries),
+        )
+
+    @classmethod
+    def from_snapshot(
+        cls, snapshot: BattleSnapshot, config: AppConfig | None = None, *, verbose: bool = True
+    ) -> BattleEngine:
+        """Поднять бой из снимка."""
+        engine = cls(snapshot.scenario, config, seed=snapshot.master_seed, verbose=verbose)
+        for name, side in snapshot.sides.items():
+            state = engine.state.side(name)
+            state.battalion = side.battalion.copy_deep()
+            state.initial_personnel = dict(side.initial_personnel)
+            state.initial_vehicles = dict(side.initial_vehicles)
+            state.personnel_lost = dict(side.personnel_lost)
+            state.vehicles_lost = dict(side.vehicles_lost)
+            state.contact = dict(side.contact)
+            state.in_contact = dict(side.in_contact)
+            state.intel_progress = side.intel_progress
+            state.intel_level = side.intel_level
+            state.turns_held = side.turns_held
+            state.disengage = side.disengage
+            state.inflicted_personnel = side.inflicted_personnel
+            state.task_completed = side.task_completed
+            state.first_contact_turn = side.first_contact_turn
+            state.panicked_elements = side.panicked_elements
+            state.destroyed_elements = side.destroyed_elements
+        engine.state.turn = snapshot.turn
+        engine.state.finished = snapshot.finished
+        engine.winner = snapshot.winner
+        engine.end_reason = snapshot.end_reason
+        engine.log.restore(snapshot.log)
+        engine.turn_data = TurnData(turn=snapshot.turn)
+        return engine
 
     def result(self) -> BattleResult:
         """Собрать результат боя вместе с журналом."""

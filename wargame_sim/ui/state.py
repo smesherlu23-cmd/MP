@@ -14,9 +14,10 @@ from typing import Any
 from core.batch import run_batch
 from core.config import AppConfig, ConfigError, ConfigStore
 from core.engine import BattleEngine
-from core.models import BatchResult, Battalion, BattleResult, Scenario
+from core.models import BatchResult, Battalion, BattleResult, BattleSnapshot, Scenario
 from core.samples import make_scenario
 from core.storage import (
+    BATTLES_DIR,
     RESULTS_DIR,
     SCENARIOS_DIR,
     UNITS_DIR,
@@ -24,9 +25,11 @@ from core.storage import (
     ensure_dirs,
     list_scenarios,
     save_battalion,
+    save_battle,
     save_result,
     save_scenario,
     scan_battalions,
+    scan_battles,
     scan_results,
 )
 
@@ -97,6 +100,7 @@ class AppState:
         self.units_dir = (data_dir / "units") if data_dir else UNITS_DIR
         self.scenarios_dir = (data_dir / "scenarios") if data_dir else SCENARIOS_DIR
         self.results_dir = (data_dir / "results") if data_dir else RESULTS_DIR
+        self.battles_dir = (data_dir / "battles") if data_dir else BATTLES_DIR
         ensure_dirs(data_dir)
 
         self.config_error: str | None = None
@@ -396,6 +400,36 @@ class AppState:
         self.engine = BattleEngine(self.scenario, self.config)
         self._battle_source = self.scenario_fingerprint()
         self.result = None
+        return self.engine
+
+    # -- бой переживает закрытие окна ---------------------------------------
+    def save_battle(self) -> Path | None:
+        """Сохранить текущий бой. Зовётся после каждого хода и команды.
+
+        Снимок делается на границе хода, поэтому поднятый бой идёт теми же
+        бросками, что и непрерывный.
+        """
+        if self.engine is None:
+            return None
+        try:
+            return save_battle(self.engine.snapshot(), self.battles_dir)
+        except OSError:
+            # Каталог данных может оказаться недоступен на запись; это не
+            # повод ронять бой, который ГМ ведёт прямо сейчас.
+            return None
+
+    def saved_battles(self) -> list[tuple[Path, BattleSnapshot]]:
+        return scan_battles(self.battles_dir).items
+
+    def broken_battles(self) -> list[tuple[Path, str]]:
+        return scan_battles(self.battles_dir).broken
+
+    def resume_battle(self, snapshot: BattleSnapshot) -> BattleEngine:
+        """Поднять сохранённый бой и сделать его текущим."""
+        self.scenario = snapshot.scenario.model_copy(deep=True)
+        self.engine = BattleEngine.from_snapshot(snapshot, self.config)
+        self._battle_source = self.scenario_fingerprint()
+        self.result = self.engine.result() if self.engine.finished else None
         return self.engine
 
     def ensure_battle(self) -> BattleEngine:

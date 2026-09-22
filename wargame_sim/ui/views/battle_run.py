@@ -163,10 +163,12 @@ def build(app: AppState, battle_id: str) -> ft.View:
         except FormationError as exc:
             app.notify(str(exc))
             return
+        app.save_battle()
         redraw_all()
 
     def change_order(side: str, element_id: str, order: Order | None) -> None:
         engine.set_order(side, element_id, order)
+        app.save_battle()
         redraw_all()
 
     def split_group(side: str, element_id: str) -> None:
@@ -207,6 +209,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         for leaf in battalion.leaves_of(element_id):
             if not leaf.engaged:
                 engine.commit(side, leaf.id)
+        app.save_battle()
         redraw_all()
 
     def withdraw_branch(side: str, element_id: str) -> None:
@@ -214,6 +217,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         for leaf in battalion.leaves_of(element_id):
             if leaf.engaged:
                 engine.withdraw(side, leaf.id)
+        app.save_battle()
         redraw_all()
 
     def group_menu(side: str, element: object) -> list[c.MenuItem]:
@@ -416,6 +420,8 @@ def build(app: AppState, battle_id: str) -> ft.View:
             try:
                 work()
             finally:
+                # Снимок на границе хода: закрытое окно больше не стоит боя.
+                app.save_battle()
                 busy.visible = False
                 redraw_all()
                 app.refresh(busy)
@@ -467,6 +473,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
     def do_restart() -> None:
         app.start_battle()
+        app.save_battle()
         app.go(ROUTE.format(id=battle_id))
 
     def show_result() -> None:

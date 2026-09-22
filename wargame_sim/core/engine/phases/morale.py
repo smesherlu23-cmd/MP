@@ -19,14 +19,21 @@ PHASE = "morale"
 
 
 def _side_success(state: BattleState, turn_data: TurnData) -> dict[str, float]:
-    """Успех стороны в ходу: своя доля потерь против доли потерь противника."""
+    """Успех стороны в ходу: своя доля потерь против доли потерь противника.
+
+    Доля считается **по людям**, а не по элементам. Раньше это было
+    среднее долей потерь по элементам, и миномётная батарея в 40 человек
+    весила столько же, сколько стрелковая рота в 600: на 20 боях в 15%
+    сторон·ходов знак получался противоположным взвешенному, то есть
+    премию за ход получал тот, кто в этом ходу потерял больше людей.
+    """
     shares: dict[str, float] = {}
     for side in SIDES:
-        own = [
-            turn_data.loss_share.get(element_key(side, element), 0.0)
-            for element in state.elements(side)
-        ]
-        shares[side] = sum(own) / len(own) if own else 0.0
+        elements = state.elements(side)
+        lost = sum(turn_data.casualties.get(element_key(side, item), 0) for item in elements)
+        alive = sum(item.personnel_current for item in elements)
+        start = alive + lost
+        shares[side] = lost / start if start else 0.0
     return {side: clamp(shares[other_side(side)] - shares[side], -1.0, 1.0) for side in SIDES}
 
 

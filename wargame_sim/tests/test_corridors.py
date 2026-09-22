@@ -270,14 +270,15 @@ def test_battle_is_decided_by_combat_not_by_the_clock(config: AppConfig) -> None
 
 @pytest.mark.slow
 def test_winner_keeps_a_force_worth_counting(config: AppConfig) -> None:
-    """У победителя остаётся чем воевать дальше.
+    """У победителя остаётся чем воевать дальше — но не всё.
 
-    Если у обеих сторон выходит около нуля, модель перестала различать
-    победу и взаимное истребление.
+    Величина — доля боевой мощи, с которой отряд вошёл в бой, поэтому
+    коридор двусторонний: ноль означает, что модель перестала различать
+    победу и взаимное истребление, а сотня — что победа не стоила ничего.
     """
     outcome = Outcome(config)
     mean_power = statistics.mean(outcome.winner_power)
-    assert mean_power >= 30.0, f"боеспособность победителя {mean_power:.0f}"
+    assert 45.0 <= mean_power <= 95.0, f"боеспособность победителя {mean_power:.0f}"
 
 
 @pytest.mark.slow

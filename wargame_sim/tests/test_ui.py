@@ -1388,3 +1388,45 @@ def test_head_and_rows_never_diverge() -> None:
     head_cells = row.content.controls if hasattr(row, "content") else []
     assert len(table.shown) == len(head_cells)
     assert [cell.content.value for cell in head_cells] == ["имя", "a"]
+
+
+def test_battle_console_saves_after_every_turn(app: AppState) -> None:
+    """Ход прошёл — бой уже на диске, а не только в памяти."""
+    app.start_battle()
+    route = ROUTES["battle"].format(id=app.scenario.id)
+    view = resolve(app, route)
+    assert app.saved_battles() == []
+
+    _click_by_label(view, "Шаг")()
+
+    saved = app.saved_battles()
+    assert len(saved) == 1
+    assert saved[0][1].turn == 1
+    assert saved[0][1].log, "журнал в снимок не попал"
+
+
+def test_home_offers_to_continue_an_unfinished_battle(app: AppState) -> None:
+    """Незаконченный бой виден на главной и поднимается щелчком."""
+    engine = app.start_battle()
+    engine.run_turns(5)
+    app.save_battle()
+    app.engine = None  # как после перезапуска приложения
+
+    view = resolve(app, ROUTES["home"])
+    assert _has(view, "Незаконченные бои")
+    assert any("ход 5" in text for text in _texts(view))
+
+    _click_by_label(view, "Продолжить")()
+    assert app.engine is not None
+    assert app.engine.turn == 5
+    assert len(app.engine.log) > 0
+
+
+def test_finished_battle_is_not_offered_as_unfinished(app: AppState) -> None:
+    """Законченный бой в «незаконченные» не попадает."""
+    engine = app.start_battle()
+    engine.run()
+    app.save_battle()
+
+    assert engine.finished
+    assert not _has(resolve(app, ROUTES["home"]), "Незаконченные бои")

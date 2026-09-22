@@ -84,6 +84,10 @@ class BattleLog:
     def __len__(self) -> int:
         return len(self.entries)
 
+    def restore(self, entries: Iterable[LogEntry]) -> None:
+        """Подставить записи из снимка — журнал продолжится с них."""
+        self.entries = list(entries)
+
     def __iter__(self):
         return iter(self.entries)
 
