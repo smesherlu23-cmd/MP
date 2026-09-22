@@ -155,7 +155,7 @@ class BattleEngine:
         )
 
         recovery.run(self.state, config, log)
-        detection.run(self.state, self.turn_data, config, self.rng, log)
+        detection.run(self.state, self.turn_data, config, log)
         initiative.run(self.state, self.turn_data, config, self.rng, log)
 
         first = self.turn_data.first_side

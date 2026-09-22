@@ -13,8 +13,7 @@ from dataclasses import dataclass
 
 import flet as ft
 
-from core.config import AppConfig
-from core.models import Battalion, Element, Order
+from core.models import COMMAND_ORDERS, Battalion, Element
 from ui import theme as t
 from ui.widgets import common as c
 
@@ -24,7 +23,7 @@ INDENT = 14
 #: Приказ группы: пусто — как у отряда целиком.
 ORDER_OPTIONS: tuple[tuple[str, str], ...] = (
     ("", "по отряду"),
-    *((str(order), str(order)) for order in Order),
+    *((str(order), str(order)) for order in COMMAND_ORDERS),
 )
 
 TREE_COLUMNS: tuple[c.Col, ...] = (
@@ -121,7 +120,6 @@ def _name_cell(node: Node, *, muted: bool, on_toggle: Callable[[], None] | None)
 def tree_row(
     node: Node,
     battalion: Battalion,
-    config: AppConfig,
     *,
     selected: bool = False,
     on_select: Callable[[], None] | None = None,

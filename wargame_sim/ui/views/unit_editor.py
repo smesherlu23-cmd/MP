@@ -11,6 +11,7 @@ import flet as ft
 
 from core import formation
 from core.models import (
+    COMMAND_ORDERS,
     ECHELON_ORDER,
     Battalion,
     Echelon,
@@ -205,9 +206,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
 
             reshape(work)
 
-        dlg.split_group(
-            app, battalion, element, on_split=apply_split, parts=app.split_parts
-        )
+        dlg.split_group(app, element, on_split=apply_split, parts=app.split_parts)
 
     def detach_element(element: Element) -> None:
         def work() -> None:
@@ -462,7 +461,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
                 ),
                 c.select(
                     str(element.order or ""),
-                    [("", "как у отряда"), *[(str(o), str(o)) for o in Order]],
+                    [("", "как у отряда"), *[(str(o), str(o)) for o in COMMAND_ORDERS]],
                     lambda value, e=element: set_element(
                         e, "order", Order(value) if value else None
                     ),
@@ -594,7 +593,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
             "Приказ отряда",
             c.select(
                 str(battalion.order),
-                [(str(order), str(order)) for order in Order],
+                [(str(order), str(order)) for order in COMMAND_ORDERS],
                 lambda value: set_battalion("order", Order(value)),
                 width=170,
             ),

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from core.config import AppConfig
-from core.engine.rng import RngStreams
 from core.engine.state import SIDES, BattleState, TurnData, element_key, other_side
 from core.log import BattleLog
 from core.models import ContactLevel, IntelLevel
@@ -67,7 +66,6 @@ def run(
     state: BattleState,
     turn_data: TurnData,
     config: AppConfig,
-    rng: RngStreams,
     log: BattleLog,
 ) -> None:
     """Определить уровень контакта каждой стороны с элементами противника."""

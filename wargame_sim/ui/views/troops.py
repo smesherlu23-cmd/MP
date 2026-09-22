@@ -261,6 +261,17 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
             app.notify(f"Удалена папка «{target}»")
             go_folder(folder_ops.parent_of(target))
 
+    def ask_reset_library() -> None:
+        dlg.confirm(
+            app,
+            "Сбросить типы солдат?",
+            "Все типы и папки заменятся эталоном из config/defaults: созданное "
+            "и перевооружённое пропадёт. Отменить нельзя.",
+            confirm_label="Сбросить",
+            danger=True,
+            on_confirm=reset_library,
+        )
+
     def reset_library() -> None:
         try:
             store.reset_section(SECTION)
@@ -684,7 +695,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
         subtitle="Типы солдат: кому что выдано",
         aside=aside,
         actions=[
-            c.tertiary_button("Сбросить типы", reset_library, icon=ft.Icons.RESTORE),
+            c.tertiary_button("Сбросить типы…", ask_reset_library, icon=ft.Icons.RESTORE),
             c.primary_button("Создать тип", create, icon=ft.Icons.ADD, tooltip="Ctrl+N"),
         ],
         body=ft.Column(

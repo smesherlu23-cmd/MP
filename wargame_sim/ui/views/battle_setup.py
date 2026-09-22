@@ -13,6 +13,7 @@ import flet as ft
 
 from core import formation, preview
 from core.models import (
+    COMMAND_ORDERS,
     MAX_SEED,
     Battalion,
     IntelLevel,
@@ -224,7 +225,7 @@ def build(app: AppState) -> ft.View:
                         "Приказ",
                         c.select(
                             str(battalion.order),
-                            [(str(order), str(order)) for order in Order],
+                            [(str(order), str(order)) for order in COMMAND_ORDERS],
                             lambda value, s=side: set_side(s, "order", Order(value)),
                             expand=True,
                         ),

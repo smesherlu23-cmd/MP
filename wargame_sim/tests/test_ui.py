@@ -20,7 +20,7 @@ from core.config import ConfigError, ConfigStore
 from core.config.introspect import flatten
 from core.config.schema import TogglesBody
 from core.engine import BattleEngine
-from core.models import Order, Side
+from core.models import COMMAND_ORDERS, Order, Side
 from ui import shell
 from ui import theme as t
 from ui.app import ROUTE_TABLE, resolve
@@ -509,11 +509,34 @@ def test_scenario_side_assignment_from_editor(app: AppState) -> None:
     assert app.scenario.battalion_b.side == Side.B
 
 
-def test_order_choices_cover_every_order(app: AppState) -> None:
+def test_order_choices_cover_every_command(app: AppState) -> None:
+    """В списке приказов есть все команды — и нет паники.
+
+    Паника не команда: это состояние, в которое элемент срывается сам.
+    Пока её можно было выбрать, у стороны не оставалось выполнимой задачи,
+    элемент продолжал стрелять, а через ход приказ переписывался на
+    отступление.
+    """
     labels = _labels(resolve(app, ROUTES["battle_setup"]))
     assert "приказ" in labels
-    for order in Order:
+    for order in COMMAND_ORDERS:
         assert str(order).casefold() in labels
+    assert str(Order.PANIC).casefold() not in labels
+
+
+def test_panic_is_not_offered_anywhere(app: AppState) -> None:
+    """Ни один экран не предлагает «паническое бегство» как выбор."""
+    engine = app.start_battle()
+    engine.run_turns(2)
+    unit = app.units()[0][1].id
+    app.expanded_element = app.scenario.battalion_a.elements[1].id
+    app.selected_group = ("A", engine.state.battalion("A").leaf_elements[0].id)
+    for route in (
+        ROUTES["battle_setup"],
+        ROUTES["battle"].format(id=app.scenario.id),
+        ROUTES["unit"].format(id=unit),
+    ):
+        assert str(Order.PANIC).casefold() not in _labels(resolve(app, route)), route
 
 
 # --------------------------------------------------------------------------
@@ -806,6 +829,16 @@ def _click_by_label(node: object, label: str):
     return found[-1]
 
 
+def _click_by_tooltip(node: object, tooltip: str):
+    """Обработчик кнопки без подписи — такие ищутся по подсказке."""
+    for control in _walk(node):
+        if getattr(control, "on_click", None) is None:
+            continue
+        if any(getattr(item, "tooltip", None) == tooltip for item in _walk(control)):
+            return control.on_click
+    raise AssertionError(f"нет кнопки с подсказкой «{tooltip}»")
+
+
 def _dialogs(app: AppState) -> list[object]:
     """Перехват модальных окон: в тестах их некуда показывать."""
     box: list[object] = []
@@ -864,7 +897,7 @@ def test_split_dialog_previews_the_apportionment(app: AppState) -> None:
     battalion = app.scenario.battalion_a
     element = battalion.leaf_elements[0]
     box = _dialogs(app)
-    dlg.split_group(app, battalion, element, on_split=lambda parts, shares: None, parts=3)
+    dlg.split_group(app, element, on_split=lambda parts, shares: None, parts=3)
 
     assert len(box) == 1
     texts = _texts(box[0])
@@ -884,7 +917,6 @@ def test_split_dialog_hands_over_the_shares(app: AppState) -> None:
     box = _dialogs(app)
     dlg.split_group(
         app,
-        battalion,
         element,
         on_split=lambda parts, shares: taken.append((parts, shares)),
         parts=2,
@@ -1251,3 +1283,34 @@ def test_result_route_does_not_invent_an_outcome(app: AppState) -> None:
     assert not any("Ничья" in text for text in shown)
     assert f"Бой идёт, ход {engine.turn}" in shown
     assert _has(view, "К пульту боя")
+
+
+def test_resets_ask_before_wiping(app: AppState) -> None:
+    """Четыре «сброса» необратимы — каждый сначала спрашивает."""
+    from ui.views import config_editor as cfg_view
+
+    box = _dialogs(app)
+    _click_by_label(materiel.build(app, "vehicles"), "Сбросить библиотеку…")()
+    _click_by_label(troops.build(app), "Сбросить типы…")()
+    view = cfg_view.build(app)
+    _click_by_label(view, "Сбросить раздел…")()
+    _click_by_label(view, "Сбросить всё…")()
+
+    assert len(box) == 4, "какой-то сброс срабатывает без вопроса"
+    # и ничего при этом не сбросилось
+    assert app.config is not None
+
+
+def test_restart_asks_when_the_battle_has_started(app: AppState) -> None:
+    """«Начать заново» стирает проведённый бой, поэтому спрашивает."""
+    engine = app.start_battle()
+    engine.run_turns(3)
+    box = _dialogs(app)
+    route = ROUTES["battle"].format(id=app.scenario.id)
+
+    _click_by_tooltip(resolve(app, route), "Начать заново с тем же сидом")()
+
+    assert len(box) == 1
+    assert "заново" in box[0].title.value.casefold()
+    assert app.engine is engine, "бой перезапустился до подтверждения"
+    assert engine.turn == 3

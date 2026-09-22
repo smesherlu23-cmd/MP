@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 import flet as ft
 
 from core import formation
-from core.models import Battalion, Element
+from core.models import Element
 from ui import theme as t
 from ui.widgets import common as c
 
@@ -203,7 +203,6 @@ def _preview_rows(element: Element, shares: Sequence[float]) -> list[ft.Control]
 
 def split_group(
     app,
-    battalion: Battalion,
     element: Element,
     *,
     on_split: Callable[[int, list[float]], None],

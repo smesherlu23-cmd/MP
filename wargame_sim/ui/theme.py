@@ -318,7 +318,12 @@ def text(
     align: ft.TextAlign | None = None,
     no_wrap: bool = False,
 ) -> ft.Text:
-    """Текст основным шрифтом."""
+    """Текст основным шрифтом.
+
+    У `ft.Text` `overflow` по умолчанию `CLIP`: с `no_wrap` длинное
+    название режется посреди буквы, и понять, что оно обрезано, нельзя.
+    Поэтому там, где перенос запрещён, ставится многоточие.
+    """
     return ft.Text(
         value,
         font_family=_family(SANS, weight),
@@ -328,6 +333,8 @@ def text(
         expand=expand,
         text_align=align,
         no_wrap=no_wrap or None,
+        overflow=ft.TextOverflow.ELLIPSIS if no_wrap else ft.TextOverflow.CLIP,
+        tooltip=value if no_wrap else None,
     )
 
 
@@ -353,8 +360,18 @@ def num(
 
 
 def caption(value: str, color: str | None = None, size: int = SIZE_LABEL) -> ft.Text:
-    """Подпись поля или шапка таблицы: моно, разрядка, верхний регистр."""
-    return ft.Text(value.upper(), style=mono(size=size, color=color or TEXT_MUTED, spacing=0.6))
+    """Подпись поля или шапка таблицы: моно, разрядка, верхний регистр.
+
+    Шапка живёт в колонке фиксированной ширины, поэтому длинный заголовок
+    обязан обрываться многоточием, а не срезаться на полбукве.
+    """
+    return ft.Text(
+        value.upper(),
+        style=mono(size=size, color=color or TEXT_MUTED, spacing=0.6),
+        no_wrap=True,
+        overflow=ft.TextOverflow.ELLIPSIS,
+        tooltip=value,
+    )
 
 
 def card_title(value: str, color: str | None = None) -> ft.Text:

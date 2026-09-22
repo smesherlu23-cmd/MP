@@ -68,7 +68,6 @@ def turn_indicator(turn: int, limit: int, finished: bool, outcome: str) -> ft.Co
 def build(app: AppState, battle_id: str) -> ft.View:
     engine = app.ensure_battle()
     scenario = app.scenario
-    config = app.config
 
     panels = ft.Container()
     tree_body = ft.Container(expand=True)
@@ -179,9 +178,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
             guarded(work)
 
-        dlg.split_group(
-            app, battalion, element, on_split=apply_split, parts=app.split_parts
-        )
+        dlg.split_group(app, element, on_split=apply_split, parts=app.split_parts)
 
     def detach_group(side: str, element_id: str) -> None:
         def work() -> None:
@@ -282,7 +279,6 @@ def build(app: AppState, battle_id: str) -> ft.View:
                     ob.tree_row(
                         node,
                         battalion,
-                        config,
                         selected=app.selected_group == node.key,
                         on_select=lambda s=side, e=node.element.id: select(s, e),
                         on_toggle=lambda s=side, e=node.element.id: toggle_branch(s, e),
@@ -443,6 +439,25 @@ def build(app: AppState, battle_id: str) -> ft.View:
         run_in_background(work)
 
     def restart() -> None:
+        """Начать бой заново — но не по одному щелчку.
+
+        Кнопка стоит в верхней полосе между «До конца» и «Итог» и выглядит
+        безобидной стрелкой, а стирает весь проведённый бой.
+        """
+        if engine.turn == 0:
+            do_restart()
+            return
+        dlg.confirm(
+            app,
+            "Начать бой заново?",
+            f"Проведённые {engine.turn} ход(ов) пропадут: журнал, потери и "
+            "перестроения. Бой начнётся с того же сида и того же сценария.",
+            confirm_label="Начать заново",
+            danger=True,
+            on_confirm=do_restart,
+        )
+
+    def do_restart() -> None:
         app.start_battle()
         app.go(ROUTE.format(id=battle_id))
 

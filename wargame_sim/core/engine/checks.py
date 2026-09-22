@@ -12,13 +12,7 @@ from core.models import BattalionState, ContactLevel, Element, IntelLevel, Order
 PHASE = "checks"
 
 
-def _set_order(
-    state: BattleState,
-    side: str,
-    element: Element,
-    order: Order,
-    config: AppConfig | None = None,
-) -> None:
+def _set_order(element: Element, order: Order, config: AppConfig | None = None) -> None:
     """Сменить приказ элемента; смена стоит готовности, как и команда ГМ."""
     element.order = order
     if config is None or not config.tog.readiness:
@@ -73,7 +67,7 @@ def check_morale_states(
                 # Брошенная при панике техника достаётся противнику целой —
                 # экипаж уходит своим ходом, поэтому потерь в л/с здесь нет.
                 abandoned = sum(apply_vehicle_loss(state, side, element, abandoned).values())
-                _set_order(state, side, element, Order.PANIC, config)
+                _set_order(element, Order.PANIC, config)
                 element.alive = False
                 state.side(side).panicked_elements += 1
                 turn_data.casualties[key] = turn_data.casualties.get(key, 0) + lost
@@ -105,9 +99,15 @@ def check_morale_states(
                 continue
 
             current_order = state.battalion(side).order_for(element)
-            if element.morale < thresholds.retreat and current_order != Order.RETREAT:
+            # Паника хуже отступления: перезаписывать её отступлением нельзя.
+            # Через штатный путь сюда не попасть — запаниковавший элемент
+            # уходит из `alive_elements`, — но условие фиксирует намерение.
+            if (
+                element.morale < thresholds.retreat
+                and current_order not in (Order.RETREAT, Order.PANIC)
+            ):
                 before_order = str(current_order)
-                _set_order(state, side, element, Order.RETREAT, config)
+                _set_order(element, Order.RETREAT, config)
                 log.add(
                     turn=state.turn,
                     phase=PHASE,
@@ -296,15 +296,14 @@ def check_battalions(state: BattleState, config: AppConfig, log: BattleLog) -> N
             )
             continue
 
+        # Отдельной ветки «все элементы в панике» здесь нет и быть не может:
+        # запаниковавший элемент получает `alive = False` и выпадает из
+        # `alive_elements`, поэтому такое условие никогда не выполнялось.
+        # Сторона приходит к панике выше — через ветку разгрома, когда
+        # боевых элементов не осталось, а сорвавшихся больше, чем выбитых.
         alive = battalion.alive_elements
         if alive and all(
-            state.order_of(side, element) == str(Order.PANIC) for element in alive
-        ):
-            battalion.state = BattalionState.PANIC
-        elif alive and all(
-            state.order_of(side, element)
-            in (str(Order.RETREAT), str(Order.PANIC))
-            for element in alive
+            state.order_of(side, element) == str(Order.RETREAT) for element in alive
         ):
             battalion.state = BattalionState.RETREATING
         elif side_state.task_completed:
@@ -313,7 +312,7 @@ def check_battalions(state: BattleState, config: AppConfig, log: BattleLog) -> N
             battalion.state = BattalionState.FIGHTING
 
 
-def update_hold_counters(state: BattleState, config: AppConfig) -> None:
+def update_hold_counters(state: BattleState) -> None:
     """Счётчик «выстоял N ходов» для обороны и закрепления."""
     for side in SIDES:
         side_state = state.side(side)
@@ -331,7 +330,7 @@ def run(
     check_morale_states(state, turn_data, config, rng, log)
     check_elements_alive(state, config, log)
     update_disengage(state, config)
-    update_hold_counters(state, config)
+    update_hold_counters(state)
     check_battalions(state, config, log)
     check_task(state, config, log)
     # Выполнение задачи может изменить состояние батальона.

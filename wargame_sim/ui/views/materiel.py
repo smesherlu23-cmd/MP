@@ -482,6 +482,17 @@ def build(
             app.notify(f"Удалена папка «{target}»")
             go_folder(folder_ops.parent_of(target))
 
+    def ask_reset_library() -> None:
+        dlg.confirm(
+            app,
+            f"Сбросить библиотеку «{spec.label}»?",
+            "Все записи и папки заменятся эталоном из config/defaults: созданное "
+            "и переименованное пропадёт. Отменить нельзя.",
+            confirm_label="Сбросить",
+            danger=True,
+            on_confirm=reset_library,
+        )
+
     def reset_library() -> None:
         try:
             store.reset_section(spec.key)
@@ -829,7 +840,7 @@ def build(
             ],
         ),
         actions=[
-            c.tertiary_button("Сбросить библиотеку", reset_library, icon=ft.Icons.RESTORE),
+            c.tertiary_button("Сбросить библиотеку…", ask_reset_library, icon=ft.Icons.RESTORE),
             c.primary_button(
                 f"Создать {spec.item_word}", create, icon=ft.Icons.ADD, tooltip="Ctrl+N"
             ),

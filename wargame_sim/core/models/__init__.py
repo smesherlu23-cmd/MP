@@ -3,6 +3,7 @@
 from core.models.battalion import Battalion, Rollup
 from core.models.element import SCHEMA_VERSION, Element, VehicleGroup
 from core.models.enums import (
+    COMMAND_ORDERS,
     ECHELON_ORDER,
     ECHELON_ORDINAL,
     BattalionState,
@@ -32,6 +33,7 @@ from core.models.result import (
 from core.models.scenario import MAX_SEED, Scenario, new_id
 
 __all__ = [
+    "COMMAND_ORDERS",
     "ECHELON_ORDER",
     "ECHELON_ORDINAL",
     "MAX_SEED",
