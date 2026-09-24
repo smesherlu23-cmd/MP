@@ -413,8 +413,40 @@ def build(app: AppState, battle_id: str) -> ft.View:
         redraw_journal()
 
     # -- действия -----------------------------------------------------------
-    def run_in_background(work, then=None) -> None:
-        """Длинные расчёты — в отдельном потоке, UI не блокируется (§10)."""
+    def announce_end() -> None:
+        """Бой кончился — сказать об этом и предложить разбор.
+
+        Раньше конец был виден только по цвету индикатора хода: «Шаг»
+        переставал что-либо менять, а почему — экран не говорил. Итог здесь
+        же уходит в архив, поэтому доведённый до конца бой оставляет след
+        даже если ГМ закроет окно, не заходя на экран итога.
+        """
+        app.finish_battle()
+        where = (
+            f" Итог сохранён в архив: {app.result_path.name}."
+            if app.result_path is not None
+            else " Итог в архив записать не удалось — каталог данных недоступен."
+        )
+        app.notify(f"Бой окончен: {outcome_text()}")
+        dlg.confirm(
+            app,
+            "Бой окончен",
+            f"{outcome_text()}. Ходов: {engine.turn}.{where} "
+            "Разбор показывает потери по группам, остаточную боеспособность "
+            "и причину исхода.",
+            confirm_label="Смотреть итог",
+            cancel_label="Остаться на пульте",
+            on_confirm=lambda: app.go(f"/battle/{battle_id}/result"),
+        )
+
+    def run_in_background(work, then=None, *, announce: bool = True) -> None:
+        """Длинные расчёты — в отдельном потоке, UI не блокируется (§10).
+
+        ``announce=False`` — для того, кто и так ведёт ГМ на экран итога:
+        два сообщения об одном событии это шум, но итог всё равно должен
+        попасть в архив.
+        """
+        was_finished = engine.finished
 
         def task() -> None:
             try:
@@ -425,6 +457,8 @@ def build(app: AppState, battle_id: str) -> ft.View:
                 busy.visible = False
                 redraw_all()
                 app.refresh(busy)
+            if engine.finished and not was_finished:
+                announce_end() if announce else app.finish_battle()
             if then is not None:
                 then()
 
@@ -446,11 +480,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
     app.bind("Ctrl+Shift+Enter", few_turns)
 
     def to_the_end() -> None:
-        def work() -> None:
-            engine.run()
-            app.finish_battle()
-
-        run_in_background(work)
+        run_in_background(engine.run)
 
     def restart() -> None:
         """Начать бой заново — но не по одному щелчку.
@@ -497,11 +527,11 @@ def build(app: AppState, battle_id: str) -> ft.View:
         )
 
     def finish_and_show() -> None:
-        def work() -> None:
-            engine.run()
-            app.finish_battle()
-
-        run_in_background(work, then=lambda: app.go(f"/battle/{battle_id}/result"))
+        run_in_background(
+            engine.run,
+            then=lambda: app.go(f"/battle/{battle_id}/result"),
+            announce=False,
+        )
 
     def set_side_filter(value: str) -> None:
         app.run_side_filter = value

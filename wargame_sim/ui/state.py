@@ -113,6 +113,8 @@ class AppState:
         #: и старый движок пришлось бы выдавать за новый.
         self._battle_source: str = ""
         self.result: BattleResult | None = None
+        #: Куда лёг итог законченного боя; None — ещё не сохранён.
+        self.result_path: Path | None = None
         self.batch: BatchResult | None = None
         self.batch_running = False
         self.batch_cancelled = False
@@ -390,6 +392,13 @@ class AppState:
     def save_result(self, result: BattleResult) -> Path:
         return save_result(result, self.results_dir)
 
+    def archive_result(self, result: BattleResult) -> Path | None:
+        """Записать итог в архив; недоступный каталог — не повод ронять бой."""
+        try:
+            return self.save_result(result)
+        except OSError:
+            return None
+
     # -- бой ----------------------------------------------------------------
     def scenario_fingerprint(self) -> str:
         """Отпечаток сценария: по нему видно, что его правили после начала боя."""
@@ -400,6 +409,7 @@ class AppState:
         self.engine = BattleEngine(self.scenario, self.config)
         self._battle_source = self.scenario_fingerprint()
         self.result = None
+        self.result_path = None
         return self.engine
 
     # -- бой переживает закрытие окна ---------------------------------------
@@ -429,7 +439,10 @@ class AppState:
         self.scenario = snapshot.scenario.model_copy(deep=True)
         self.engine = BattleEngine.from_snapshot(snapshot, self.config)
         self._battle_source = self.scenario_fingerprint()
-        self.result = self.engine.result() if self.engine.finished else None
+        self.result = None
+        self.result_path = None
+        if self.engine.finished:
+            self.finish_battle()
         return self.engine
 
     def ensure_battle(self) -> BattleEngine:
@@ -444,8 +457,25 @@ class AppState:
         return self.engine
 
     def finish_battle(self) -> BattleResult:
+        """Итог боя; законченный бой при этом сам попадает в архив.
+
+        Два правила, каждое из-за своей поломки:
+
+        * итог считается **один раз на ход**. ``engine.result()`` каждый раз
+          выдаёт результат с новым id, а архив хранит файл на id — без этой
+          оговорки каждый заход на экран итога добавлял бы в архив ещё одну
+          копию того же боя;
+        * законченный бой архивируется **сам**. Раньше в архив он попадал
+          только по кнопке «В архив» на экране итога, то есть после двух
+          лишних щелчков: бой, доведённый до конца и закрытый, не оставлял
+          никакого следа, и раздел «Бои» в архиве у ГМ был пустым всегда.
+        """
         engine = self.ensure_battle()
-        self.result = engine.result()
+        if self.result is None or self.result.turns != engine.turn:
+            self.result = engine.result()
+            self.result_path = None
+        if engine.finished and self.result_path is None:
+            self.result_path = self.archive_result(self.result)
         return self.result
 
     # -- массовое моделирование --------------------------------------------

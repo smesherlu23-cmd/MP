@@ -206,11 +206,24 @@ def test_readiness_is_spent_by_commands(scenario: Scenario, config: AppConfig) -
 
 
 def test_supply_runs_down_in_a_long_fight(scenario: Scenario, config: AppConfig) -> None:
-    """Боезапас убывает: подвоз меньше расхода, иначе снабжение — украшение."""
+    """Боезапас убывает, и убывает до рабочей части своей кривой.
+
+    Прежний порог «ниже 90%» пропустил настоящую поломку: подвоз (8.5) был
+    больше расхода (4.76 за ход), боезапас за бой не таял, а рос, и всё же
+    у отдельного элемента падал до 72% — теста хватало. Между тем кривая
+    ``supply.ammo.state_curve`` плоская выше 60 (1.00…1.05), поэтому
+    множитель боезапаса весь бой стоял в 1.01…1.05: параметр был
+    украшением. Порог поэтому привязан к колену кривой, а не к круглому
+    числу.
+    """
+    knee = next(point.x for point in config.sup.ammo.state_curve.points if point.y >= 1.0)
     engine = BattleEngine(scenario, config, verbose=False)
     engine.run()
     lowest = min(element.ammo for element in engine.state.battalion("A").leaf_elements)
-    assert lowest < 90.0, f"боезапас за весь бой не просел ниже {lowest:.0f}%"
+    assert lowest < knee, (
+        f"боезапас просел лишь до {lowest:.0f}%, а кривая начинает работать "
+        f"ниже {knee:.0f}% — снабжение ни на что не влияет"
+    )
 
 
 def test_first_turn_has_nothing_to_recover(scenario: Scenario, config: AppConfig) -> None:

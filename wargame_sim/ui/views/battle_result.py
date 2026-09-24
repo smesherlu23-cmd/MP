@@ -106,7 +106,12 @@ def build(app: AppState, battle_id: str) -> ft.View:
     # ещё подпункт навигации и карточка с главной.
     engine = app.engine
     unfinished = engine is not None and not engine.finished
-    result = app.result or (engine.result() if engine is not None and engine.finished else None)
+    # Через `finish_battle`, а не `engine.result()` напрямую: итог считается
+    # один раз и законченный бой при этом попадает в архив. На этот маршрут
+    # ведёт и подпункт навигации, куда можно прийти, минуя пульт.
+    result = app.result
+    if result is None and engine is not None and engine.finished:
+        result = app.finish_battle()
     if result is None:
         return screen(
             app,
@@ -160,7 +165,12 @@ def build(app: AppState, battle_id: str) -> ft.View:
         app.notify(f"Выгружено: {path}")
 
     def to_archive() -> None:
-        path = app.save_result(result)
+        """Повторная попытка записи: сам итог архивируется при конце боя."""
+        path = app.archive_result(result)
+        if path is None:
+            app.notify("Каталог данных недоступен на запись — итог не сохранён")
+            return
+        app.result_path = path
         app.notify(f"Сохранено в архив: {path.name}")
 
     def replay() -> None:
@@ -348,12 +358,23 @@ def build(app: AppState, battle_id: str) -> ft.View:
     )
 
     # -- правая колонка -----------------------------------------------------
+    archived = app.result_path is not None
     reproducibility = c.card(
         [
             t.card_title("Воспроизводимость"),
             c.kv_line("Сид", t.num(str(result.master_seed), weight=t.W500), height=22),
             c.kv_line("Хеш журнала", t.num(result.log_hash[:16] or "—"), height=22),
             c.kv_line("Записей", t.num(str(len(result.log))), height=22),
+            c.kv_line(
+                "В архиве",
+                t.text(
+                    app.result_path.name if archived else "не сохранён",
+                    size=t.SIZE_ROW,
+                    color=None if archived else t.WARN,
+                    no_wrap=True,
+                ),
+                height=22,
+            ),
             c.note("Тот же сценарий и тот же сид дают тот же бой ход в ход.", size=t.SIZE_META),
         ],
         spacing=2,
@@ -403,7 +424,11 @@ def build(app: AppState, battle_id: str) -> ft.View:
             c.secondary_button("HTML", lambda: export("html"), height=t.BUTTON_SM_H),
             c.secondary_button("CSV", lambda: export("csv"), height=t.BUTTON_SM_H),
             c.secondary_button("Повтор по сиду", replay, icon=ft.Icons.REPLAY),
-            c.primary_button("В архив", to_archive, icon=ft.Icons.SAVE_OUTLINED),
+            *(
+                ()
+                if archived
+                else (c.primary_button("В архив", to_archive, icon=ft.Icons.SAVE_OUTLINED),)
+            ),
         ],
         body=c.columns(left, right, right_width=400),
     )

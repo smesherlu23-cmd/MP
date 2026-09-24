@@ -1660,3 +1660,87 @@ def test_interactive_makes_the_row_clickable(app: AppState) -> None:
     assert row.on_click is not None, "строка осталась неживой"
     row.on_click(None)
     assert clicks == [1]
+
+
+# --------------------------------------------------------------------------
+# Бой не теряется, конец слышен, итог сохраняется
+# --------------------------------------------------------------------------
+def test_opening_the_setup_does_not_wipe_a_running_battle(app: AppState) -> None:
+    """Заход на экран настройки не сбрасывает проведённый бой.
+
+    Экран настройки звал `touch()` прямо при сборке, а `touch` ставит
+    `app.engine = None`: пять проведённых ходов пропадали от одного
+    перехода по навигации, и со стороны это выглядело так, будто отряды
+    вообще не несут потерь.
+    """
+    engine = app.start_battle()
+    engine.run_turns(5)
+    losses = engine.state.side("A").total_personnel_lost()
+    assert losses > 0
+
+    resolve(app, ROUTES["battle_setup"])
+
+    assert app.engine is engine, "бой заменён новым"
+    assert app.ensure_battle().turn == 5
+    assert app.engine.state.side("A").total_personnel_lost() == losses
+
+
+def test_finished_battle_announces_itself(app: AppState) -> None:
+    """Конец боя слышен: уведомление и окно с предложением разбора."""
+    notes: list[str] = []
+    app.notifier = notes.append
+    box = _dialogs(app)
+    app.engine = None
+
+    view = resolve(app, ROUTES["battle"].format(id=app.scenario.id))
+    _click_by_label(view, "До конца")()
+
+    assert app.engine.finished
+    assert notes and notes[-1].startswith("Бой окончен"), notes
+    assert len(box) == 1, "окна о конце боя нет"
+    assert "окончен" in box[0].title.value.casefold()
+
+
+def test_a_finished_battle_goes_to_the_archive_by_itself(app: AppState) -> None:
+    """Законченный бой попадает в архив сам, без кнопки «В архив».
+
+    Раньше `finish_battle` считал итог только в памяти: бой, доведённый до
+    конца и закрытый, не оставлял следа, и раздел «Бои» в архиве был пуст.
+    """
+    assert not app.results()
+    engine = app.start_battle()
+    engine.run()
+
+    result = app.finish_battle()
+
+    assert app.result_path is not None
+    assert [saved.id for _, saved in app.results()] == [result.id]
+
+    # Итог считается один раз: иначе каждый заход на экран плодил копии.
+    for _ in range(3):
+        app.finish_battle()
+    assert len(app.results()) == 1
+    assert app.result is result
+
+
+def test_an_unfinished_battle_is_not_archived(app: AppState) -> None:
+    """Незаконченный бой в архив не идёт — итога у него ещё нет."""
+    engine = app.start_battle()
+    engine.run_turns(4)
+
+    app.finish_battle()
+
+    assert app.result_path is None
+    assert not app.results()
+
+
+def test_the_result_screen_says_where_the_battle_was_saved(app: AppState) -> None:
+    """Экран итога показывает файл архива вместо кнопки «В архив»."""
+    engine = app.start_battle()
+    engine.run()
+
+    view = resolve(app, ROUTES["battle_result"].format(id=app.scenario.id))
+
+    assert app.result_path is not None
+    assert _has(view, app.result_path.name)
+    assert not _has(view, "В архив"), "кнопка предлагает сделать уже сделанное"
