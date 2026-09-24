@@ -1,11 +1,17 @@
-"""Конструктор отряда: боевой порядок деревом, сводка справа.
+"""Редактор отряда: шапка с параметрами, сводка строкой, боевой порядок деревом.
 
-Отряд — это дерево групп любого масштаба. Одновременно раскрыта одна
-группа. Правки сохраняются сразу и тут же пересчитывают сводку — это
-единственный способ понять, что даёт правка.
+Живёт правой половиной экрана «Отряды» (:mod:`ui.views.units`): список слева,
+выбранный отряд справа. Раньше это был отдельный экран, и чтобы перейти от
+одного отряда к другому, надо было вернуться к списку и открыть следующий.
+
+Правки сохраняются сразу и тут же пересчитывают сводку — это единственный
+способ понять, что даёт правка. Одновременно раскрыта одна группа.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
 
 import flet as ft
 
@@ -22,14 +28,13 @@ from core.models import (
     new_id,
 )
 from core.samples import make_element
-from core.storage import write_json
+from core.storage import delete_file, write_json
 from ui import theme as t
-from ui.shell import aside_block, screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
 from ui.widgets import dialogs as dlg
 from ui.widgets import orbat as ob
-from ui.widgets.battalion import summary_card, type_label
+from ui.widgets.battalion import type_label
 
 ROUTE = ROUTES["unit"]
 
@@ -38,24 +43,24 @@ ECHELON_OPTIONS: tuple[tuple[str, str], ...] = tuple(
 )
 
 #: `optional` — очередь на скрытие в узком окне: чем больше, тем раньше
-#: колонка уходит. Имя, численность, приказ и раскрытие остаются всегда.
+#: колонка уходит. Имя, численность, приказ и «⋯» остаются всегда.
 COLUMNS: tuple[c.Col, ...] = (
     c.Col("Группа", expand=True),
     c.Col("Тип", 130, optional=1),
     c.Col("Масштаб", 80, optional=3),
     c.Col("Л/с", 90, numeric=True),
-    c.Col("Огн.", 70, numeric=True, optional=4),
-    c.Col("Устойч.", 80, numeric=True, optional=5),
-    c.Col("Опыт", 60, numeric=True, optional=6),
-    c.Col("Мораль", 70, numeric=True, optional=2),
-    c.Col("Приказ", 110, pad_left=14),
+    c.Col("Огн.", 60, numeric=True, optional=4),
+    c.Col("Устойч.", 70, numeric=True, optional=5),
+    c.Col("Опыт", 50, numeric=True, optional=6),
+    c.Col("Мораль", 60, numeric=True, optional=2),
+    c.Col("Приказ", 104, pad_left=14),
     c.Col("", 28),
 )
 
-#: Ширина правой колонки со сводкой.
-SUMMARY_W = 330
+#: Ширина списка отрядов слева от редактора.
+LIST_W = 300
 
-#: Поля элемента в раскрытой панели: подпись, атрибут, диапазон, целое ли.
+#: Поля группы в раскрытой панели: подпись, атрибут, диапазон, целое ли.
 ELEMENT_FIELDS: tuple[tuple[str, str, float, float, bool], ...] = (
     ("Штат", "personnel_full", 0, 100000, True),
     ("В строю", "personnel_current", 0, 100000, True),
@@ -71,9 +76,8 @@ ELEMENT_FIELDS: tuple[tuple[str, str, float, float, bool], ...] = (
     ("Усталость %", "fatigue", 0, 100, False),
 )
 
-#: Ширина поля «задача боя»: в строке с переносом у ребёнка обязана быть
-#: своя ширина, иначе Flet рисует серый прямоугольник вместо содержимого.
-TASK_FIELD_W = 300
+#: Ширина числового поля в раскрытой группе.
+FIELD_W = 118
 
 #: Поля, скрываемые при выключенном тумблере (§4.5).
 OPTIONAL_FIELDS = {
@@ -85,39 +89,143 @@ OPTIONAL_FIELDS = {
 
 
 def build(app: AppState, unit_id: str) -> ft.View:
-    found = app.unit(unit_id)
-    if found is None:
-        return screen(
+    """Прежний маршрут `/units/<id>` — тот же экран «Отряды» с выбранным отрядом."""
+    from ui.views import units
+
+    return units.build(app, unit_id=unit_id)
+
+
+# --------------------------------------------------------------------------
+# Действия над отрядом целиком — одни и те же в списке и в редакторе
+# --------------------------------------------------------------------------
+def unit_actions(
+    app: AppState,
+    path: Path,
+    battalion: Battalion,
+    *,
+    on_changed: Callable[[str | None], None],
+    with_battle: bool = True,
+) -> list[c.MenuItem | None]:
+    """Пункты меню отряда: «⋯» на строке списка и в шапке редактора.
+
+    ``on_changed(id)`` — список надо перерисовать и выбрать этот отряд
+    (``None`` — отряд удалён, выбрать какой-нибудь другой). В шапке
+    редактора «В бой» — отдельная кнопка, поэтому там ``with_battle=False``.
+    """
+
+    def duplicate() -> None:
+        copy = battalion.model_copy(deep=True)
+        copy.id = new_id("bat")
+        copy.name = f"{battalion.name} (копия)"
+        app.save_unit(copy)
+        app.notify(f"Скопирован «{battalion.name}»")
+        on_changed(copy.id)
+
+    def export() -> None:
+        def write(directory: Path) -> None:
+            target = write_json(
+                directory / f"{path.stem}.json", battalion.model_dump(mode="json")
+            )
+            app.notify(f"Выгружено: {target}")
+
+        app.ask_directory(f"Куда выгрузить «{battalion.name}»", write)
+
+    def ask_remove() -> None:
+        dlg.confirm(
             app,
-            active="units",
-            title="Подразделение не найдено",
-            subtitle=f"«{unit_id}» отсутствует в data/units",
-            body=c.empty_hint("Выберите отряд в списке подразделений."),
+            f"Удалить «{battalion.name}»?",
+            f"Файл {path.name} будет удалён с диска. Отменить это нельзя — "
+            "если отряд ещё понадобится, сначала выгрузите его в JSON.",
+            confirm_label="Удалить",
+            danger=True,
+            on_confirm=remove,
         )
 
-    unit_path, battalion = found
-    app.open_unit = (battalion.id, battalion.name)
+    def remove() -> None:
+        delete_file(path)
+        if app.open_unit and app.open_unit[0] == battalion.id:
+            app.open_unit = None
+        app.notify(f"Удалён «{battalion.name}»")
+        on_changed(None)
+
+    battle: list[c.MenuItem | None] = [
+        c.MenuItem(
+            "В бой стороной A",
+            lambda: _use_in_battle(app, battalion, Side.A),
+            icon=ft.Icons.MILITARY_TECH,
+        ),
+        c.MenuItem("В бой стороной B", lambda: _use_in_battle(app, battalion, Side.B)),
+        c.MENU_DIVIDER,
+    ]
+    return [
+        *(battle if with_battle else []),
+        c.MenuItem("Копировать", duplicate, icon=ft.Icons.CONTENT_COPY),
+        c.MenuItem("Выгрузить JSON", export, icon=ft.Icons.DOWNLOAD_OUTLINED),
+        c.MENU_DIVIDER,
+        c.MenuItem("Удалить…", ask_remove, icon=ft.Icons.DELETE_OUTLINE, danger=True),
+    ]
+
+
+def _use_in_battle(app: AppState, battalion: Battalion, side: Side) -> None:
+    """Поставить подразделение в текущий сценарий выбранной стороной."""
+    copy = battalion.model_copy(deep=True)
+    copy.side = side
+    if side == Side.A:
+        app.scenario.battalion_a = copy
+    else:
+        app.scenario.battalion_b = copy
+    app.engine = None
+    app.notify(f"«{battalion.name}» назначен стороной {side}")
+    app.go(ROUTES["battle_setup"])
+
+
+# --------------------------------------------------------------------------
+# Редактор
+# --------------------------------------------------------------------------
+def editor_pane(
+    app: AppState,
+    unit_path: Path,
+    battalion: Battalion,
+    *,
+    on_changed: Callable[[str | None], None],
+    available: int,
+) -> ft.Control:
+    """Редактор одного отряда.
+
+    ``on_changed`` зовётся после сохранения, чтобы список слева показал
+    новое имя и численность; ``available`` — ширина под таблицу групп.
+    """
     config = app.config
     toggles = config.tog
+    app.open_unit = (battalion.id, battalion.name)
 
-    table = c.Table.fit(COLUMNS, t.content_width(app.window_width, right=SUMMARY_W))
-    summary_holder = ft.Container()
+    table = c.Table.fit(COLUMNS, available)
+    stats_holder = ft.Container()
     elements_holder = ft.Column(spacing=0, scroll=ft.ScrollMode.AUTO, expand=True)
+    count_holder = ft.Container()
     error_holder = ft.Container()
 
+    # -- сохранение и перерисовка -------------------------------------------
     def save_and_refresh() -> None:
         app.save_unit(battalion)
-        summary_holder.content = summary_card(battalion, config, side=str(battalion.side))
+        stats_holder.content = stats()
         elements_holder.controls = element_rows()
-        app.refresh(summary_holder, elements_holder)
+        count_holder.content = t.card_title(f"Боевой порядок · групп {len(battalion.elements)}")
+        app.refresh(stats_holder, elements_holder, count_holder)
+
+    def save_and_tell_list() -> None:
+        """Имя и численность видны в списке — его тоже надо обновить."""
+        save_and_refresh()
+        on_changed(battalion.id)
 
     def show_error(message: str) -> None:
         error_holder.content = c.error_banner(message)
         app.refresh(error_holder)
 
     def clear_error() -> None:
-        error_holder.content = None
-        app.refresh(error_holder)
+        if error_holder.content is not None:
+            error_holder.content = None
+            app.refresh(error_holder)
 
     def set_element(element: Element, attribute: str, value: object) -> None:
         previous = getattr(element, attribute)
@@ -128,23 +236,28 @@ def build(app: AppState, unit_id: str) -> ft.View:
             setattr(element, attribute, previous)
             return
         clear_error()
-        save_and_refresh()
+        save_and_tell_list()
 
     def set_battalion(attribute: str, value: object) -> None:
         setattr(battalion, attribute, value)
-        save_and_refresh()
+        save_and_tell_list()
 
     def toggle_expanded(element: Element) -> None:
         app.expanded_element = None if app.expanded_element == element.id else element.id
         elements_holder.controls = element_rows()
         app.refresh(elements_holder)
 
+    # -- группы ---------------------------------------------------------------
     def add_element(type_name: str) -> None:
         entry = config.element_type(type_name)
-        element = make_element(type_name, entry.label, new_id(type_name), config)
+        taken = {item.name for item in battalion.elements}
+        name, index = entry.label, 2
+        while name in taken:
+            name, index = f"{entry.label} {index}", index + 1
+        element = make_element(type_name, name, new_id(type_name), config)
         battalion.elements = [*battalion.elements, element]
         app.expanded_element = element.id
-        save_and_refresh()
+        save_and_tell_list()
 
     def ask_remove_element(element: Element) -> None:
         children = len(battalion.children_of(element.id))
@@ -170,14 +283,18 @@ def build(app: AppState, unit_id: str) -> ft.View:
         battalion.elements = [item for item in battalion.elements if item.id != element.id]
         if app.expanded_element == element.id:
             app.expanded_element = None
-        save_and_refresh()
+        save_and_tell_list()
 
     def add_vehicles(element: Element) -> None:
         element.vehicles = [
             *element.vehicles,
             VehicleGroup(vehicle_type="Техника", count_full=4, count_current=4),
         ]
-        save_and_refresh()
+        save_and_tell_list()
+
+    def remove_vehicles(element: Element, group: VehicleGroup) -> None:
+        element.vehicles = [item for item in element.vehicles if item is not group]
+        save_and_tell_list()
 
     def set_vehicle(group: VehicleGroup, attribute: str, value: object) -> None:
         previous = getattr(group, attribute)
@@ -188,9 +305,9 @@ def build(app: AppState, unit_id: str) -> ft.View:
             setattr(group, attribute, previous)
             return
         clear_error()
-        save_and_refresh()
+        save_and_tell_list()
 
-    def reshape(work) -> None:
+    def reshape(work: Callable[[], None]) -> None:
         """Перестроение с понятным отказом вместо падения."""
         try:
             work()
@@ -198,7 +315,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
             show_error(str(error))
             return
         clear_error()
-        save_and_refresh()
+        save_and_tell_list()
 
     def split_element(element: Element) -> None:
         """Деление — через окно с долями: видно, что достанется каждой части."""
@@ -227,34 +344,16 @@ def build(app: AppState, unit_id: str) -> ft.View:
     def reassign_element(element: Element, parent_id: str) -> None:
         reshape(lambda: formation.reassign(battalion, element.id, parent_id or None))
 
-    def duplicate_unit() -> None:
-        copy = battalion.model_copy(deep=True)
-        copy.id = new_id("bat")
-        copy.name = f"{battalion.name} (копия)"
-        app.save_unit(copy)
-        app.notify(f"Скопирован «{battalion.name}»")
-        app.go(ROUTES["unit"].format(id=copy.id))
-
-    def export_unit() -> None:
-        def write(directory) -> None:
-            target = write_json(
-                directory / f"{unit_path.stem}.json", battalion.model_dump(mode="json")
-            )
-            app.notify(f"Выгружено: {target}")
-
-        app.ask_directory(f"Куда выгрузить «{battalion.name}»", write)
-
-    def element_menu(element: Element) -> list[c.MenuItem]:
-        """Действия над группой — по правой кнопке, не в раскрытой панели."""
-        items = [
+    def element_menu(element: Element) -> list[c.MenuItem | None]:
+        """Что можно сделать с группой — на её строке, «⋯» и правой кнопкой."""
+        items: list[c.MenuItem | None] = [
             c.MenuItem(
-                "Свернуть" if app.expanded_element == element.id else "Правка",
+                "Свернуть" if app.expanded_element == element.id else "Править",
                 lambda: toggle_expanded(element),
                 icon=ft.Icons.TUNE,
             ),
-            c.MenuItem(
-                "Разделить…", lambda: split_element(element), icon=ft.Icons.CALL_SPLIT
-            ),
+            c.MENU_DIVIDER,
+            c.MenuItem("Разделить…", lambda: split_element(element), icon=ft.Icons.CALL_SPLIT),
         ]
         if element.has_vehicles:
             items.append(
@@ -266,17 +365,21 @@ def build(app: AppState, unit_id: str) -> ft.View:
             )
         if battalion.children_of(element.id):
             items.append(
-                c.MenuItem(
-                    "Свести подгруппы", lambda: merge_element(element), icon=ft.Icons.MERGE
-                )
+                c.MenuItem("Свести подгруппы", lambda: merge_element(element), icon=ft.Icons.MERGE)
             )
         items.append(
-            c.MenuItem(
-                "Удалить…",
-                lambda: ask_remove_element(element),
-                icon=ft.Icons.DELETE_OUTLINE,
-                danger=True,
-            )
+            c.MenuItem("Добавить технику", lambda: add_vehicles(element), icon=ft.Icons.ADD)
+        )
+        items.extend(
+            [
+                c.MENU_DIVIDER,
+                c.MenuItem(
+                    "Удалить…",
+                    lambda: ask_remove_element(element),
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    danger=True,
+                ),
+            ]
         )
         return items
 
@@ -292,12 +395,79 @@ def build(app: AppState, unit_id: str) -> ft.View:
             ],
         ]
 
-    def remove_vehicles(element: Element, group: VehicleGroup) -> None:
-        element.vehicles = [item for item in element.vehicles if item is not group]
-        save_and_refresh()
-
-    # -- раскрытая панель элемента -----------------------------------------
+    # -- раскрытая группа -----------------------------------------------------
     def expanded_panel(element: Element) -> ft.Control:
+        """Правка группы: кто она, сколько в ней людей и в каком состоянии.
+
+        Подписи стоят над каждым полем: раньше пять выпадающих списков в
+        шапке панели шли без подписей, и понять, какой из них «подчинена»,
+        а какой «приказ», можно было только раскрыв каждый.
+        """
+        identity = c.flow(
+            [
+                c.labeled(
+                    "Название",
+                    c.text_field(
+                        element.name,
+                        lambda value, e=element: set_element(e, "name", value),
+                        width=210,
+                        nested=True,
+                    )[0],
+                    width=210,
+                ),
+                c.labeled(
+                    "Тип",
+                    c.select(
+                        element.type,
+                        [
+                            (key, entry.label)
+                            for key, entry in sorted(config.element_types.element_types.items())
+                        ],
+                        lambda value, e=element: set_element(e, "type", value),
+                        width=190,
+                        nested=True,
+                    ),
+                    width=190,
+                ),
+                c.labeled(
+                    "Ступень",
+                    c.select(
+                        str(element.echelon),
+                        ECHELON_OPTIONS,
+                        lambda value, e=element: set_element(e, "echelon", Echelon(value)),
+                        width=124,
+                        nested=True,
+                    ),
+                    width=124,
+                ),
+                c.labeled(
+                    "Подчинена",
+                    c.select(
+                        element.parent or "",
+                        parent_options(element),
+                        lambda value, e=element: reassign_element(e, value),
+                        width=180,
+                        nested=True,
+                    ),
+                    width=180,
+                ),
+                c.labeled(
+                    "Приказ",
+                    c.select(
+                        str(element.order or ""),
+                        [("", "как у отряда"), *[(str(o), str(o)) for o in COMMAND_ORDERS]],
+                        lambda value, e=element: set_element(
+                            e, "order", Order(value) if value else None
+                        ),
+                        width=160,
+                        nested=True,
+                    ),
+                    width=160,
+                ),
+            ],
+            spacing=t.GAP_SM,
+        )
+
         fields: list[ft.Control] = []
         for label, attribute, minimum, maximum, integer in ELEMENT_FIELDS:
             toggle_name = OPTIONAL_FIELDS.get(attribute)
@@ -313,199 +483,105 @@ def build(app: AppState, unit_id: str) -> ft.View:
                         maximum=maximum,
                         integer=integer,
                         nested=True,
-                        width=146,
+                        width=FIELD_W,
                     ),
-                    width=146,
+                    width=FIELD_W,
                 )
             )
 
-        vehicles: list[ft.Control] = []
-        for group in element.vehicles:
-            row: list[ft.Control] = [
-                ft.Container(content=t.caption("Техника"), width=80),
-                c.text_field(
-                    group.vehicle_type,
-                    lambda value, g=group: set_vehicle(g, "vehicle_type", value),
-                    width=130,
-                    nested=True,
-                )[0],
-                ft.Text(
-                    f"по штату {group.count_full} · в строю {group.count_current}"
-                    f" · состояние {group.condition:.0f}",
-                    style=t.mono(size=t.SIZE_ROW, color=t.TEXT_3),
-                    expand=True,
-                ),
-                c.number_field(
-                    group.count_full,
-                    lambda value, g=group: set_vehicle(g, "count_full", int(value)),
-                    minimum=0,
-                    maximum=10000,
-                    integer=True,
-                    width=90,
-                    nested=True,
-                ),
-                c.number_field(
-                    group.count_current,
-                    lambda value, g=group: set_vehicle(g, "count_current", int(value)),
-                    minimum=0,
-                    maximum=10000,
-                    integer=True,
-                    width=90,
-                    nested=True,
-                ),
-            ]
-            if toggles.vehicle_condition:
-                row.append(
-                    c.number_field(
-                        group.condition,
-                        lambda value, g=group: set_vehicle(g, "condition", value),
-                        minimum=0,
-                        maximum=100,
-                        width=90,
+        parts: list[ft.Control] = [identity, c.flow(fields, spacing=t.GAP_SM)]
+
+        if element.vehicles:
+            vehicle_rows: list[ft.Control] = [t.caption("Техника группы")]
+            for group in element.vehicles:
+                cells: list[ft.Control] = [
+                    c.text_field(
+                        group.vehicle_type,
+                        lambda value, g=group: set_vehicle(g, "vehicle_type", value),
+                        width=150,
                         nested=True,
+                    )[0],
+                    c.labeled(
+                        "По штату",
+                        c.number_field(
+                            group.count_full,
+                            lambda value, g=group: set_vehicle(g, "count_full", int(value)),
+                            minimum=0,
+                            maximum=10000,
+                            integer=True,
+                            width=90,
+                            nested=True,
+                        ),
+                        width=90,
+                    ),
+                    c.labeled(
+                        "В строю",
+                        c.number_field(
+                            group.count_current,
+                            lambda value, g=group: set_vehicle(g, "count_current", int(value)),
+                            minimum=0,
+                            maximum=10000,
+                            integer=True,
+                            width=90,
+                            nested=True,
+                        ),
+                        width=90,
+                    ),
+                ]
+                if toggles.vehicle_condition:
+                    cells.append(
+                        c.labeled(
+                            "Состояние",
+                            c.number_field(
+                                group.condition,
+                                lambda value, g=group: set_vehicle(g, "condition", value),
+                                minimum=0,
+                                maximum=100,
+                                width=90,
+                                nested=True,
+                            ),
+                            width=90,
+                        )
+                    )
+                cells.append(
+                    c.icon_button(
+                        ft.Icons.DELETE_OUTLINE,
+                        lambda e=element, g=group: remove_vehicles(e, g),
+                        size=t.BUTTON_XS_H,
+                        icon_size=15,
+                        color=t.LOSS,
+                        tooltip="Убрать эту технику из группы",
+                        bordered=False,
                     )
                 )
-            row.append(
-                c.icon_button(
-                    ft.Icons.DELETE_OUTLINE,
-                    lambda e=element, g=group: remove_vehicles(e, g),
-                    size=t.BUTTON_XS_H,
-                    icon_size=15,
-                    color=t.LOSS,
-                    tooltip="Убрать группу техники",
+                vehicle_rows.append(
+                    ft.Row(cells, spacing=t.GAP_SM, vertical_alignment=ft.CrossAxisAlignment.END)
+                )
+            parts.append(
+                ft.Container(
+                    content=ft.Column(vehicle_rows, spacing=8, tight=True),
+                    padding=ft.Padding.only(top=10),
+                    border=t.border_top(t.BORDER_INNER),
                 )
             )
-            vehicles.append(
-                ft.Row(
-                    row,
-                    spacing=t.GAP_SM,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                )
-            )
-
-        shape_row = ft.Row(
-            [
-                t.caption("Перестроить"),
-                c.secondary_button(
-                    "Разделить…",
-                    lambda e=element: split_element(e),
-                    icon=ft.Icons.CALL_SPLIT,
-                    height=t.BUTTON_SM_H,
-                ),
-                c.secondary_button(
-                    "Отделить технику",
-                    lambda e=element: detach_element(e),
-                    height=t.BUTTON_SM_H,
-                )
-                if element.has_vehicles
-                else ft.Container(width=0),
-                c.secondary_button(
-                    "Свести подгруппы",
-                    lambda e=element: merge_element(e),
-                    height=t.BUTTON_SM_H,
-                )
-                if battalion.children_of(element.id)
-                else ft.Container(width=0),
-            ],
-            spacing=t.GAP_SM,
-            wrap=True,
-            run_spacing=t.GAP_SM,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        )
-
-        controls_row = ft.Row(
-            [
-                c.secondary_button(
-                    "Добавить технику",
-                    lambda e=element: add_vehicles(e),
-                    icon=ft.Icons.ADD,
-                    height=t.BUTTON_SM_H,
-                ),
-                c.spacer(),
-                c.tertiary_button(
-                    "Удалить элемент",
-                    lambda e=element: ask_remove_element(e),
-                    icon=ft.Icons.DELETE_OUTLINE,
-                    color=t.LOSS,
-                    height=t.BUTTON_SM_H,
-                ),
-            ],
-            spacing=t.GAP_SM,
-        )
-
-        head = ft.Row(
-            [
-                c.text_field(
-                    element.name,
-                    lambda value, e=element: set_element(e, "name", value),
-                    width=230,
-                    nested=True,
-                )[0],
-                c.select(
-                    element.type,
-                    [
-                        (key, entry.label)
-                        for key, entry in sorted(config.element_types.element_types.items())
-                    ],
-                    lambda value, e=element: set_element(e, "type", value),
-                    width=190,
-                    nested=True,
-                ),
-                c.select(
-                    str(element.echelon),
-                    ECHELON_OPTIONS,
-                    lambda value, e=element: set_element(e, "echelon", Echelon(value)),
-                    width=130,
-                    nested=True,
-                ),
-                c.select(
-                    element.parent or "",
-                    parent_options(element),
-                    lambda value, e=element: reassign_element(e, value),
-                    width=190,
-                    nested=True,
-                ),
-                c.select(
-                    str(element.order or ""),
-                    [("", "как у отряда"), *[(str(o), str(o)) for o in COMMAND_ORDERS]],
-                    lambda value, e=element: set_element(
-                        e, "order", Order(value) if value else None
-                    ),
-                    width=180,
-                    nested=True,
-                ),
-            ],
-            spacing=t.GAP_SM,
-            wrap=True,
-            run_spacing=t.GAP_SM,
-        )
 
         return ft.Container(
-            content=ft.Column(
-                [
-                    head,
-                    c.flow(fields, spacing=t.GAP_IN),
-                    ft.Container(
-                        content=ft.Column(vehicles, spacing=6, tight=True),
-                        padding=ft.Padding.only(top=10),
-                        border=t.border_top(t.BORDER_INNER),
-                    )
-                    if vehicles
-                    else ft.Container(height=0),
-                    shape_row,
-                    controls_row,
-                ],
-                spacing=t.GAP_IN,
-                tight=True,
-            ),
+            content=ft.Column(parts, spacing=t.GAP_IN, tight=True),
             bgcolor=t.SURFACE_ALT,
-            padding=ft.Padding.symmetric(vertical=14, horizontal=16),
+            padding=ft.Padding.symmetric(vertical=14, horizontal=t.PAD_ROW_X),
             border=t.border_bottom(t.BORDER),
         )
 
     def element_rows() -> list[ft.Control]:
         if not battalion.elements:
-            return [c.empty_hint("В отряде нет групп — добавьте из шаблонов.")]
+            return [
+                c.empty_state(
+                    "В отряде пока нет групп",
+                    "Добавьте группу нужного типа — числа посчитаются по её составу.",
+                    icon=ft.Icons.GROUPS_OUTLINED,
+                    action=add_group_menu(),
+                )
+            ]
         rows: list[ft.Control] = []
         ordered = battalion.ordered_elements
         for index, element in enumerate(ordered):
@@ -513,6 +589,7 @@ def build(app: AppState, unit_id: str) -> ft.View:
             last = index == len(ordered) - 1
             children = len(battalion.children_of(element.id))
             roll = battalion.rollup(element.id)
+            menu = element_menu(element)
             rows.append(
                 table.row(
                     [
@@ -536,7 +613,12 @@ def build(app: AppState, unit_id: str) -> ft.View:
                             tight=True,
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
-                        t.text(type_label(element, config), size=t.SIZE_META, color=t.TEXT_3),
+                        t.text(
+                            type_label(element, config),
+                            size=t.SIZE_META,
+                            color=t.TEXT_3,
+                            no_wrap=True,
+                        ),
                         t.text(str(element.echelon), size=t.SIZE_META, color=t.TEXT_3),
                         c.fraction(roll.personnel_current, roll.personnel_full),
                         # У старшей группы собственные огонь и устойчивость в
@@ -545,45 +627,53 @@ def build(app: AppState, unit_id: str) -> ft.View:
                         t.num(f"{element.defense:.0f}") if not children else c.dash(),
                         t.num(str(element.experience)) if not children else c.dash(),
                         t.num(f"{roll.morale:.0f}" if children else f"{element.morale:.0f}"),
-                        t.text(str(battalion.order_for(element)), size=t.SIZE_META, color=t.TEXT_3),
-                        ft.Icon(
-                            ft.Icons.EXPAND_LESS if expanded else ft.Icons.EXPAND_MORE,
-                            size=16,
-                            color=t.TEXT_2 if expanded else t.TEXT_MUTED,
+                        t.text(
+                            str(battalion.order_for(element)),
+                            size=t.SIZE_META,
+                            color=t.TEXT_3,
+                            no_wrap=True,
                         ),
+                        c.row_menu(menu),
                     ],
-                    height=t.TABLE_ROW_H + 2,
+                    height=t.TABLE_ROW_H + 4,
                     bgcolor=t.ROW_EXPANDED if expanded else None,
                     last=last and not expanded,
                     on_click=lambda e=element: toggle_expanded(e),
-                    menu=element_menu(element),
+                    menu=menu,
                 )
             )
             if expanded:
                 rows.append(expanded_panel(element))
         return rows
 
-    # -- карточка батальона -------------------------------------------------
-    battalion_fields: list[ft.Control] = [
-        c.labeled(
-            "Название",
-            c.text_field(
-                battalion.name,
-                lambda value: set_battalion("name", value),
-                width=250,
-            )[0],
-            width=250,
-        ),
-        c.labeled(
-            "Сторона",
-            c.select(
-                str(battalion.side),
-                [(str(side), str(side)) for side in Side],
-                lambda value: set_battalion("side", Side(value)),
-                width=100,
-            ),
-            width=100,
-        ),
+    def add_group_menu() -> ft.Control:
+        return c.create_menu(
+            "Добавить группу",
+            [
+                c.MenuItem(entry.label, lambda key=key: add_element(key))
+                for key, entry in sorted(
+                    config.element_types.element_types.items(), key=lambda item: item[1].label
+                )
+            ],
+            primary=False,
+            height=t.BUTTON_SM_H,
+        )
+
+    # -- шапка отряда ---------------------------------------------------------
+    def stats() -> ft.Control:
+        summary = battalion.summary()
+        return c.stat_strip(
+            [
+                ("Групп в бою", f"{summary['elements']} из {len(battalion.leaf_elements)}"),
+                ("Л/с", str(battalion.personnel_current)),
+                ("Техника", str(battalion.vehicles_current)),
+                ("Мораль", f"{summary['morale']:.0f}"),
+                ("Опыт", f"{summary['experience']:.1f}"),
+                ("Организация", f"{summary['organisation']:.0f}"),
+            ]
+        )
+
+    fields: list[ft.Control] = [
         c.labeled(
             "Масштаб отряда",
             c.select(
@@ -600,9 +690,9 @@ def build(app: AppState, unit_id: str) -> ft.View:
                 str(battalion.order),
                 [(str(order), str(order)) for order in COMMAND_ORDERS],
                 lambda value: set_battalion("order", Order(value)),
-                width=170,
+                width=160,
             ),
-            width=170,
+            width=160,
         ),
         c.labeled(
             "Связь, %",
@@ -611,13 +701,13 @@ def build(app: AppState, unit_id: str) -> ft.View:
                 lambda value: set_battalion("communications", value),
                 minimum=0,
                 maximum=100,
-                width=110,
+                width=100,
             ),
-            width=110,
+            width=100,
         ),
     ]
     if toggles.commander_influence:
-        battalion_fields.append(
+        fields.append(
             c.labeled(
                 "Командир, 0…100",
                 c.number_field(
@@ -625,134 +715,93 @@ def build(app: AppState, unit_id: str) -> ft.View:
                     lambda value: set_battalion("commander_influence", value),
                     minimum=0,
                     maximum=100,
-                    width=150,
+                    width=120,
                 ),
-                width=150,
+                width=120,
             )
         )
-    battalion_fields.append(
+    fields.append(
         c.labeled(
             "Задача боя",
             c.text_field(
                 battalion.task,
                 lambda value: set_battalion("task", value),
                 placeholder="не задана",
-                width=TASK_FIELD_W,
+                width=260,
             )[0],
-            width=TASK_FIELD_W,
+            width=260,
         )
     )
 
-    templates_menu = c.secondary_button(
-        "Добавить из шаблона",
-        lambda: toggle_templates(),
-        icon=ft.Icons.ADD,
-        height=t.BUTTON_SM_H,
-    )
-    templates_row = ft.Container(visible=False)
-
-    def toggle_templates() -> None:
-        templates_row.visible = not templates_row.visible
-        app.refresh(templates_row)
-
-    templates_row.content = ft.Container(
-        content=c.flow(
-            [
-                c.chip(entry.label, lambda key=key: add_element(key))
-                for key, entry in sorted(config.element_types.element_types.items())
-            ],
-            spacing=t.GAP_SM,
-        ),
-        padding=ft.Padding.symmetric(vertical=10, horizontal=t.PAD_CARD),
-        bgcolor=t.SURFACE_ALT,
-        border=t.border_bottom(t.BORDER),
-    )
-
-    save_and_refresh()
-
-    elements_card = c.framed_card(
-        f"Боевой порядок · групп {len(battalion.elements)}",
-        ft.Column(
-            [templates_row, table.head(), elements_holder],
-            spacing=0,
-            expand=True,
-        ),
-        trailing=[templates_menu],
+    name_field, _ = c.text_field(
+        battalion.name,
+        lambda value: set_battalion("name", value),
         expand=True,
     )
 
-    left = ft.Column(
+    header = c.card(
         [
-            error_holder,
-            c.card([t.card_title("Отряд"), c.flow(battalion_fields, spacing=12)]),
-            elements_card,
-        ],
-        spacing=t.GAP,
-        expand=True,
-    )
-
-    right = c.card(
-        [
-            summary_holder,
-            c.divider(),
             ft.Row(
                 [
-                    c.secondary_button(
-                        "Копировать",
-                        duplicate_unit,
-                        icon=ft.Icons.CONTENT_COPY,
-                        height=32,
-                        expand=True,
+                    name_field,
+                    c.create_menu(
+                        "В бой",
+                        [
+                            c.MenuItem(
+                                "Стороной A",
+                                lambda: _use_in_battle(app, battalion, Side.A),
+                                icon=ft.Icons.MILITARY_TECH,
+                            ),
+                            c.MenuItem(
+                                "Стороной B", lambda: _use_in_battle(app, battalion, Side.B)
+                            ),
+                        ],
+                        icon=ft.Icons.SHIELD_OUTLINED,
+                        primary=False,
                     ),
-                    c.secondary_button(
-                        "Экспорт",
-                        export_unit,
-                        icon=ft.Icons.DOWNLOAD_OUTLINED,
-                        height=32,
-                        expand=True,
+                    c.more_menu(
+                        unit_actions(
+                            app, unit_path, battalion, on_changed=on_changed, with_battle=False
+                        )
                     ),
                 ],
                 spacing=t.GAP_SM,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
+            c.flow(fields, spacing=12),
+            c.divider(vertical_margin=4),
+            stats_holder,
         ],
+        spacing=t.GAP_IN,
+    )
+
+    count_holder.content = t.card_title(f"Боевой порядок · групп {len(battalion.elements)}")
+    stats_holder.content = stats()
+    elements_holder.controls = element_rows()
+
+    elements_card = ft.Container(
+        content=ft.Column(
+            [
+                ft.Container(
+                    content=ft.Row(
+                        [count_holder, c.spacer(), add_group_menu()],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    height=t.CARD_HEADER_H,
+                    padding=ft.Padding.symmetric(horizontal=t.PAD_CARD),
+                    border=t.border_bottom(t.BORDER),
+                ),
+                table.head(),
+                elements_holder,
+            ],
+            spacing=0,
+            expand=True,
+        ),
+        bgcolor=t.CARD_BG,
+        border=ft.Border.all(1, t.BORDER),
+        border_radius=t.R_CARD,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         expand=True,
     )
 
-    return screen(
-        app,
-        active="units",
-        active_child=battalion.id,
-        title=battalion.name,
-        subtitle=(
-            f"{battalion.scale} · групп в бою {len(battalion.engaged_elements)}"
-            f" · {battalion.personnel_current} чел."
-            f" · техники {battalion.vehicles_current}"
-        ),
-        mono_subtitle=True,
-        actions=[
-            c.secondary_button("В бой стороной B", lambda: _use_in_battle(app, battalion, Side.B)),
-            c.primary_button(
-                "В бой стороной A",
-                lambda: _use_in_battle(app, battalion, Side.A),
-                icon=ft.Icons.MILITARY_TECH,
-            ),
-        ],
-        aside=aside_block(
-            "Правки",
-            [c.note("Сохраняются сразу и тут же видны в сводке справа.", size=t.SIZE_META)],
-        ),
-        body=c.columns(left, right, right_width=SUMMARY_W),
-    )
-
-
-def _use_in_battle(app: AppState, battalion: Battalion, side: Side) -> None:
-    """Поставить подразделение в текущий сценарий выбранной стороной."""
-    copy = battalion.model_copy(deep=True)
-    copy.side = side
-    if side == Side.A:
-        app.scenario.battalion_a = copy
-    else:
-        app.scenario.battalion_b = copy
-    app.engine = None
-    app.notify(f"«{battalion.name}» назначен стороной {side}")
-    app.go(ROUTES["battle_setup"])
+    return ft.Column([error_holder, header, elements_card], spacing=t.GAP, expand=True)

@@ -230,6 +230,7 @@ TABLE_ROW_H = 28
 TABLE_ROW_TALL_H = 42
 CARD_FOOTER_H = 32
 MENU_ITEM_H = 34  # пункт контекстного меню
+EMPTY_TEXT_W = 460  # ширина пояснения в пустом состоянии: длинная строка не читается
 BAR_H = 4
 BAR_STACKED_H = 10
 TOGGLE_W = 36

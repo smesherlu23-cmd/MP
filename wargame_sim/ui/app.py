@@ -128,6 +128,16 @@ def _error_view(app: AppState, message: str) -> ft.View:
     )
 
 
+def current_width(page: ft.Page) -> int:
+    """Ширина, под которую раскладываются таблицы.
+
+    Сначала ширина самой страницы: у окна её может не быть (в браузере
+    ``page.window.width`` пуст), и тогда таблица считала бы колонки под
+    штатные 1600 px при настоящих 1280 — и колонка названия схлопывалась.
+    """
+    return int(page.width or page.window.width or t.WINDOW_W)
+
+
 def main(page: ft.Page) -> None:
     """Точка входа Flet-приложения.
 
@@ -146,7 +156,7 @@ def main(page: ft.Page) -> None:
     page.window.height = t.WINDOW_H
     page.window.min_width = t.WINDOW_MIN_W
     page.window.min_height = t.WINDOW_MIN_H
-    app.window_width = t.WINDOW_W
+    app.window_width = current_width(page)
 
     def notify(message: str) -> None:
         page.show_dialog(ft.SnackBar(content=ft.Text(message)))
@@ -233,7 +243,7 @@ def main(page: ft.Page) -> None:
 
     def resized(*_: object) -> None:
         """Окно изменили — таблицы пересобирают набор колонок под ширину."""
-        width = int(page.window.width or t.WINDOW_W)
+        width = current_width(page)
         if width == app.window_width:
             return
         app.window_width = width

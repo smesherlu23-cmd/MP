@@ -12,7 +12,7 @@ import flet as ft
 from core.formation import FormationError
 from core.models import BattalionState, Order
 from ui import theme as t
-from ui.shell import scenario_aside, screen
+from ui.shell import battle_tabs, screen
 from ui.state import ALL, SIDE_A, SIDE_B, SIDE_BOTH, AppState
 from ui.widgets import common as c
 from ui.widgets import dialogs as dlg
@@ -439,13 +439,8 @@ def build(app: AppState, battle_id: str) -> ft.View:
             on_confirm=lambda: app.go(f"/battle/{battle_id}/result"),
         )
 
-    def run_in_background(work, then=None, *, announce: bool = True) -> None:
-        """Длинные расчёты — в отдельном потоке, UI не блокируется (§10).
-
-        ``announce=False`` — для того, кто и так ведёт ГМ на экран итога:
-        два сообщения об одном событии это шум, но итог всё равно должен
-        попасть в архив.
-        """
+    def run_in_background(work) -> None:
+        """Длинные расчёты — в отдельном потоке, UI не блокируется (§10)."""
         was_finished = engine.finished
 
         def task() -> None:
@@ -458,9 +453,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
                 redraw_all()
                 app.refresh(busy)
             if engine.finished and not was_finished:
-                announce_end() if announce else app.finish_battle()
-            if then is not None:
-                then()
+                announce_end()
 
         busy.visible = True
         app.refresh(busy)
@@ -483,11 +476,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         run_in_background(engine.run)
 
     def restart() -> None:
-        """Начать бой заново — но не по одному щелчку.
-
-        Кнопка стоит в верхней полосе между «До конца» и «Итог» и выглядит
-        безобидной стрелкой, а стирает весь проведённый бой.
-        """
+        """Начать бой заново — но не по одному щелчку: это стирает весь бой."""
         if engine.turn == 0:
             do_restart()
             return
@@ -506,33 +495,6 @@ def build(app: AppState, battle_id: str) -> ft.View:
         app.save_battle()
         app.go(ROUTE.format(id=battle_id))
 
-    def show_result() -> None:
-        """Итог — только по законченному бою.
-
-        Раньше кнопка показывала «ничья по лимиту ходов» на пятом ходу:
-        движок собирал результат из ещё не наступившего конца.
-        """
-        if engine.finished:
-            app.finish_battle()
-            app.go(f"/battle/{battle_id}/result")
-            return
-        dlg.confirm(
-            app,
-            "Бой ещё не закончен",
-            f"Идёт ход {engine.state.turn}. Итог складывается по законченному "
-            "бою: победитель, причина и остаточная боеспособность. Довести "
-            "бой до конца?",
-            confirm_label="Довести до конца",
-            on_confirm=finish_and_show,
-        )
-
-    def finish_and_show() -> None:
-        run_in_background(
-            engine.run,
-            then=lambda: app.go(f"/battle/{battle_id}/result"),
-            announce=False,
-        )
-
     def set_side_filter(value: str) -> None:
         app.run_side_filter = value
         side_switch.content = c.segmented(SIDE_OPTIONS, value, set_side_filter)
@@ -547,34 +509,46 @@ def build(app: AppState, battle_id: str) -> ft.View:
     # -- контролы журнала ---------------------------------------------------
     journal_controls = ft.Row(spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
+    journal_filters = ft.Container(
+        padding=ft.Padding.symmetric(vertical=8, horizontal=t.PAD_CARD),
+        border=t.border_bottom(t.BORDER_INNER),
+    )
+
     def rebuild_journal_controls() -> None:
+        """Шапка журнала — детальность, строка под ней — фильтры.
+
+        Раньше детальность, два списка и кнопка выгрузки стояли в одной
+        шапке карточки шириной 420 px, и список ходов обрезался до «все ходь».
+        """
         journal_controls.controls = [
             c.segmented(
                 j.DETAIL_OPTIONS, app.journal_detail,
                 lambda value: set_journal("journal_detail", value),
                 size=t.SIZE_META,
             ),
-            c.select(
-                app.journal_turn,
-                j.filter_options([str(turn) for turn in engine.log.turns()], "все ходы"),
-                lambda value: set_journal("journal_turn", value),
-                width=124,
-            ),
-            c.select(
-                app.journal_element,
-                j.filter_options(engine.log.actors(), "все элементы"),
-                lambda value: set_journal("journal_element", value),
-                width=164,
-            ),
-            c.icon_button(
-                ft.Icons.DOWNLOAD_OUTLINED,
-                export_journal,
-                size=t.BUTTON_XS_H,
-                icon_size=15,
-                tooltip="Выгрузить журнал целиком",
-            ),
         ]
-        app.refresh(journal_controls)
+        journal_filters.content = ft.Row(
+            [
+                c.select(
+                    app.journal_turn,
+                    j.filter_options([str(turn) for turn in engine.log.turns()], "все ходы"),
+                    lambda value: set_journal("journal_turn", value),
+                    expand=True,
+                    height=t.BUTTON_SM_H,
+                    size=t.SIZE_META,
+                ),
+                c.select(
+                    app.journal_element,
+                    j.filter_options(engine.log.actors(), "все элементы"),
+                    lambda value: set_journal("journal_element", value),
+                    expand=True,
+                    height=t.BUTTON_SM_H,
+                    size=t.SIZE_META,
+                ),
+            ],
+            spacing=t.GAP_SM,
+        )
+        app.refresh(journal_controls, journal_filters)
 
     def export_journal() -> None:
         from core.storage import write_text
@@ -606,7 +580,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
     journal_card = c.framed_card(
         "Журнал",
-        journal_view.control,
+        ft.Column([journal_filters, journal_view.control], spacing=0, expand=True),
         trailing=[journal_controls],
         footer=c.card_footer([journal_footer]),
         expand=True,
@@ -640,21 +614,27 @@ def build(app: AppState, battle_id: str) -> ft.View:
     return screen(
         app,
         active="battle",
-        active_child="run",
-        title=f"Бой: {scenario.name}",
+        title=scenario.name,
         subtitle=sides,
         mono_subtitle=True,
-        leading_extra=[ft.Container(width=8), indicator],
+        tabs=battle_tabs(app, "run"),
+        leading_extra=[indicator],
         actions=[
-            c.primary_button("Шаг", step, icon=ft.Icons.SKIP_NEXT, tooltip="Ctrl+Enter"),
             c.secondary_button(
                 f"+{FEW_TURNS} ходов", few_turns, tooltip="Ctrl+Shift+Enter"
             ),
-            c.secondary_button("До конца", to_the_end),
-            c.icon_button(ft.Icons.REPLAY, restart, tooltip="Начать заново с тем же сидом"),
-            c.secondary_button("Итог", show_result, icon=ft.Icons.ASSESSMENT_OUTLINED),
+            c.primary_button("Шаг", step, icon=ft.Icons.SKIP_NEXT, tooltip="Ctrl+Enter"),
+            c.more_menu(
+                [
+                    c.MenuItem("До конца боя", to_the_end, icon=ft.Icons.FAST_FORWARD),
+                    c.MenuItem(
+                        "Выгрузить журнал…", export_journal, icon=ft.Icons.DOWNLOAD_OUTLINED
+                    ),
+                    c.MENU_DIVIDER,
+                    c.MenuItem("Начать заново…", restart, icon=ft.Icons.REPLAY, danger=True),
+                ]
+            ),
         ],
-        aside=scenario_aside(app),
         body=body,
     )
 

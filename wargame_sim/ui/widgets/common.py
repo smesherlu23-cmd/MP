@@ -46,12 +46,15 @@ def _button(
     disabled: bool,
     expand: bool | int,
     pad_x: int,
+    trailing: str | None = None,
 ) -> ft.Control:
     content: list[ft.Control] = []
     if icon:
         content.append(ft.Icon(icon, size=icon_size, color=color))
     if label:
         content.append(ft.Text(label, style=t.sans(size=size, weight=weight, color=color)))
+    if trailing:
+        content.append(ft.Icon(trailing, size=icon_size, color=color))
 
     return ft.Container(
         content=ft.Row(
@@ -83,6 +86,7 @@ def primary_button(
     tooltip: str = "",
     disabled: bool = False,
     expand: bool | int = False,
+    trailing: str | None = None,
 ) -> ft.Control:
     """Основная кнопка: тёмный фон, светлый текст."""
     return _button(
@@ -100,6 +104,7 @@ def primary_button(
         disabled=disabled,
         expand=expand,
         pad_x=14,
+        trailing=trailing,
     )
 
 
@@ -112,6 +117,7 @@ def secondary_button(
     tooltip: str = "",
     disabled: bool = False,
     expand: bool | int = False,
+    trailing: str | None = None,
 ) -> ft.Control:
     """Второстепенная кнопка: светлый фон с границей."""
     return _button(
@@ -129,6 +135,7 @@ def secondary_button(
         disabled=disabled,
         expand=expand,
         pad_x=10 if height <= t.BUTTON_SM_H else 14,
+        trailing=trailing,
     )
 
 
@@ -473,6 +480,15 @@ class MenuItem:
     danger: bool = False
 
 
+#: Разделитель в списке пунктов меню: отделяет необратимое от обычного.
+MENU_DIVIDER = None
+
+
+def menu_entries(items: Sequence[MenuItem | None]) -> list[ft.PopupMenuItem]:
+    """Пункты для меню Flutter; ``None`` становится разделителем."""
+    return [ft.PopupMenuItem() if item is None else _menu_entry(item) for item in items]
+
+
 def _menu_entry(item: MenuItem) -> ft.PopupMenuItem:
     color = t.LOSS if item.danger else t.TEXT
     return ft.PopupMenuItem(
@@ -538,10 +554,224 @@ def interactive(
     if menu:
         node = ft.ContextMenu(
             content=node,
-            secondary_items=[_menu_entry(item) for item in menu],
+            secondary_items=menu_entries(menu),
             secondary_trigger=ft.ContextMenuTrigger.DOWN,
         )
     return node
+
+
+# --------------------------------------------------------------------------
+# Меню «⋯», кнопка с вариантами, строка списка, пустое состояние
+# --------------------------------------------------------------------------
+def more_menu(
+    items: Sequence[MenuItem | None],
+    *,
+    tooltip: str = "Ещё действия",
+    size: int = t.BUTTON_H,
+    bordered: bool = True,
+) -> ft.Control:
+    """Кнопка «⋯» с меню.
+
+    Сюда уходит всё, чему не место отдельной кнопкой: редкое, разовое и
+    необратимое. Раньше каждое такое действие стояло в шапке рядом с
+    главным, и на экране подразделений их набиралось пять.
+    """
+    return ft.PopupMenuButton(
+        content=ft.Container(
+            content=ft.Icon(ft.Icons.MORE_HORIZ, size=18, color=t.TEXT_2),
+            width=size,
+            height=size,
+            alignment=ft.Alignment.CENTER,
+            bgcolor=t.CARD_BG if bordered else None,
+            border=ft.Border.all(1, t.BORDER) if bordered else None,
+            border_radius=t.R_FIELD,
+        ),
+        items=menu_entries(items),
+        tooltip=tooltip,
+        menu_position=ft.PopupMenuPosition.UNDER,
+        bgcolor=t.CARD_BG,
+        shape=ft.RoundedRectangleBorder(radius=t.R_BUTTON),
+    )
+
+
+def row_menu(items: Sequence[MenuItem | None]) -> ft.Control:
+    """«⋯» в конце строки: те же пункты, что по правой кнопке.
+
+    Меню по правой кнопке никто не найдёт, пока ему не скажут. Раньше
+    вместо него на строке стояли три-четыре значка — копировать,
+    выгрузить, удалить, — и список кричал кнопками. Одно «⋯» и видно, и
+    не шумит.
+    """
+    return more_menu(items, tooltip="Действия", size=t.BUTTON_XS_H, bordered=False)
+
+
+def create_menu(
+    label: str,
+    items: Sequence[MenuItem | None],
+    *,
+    icon: str | None = ft.Icons.ADD,
+    primary: bool = True,
+    height: int = t.BUTTON_H,
+    tooltip: str = "",
+) -> ft.Control:
+    """Кнопка с вариантами: «Создать ▾» вместо четырёх кнопок в ряд."""
+    face = primary_button if primary else secondary_button
+    return ft.PopupMenuButton(
+        content=face(label, None, icon=icon, height=height, trailing=ft.Icons.EXPAND_MORE),
+        tooltip=tooltip or None,
+        items=menu_entries(items),
+        menu_position=ft.PopupMenuPosition.UNDER,
+        bgcolor=t.CARD_BG,
+        shape=ft.RoundedRectangleBorder(radius=t.R_BUTTON),
+    )
+
+
+def list_row(
+    title: str,
+    meta: str = "",
+    *,
+    trailing: Sequence[ft.Control] = (),
+    selected: bool = False,
+    on_click: Callable[[], None] | None = None,
+    menu: Sequence[MenuItem | None] = (),
+    last: bool = False,
+) -> ft.Control:
+    """Строка списка: название, строка подробностей и «⋯» справа.
+
+    Щелчок выбирает, «⋯» и правая кнопка открывают одно и то же меню.
+    """
+    row = ft.Container(
+        content=ft.Row(
+            [
+                ft.Column(
+                    [
+                        t.text(
+                            title,
+                            size=t.SIZE_BODY,
+                            weight=t.W500 if selected else t.W400,
+                            no_wrap=True,
+                        ),
+                        *(
+                            [
+                                ft.Text(
+                                    meta,
+                                    style=t.mono(size=t.SIZE_META, color=t.TEXT_3),
+                                    no_wrap=True,
+                                    overflow=ft.TextOverflow.ELLIPSIS,
+                                    tooltip=meta,
+                                )
+                            ]
+                            if meta
+                            else []
+                        ),
+                    ],
+                    spacing=2,
+                    tight=True,
+                    expand=True,
+                ),
+                *trailing,
+                *([row_menu(menu)] if menu else []),
+            ],
+            spacing=t.GAP_SM,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        padding=ft.Padding.only(left=t.PAD_ROW_X, right=t.GAP_SM, top=9, bottom=9),
+        bgcolor=t.ROW_EXPANDED if selected else None,
+        border=None if last else t.border_bottom(t.BORDER_INNER),
+    )
+    if on_click is None and not menu:
+        return row
+    return interactive(row, on_click=on_click, menu=menu)
+
+
+def stat_strip(items: Sequence[tuple[str, str]]) -> ft.Control:
+    """Сводка строкой: подпись и крупное число.
+
+    Заменила высокую колонку сводки справа от редактора отряда: там было
+    двадцать строк, из которых в редакторе меняется пять, а место она
+    отнимала у самого боевого порядка.
+    """
+    return ft.Row(
+        [
+            ft.Container(
+                content=ft.Column(
+                    [
+                        t.caption(label),
+                        ft.Text(
+                            value,
+                            style=t.mono(size=t.SIZE_TITLE, weight=t.W500),
+                            no_wrap=True,
+                        ),
+                    ],
+                    spacing=3,
+                    tight=True,
+                ),
+                expand=True,
+            )
+            for label, value in items
+        ],
+        spacing=t.GAP,
+    )
+
+
+def empty_state(
+    title: str,
+    text: str = "",
+    *,
+    icon: str = ft.Icons.INBOX_OUTLINED,
+    action: ft.Control | None = None,
+) -> ft.Control:
+    """Пустое место говорит, что здесь будет и как это получить.
+
+    Раньше вместо него стояла одна серая строка посреди пустой карточки.
+    """
+    parts: list[ft.Control] = [
+        ft.Icon(icon, size=28, color=t.TEXT_MUTED),
+        ft.Text(
+            title,
+            style=t.sans(size=t.SIZE_BODY, weight=t.W500, color=t.TEXT_2),
+            text_align=ft.TextAlign.CENTER,
+        ),
+    ]
+    if text:
+        parts.append(
+            ft.Container(
+                content=ft.Text(
+                    text,
+                    style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3, height=1.5),
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                width=t.EMPTY_TEXT_W,
+            )
+        )
+    if action is not None:
+        parts.append(ft.Container(content=action, padding=ft.Padding.only(top=6)))
+    return ft.Container(
+        content=ft.Column(
+            parts,
+            spacing=8,
+            tight=True,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        alignment=ft.Alignment.CENTER,
+        padding=ft.Padding.symmetric(vertical=40, horizontal=t.PAD_CARD * 2),
+    )
+
+
+def panel(
+    title: str,
+    body: ft.Control,
+    *,
+    trailing: Sequence[ft.Control] = (),
+    footer: ft.Control | None = None,
+    expand: bool | int = True,
+    width: int | None = None,
+) -> ft.Container:
+    """Карточка-панель на всю высоту: шапка, прокручиваемое тело, подвал.
+
+    Основной строительный блок экранов: список слева, редактор справа.
+    """
+    return framed_card(title, body, trailing=trailing, footer=footer, expand=expand, width=width)
 
 
 def table(
@@ -774,7 +1004,7 @@ def search_box(
     on_change: Callable[[str], None],
     *,
     placeholder: str = "Поиск",
-    width: int = 260,
+    width: int | None = 260,
 ) -> tuple[ft.Control, Callable[[], None]]:
     """Поле поиска и функция «поставить в него курсор».
 
@@ -810,7 +1040,7 @@ def search_box(
         content=ft.Row(
             [ft.Icon(ft.Icons.SEARCH, size=17, color=t.TEXT_MUTED), field, clear_button],
             spacing=6,
-            tight=True,
+            tight=width is not None,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         ),
         height=t.BUTTON_H,

@@ -445,6 +445,17 @@ class AppState:
             self.finish_battle()
         return self.engine
 
+    def battle_route(self) -> str:
+        """Стадия боя, на которой ГМ сейчас: идущий бой — пульт, иначе подготовка.
+
+        Пункт «Бой» в навигации ведёт сюда, а не всегда на подготовку:
+        вернуться к бою, который идёт, — самое частое, что с ним делают.
+        """
+        engine = self.engine
+        if engine is not None and engine.turn > 0:
+            return ROUTES["battle"].format(id=self.scenario.id)
+        return ROUTES["battle_setup"]
+
     def ensure_battle(self) -> BattleEngine:
         """Текущий бой, но не чужой: правка сценария начинает бой заново.
 

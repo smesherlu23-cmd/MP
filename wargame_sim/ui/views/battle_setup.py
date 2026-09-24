@@ -46,7 +46,7 @@ from core.models import (
     new_id,
 )
 from ui import theme as t
-from ui.shell import scenario_aside, screen
+from ui.shell import battle_tabs, scenario_aside, screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
 from ui.widgets import orbat as ob
@@ -690,38 +690,48 @@ def build(app: AppState) -> ft.View:
     app.bind("Ctrl+Enter", start)
     app.bind("Ctrl+S", save)
 
+    # Карточки тянутся на всю ширину колонки: раньше «Условия боя» была
+    # уже соседних — колонка брала ширину по содержимому.
     left = ft.Column(
         [
             sides_holder,
             conditions_holder,
             forces_holder,
             randomness,
-            c.spacer(),
         ],
         spacing=t.GAP,
         expand=True,
         scroll=ft.ScrollMode.AUTO,
+        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
     )
 
     return screen(
         app,
         active="battle",
-        active_child="setup",
-        title="Настройка боя",
+        title=scenario.name,
         subtitle="Кто, где и с какой задачей вступает в бой",
+        tabs=battle_tabs(app, "setup"),
         actions=[
-            c.tertiary_button(
-                "Сохранить сценарий",
-                save,
-                icon=ft.Icons.SAVE_OUTLINED,
-                tooltip="Ctrl+S",
-            ),
-            c.secondary_button("Массовое моделирование", lambda: app.go(ROUTES["batch"])),
             c.primary_button(
                 "Начать бой",
                 start,
                 icon=ft.Icons.PLAY_ARROW,
                 tooltip="Ctrl+Enter",
+            ),
+            c.more_menu(
+                [
+                    c.MenuItem("Сохранить сценарий  Ctrl+S", save, icon=ft.Icons.SAVE_OUTLINED),
+                    c.MenuItem(
+                        "Открыть сценарий…",
+                        lambda: app.go(ROUTES["archive"]),
+                        icon=ft.Icons.FOLDER_OPEN_OUTLINED,
+                    ),
+                    c.MenuItem(
+                        "Прогнать много раз",
+                        lambda: app.go(ROUTES["batch"]),
+                        icon=ft.Icons.INSIGHTS_OUTLINED,
+                    ),
+                ]
             ),
         ],
         aside=aside_holder,

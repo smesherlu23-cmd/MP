@@ -160,7 +160,7 @@ def test_active_navigation_item_is_highlighted(app: AppState) -> None:
     highlighted = [
         control
         for control in _walk(sidebar)
-        if getattr(control, "bgcolor", None) == t.TEXT and _has(control, "Подразделения")
+        if getattr(control, "bgcolor", None) == t.TEXT and _has(control, "Отряды")
     ]
     assert len(highlighted) == 1
 
@@ -322,7 +322,8 @@ def test_result_screen_after_battle(app: AppState) -> None:
 
 def test_result_screen_without_battle_explains_itself(app: AppState) -> None:
     view = resolve(app, ROUTES["battle_result"].format(id=app.scenario.id))
-    assert _has(view, "Бой ещё не проводился")
+    assert _has(view, "Боя ещё не было")
+    assert _has(view, "К подготовке")
 
 
 def test_batch_screen_with_results(app: AppState) -> None:
@@ -617,8 +618,9 @@ def test_unit_editor_offers_scale_and_reshaping(app: AppState) -> None:
     view = unit_editor.build(app, battalion.id)
 
     assert "масштаб отряда" in _labels(view)
-    assert _has(view, "Перестроить")
-    assert _has(view, "Разделить…")
+    # Перестроение — в «⋯» строки группы и по правой кнопке, а не третьей
+    # копией кнопок внутри раскрытой панели.
+    assert "Разделить…" in _menu_labels(view)
     assert "самостоятельная" in _labels(view)
 
 
@@ -782,11 +784,21 @@ def test_charts_follow_the_palette(app: AppState, light_theme) -> None:
 # --------------------------------------------------------------------------
 # Правая кнопка, диалоги и честность интерфейса
 # --------------------------------------------------------------------------
+def _menu_items(control: object) -> list[object]:
+    """Пункты меню контрола: и по правой кнопке, и под «⋯»."""
+    found: list[object] = []
+    for attribute in ("secondary_items", "items"):
+        value = getattr(control, attribute, None)
+        if isinstance(value, list):
+            found.extend(item for item in value if isinstance(item, ft.PopupMenuItem))
+    return found
+
+
 def _menu_labels(node: object) -> set[str]:
-    """Подписи всех пунктов контекстных меню экрана."""
+    """Подписи всех пунктов меню экрана — контекстных и под «⋯»."""
     labels: set[str] = set()
     for control in _walk(node):
-        for item in getattr(control, "secondary_items", None) or ():
+        for item in _menu_items(control):
             for child in _walk(item):
                 value = getattr(child, "value", None)
                 if isinstance(value, str) and value:
@@ -797,7 +809,7 @@ def _menu_labels(node: object) -> set[str]:
 def _menu_action(node: object, label: str):
     """Обработчик пункта меню с такой подписью."""
     for control in _walk(node):
-        for item in getattr(control, "secondary_items", None) or ():
+        for item in _menu_items(control):
             if label in {
                 value
                 for child in _walk(item)
@@ -937,18 +949,26 @@ def test_split_dialog_hands_over_the_shares(app: AppState) -> None:
 
 
 def test_result_is_not_invented_before_the_battle_ends(app: AppState) -> None:
-    """«Итог» на пятом ходу не выдаёт ничью по лимиту ходов."""
+    """Вкладка «Итог» на третьем ходу не выдаёт ничью по лимиту ходов.
+
+    Она ведёт на экран итога, и тот честно говорит, что бой идёт, — и
+    предлагает довести его до конца, а не показывает конец, которого не было.
+    """
     engine = app.start_battle()
     engine.run_turns(3)
     assert not engine.finished
+    moves: list[str] = []
+    app.navigator = moves.append
 
-    box = _dialogs(app)
     view = resolve(app, ROUTES["battle"].format(id=app.scenario.id))
     _click_by_label(view, "Итог")()
-
+    result_route = ROUTES["battle_result"].format(id=app.scenario.id)
+    assert moves == [result_route]
     assert app.result is None, "итог собрался по незакончившемуся бою"
-    assert len(box) == 1
-    assert "не закончен" in box[0].title.value.casefold()
+
+    _click_by_label(resolve(app, result_route), "Довести до конца")()
+    assert engine.finished
+    assert app.result is not None and app.result.turns == engine.turn
 
 
 def test_journal_shows_the_latest_records(app: AppState) -> None:
@@ -1007,20 +1027,20 @@ def test_changed_filter_rebuilds_the_journal(app: AppState) -> None:
 
 
 def test_template_chip_actually_adds_a_group(app: AppState) -> None:
-    """Плашка шаблона добавляет группу этого типа, а не открывает первый отряд."""
+    """«Добавить группу» кладёт группу этого типа в открытый отряд.
+
+    Раньше шаблоны жили на экране списка и сначала спрашивали, в какой
+    отряд класть; ещё раньше любой шаблон просто открывал первый отряд.
+    Теперь они там, где ими пользуются, — в редакторе выбранного отряда.
+    """
     from ui.views import units as units_view
 
     type_name = sorted(app.config.element_types.element_types)[0]
     label = app.config.element_type(type_name).label
-
-    # Отрядов два, поэтому сначала спрашивают, куда класть.
-    box = _dialogs(app)
-    _click_by_label(units_view.build(app), label)()
-    assert len(box) == 1, "не спросил, в какой отряд добавлять"
-
-    target = app.units()[0][1]
+    target = app.units()[1][1]
     before = len(target.elements)
-    _click_by_label(box[0], "Добавить")()
+
+    _menu_action(units_view.build(app, unit_id=target.id), label)(None)
 
     saved = app.unit(target.id)
     assert saved is not None
@@ -1113,8 +1133,8 @@ def test_report_export_lands_in_the_chosen_folder(app: AppState, tmp_path: Path)
     _picker(app, target)
 
     view = battle_result.build(app, app.scenario.id)
-    for label in ("Markdown", "HTML", "CSV"):
-        _click_by_label(view, label)()
+    for label in ("Отчёт Markdown", "Страница HTML", "Таблица CSV"):
+        _menu_action(view, label)(None)
 
     assert {path.suffix for path in target.iterdir()} == {".md", ".html", ".csv"}
 
@@ -1147,7 +1167,7 @@ def test_import_offers_a_file_dialog(app: AppState, tmp_path: Path) -> None:
 
     app.file_asker = ask
     before = len(app.units())
-    _click_by_label(units_view.build(app), "Обзор…")()
+    _menu_action(units_view.build(app), "Загрузить из файла…")(None)
 
     assert asked and asked[0][1] == ("json",)
     assert len(app.units()) == before + 1
@@ -1301,7 +1321,8 @@ def test_result_route_does_not_invent_an_outcome(app: AppState) -> None:
     assert app.result is None
     assert not any("Ничья" in text for text in shown)
     assert f"Бой идёт, ход {engine.turn}" in shown
-    assert _has(view, "К пульту боя")
+    assert _has(view, "К пульту")
+    assert _has(view, "Довести до конца")
 
 
 def test_resets_ask_before_wiping(app: AppState) -> None:
@@ -1327,7 +1348,7 @@ def test_restart_asks_when_the_battle_has_started(app: AppState) -> None:
     box = _dialogs(app)
     route = ROUTES["battle"].format(id=app.scenario.id)
 
-    _click_by_tooltip(resolve(app, route), "Начать заново с тем же сидом")()
+    _menu_action(resolve(app, route), "Начать заново…")(None)
 
     assert len(box) == 1
     assert "заново" in box[0].title.value.casefold()
@@ -1342,15 +1363,15 @@ def _tables() -> list[tuple[str, tuple[common.Col, ...], int]]:
     """Все таблицы приложения и ширина правой колонки рядом с ними."""
     from ui.views import archive as archive_view
     from ui.views import unit_editor as editor_view
-    from ui.views import units as units_view
     from ui.widgets import orbat as orbat_widget
 
     tables = [
-        ("конструктор отряда", editor_view.COLUMNS, editor_view.SUMMARY_W),
+        # Список отрядов стоит слева от редактора, но для ширины таблицы
+        # сторона не важна — важно, сколько он отнимает.
+        ("редактор отряда", editor_view.COLUMNS, editor_view.LIST_W),
         ("пульт боя", orbat_widget.TREE_COLUMNS, 420),
         ("сборка юнитов", troops.COLUMNS, troops.DETAIL_W),
         ("архив", archive_view.RESULT_COLUMNS, archive_view.SCENARIOS_W),
-        ("подразделения", units_view.COLUMNS, 0),
     ]
     tables += [
         (f"мат.часть · {spec.label}", spec.columns, materiel.DETAIL_W)
@@ -1693,7 +1714,7 @@ def test_finished_battle_announces_itself(app: AppState) -> None:
     app.engine = None
 
     view = resolve(app, ROUTES["battle"].format(id=app.scenario.id))
-    _click_by_label(view, "До конца")()
+    _menu_action(view, "До конца боя")(None)
 
     assert app.engine.finished
     assert notes and notes[-1].startswith("Бой окончен"), notes

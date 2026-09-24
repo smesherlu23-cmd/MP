@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import flet as ft
 
@@ -25,33 +25,54 @@ class NavItem:
     label: str
     icon: str
     route: str
-    #: Подпункты второго уровня: (подпись, маршрут, ключ активности).
-    children: list[tuple[str, str, str]] = field(default_factory=list)
+    #: Группа пунктов; у группы своя подпись (пустая — без подписи).
+    group: str = ""
 
 
-#: Порядок пунктов из хендоффа. `swords` в Flet нет — берём ближайшую военную
-#: иконку из того же набора Material Symbols.
+#: Навигация сгруппирована по тому, что ГМ делает: бой — силы — разбор —
+#: настройка. Раньше это был плоский список из восьми пунктов, где рядом
+#: стояли «Подразделения», «Мат.часть» и «Сборка юнитов» — три имени для
+#: библиотек одного рода, — а «Массовое моделирование» не влезало в строку.
+#: Подпунктов у навигации больше нет: стадии боя, библиотеки и разделы
+#: коэффициентов переключаются на самом экране, поэтому рамка не прыгает.
 NAV: tuple[NavItem, ...] = (
-    NavItem("home", "Главная", ft.Icons.DASHBOARD_OUTLINED, ROUTES["home"]),
-    NavItem("units", "Подразделения", ft.Icons.GROUPS_OUTLINED, ROUTES["units"]),
+    NavItem("home", "Обзор", ft.Icons.DASHBOARD_OUTLINED, ROUTES["home"]),
+    NavItem("battle", "Бой", ft.Icons.SHIELD_OUTLINED, ROUTES["battle_setup"]),
+    NavItem("units", "Отряды", ft.Icons.GROUPS_OUTLINED, ROUTES["units"], group="Силы"),
     NavItem(
         "materiel",
         "Мат.часть",
         ft.Icons.INVENTORY_OUTLINED,
         ROUTES["materiel"].format(library="vehicles"),
+        group="Силы",
     ),
-    NavItem("troops", "Сборка юнитов", ft.Icons.PERSON_OUTLINE, ROUTES["troops"]),
-    NavItem("battle", "Бой", ft.Icons.SHIELD_OUTLINED, ROUTES["battle_setup"]),
-    NavItem("batch", "Массовое моделирование", ft.Icons.INSIGHTS_OUTLINED, ROUTES["batch"]),
-    NavItem("config", "Коэффициенты", ft.Icons.TUNE_OUTLINED, ROUTES["config"]),
-    NavItem("archive", "Архив", ft.Icons.INVENTORY_2_OUTLINED, ROUTES["archive"]),
+    NavItem("batch", "Прогоны", ft.Icons.INSIGHTS_OUTLINED, ROUTES["batch"], group="Разбор"),
+    NavItem("archive", "Архив", ft.Icons.INVENTORY_2_OUTLINED, ROUTES["archive"], group="Разбор"),
+    NavItem(
+        "config", "Коэффициенты", ft.Icons.TUNE_OUTLINED, ROUTES["config"], group="Настройка"
+    ),
+)
+
+#: Стадии боя — вкладками в шапке, а не подпунктами навигации.
+BATTLE_STAGES: tuple[tuple[str, str], ...] = (
+    ("setup", "Подготовка"),
+    ("run", "Пульт"),
+    ("result", "Итог"),
 )
 
 
+def nav_route(item: NavItem, app: AppState) -> str:
+    """Куда ведёт пункт: «Бой» открывает ту стадию, на которой бой сейчас."""
+    if item.key == "battle":
+        return app.battle_route()
+    return item.route
+
+
 def nav_item(
-    item: NavItem, active: bool, go: Callable[[str], None]
+    item: NavItem, active: bool, go: Callable[[str], None], route: str | None = None
 ) -> ft.Control:
     """Пункт навигации: активный — тёмная плашка."""
+    target = route or item.route
     return ft.Container(
         content=ft.Row(
             [
@@ -63,6 +84,7 @@ def nav_item(
                         weight=t.W500 if active else t.W400,
                         color=t.TEXT_INVERSE if active else t.TEXT_2,
                     ),
+                    no_wrap=True,
                     expand=True,
                 ),
             ],
@@ -73,57 +95,81 @@ def nav_item(
         padding=ft.Padding.symmetric(horizontal=8),
         bgcolor=t.TEXT if active else None,
         border_radius=t.R_BUTTON,
-        on_click=lambda *_: go(item.route),
+        on_click=lambda *_: go(target),
     )
 
 
-def nav_child(label: str, route: str, active: bool, go: Callable[[str], None]) -> ft.Control:
-    """Подпункт второго уровня."""
-    return ft.Container(
-        content=ft.Text(
-            label,
-            style=t.sans(
-                size=t.SIZE_ROW,
-                weight=t.W500 if active else t.W400,
-                color=t.TEXT if active else t.TEXT_2,
-            ),
+def battle_tabs(app: AppState, active: str) -> ft.Control:
+    """Подготовка → Пульт → Итог: три стадии одного боя в шапке экрана."""
+    battle_id = app.scenario.id
+    routes = {
+        "setup": ROUTES["battle_setup"],
+        "run": ROUTES["battle"].format(id=battle_id),
+        "result": ROUTES["battle_result"].format(id=battle_id),
+    }
+    return c.segmented(
+        list(BATTLE_STAGES),
+        active,
+        lambda key: app.go(routes[key]),
+    )
+
+
+def status_block(app: AppState) -> ft.Control:
+    """Что сейчас заряжено в бой — видно с любого экрана, щелчок ведёт туда.
+
+    Заменил пять разных «справочных» блоков под навигацией: на одном экране
+    там лежала подсказка про сохранение правок, на другом — про эталон
+    конфигурации, на третьем — список типов с численностью. Всё это было
+    текстом, который прочитали один раз. Состояние боя нужно всегда.
+    """
+    scenario = app.scenario
+    environment = scenario.environment
+    engine = app.engine
+    if engine is not None and engine.finished:
+        state = f"окончен · ход {engine.turn}"
+    elif engine is not None and engine.turn > 0:
+        state = f"идёт · ход {engine.turn}"
+    else:
+        state = "не начат"
+    block = ft.Container(
+        content=ft.Column(
+            [
+                t.caption("Текущий бой"),
+                t.text(scenario.name, size=t.SIZE_ROW, weight=t.W500, no_wrap=True),
+                ft.Text(
+                    f"{scenario.battalion_a.name} → {scenario.battalion_b.name}",
+                    style=t.sans(size=t.SIZE_META, color=t.TEXT_3),
+                    no_wrap=True,
+                    overflow=ft.TextOverflow.ELLIPSIS,
+                ),
+                ft.Text(
+                    f"{environment.terrain} · {environment.time_of_day} · {environment.weather}",
+                    style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_3),
+                    no_wrap=True,
+                    overflow=ft.TextOverflow.ELLIPSIS,
+                ),
+                ft.Text(
+                    f"{state} · сид {scenario.master_seed}",
+                    style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_3),
+                    no_wrap=True,
+                ),
+            ],
+            spacing=3,
+            tight=True,
         ),
-        height=t.NAV_SUB_H,
-        padding=ft.Padding.only(left=30, right=8),
-        bgcolor=t.NAV_ACTIVE if active else None,
-        border_radius=t.R_FIELD,
-        alignment=ft.Alignment.CENTER_LEFT,
-        on_click=lambda *_: go(route),
+        padding=ft.Padding.symmetric(vertical=10, horizontal=10),
+        border=ft.Border.all(1, t.BORDER),
+        border_radius=t.R_BUTTON,
+        bgcolor=t.CONTENT_BG,
+        width=t.SIDEBAR_W - 24,
+        tooltip="Открыть бой",
     )
+    return c.interactive(block, on_click=lambda: app.go(app.battle_route()))
 
 
-def children_for(section: str, app: AppState) -> list[tuple[str, str, str]]:
-    """Подпункты активного раздела: фазы боя, открытый отряд, разделы конфига."""
-    if section == "battle":
-        battle_id = app.scenario.id
-        return [
-            ("Настройка", ROUTES["battle_setup"], "setup"),
-            ("Прогон", ROUTES["battle"].format(id=battle_id), "run"),
-            ("Итог", ROUTES["battle_result"].format(id=battle_id), "result"),
-        ]
-    if section == "units" and app.open_unit is not None:
-        unit_id, name = app.open_unit
-        return [(name, ROUTES["unit"].format(id=unit_id), unit_id)]
-    if section == "materiel":
-        from ui.views.materiel import LIBRARIES
-
-        return [
-            (spec.label, ROUTES["materiel"].format(library=key), key)
-            for key, spec in LIBRARIES.items()
-        ]
-    if section == "config":
-        from ui.views.config_editor import SECTION_LABELS
-
-        return [
-            (SECTION_LABELS.get(name, name), f"{ROUTES['config']}?section={name}", name)
-            for name in app.store.sections()
-        ]
-    return []
+#: Прежнее имя: экран подготовки держит этот блок в своём держателе и
+#: перерисовывает при правке условий.
+scenario_aside = status_block
 
 
 def sidebar(
@@ -133,15 +179,26 @@ def sidebar(
     *,
     aside: ft.Control | None = None,
 ) -> ft.Control:
-    """Боковая навигация: бренд, пункты, блок сценария, тема."""
-    items: list[ft.Control] = []
+    """Боковая навигация: бренд, пункты по группам, текущий бой, тема."""
+    del active_child  # подпунктов больше нет; параметр остаётся для вызовов
+    groups: list[ft.Control] = []
+    current: list[ft.Control] = []
+    caption = None
     for item in NAV:
-        items.append(nav_item(item, item.key == active, app.go))
-        if item.key == active:
-            items.extend(
-                nav_child(label, route, key == active_child, app.go)
-                for label, route, key in children_for(item.key, app)
+        if item.group != caption and current:
+            groups.append(ft.Column(current, spacing=2, tight=True))
+            current = []
+        if item.group != caption and item.group:
+            current.append(
+                ft.Container(
+                    content=t.caption(item.group),
+                    padding=ft.Padding.only(left=8, bottom=4),
+                )
             )
+        caption = item.group
+        current.append(nav_item(item, item.key == active, app.go, nav_route(item, app)))
+    if current:
+        groups.append(ft.Column(current, spacing=2, tight=True))
 
     brand = ft.Column(
         [
@@ -171,17 +228,19 @@ def sidebar(
         height=32,
         padding=ft.Padding.symmetric(horizontal=8),
         border_radius=t.R_BUTTON,
+        tooltip="Переключить тему",
         on_click=lambda *_: app.toggle_theme(),
     )
 
-    body: list[ft.Control] = [brand, ft.Column(items, spacing=2, tight=True)]
-    if aside is not None:
-        body.append(aside)
-    body.append(c.spacer())
-    body.append(theme_row)
-
+    body: list[ft.Control] = [
+        brand,
+        ft.Column(groups, spacing=16, tight=True),
+        c.spacer(),
+        aside if aside is not None else status_block(app),
+        theme_row,
+    ]
     return ft.Container(
-        content=ft.Column(body, spacing=22, tight=False, expand=True),
+        content=ft.Column(body, spacing=18, tight=False, expand=True),
         width=t.SIDEBAR_W,
         bgcolor=t.SIDEBAR_BG,
         border=ft.Border.only(right=ft.BorderSide(1, t.BORDER)),
@@ -190,31 +249,11 @@ def sidebar(
 
 
 def aside_block(title: str, controls: Sequence[ft.Control]) -> ft.Control:
-    """Блок в боковой колонке под навигацией (сценарий, разделы, правки)."""
+    """Блок в боковой колонке под навигацией."""
     return ft.Column(
         [t.caption(title), *controls],
         spacing=6,
         tight=True,
-    )
-
-
-def scenario_aside(app: AppState) -> ft.Control:
-    """Блок «Сценарий»: что сейчас заряжено в бой."""
-    scenario = app.scenario
-    environment = scenario.environment
-    return aside_block(
-        "Сценарий",
-        [
-            ft.Text(scenario.name, style=t.sans(size=t.SIZE_BODY, weight=t.W500)),
-            ft.Text(
-                f"{environment.terrain} · {environment.time_of_day} · {environment.weather}",
-                style=t.mono(size=t.SIZE_META, color=t.TEXT_3, height=1.5),
-            ),
-            ft.Text(
-                f"сид {scenario.master_seed} · предел {environment.max_turns}",
-                style=t.mono(size=t.SIZE_META, color=t.TEXT_3, height=1.5),
-            ),
-        ],
     )
 
 
@@ -225,6 +264,7 @@ def topbar(
     actions: Sequence[ft.Control] = (),
     mono_subtitle: bool = False,
     leading_extra: Sequence[ft.Control] = (),
+    tabs: ft.Control | None = None,
 ) -> ft.Control:
     """Верхняя полоса: заголовок экрана слева, действия справа."""
     heading: list[ft.Control] = [
@@ -256,6 +296,7 @@ def topbar(
         content=ft.Row(
             [
                 ft.Column(heading, spacing=2, tight=True),
+                *([tabs] if tabs is not None else []),
                 *leading_extra,
                 c.spacer(),
                 *actions,
@@ -282,6 +323,7 @@ def screen(
     aside: ft.Control | None = None,
     mono_subtitle: bool = False,
     leading_extra: Sequence[ft.Control] = (),
+    tabs: ft.Control | None = None,
 ) -> ft.View:
     """Собрать экран в общей рамке.
 
@@ -325,6 +367,7 @@ def screen(
                                 actions=actions,
                                 mono_subtitle=mono_subtitle,
                                 leading_extra=leading_extra,
+                                tabs=tabs,
                             ),
                             content,
                         ],

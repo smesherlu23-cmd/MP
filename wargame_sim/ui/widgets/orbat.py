@@ -26,10 +26,11 @@ ORDER_OPTIONS: tuple[tuple[str, str], ...] = (
     *((str(order), str(order)) for order in COMMAND_ORDERS),
 )
 
-#: Сторона, имя, численность, мораль и приказ остаются при любой ширине —
-#: без них пульт перестаёт быть пультом. Остальное уходит по очереди.
+#: Имя, численность, мораль и приказ остаются при любой ширине — без них
+#: пульт перестаёт быть пультом. Остальное уходит по очереди. Колонки
+#: стороны нет: на каждой строке стояла одна и та же буква, хотя стороны и
+#: так разделены своими шапками.
 TREE_COLUMNS: tuple[c.Col, ...] = (
-    c.Col("С", 22),
     c.Col("Группа", expand=True),
     c.Col("Масштаб", 84, optional=3),
     c.Col("Л/с", 76, numeric=True),
@@ -169,7 +170,6 @@ def tree_row(
     )
     return table.row(
         [
-            ft.Text(node.side, style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED)),
             name_cell(node, muted=muted, on_toggle=on_toggle),
             state,
             c.fraction(roll.personnel_current, roll.personnel_full),

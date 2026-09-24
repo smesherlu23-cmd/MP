@@ -21,7 +21,7 @@ from core.models import (
 from core.report import outcome_text, result_csv, result_html, result_markdown
 from core.storage import write_text
 from ui import theme as t
-from ui.shell import scenario_aside, screen
+from ui.shell import battle_tabs, screen
 from ui.state import ROUTES, SIDE_A, SIDE_B, SIDE_BOTH, AppState
 from ui.widgets import common as c
 from ui.widgets import journal as j
@@ -36,7 +36,6 @@ SIDE_OPTIONS: tuple[tuple[str, str], ...] = (
 
 #: Колонки таблицы «элементы: начало → конец».
 ELEMENT_COLUMNS: tuple[c.Col, ...] = (
-    c.Col("С", 24),
     c.Col("Элемент", expand=True),
     c.Col("Л/с", 92, numeric=True),
     c.Col("Потери", 72, numeric=True),
@@ -105,7 +104,8 @@ def build(app: AppState, battle_id: str) -> ft.View:
     # не было. Проверка стоит здесь, а не в кнопке: на этот маршрут ведут
     # ещё подпункт навигации и карточка с главной.
     engine = app.engine
-    unfinished = engine is not None and not engine.finished
+    # Бой на нулевом ходу ещё не начат — называть его «идущим» неверно.
+    unfinished = engine is not None and not engine.finished and engine.turn > 0
     # Через `finish_battle`, а не `engine.result()` напрямую: итог считается
     # один раз и законченный бой при этом попадает в архив. На этот маршрут
     # ведёт и подпункт навигации, куда можно прийти, минуя пульт.
@@ -113,31 +113,58 @@ def build(app: AppState, battle_id: str) -> ft.View:
     if result is None and engine is not None and engine.finished:
         result = app.finish_battle()
     if result is None:
+
+        def finish_here() -> None:
+            """Довести бой до конца прямо отсюда и показать итог."""
+
+            def work() -> None:
+                engine.run()
+                app.save_battle()
+                app.finish_battle()
+                app.go(ROUTE.format(id=battle_id))
+
+            if app.page is None:
+                work()
+            else:
+                app.page.run_thread(work)
+
+        if unfinished:
+            state = c.empty_state(
+                f"Бой идёт, ход {engine.turn}",
+                "Итог складывается по законченному бою: победитель, причина и "
+                "остаточная боеспособность. Можно вернуться к пульту или "
+                "довести бой до конца отсюда.",
+                icon=ft.Icons.HOURGLASS_EMPTY,
+                action=ft.Row(
+                    [
+                        c.secondary_button(
+                            "К пульту",
+                            lambda: app.go(ROUTES["battle"].format(id=battle_id)),
+                        ),
+                        c.primary_button(
+                            "Довести до конца", finish_here, icon=ft.Icons.FAST_FORWARD
+                        ),
+                    ],
+                    spacing=t.GAP_SM,
+                    tight=True,
+                ),
+            )
+        else:
+            state = c.empty_state(
+                "Боя ещё не было",
+                "Выберите стороны и условия на подготовке — итог появится здесь.",
+                icon=ft.Icons.ASSESSMENT_OUTLINED,
+                action=c.primary_button(
+                    "К подготовке", lambda: app.go(ROUTES["battle_setup"]), icon=ft.Icons.TUNE
+                ),
+            )
         return screen(
             app,
             active="battle",
-            active_child="result",
-            title="Итог боя",
-            subtitle=f"Бой идёт, ход {engine.turn}" if unfinished else "Бой ещё не проводился",
-            actions=[
-                c.primary_button(
-                    "К пульту боя",
-                    lambda: app.go(ROUTES["battle"].format(id=battle_id)),
-                    icon=ft.Icons.SHIELD_OUTLINED,
-                )
-                if unfinished
-                else c.primary_button(
-                    "К настройке боя",
-                    lambda: app.go(ROUTES["battle_setup"]),
-                    icon=ft.Icons.TUNE,
-                )
-            ],
-            body=c.empty_hint(
-                "Бой ещё идёт. Итог складывается по законченному бою: "
-                "победитель, причина и остаточная боеспособность."
-                if unfinished
-                else "Сначала проведите бой — итог появится здесь."
-            ),
+            title=app.scenario.name,
+            subtitle="итог появится, когда бой закончится",
+            tabs=battle_tabs(app, "result"),
+            body=c.card([state], expand=True),
         )
 
     config = app.config
@@ -186,13 +213,34 @@ def build(app: AppState, battle_id: str) -> ft.View:
         app.refresh(side_switch)
 
     # -- таблица элементов --------------------------------------------------
+    def side_header(side: str, report: SideReport) -> ft.Control:
+        """Полоса стороны над её элементами — как на пульте боя."""
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Text(side, style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED)),
+                    t.text(report.name, size=t.SIZE_ROW, weight=t.W600, no_wrap=True),
+                    c.spacer(),
+                    ft.Text(
+                        f"{report.state} · потери {report.personnel_lost}",
+                        style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            height=t.TABLE_HEAD_H,
+            bgcolor=t.SURFACE_ALT,
+            padding=ft.Padding.symmetric(horizontal=t.PAD_ROW_X),
+            border=t.border_bottom(t.BORDER_INNER),
+        )
+
     def element_row(side: str, element: ElementReport, *, last: bool) -> ft.Control:
         panic = element.order == str(Order.PANIC)
         return c.table_row(
             ELEMENT_COLUMNS,
             [
-                ft.Text(side, style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED)),
-                t.text(element.name, size=t.SIZE_ROW),
+                t.text(element.name, size=t.SIZE_ROW, no_wrap=True),
                 t.num(f"{element.personnel_start} → {element.personnel_end}"),
                 t.num(
                     str(element.personnel_lost),
@@ -219,7 +267,6 @@ def build(app: AppState, battle_id: str) -> ft.View:
                     color=t.LOSS if panic else t.TEXT_3,
                 ),
             ],
-            bgcolor=t.SURFACE_ALT if side == "B" else None,
             last=last,
         )
 
@@ -227,11 +274,16 @@ def build(app: AppState, battle_id: str) -> ft.View:
         reports = {"A": result.side_a, "B": result.side_b}
         sides = ("A", "B") if app.result_side_filter == SIDE_BOTH else (app.result_side_filter,)
         pairs = [(side, element) for side in sides for element in reports[side].elements]
+        rows: list[ft.Control] = []
+        for side in sides:
+            report = reports[side]
+            rows.append(side_header(side, report))
+            rows.extend(
+                element_row(side, element, last=index == len(report.elements) - 1)
+                for index, element in enumerate(report.elements)
+            )
         elements_body.content = ft.Column(
-            [
-                element_row(side, element, last=index == len(pairs) - 1)
-                for index, (side, element) in enumerate(pairs)
-            ],
+            rows,
             spacing=0,
             scroll=ft.ScrollMode.AUTO,
             expand=True,
@@ -409,27 +461,33 @@ def build(app: AppState, battle_id: str) -> ft.View:
     )
     right = ft.Column([reproducibility, events_card], spacing=t.GAP, expand=True)
 
+    actions: list[ft.Control] = [
+        c.secondary_button("Повтор по сиду", replay, icon=ft.Icons.REPLAY),
+    ]
+    if not archived:
+        actions.append(c.secondary_button("В архив", to_archive, icon=ft.Icons.SAVE_OUTLINED))
+    actions.append(
+        c.create_menu(
+            "Выгрузить",
+            [
+                c.MenuItem("Отчёт Markdown", lambda: export("md"), icon=ft.Icons.DESCRIPTION),
+                c.MenuItem("Страница HTML", lambda: export("html"), icon=ft.Icons.WEB),
+                c.MenuItem("Таблица CSV", lambda: export("csv"), icon=ft.Icons.TABLE_CHART),
+            ],
+            icon=ft.Icons.DOWNLOAD_OUTLINED,
+        )
+    )
+
     return screen(
         app,
         active="battle",
-        active_child="result",
-        title=f"Итог: {result.scenario_name}",
+        title=result.scenario_name,
         subtitle=(
             f"ходов {result.turns} · сид {result.master_seed} · записей {len(result.log)}"
         ),
         mono_subtitle=True,
-        aside=scenario_aside(app),
-        actions=[
-            c.secondary_button("Markdown", lambda: export("md"), height=t.BUTTON_SM_H),
-            c.secondary_button("HTML", lambda: export("html"), height=t.BUTTON_SM_H),
-            c.secondary_button("CSV", lambda: export("csv"), height=t.BUTTON_SM_H),
-            c.secondary_button("Повтор по сиду", replay, icon=ft.Icons.REPLAY),
-            *(
-                ()
-                if archived
-                else (c.primary_button("В архив", to_archive, icon=ft.Icons.SAVE_OUTLINED),)
-            ),
-        ],
+        tabs=battle_tabs(app, "result"),
+        actions=actions,
         body=c.columns(left, right, right_width=400),
     )
 
