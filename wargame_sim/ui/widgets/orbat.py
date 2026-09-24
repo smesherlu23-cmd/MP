@@ -86,8 +86,19 @@ def nodes(
     return visible
 
 
-def _name_cell(node: Node, *, muted: bool, on_toggle: Callable[[], None] | None) -> ft.Control:
-    """Имя со сдвигом по уровню и «галочкой» раскрытия у старшей группы."""
+def name_cell(
+    node: Node,
+    *,
+    muted: bool,
+    on_toggle: Callable[[], None] | None,
+    counter: str | None = None,
+) -> ft.Control:
+    """Имя со сдвигом по уровню и «галочкой» раскрытия у старшей группы.
+
+    ``counter`` — приписка справа от названия у старшей группы. По
+    умолчанию это число подгрупп («из 3»); наряд сил ставит своё, потому
+    что там важно не сколько подгрупп всего, а сколько из них в бою.
+    """
     parts: list[ft.Control] = [ft.Container(width=node.depth * INDENT)]
     if node.children:
         parts.append(
@@ -112,7 +123,7 @@ def _name_cell(node: Node, *, muted: bool, on_toggle: Callable[[], None] | None)
     if node.children:
         parts.append(
             ft.Text(
-                f"из {node.children}",
+                counter if counter is not None else f"из {node.children}",
                 style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
             )
         )
@@ -159,7 +170,7 @@ def tree_row(
     return table.row(
         [
             ft.Text(node.side, style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED)),
-            _name_cell(node, muted=muted, on_toggle=on_toggle),
+            name_cell(node, muted=muted, on_toggle=on_toggle),
             state,
             c.fraction(roll.personnel_current, roll.personnel_full),
             c.fraction(roll.vehicles_current, roll.vehicles_full)

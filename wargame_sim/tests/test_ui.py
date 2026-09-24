@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Sequence
 from dataclasses import fields
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,7 +21,7 @@ from core.config import ConfigError, ConfigStore
 from core.config.introspect import flatten
 from core.config.schema import TogglesBody
 from core.engine import BattleEngine
-from core.models import COMMAND_ORDERS, Order, Side
+from core.models import COMMAND_ORDERS, Order, Side, Terrain
 from ui import shell
 from ui import theme as t
 from ui.app import ROUTE_TABLE, resolve
@@ -806,12 +807,11 @@ def _menu_action(node: object, label: str):
     raise AssertionError(f"нет пункта меню «{label}»")
 
 
-def _click_by_label(node: object, label: str):
-    """Обработчик кнопки или плашки с такой подписью.
+def _clicks_by_label(node: object, label: str) -> list:
+    """Все обработчики кнопок с такой подписью, в порядке обхода.
 
-    Берётся последнее совпадение: содержимое экрана идёт после навигации,
-    а подпункт навигации бывает подписан так же, как кнопка (например,
-    «Итог» на пульте боя).
+    Одинаково подписанных кнопок на экране бывает несколько: в наряде сил
+    «Все» и «Никого» есть у каждой стороны.
     """
     found = [
         control.on_click
@@ -826,7 +826,17 @@ def _click_by_label(node: object, label: str):
     ]
     if not found:
         raise AssertionError(f"нет кнопки «{label}»")
-    return found[-1]
+    return found
+
+
+def _click_by_label(node: object, label: str):
+    """Обработчик кнопки или плашки с такой подписью.
+
+    Берётся последнее совпадение: содержимое экрана идёт после навигации,
+    а подпункт навигации бывает подписан так же, как кнопка (например,
+    «Итог» на пульте боя).
+    """
+    return _clicks_by_label(node, label)[-1]
 
 
 def _click_by_tooltip(node: object, tooltip: str):
@@ -1439,3 +1449,214 @@ def test_finished_battle_is_not_offered_as_unfinished(app: AppState) -> None:
 
     assert engine.finished
     assert not _has(resolve(app, ROUTES["home"]), "Незаконченные бои")
+
+
+# --------------------------------------------------------------------------
+# Настройка боя: экран показывает то, что в модели
+# --------------------------------------------------------------------------
+def _switches(node: object) -> list[ft.Switch]:
+    return [control for control in _walk(node) if isinstance(control, ft.Switch)]
+
+
+def _force_rows(node: object) -> list[ft.Container]:
+    """Живые строки наряда сил: у каждой свой тумблер и свой щелчок."""
+    return [
+        control
+        for control in _walk(node)
+        if isinstance(control, ft.Container)
+        and getattr(control, "on_click", None) is not None
+        and _switches(control)
+    ]
+
+
+def _counters(node: object) -> list[str]:
+    """Счётчики «в бою N из M» — по одному на сторону."""
+    return [
+        value
+        for control in _walk(node)
+        if isinstance(value := getattr(control, "value", None), str)
+        and value.startswith("в бою ")
+    ]
+
+
+def _segments(node: object, label: str) -> list[ft.Container]:
+    """Сегменты переключателя с такой подписью: щёлкаемые и подсвеченный."""
+    return [
+        control
+        for control in _walk(node)
+        if isinstance(control, ft.Container)
+        and control.border_radius == t.R_SEGMENT
+        and [
+            value
+            for child in _walk(control)
+            if isinstance(value := getattr(child, "value", None), str)
+        ]
+        == [label]
+    ]
+
+
+def _active_segment(node: object, labels: Sequence[str]) -> str:
+    """Какой из вариантов подсвечен: у активного нет обработчика и есть фон."""
+    active = [
+        label
+        for label in labels
+        for segment in _segments(node, label)
+        if segment.on_click is None and segment.bgcolor
+    ]
+    assert len(active) == 1, f"подсвечено не одно значение: {active}"
+    return active[0]
+
+
+def test_force_allocation_follows_the_model(app: AppState) -> None:
+    """Щелчок по строке наряда сил виден на самой строке.
+
+    Тумблер помнит значение, с которым его собрали, а карточка наряда сил
+    не пересобиралась вовсе: щелчок по строке уводил группу в резерв, но
+    тумблер оставался включённым, а счётчик «в бою» не менялся никогда.
+    """
+    battalion = app.scenario.battalion_a
+    total = len(battalion.leaf_elements)
+    view = resolve(app, ROUTES["battle_setup"])
+
+    assert _counters(view)[0] == f"в бою {total} из {total}"
+    assert _switches(view)[0].value is True
+
+    _force_rows(view)[0].on_click(None)
+
+    assert len(battalion.engaged_elements) == total - 1
+    assert _switches(view)[0].value is False, "тумблер показывает состояние, которого нет"
+    assert _counters(view)[0] == f"в бою {total - 1} из {total}"
+
+
+def test_force_allocation_has_bulk_actions(app: AppState) -> None:
+    """«Все» и «Никого» есть у каждой стороны и работают только на своей."""
+    view = resolve(app, ROUTES["battle_setup"])
+    _clicks_by_label(view, "Никого")[0]()
+
+    assert not app.scenario.battalion_a.engaged_elements
+    assert app.scenario.battalion_b.engaged_elements, "«Никого» задело чужую сторону"
+
+    _clicks_by_label(view, "Все")[0]()
+    assert len(app.scenario.battalion_a.engaged_elements) == len(
+        app.scenario.battalion_a.leaf_elements
+    )
+
+
+def test_a_side_left_in_reserve_does_not_start_a_battle(app: AppState) -> None:
+    """Бой, в котором одной стороне воевать нечем, не начинается.
+
+    Раньше «Начать бой» собирал такой бой молча, и он кончался на первом
+    ходу разгромом, которого никто не задумывал.
+    """
+    notes: list[str] = []
+    app.notifier = notes.append
+    view = resolve(app, ROUTES["battle_setup"])
+
+    _clicks_by_label(view, "Никого")[0]()
+    assert any("целиком в резерве" in value for value in _texts(view)), "предупреждения не видно"
+
+    _click_by_label(view, "Начать бой")()
+    assert app.engine is None, "бой начался без одной из сторон"
+    assert notes and "в резерве" in notes[-1]
+
+
+def test_conditions_highlight_moves_with_the_choice(app: AppState) -> None:
+    """Выбранная местность подсвечена: сегмент сам себя не перекрашивает."""
+    labels = [str(item) for item in Terrain]
+    view = resolve(app, ROUTES["battle_setup"])
+    assert _active_segment(view, labels) == str(app.scenario.environment.terrain)
+
+    _segments(view, str(Terrain.SWAMP))[0].on_click(None)
+
+    assert app.scenario.environment.terrain == Terrain.SWAMP
+    assert _active_segment(view, labels) == str(Terrain.SWAMP)
+
+
+def test_fortification_is_chosen_not_typed(app: AppState) -> None:
+    """Укрепления выбираются из шести уровней, и выбор виден на месте."""
+    view = resolve(app, ROUTES["battle_setup"])
+    _segments(view, "4")[0].on_click(None)
+
+    assert app.scenario.environment.fortification_A == 4
+    assert app.scenario.environment.fortification_B != 4, "укрепления поехали на обе стороны"
+    assert _segments(view, "4")[0].on_click is None, "подсветка осталась на прежнем уровне"
+
+
+def test_the_scenario_block_follows_the_conditions(app: AppState) -> None:
+    """Блок «Сценарий» в боковой колонке пересобирается вместе с условиями."""
+    view = resolve(app, ROUTES["battle_setup"])
+    _segments(view, str(Terrain.SWAMP))[0].on_click(None)
+
+    environment = app.scenario.environment
+    line = f"{environment.terrain} · {environment.time_of_day} · {environment.weather}"
+    assert line in _texts(view), "боковая колонка показывает прежние условия"
+
+
+def test_picking_a_unit_redraws_the_force_allocation(app: AppState) -> None:
+    """Смена подразделения меняет и дерево наряда сил, а не только список."""
+    from core.samples import make_platoon
+
+    platoon = make_platoon("bn_probe", "Взвод для проверки", Side.A, app.config)
+    app.save_unit(platoon)
+
+    view = resolve(app, ROUTES["battle_setup"])
+    dropdown = next(control for control in _walk(view) if isinstance(control, ft.Dropdown))
+    dropdown.value = platoon.id
+    dropdown.on_select(None)
+
+    assert app.scenario.battalion_a.name == platoon.name
+    leaves = app.scenario.battalion_a.leaf_elements
+    assert _counters(view)[0] == f"в бою {len(leaves)} из {len(leaves)}"
+    for element in leaves:
+        assert _has(view, element.name), "в наряде сил группы прежнего отряда"
+
+
+def test_random_seed_does_not_rebuild_the_screen(app: AppState) -> None:
+    """Новый сид перерисовывает поле, а не гоняет экран через переход."""
+    moves: list[str] = []
+    app.navigator = moves.append
+    view = resolve(app, ROUTES["battle_setup"])
+
+    _click_by_label(view, "Случайный")()
+
+    assert not moves, "смена сида собирает экран заново"
+    assert str(app.scenario.master_seed) in _texts(view), "в поле прежний сид"
+
+
+def test_the_edge_is_shown_as_numbers(app: AppState) -> None:
+    """Перевес показан двумя отношениями и выводом, а не абзацем из трёх фраз."""
+    from core import preview
+
+    edge = preview.edge(app.scenario, app.config)
+    shown = _texts(resolve(app, ROUTES["battle_setup"]))
+
+    assert f"{edge.ratio_a:.2f}" in shown
+    assert f"{edge.ratio_b:.2f}" in shown
+    assert edge.verdict in shown
+
+
+def test_setup_shortcuts_save_and_start(app: AppState) -> None:
+    """Ctrl+S сохраняет сценарий, Ctrl+Enter начинает бой."""
+    resolve(app, ROUTES["battle_setup"])
+
+    assert app.press("Ctrl+S")
+    assert app.scenarios(), "сценарий не сохранён"
+
+    assert app.press("Ctrl+Enter")
+    assert app.engine is not None
+
+
+def test_interactive_makes_the_row_clickable(app: AppState) -> None:
+    """`interactive` вешает щелчок сама.
+
+    Раньше она брала ``on_click`` только ради формы курсора, а вешать
+    обработчик должен был вызывающий: строка наряда сил показывала руку и
+    не делала ничего.
+    """
+    clicks: list[int] = []
+    row = ft.Container(content=ft.Text("строка"))
+    common.interactive(row, on_click=lambda: clicks.append(1))
+
+    assert row.on_click is not None, "строка осталась неживой"
+    row.on_click(None)
+    assert clicks == [1]

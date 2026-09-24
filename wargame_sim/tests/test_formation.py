@@ -329,3 +329,23 @@ def test_hold_task_scales_with_the_unit(config: AppConfig) -> None:
     assert config.task_turns(16, Echelon.PLATOON) < config.task_turns(16, Echelon.BATTALION)
     assert config.task_turns(16, Echelon.BATTALION) == 16
     assert config.task_turns(0, Echelon.SQUAD) == 0
+
+
+def test_set_all_engaged_covers_every_root(scenario: Scenario) -> None:
+    """«Все» и «Никого» доходят до всех листьев, а не до одного поддерева.
+
+    Отряд растёт из нескольких корней — техника и тыл живут отдельными
+    группами, — поэтому «весь отряд» это не поддерево одной группы.
+    """
+    battalion = scenario.battalion_a
+    f.split(battalion, battalion.leaf_elements[0].id, 2)
+    assert len(battalion.roots) > 1
+
+    assert f.set_all_engaged(battalion, False)
+    assert not battalion.engaged_elements
+
+    touched = f.set_all_engaged(battalion, True)
+    assert len(touched) == len(battalion.leaf_elements)
+    assert len(battalion.engaged_elements) == len(battalion.leaf_elements)
+
+    assert not f.set_all_engaged(battalion, True), "повторный вызов что-то поменял"

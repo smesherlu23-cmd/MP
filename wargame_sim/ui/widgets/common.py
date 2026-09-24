@@ -453,7 +453,6 @@ def table_row(
         bgcolor=bgcolor,
         padding=ft.Padding.symmetric(horizontal=t.PAD_ROW_X),
         border=None if last else t.border_bottom(t.BORDER_INNER),
-        on_click=None if on_click is None else (lambda *_: on_click()),
     )
     if on_click is None and not menu:
         return row
@@ -508,7 +507,14 @@ def interactive(
     Подсветка меняет ``bgcolor`` самой строки, поэтому выбранная строка
     (у неё свой фон) под курсором не перекрашивается — иначе выбор
     «мигал» бы при каждом движении мыши.
+
+    Щелчок вешается здесь же, на саму строку. Раньше ``on_click`` здесь
+    выбирал только форму курсора, а вешать обработчик должен был вызывающий:
+    у строки наряда сил курсор становился рукой, а щелчок не делал ничего —
+    ровно то вранье интерфейса, от которого уходили в остальных местах.
     """
+    if on_click is not None and row.on_click is None:
+        row.on_click = lambda *_: on_click()
     base = row.bgcolor
     if hover and base != t.ROW_EXPANDED:
 
