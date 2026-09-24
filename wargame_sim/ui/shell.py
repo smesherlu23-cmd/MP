@@ -248,15 +248,6 @@ def sidebar(
     )
 
 
-def aside_block(title: str, controls: Sequence[ft.Control]) -> ft.Control:
-    """Блок в боковой колонке под навигацией."""
-    return ft.Column(
-        [t.caption(title), *controls],
-        spacing=6,
-        tight=True,
-    )
-
-
 def topbar(
     title: str,
     subtitle: str = "",

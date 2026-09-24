@@ -219,7 +219,9 @@ def editor_pane(
         on_changed(battalion.id)
 
     def show_error(message: str) -> None:
-        error_holder.content = c.error_banner(message)
+        error_holder.content = ft.Container(
+            content=c.error_banner(message), margin=ft.Margin.only(bottom=t.GAP)
+        )
         app.refresh(error_holder)
 
     def clear_error() -> None:
@@ -435,10 +437,10 @@ def editor_pane(
                         str(element.echelon),
                         ECHELON_OPTIONS,
                         lambda value, e=element: set_element(e, "echelon", Echelon(value)),
-                        width=124,
+                        width=148,
                         nested=True,
                     ),
-                    width=124,
+                    width=148,
                 ),
                 c.labeled(
                     "Подчинена",
@@ -804,4 +806,14 @@ def editor_pane(
         expand=True,
     )
 
-    return ft.Column([error_holder, header, elements_card], spacing=t.GAP, expand=True)
+    # Пустое место под ошибку не должно сдвигать редактор ниже списка слева:
+    # отступ у самой ошибки, а не промежуток колонки.
+    return ft.Column(
+        [
+            error_holder,
+            ft.Container(content=header, margin=ft.Margin.only(bottom=t.GAP)),
+            elements_card,
+        ],
+        spacing=0,
+        expand=True,
+    )

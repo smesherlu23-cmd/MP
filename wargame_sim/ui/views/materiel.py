@@ -19,13 +19,16 @@ from core.config import ConfigError
 from core.config import folders as folder_ops
 from core.config.introspect import PatchError, append_entry, patch_scalar, remove_entry
 from ui import theme as t
-from ui.shell import aside_block, screen
+from ui.shell import screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
 from ui.widgets import dialogs as dlg
 from ui.widgets import library as lib
 
 ROUTE = ROUTES["materiel"]
+
+#: Ключ вкладки «Солдаты»: у неё свой экран, но место — среди библиотек.
+TROOPS = "troops"
 
 #: Подпись корня библиотеки.
 NO_FOLDER = lib.ROOT_LABEL
@@ -115,7 +118,7 @@ LIBRARIES: dict[str, Library] = {
             c.Col("Подв.", 60, numeric=True, optional=7),
             c.Col("Замет.", 62, numeric=True, optional=5),
             c.Col("Надёж.", 64, numeric=True, optional=4),
-            c.Col("", 64),
+            c.Col("", 28),
         ),
         groups=(
             (
@@ -185,7 +188,7 @@ LIBRARIES: dict[str, Library] = {
             c.Col("ПТ", 56, numeric=True),
             c.Col("Дальность", 84, numeric=True, optional=4),
             c.Col("Расход", 70, numeric=True, optional=2),
-            c.Col("", 64),
+            c.Col("", 28),
         ),
         groups=(
             ("Расчёт", (Num("crew", "Расчёт · справочно", 1, 10, True),)),
@@ -229,7 +232,7 @@ LIBRARIES: dict[str, Library] = {
             c.Col("Заметность", 90, numeric=True, optional=2),
             c.Col("Подвижность", 96, numeric=True, optional=4),
             c.Col("Усталость", 80, numeric=True),
-            c.Col("", 64),
+            c.Col("", 28),
         ),
         groups=(
             ("Защита", (Num("protection", "Защищённость", 0, 100),)),
@@ -268,6 +271,10 @@ def folders_of(app: AppState, library: Library) -> list[str]:
 def build(
     app: AppState, library: str = "vehicles", item: str = "", folder: str = ""
 ) -> ft.View:
+    if library == TROOPS:
+        from ui.views import troops
+
+        return troops.build(app, troop_id=item, folder=folder)
     spec = LIBRARIES.get(library) or LIBRARIES["vehicles"]
     store = app.store
 
@@ -283,7 +290,6 @@ def build(
     selected = item or app.selected_materiel.get(spec.key, "")
     query = ""
 
-    message = ft.Text(style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3))
     error_holder = ft.Container()
     list_holder = ft.Container(expand=True)
     detail_holder = ft.Container(expand=True)
@@ -307,14 +313,20 @@ def build(
     reload()
 
     def say(text: str) -> None:
-        message.value = text
-        app.refresh(message)
+        """Короткое сообщение — всплывающим уведомлением, а не строкой над списком.
+
+        Пустая строка под сообщение занимала место всегда, и список с
+        карточкой начинались ниже шапки на её высоту.
+        """
+        app.notify(text)
 
     def write(text: str) -> bool:
         try:
             store.save_text(spec.key, text)
         except ConfigError as error:
-            error_holder.content = c.error_banner(str(error))
+            error_holder.content = ft.Container(
+                content=c.error_banner(str(error)), margin=ft.Margin.only(bottom=t.GAP)
+            )
             app.refresh(error_holder)
             say("Изменения не применены — файл остался прежним.")
             return False
@@ -540,10 +552,10 @@ def build(
             ),
         ]
 
-    def entry_menu(name: str) -> list[c.MenuItem]:
+    def entry_menu(name: str) -> list[c.MenuItem | None]:
         return [
-            c.MenuItem("Открыть", lambda: go(name), icon=ft.Icons.OPEN_IN_NEW),
             c.MenuItem("Копировать", lambda: duplicate(name), icon=ft.Icons.CONTENT_COPY),
+            c.MENU_DIVIDER,
             c.MenuItem(
                 "Удалить…", lambda: ask_remove(name), icon=ft.Icons.DELETE_OUTLINE, danger=True
             ),
@@ -566,27 +578,7 @@ def build(
 
     def entry_row(name: str, *, last: bool) -> ft.Control:
         entry = entries[name]
-        actions = ft.Row(
-            [
-                c.spacer(),
-                c.icon_button(
-                    ft.Icons.CONTENT_COPY,
-                    lambda: duplicate(name),
-                    size=t.BUTTON_XS_H,
-                    icon_size=15,
-                    tooltip="Копировать",
-                ),
-                c.icon_button(
-                    ft.Icons.DELETE_OUTLINE,
-                    lambda: ask_remove(name),
-                    size=t.BUTTON_XS_H,
-                    icon_size=15,
-                    color=t.LOSS,
-                    tooltip="Удалить",
-                ),
-            ],
-            spacing=4,
-        )
+        menu = entry_menu(name)
         return table.row(
             [
                 t.text(
@@ -596,13 +588,13 @@ def build(
                     no_wrap=True,
                 ),
                 *spec.cells(entry),
-                actions,
+                c.row_menu(menu),
             ],
-            height=t.TABLE_ROW_TALL_H,
+            height=t.TABLE_ROW_H + 6,
             bgcolor=t.ROW_EXPANDED if name == selected and not open_folder else None,
             last=last,
             on_click=lambda: go(name),
-            menu=entry_menu(name),
+            menu=menu,
         )
 
     def found() -> list[str]:
@@ -672,16 +664,7 @@ def build(
     list_card = c.framed_card(
         spec.label,
         ft.Column([table.head(), list_holder], spacing=0, expand=True),
-        trailing=[
-            search,
-            count,
-            c.secondary_button(
-                "Создать папку",
-                lambda: create_folder(open_folder),
-                icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
-                height=t.BUTTON_SM_H,
-            ),
-        ],
+        trailing=[search, count],
         footer=c.card_footer(
             [
                 ft.Text(
@@ -832,31 +815,50 @@ def build(
     return screen(
         app,
         active="materiel",
-        active_child=spec.key,
-        title=f"Мат.часть · {spec.label}",
+        title="Мат.часть",
         subtitle=spec.subtitle,
-        aside=aside_block(
-            "Библиотека",
-            [
-                c.note(
-                    "Правки применяются без перезапуска. Эталон — config/defaults.",
-                    size=t.SIZE_META,
-                )
-            ],
-        ),
+        tabs=library_tabs(app, spec.key),
         actions=[
-            c.tertiary_button("Сбросить библиотеку…", ask_reset_library, icon=ft.Icons.RESTORE),
             c.primary_button(
                 f"Создать {spec.item_word}", create, icon=ft.Icons.ADD, tooltip="Ctrl+N"
+            ),
+            c.more_menu(
+                [
+                    c.MenuItem(
+                        "Создать папку",
+                        lambda: create_folder(open_folder),
+                        icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
+                    ),
+                    c.MENU_DIVIDER,
+                    c.MenuItem(
+                        "Сбросить библиотеку…",
+                        ask_reset_library,
+                        icon=ft.Icons.RESTORE,
+                        danger=True,
+                    ),
+                ]
             ),
         ],
         body=ft.Column(
             [
-                message,
                 error_holder,
                 c.columns(list_card, detail_holder, right_width=DETAIL_W),
             ],
-            spacing=t.GAP_SM,
+            spacing=0,
             expand=True,
         ),
+    )
+
+
+def library_tabs(app: AppState, active: str) -> ft.Control:
+    """Четыре библиотеки одного рода — вкладками одного экрана.
+
+    Солдаты раньше были отдельным пунктом навигации «Сборка юнитов», хотя
+    устроены ровно как техника, оружие и обмундирование: папки, записи,
+    карточка справа.
+    """
+    options = [(key, spec.label) for key, spec in LIBRARIES.items()]
+    options.append((TROOPS, "Солдаты"))
+    return c.segmented(
+        options, active, lambda key: app.go(ROUTE.format(library=key))
     )

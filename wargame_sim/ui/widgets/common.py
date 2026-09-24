@@ -192,30 +192,6 @@ def icon_button(
     )
 
 
-def chip(label: str, on_click: Callable[[], None] | None = None, *, icon: str = ft.Icons.ADD):
-    """Чип-шаблон: скруглённая пилюля с иконкой."""
-    return ft.Container(
-        content=ft.Row(
-            [
-                ft.Icon(icon, size=15, color=t.TEXT_2),
-                ft.Text(label, style=t.sans(size=t.SIZE_ROW, color=t.TEXT)),
-            ],
-            spacing=6,
-            tight=True,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        ),
-        height=t.CHIP_H,
-        padding=ft.Padding.symmetric(horizontal=12),
-        bgcolor=t.SURFACE_ALT,
-        border=ft.Border.all(1, t.BORDER),
-        border_radius=t.R_CHIP,
-        on_click=None if on_click is None else (lambda *_: on_click()),
-    )
-
-
-# --------------------------------------------------------------------------
-# Карточка и её части
-# --------------------------------------------------------------------------
 def card(
     controls: Sequence[ft.Control],
     *,
@@ -756,22 +732,6 @@ def empty_state(
         alignment=ft.Alignment.CENTER,
         padding=ft.Padding.symmetric(vertical=40, horizontal=t.PAD_CARD * 2),
     )
-
-
-def panel(
-    title: str,
-    body: ft.Control,
-    *,
-    trailing: Sequence[ft.Control] = (),
-    footer: ft.Control | None = None,
-    expand: bool | int = True,
-    width: int | None = None,
-) -> ft.Container:
-    """Карточка-панель на всю высоту: шапка, прокручиваемое тело, подвал.
-
-    Основной строительный блок экранов: список слева, редактор справа.
-    """
-    return framed_card(title, body, trailing=trailing, footer=footer, expand=expand, width=width)
 
 
 def table(

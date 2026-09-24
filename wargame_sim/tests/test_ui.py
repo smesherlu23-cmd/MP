@@ -383,7 +383,10 @@ def test_materiel_lists_every_library(app: AppState, library: str, title: str) -
     entries = materiel.entries_of(app, materiel.LIBRARIES[library])
     assert _has(view, title)
     assert _has(view, str(len(entries))), "счётчик записей в шапке карточки"
-    assert _has(view, f"Мат.часть · {title}")
+    assert _has(view, "Мат.часть")
+    # все четыре библиотеки — вкладками одного экрана, солдаты среди них
+    for label in ("Техника", "Пехотное вооружение", "Обмундирование", "Солдаты"):
+        assert _has(view, label), label
 
 
 def test_materiel_groups_entries_by_folder(app: AppState) -> None:
@@ -436,7 +439,8 @@ def test_vehicle_in_use_is_not_deleted_silently(app: AppState) -> None:
 # --------------------------------------------------------------------------
 def test_troops_screen_shows_kit_and_computed_values(app: AppState) -> None:
     view = troops.build(app, "Гранатомётчик")
-    assert _has(view, "Сборка юнитов")
+    assert _has(view, "Солдаты"), "солдаты — вкладка мат.части"
+    assert view is not None and materiel.build(app, "troops").controls
     assert _has(view, "Комплект")
     assert _has(view, "Что даёт подразделению")
     # обмундирование, оружие и доп. оружие названы по-человечески
@@ -887,9 +891,19 @@ def test_folder_row_carries_its_actions(app: AppState) -> None:
 
 
 def test_library_entry_row_carries_its_actions(app: AppState) -> None:
-    """У записи библиотеки — открыть, копировать, удалить по правой кнопке."""
-    labels = _menu_labels(materiel.build(app, "weapons"))
-    assert {"Открыть", "Копировать", "Удалить…"} <= labels
+    """У записи библиотеки — копировать и удалить: в «⋯» на строке и по правой кнопке.
+
+    «Открыть» в меню больше нет: запись открывает щелчок по строке.
+    """
+    view = materiel.build(app, "weapons")
+    assert {"Копировать", "Удалить…"} <= _menu_labels(view)
+    row_menus = [
+        control
+        for control in _walk(view)
+        if isinstance(control, ft.PopupMenuButton) and control.tooltip == "Действия"
+    ]
+    entries = materiel.entries_of(app, materiel.LIBRARIES["weapons"])
+    assert len(row_menus) == len(entries), "у каждой записи своё «⋯»"
 
 
 def test_deleting_a_folder_asks_first(app: AppState) -> None:
@@ -1211,9 +1225,10 @@ def test_folder_click_does_not_rebuild_the_screen(app: AppState) -> None:
 
     view = materiel.build(app, "weapons")
     taken = _routes_taken(app)
-    _menu_action(view, "Открыть")()
+    _click_by_label(view, "ГРАНАТОМЁТЫ")()
 
     assert taken == []
+    assert app.selected_folder["weapons"] == "Гранатомёты"
 
 
 def test_search_filters_the_library(app: AppState) -> None:
@@ -1330,11 +1345,11 @@ def test_resets_ask_before_wiping(app: AppState) -> None:
     from ui.views import config_editor as cfg_view
 
     box = _dialogs(app)
-    _click_by_label(materiel.build(app, "vehicles"), "Сбросить библиотеку…")()
-    _click_by_label(troops.build(app), "Сбросить типы…")()
+    _menu_action(materiel.build(app, "vehicles"), "Сбросить библиотеку…")(None)
+    _menu_action(troops.build(app), "Сбросить библиотеку…")(None)
     view = cfg_view.build(app)
-    _click_by_label(view, "Сбросить раздел…")()
-    _click_by_label(view, "Сбросить всё…")()
+    _menu_action(view, "Сбросить раздел…")(None)
+    _menu_action(view, "Сбросить всё…")(None)
 
     assert len(box) == 4, "какой-то сброс срабатывает без вопроса"
     # и ничего при этом не сбросилось
@@ -1765,3 +1780,39 @@ def test_the_result_screen_says_where_the_battle_was_saved(app: AppState) -> Non
     assert app.result_path is not None
     assert _has(view, app.result_path.name)
     assert not _has(view, "В архив"), "кнопка предлагает сделать уже сделанное"
+
+
+def test_every_visible_character_has_a_glyph(app: AppState) -> None:
+    """Каждый видимый символ есть в зарегистрированных шрифтах.
+
+    Символ, которого в шрифте нет, Flutter рисует пустым квадратом, и ни
+    одна другая проверка этого не видит: текст на месте, шрифт на месте.
+    Так на экране коэффициентов «⋯» в пояснении превращалось в квадрат —
+    в IBM Plex этого символа нет.
+    """
+    from fontTools.ttLib import TTFont
+
+    fonts = PROJECT_ROOT / "assets" / "fonts"
+    known = set(TTFont(fonts / "IBMPlexSans-400.ttf").getBestCmap())
+    known |= set(TTFont(fonts / "IBMPlexMono-400.ttf").getBestCmap())
+
+    engine = app.start_battle()
+    engine.run()
+    app.finish_battle()
+    routes = [*_routes(app), ROUTES["battle_result"].format(id=app.scenario.id)]
+    routes += [ROUTES["materiel"].format(library=key) for key in ("weapons", "gear", "troops")]
+
+    missing: dict[str, str] = {}
+    for route in routes:
+        view = resolve(app, route)
+        nodes = _walk(view)
+        nodes += [child for node in list(nodes) for item in _menu_items(node) for child in _walk(item)]
+        for node in nodes:
+            for attribute in ("value", "text", "tooltip"):
+                value = getattr(node, attribute, None)
+                if not isinstance(value, str):
+                    continue
+                for char in value:
+                    if char.isprintable() and ord(char) not in known:
+                        missing.setdefault(char, route)
+    assert not missing, f"символы без глифа в шрифте: {missing}"
