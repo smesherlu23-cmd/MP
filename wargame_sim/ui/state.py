@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import random
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,14 @@ from typing import Any
 from core.batch import run_batch
 from core.config import AppConfig, ConfigError, ConfigStore
 from core.engine import BattleEngine
-from core.models import BatchResult, Battalion, BattleResult, BattleSnapshot, Scenario
+from core.models import (
+    MAX_SEED,
+    BatchResult,
+    Battalion,
+    BattleResult,
+    BattleSnapshot,
+    Scenario,
+)
 from core.samples import make_scenario
 from core.storage import (
     BATTLES_DIR,
@@ -405,7 +413,14 @@ class AppState:
         return json.dumps(self.scenario.model_dump(mode="json"), sort_keys=True)
 
     def start_battle(self) -> BattleEngine:
-        """Создать новый бой по текущему сценарию."""
+        """Создать новый бой по текущему сценарию — со свежим случайным сидом.
+
+        Сид ГМ не выбирает и не видит: он существует только внутри движка
+        ради детерминизма одного прогона (переживает сохранение и подъём
+        боя со снимка), а не ради повтора боя целиком — каждый бой обязан
+        быть сам по себе уникальным.
+        """
+        self.scenario.master_seed = random.randint(0, MAX_SEED)
         self.engine = BattleEngine(self.scenario, self.config)
         self._battle_source = self.scenario_fingerprint()
         self.result = None

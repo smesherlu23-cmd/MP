@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from core.config import AppConfig
 from core.engine import BattleEngine
-from core.models import Order, Scenario
+from core.models import EndReason, Order, Scenario, Winner
 
 
 def _with_reserve(scenario: Scenario) -> tuple[Scenario, str]:
@@ -67,6 +67,60 @@ def test_order_can_be_changed_during_the_battle(scenario: Scenario, config: AppC
     entries = [entry for entry in engine.log if entry.event == "order_changed"]
     assert len(entries) == 1
     assert entries[0].after["order"] == str(Order.ENTRENCH)
+
+
+def test_stop_ends_the_battle_immediately(scenario: Scenario, config: AppConfig) -> None:
+    """ГМ останавливает бой прямо сейчас — не дожидаясь разгрома или лимита."""
+    engine = BattleEngine(scenario, config, verbose=False)
+    engine.run_turns(3)
+    assert not engine.finished
+
+    result = engine.stop()
+
+    assert engine.finished
+    assert engine.end_reason == EndReason.STOPPED
+    assert result.turns == 3
+    assert result.end_reason == EndReason.STOPPED
+
+
+def test_stop_is_a_draw_when_forces_are_close(scenario: Scenario, config: AppConfig) -> None:
+    """На старте боя стороны равны — остановка сразу даёт ничью, а не победу."""
+    engine = BattleEngine(scenario, config, verbose=False)
+
+    result = engine.stop()
+
+    assert result.winner == Winner.DRAW
+    assert result.end_reason == EndReason.STOPPED
+
+
+def test_stop_declares_the_stronger_side_the_winner(
+    scenario: Scenario, config: AppConfig
+) -> None:
+    """Победитель при остановке — та сторона, что сохранила больше мощи."""
+    engine = BattleEngine(scenario, config, verbose=False)
+    for element in engine.state.battalion("B").alive_elements:
+        element.morale = 5.0
+
+    result = engine.stop()
+
+    assert engine.state.battalion("A").combat_power > engine.state.battalion("B").combat_power
+    assert result.winner == Winner.A
+
+
+def test_stop_after_the_battle_finished_does_not_rewrite_the_outcome(
+    scenario: Scenario, config: AppConfig
+) -> None:
+    """Остановка законченного боя не подменяет настоящую причину исхода."""
+    engine = BattleEngine(scenario, config, verbose=False)
+    engine.run()
+    finished_reason = engine.end_reason
+    finished_winner = engine.winner
+
+    result = engine.stop()
+
+    assert engine.end_reason == finished_reason
+    assert result.winner == finished_winner
+    assert result.end_reason != EndReason.STOPPED
 
 
 def test_changed_order_actually_reaches_the_calculation(

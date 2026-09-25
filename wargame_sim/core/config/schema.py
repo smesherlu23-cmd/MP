@@ -561,6 +561,11 @@ class ChecksConfig(BaseModel):
     disengage_threshold: float = Field(gt=0)
     default_max_turns: int = Field(gt=0)
     max_cover: float = Field(ge=0, lt=1)
+    #: Разница в остаточной боеспособности (0..100), в пределах которой
+    #: остановка ГМ засчитывается ничьей, а не победой чуть более крепкой
+    #: стороны — на близких силах сравнивать по десятым долям процента
+    #: значило бы выдумывать победителя там, где стороны фактически равны.
+    stop_draw_margin: float = Field(ge=0, le=100)
 
 
 class CohesionConfig(BaseModel):

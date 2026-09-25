@@ -317,7 +317,7 @@ def test_result_screen_after_battle(app: AppState) -> None:
     result = app.finish_battle()
     view = resolve(app, ROUTES["battle_result"].format(id=app.scenario.id))
     assert isinstance(view, ft.View)
-    assert _has(view, f"ходов {result.turns} · сид {result.master_seed} · записей {len(result.log)}")
+    assert _has(view, f"ходов {result.turns} · записей {len(result.log)}")
 
 
 def test_result_screen_without_battle_explains_itself(app: AppState) -> None:
@@ -346,7 +346,6 @@ def test_archive_screen_with_saved_battle(app: AppState) -> None:
 def test_archive_filter_by_outcome_and_search(app: AppState) -> None:
     result = BattleEngine(app.scenario, app.config, verbose=False).run()
     assert archive.matches(result, "", "*")
-    assert archive.matches(result, str(result.master_seed), "*")
     assert archive.matches(result, result.scenario_name[:5].upper(), "*")
     assert not archive.matches(result, "нет такого боя", "*")
     assert archive.matches(result, "", str(result.winner))
@@ -1371,6 +1370,21 @@ def test_restart_asks_when_the_battle_has_started(app: AppState) -> None:
     assert engine.turn == 3
 
 
+def test_stop_battle_asks_before_ending_it(app: AppState) -> None:
+    """«Остановить бой…» решает исход прямо сейчас, поэтому спрашивает."""
+    engine = app.start_battle()
+    engine.run_turns(3)
+    box = _dialogs(app)
+    route = ROUTES["battle"].format(id=app.scenario.id)
+
+    _menu_action(resolve(app, route), "Остановить бой…")(None)
+
+    assert len(box) == 1
+    assert "становить" in box[0].title.value.casefold()
+    assert not engine.finished, "бой завершился до подтверждения"
+    assert engine.turn == 3
+
+
 # --------------------------------------------------------------------------
 # Таблицы под ширину окна
 # --------------------------------------------------------------------------
@@ -1645,18 +1659,6 @@ def test_picking_a_unit_redraws_the_force_allocation(app: AppState) -> None:
     assert _counters(view)[0] == f"в бою {len(leaves)} из {len(leaves)}"
     for element in leaves:
         assert _has(view, element.name), "в наряде сил группы прежнего отряда"
-
-
-def test_random_seed_does_not_rebuild_the_screen(app: AppState) -> None:
-    """Новый сид перерисовывает поле, а не гоняет экран через переход."""
-    moves: list[str] = []
-    app.navigator = moves.append
-    view = resolve(app, ROUTES["battle_setup"])
-
-    _click_by_label(view, "Случайный")()
-
-    assert not moves, "смена сида собирает экран заново"
-    assert str(app.scenario.master_seed) in _texts(view), "в поле прежний сид"
 
 
 def test_the_edge_is_shown_as_numbers(app: AppState) -> None:

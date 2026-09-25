@@ -182,7 +182,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         )
 
     def _write(kind: str, directory: Path) -> None:
-        stem = f"{result.scenario_id}_{result.master_seed}"
+        stem = result.id
         if kind == "md":
             path = write_text(directory / f"{stem}.md", result_markdown(result))
         elif kind == "html":
@@ -201,8 +201,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         app.notify(f"Сохранено в архив: {path.name}")
 
     def replay() -> None:
-        """Повтор по сиду: тот же сценарий и тот же сид — тот же бой (§7)."""
-        app.scenario.master_seed = result.master_seed
+        """Сыграть заново: тот же сценарий, новый — уникальный — бой."""
         app.start_battle()
         app.go(ROUTES["battle"].format(id=app.scenario.id))
 
@@ -413,8 +412,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
     archived = app.result_path is not None
     reproducibility = c.card(
         [
-            t.card_title("Воспроизводимость"),
-            c.kv_line("Сид", t.num(str(result.master_seed), weight=t.W500), height=22),
+            t.card_title("Журнал"),
             c.kv_line("Хеш журнала", t.num(result.log_hash[:16] or "—"), height=22),
             c.kv_line("Записей", t.num(str(len(result.log))), height=22),
             c.kv_line(
@@ -427,7 +425,6 @@ def build(app: AppState, battle_id: str) -> ft.View:
                 ),
                 height=22,
             ),
-            c.note("Тот же сценарий и тот же сид дают тот же бой ход в ход.", size=t.SIZE_META),
         ],
         spacing=2,
     )
@@ -462,7 +459,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
     right = ft.Column([reproducibility, events_card], spacing=t.GAP, expand=True)
 
     actions: list[ft.Control] = [
-        c.secondary_button("Повтор по сиду", replay, icon=ft.Icons.REPLAY),
+        c.secondary_button("Сыграть заново", replay, icon=ft.Icons.REPLAY),
     ]
     if not archived:
         actions.append(c.secondary_button("В архив", to_archive, icon=ft.Icons.SAVE_OUTLINED))
@@ -482,9 +479,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
         app,
         active="battle",
         title=result.scenario_name,
-        subtitle=(
-            f"ходов {result.turns} · сид {result.master_seed} · записей {len(result.log)}"
-        ),
+        subtitle=f"ходов {result.turns} · записей {len(result.log)}",
         mono_subtitle=True,
         tabs=battle_tabs(app, "result"),
         actions=actions,

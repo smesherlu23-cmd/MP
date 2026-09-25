@@ -497,6 +497,24 @@ class BattleEngine:
         elif self.state.turn >= self.state.environment.max_turns:
             self._finish(Winner.DRAW, EndReason.TURN_LIMIT)
 
+    def stop(self) -> BattleResult:
+        """ГМ останавливает бой прямо сейчас — на любом ходу, в любой момент.
+
+        Победитель определяется остаточной боеспособностью сторон:
+        близкие силы (в пределах ``stop_draw_margin``) — ничья, а не
+        выдуманная победа по десятым долям процента.
+        """
+        if not self.state.finished:
+            power_a = self.state.battalion("A").combat_power
+            power_b = self.state.battalion("B").combat_power
+            margin = self.config.cbt.checks.stop_draw_margin
+            if abs(power_a - power_b) <= margin:
+                winner = Winner.DRAW
+            else:
+                winner = Winner.A if power_a > power_b else Winner.B
+            self._finish(winner, EndReason.STOPPED)
+        return self.result()
+
     def _finish(self, winner: Winner, reason: EndReason) -> None:
         if self.state.finished:
             return
@@ -513,6 +531,23 @@ class BattleEngine:
         )
 
     def _outcome_text(self, winner: Winner, reason: EndReason) -> str:
+        if reason == EndReason.STOPPED:
+            power_a = self.state.battalion("A").combat_power
+            power_b = self.state.battalion("B").combat_power
+            if winner == Winner.DRAW:
+                return (
+                    f"Бой остановлен ГМ на ходу {self.state.turn}: силы близки "
+                    f"(боеспособность A {power_a:.0f}%, B {power_b:.0f}%) — ничья."
+                )
+            battalion = self.state.battalion(str(winner))
+            loser = self.state.battalion(other_side(str(winner)))
+            winner_power = power_a if str(winner) == "A" else power_b
+            loser_power = power_b if str(winner) == "A" else power_a
+            return (
+                f"Бой остановлен ГМ на ходу {self.state.turn}: победа стороны {winner} "
+                f"({battalion.name}) — боеспособность {winner_power:.0f}% против "
+                f"{loser_power:.0f}% у {loser.name}."
+            )
         if winner == Winner.DRAW:
             return f"Бой окончен на ходу {self.state.turn}: ничья ({reason})."
         battalion = self.state.battalion(str(winner))

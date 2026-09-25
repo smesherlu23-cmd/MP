@@ -131,6 +131,7 @@ class EndReason(StrEnum):
     PANIC = "паника"
     TASK = "задача"
     TURN_LIMIT = "лимит ходов"
+    STOPPED = "остановлено ГМ"
 
 
 class Winner(StrEnum):
