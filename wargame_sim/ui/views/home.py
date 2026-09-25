@@ -1,4 +1,10 @@
-"""Главная: текущий бой, быстрые переходы и последние бои."""
+"""Обзор: текущий бой, незаконченные, последние бои и сценарии.
+
+Раньше здесь стояли ещё три большие карточки-ссылки — «Подразделения»,
+«Массовое моделирование», «Коэффициенты», — то есть та же навигация, что
+слева, только крупнее. Обзор отвечает на один вопрос: что сейчас в бою и
+что было, — и ведёт к одному действию: продолжить или начать бой.
+"""
 
 from __future__ import annotations
 
@@ -8,34 +14,12 @@ from core.models import BattleResult, Scenario
 from core.report import winner_label
 from core.storage import delete_battle
 from ui import theme as t
-from ui.shell import scenario_aside, screen
+from ui.shell import screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
 from ui.widgets import dialogs as dlg
 
 ROUTE = ROUTES["home"]
-
-#: Карточки-ссылки на разделы: маршрут, иконка, заголовок, описание.
-LINKS: tuple[tuple[str, str, str, str], ...] = (
-    (
-        ROUTES["units"],
-        ft.Icons.GROUPS_OUTLINED,
-        "Подразделения",
-        "Создать и отредактировать отряды",
-    ),
-    (
-        ROUTES["batch"],
-        ft.Icons.INSIGHTS_OUTLINED,
-        "Массовое моделирование",
-        "N прогонов и статистика",
-    ),
-    (
-        ROUTES["config"],
-        ft.Icons.TUNE_OUTLINED,
-        "Коэффициенты",
-        "Редактор конфигурации и тумблеры",
-    ),
-)
 
 RESULT_COLUMNS: tuple[c.Col, ...] = (
     c.Col("Сценарий", expand=True),
@@ -122,12 +106,18 @@ def current_battle_card(app: AppState) -> ft.Control:
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
+    if engine is not None and engine.finished:
+        state = f"окончен на ходу {turn}: {engine.winner} · {engine.end_reason}"
+    elif turn > 0:
+        state = f"идёт · ход {turn} из {limit}"
+    else:
+        state = f"не начат · предел {limit} ходов"
     header = ft.Row(
         [
             t.card_title("Текущий бой"),
             c.spacer(),
             ft.Text(
-                f"ход {turn} / {limit} · сид {scenario.master_seed}",
+                f"{state} · сид {scenario.master_seed}",
                 style=t.mono(size=t.SIZE_META, color=t.TEXT_3),
             ),
         ],
@@ -135,26 +125,6 @@ def current_battle_card(app: AppState) -> ft.Control:
     )
 
     return c.card([header, heading], padding=18, spacing=t.GAP_IN)
-
-
-def link_card(route: str, icon: str, title: str, hint: str, app: AppState) -> ft.Control:
-    return ft.Container(
-        content=ft.Column(
-            [
-                ft.Icon(icon, size=20, color=t.TEXT_2),
-                ft.Text(title, style=t.sans(size=t.SIZE_TITLE, weight=t.W600)),
-                ft.Text(hint, style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3, height=1.45)),
-            ],
-            spacing=6,
-            tight=True,
-        ),
-        bgcolor=t.CARD_BG,
-        border=ft.Border.all(1, t.BORDER),
-        border_radius=t.R_CARD,
-        padding=t.PAD_CARD,
-        expand=True,
-        on_click=lambda *_: app.go(route),
-    )
 
 
 def result_row(result: BattleResult, app: AppState, *, last: bool) -> ft.Control:
@@ -177,29 +147,22 @@ def result_row(result: BattleResult, app: AppState, *, last: bool) -> ft.Control
     )
 
 
-def scenario_block(scenario: Scenario, app: AppState, *, last: bool) -> ft.Control:
+def scenario_row(scenario: Scenario, app: AppState, *, last: bool) -> ft.Control:
+    """Сценарий строкой: щелчок заряжает его в подготовку боя."""
     environment = scenario.environment
-    return ft.Container(
-        content=ft.Column(
-            [
-                ft.Text(scenario.name, style=t.sans(size=t.SIZE_BODY, weight=t.W500)),
-                ft.Text(
-                    f"{scenario.battalion_a.name} · {scenario.battalion_a.order}"
-                    f" → {scenario.battalion_b.name} · {scenario.battalion_b.order}",
-                    style=t.mono(size=t.SIZE_META, color=t.TEXT_3, height=1.5),
-                ),
-                ft.Text(
-                    f"{environment.terrain} · {environment.time_of_day} ·"
-                    f" {environment.weather} · сид {scenario.master_seed}",
-                    style=t.mono(size=t.SIZE_META, color=t.TEXT_3, height=1.5),
-                ),
-            ],
-            spacing=2,
-            tight=True,
-        ),
-        padding=ft.Padding.symmetric(vertical=12, horizontal=t.PAD_CARD),
-        border=None if last else t.border_bottom(t.BORDER_INNER),
-        on_click=lambda *_: _open_scenario(app, scenario),
+    return c.list_row(
+        scenario.name,
+        f"{scenario.battalion_a.name} → {scenario.battalion_b.name} · "
+        f"{environment.terrain} · {environment.time_of_day} · сид {scenario.master_seed}",
+        on_click=lambda: _open_scenario(app, scenario),
+        menu=[
+            c.MenuItem(
+                "Открыть в подготовке",
+                lambda: _open_scenario(app, scenario),
+                icon=ft.Icons.OPEN_IN_NEW,
+            )
+        ],
+        last=last,
     )
 
 
@@ -234,43 +197,31 @@ def saved_battles_card(app: AppState) -> ft.Control | None:
         )
 
     rows = [
-        ft.Container(
-            content=ft.Row(
-                [
-                    ft.Column(
-                        [
-                            t.text(snapshot.title, size=t.SIZE_BODY, weight=t.W500),
-                            ft.Text(
-                                snapshot.summary,
-                                style=t.mono(size=t.SIZE_META, color=t.TEXT_3, height=1.5),
-                            ),
-                        ],
-                        spacing=2,
-                        tight=True,
-                        expand=True,
-                    ),
-                    c.secondary_button(
-                        "Продолжить",
-                        lambda s=snapshot: resume(s),
-                        icon=ft.Icons.PLAY_ARROW,
-                        height=t.BUTTON_SM_H,
-                    ),
-                    c.icon_button(
-                        ft.Icons.DELETE_OUTLINE,
-                        lambda p=path, s=snapshot: drop(p, s),
-                        size=t.BUTTON_SM_H,
-                        icon_size=15,
-                        color=t.LOSS,
-                        tooltip="Забыть сохранение",
-                    ),
-                ],
-                spacing=t.GAP_SM,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=ft.Padding.symmetric(vertical=10, horizontal=t.PAD_CARD),
-            border=None if snapshot is saved[-1][1] else t.border_bottom(t.BORDER_INNER),
+        c.list_row(
+            snapshot.title,
+            snapshot.summary,
+            trailing=[
+                c.secondary_button(
+                    "Продолжить",
+                    lambda s=snapshot: resume(s),
+                    icon=ft.Icons.PLAY_ARROW,
+                    height=t.BUTTON_SM_H,
+                )
+            ],
+            on_click=lambda s=snapshot: resume(s),
+            menu=[
+                c.MenuItem("Продолжить", lambda s=snapshot: resume(s), icon=ft.Icons.PLAY_ARROW),
+                c.MENU_DIVIDER,
+                c.MenuItem(
+                    "Забыть сохранение…",
+                    lambda p=path, s=snapshot: drop(p, s),
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    danger=True,
+                ),
+            ],
+            last=index == len(saved) - 1,
         )
-        for path, snapshot in saved
+        for index, (path, snapshot) in enumerate(saved)
     ]
     return c.framed_card("Незаконченные бои", ft.Column(rows, spacing=0, tight=True))
 
@@ -282,8 +233,8 @@ def _drop_battle(app: AppState, path) -> None:
 
 
 def build(app: AppState) -> ft.View:
-    results = app.results()[:6]
-    scenarios = app.scenarios()[:4]
+    results = app.results()[:8]
+    scenarios = app.scenarios()[:8]
 
     if results:
         table_body: ft.Control = c.table(
@@ -294,10 +245,10 @@ def build(app: AppState) -> ft.View:
             ],
         )
     else:
-        table_body = ft.Column(
-            [c.table_head(RESULT_COLUMNS), c.empty_hint("Сохранённых боёв пока нет.")],
-            spacing=0,
-            expand=True,
+        table_body = c.empty_state(
+            "Проведённых боёв пока нет",
+            "Законченный бой попадает сюда сам — с исходом, потерями и сидом.",
+            icon=ft.Icons.HISTORY,
         )
 
     recent = c.framed_card(
@@ -312,10 +263,6 @@ def build(app: AppState) -> ft.View:
         [
             current_battle_card(app),
             *([unfinished] if unfinished is not None else []),
-            ft.Row(
-                [link_card(route, icon, title, hint, app) for route, icon, title, hint in LINKS],
-                spacing=t.GAP,
-            ),
             recent,
         ],
         spacing=t.GAP,
@@ -325,7 +272,7 @@ def build(app: AppState) -> ft.View:
     scenario_body = (
         ft.Column(
             [
-                scenario_block(scenario, app, last=index == len(scenarios) - 1)
+                scenario_row(scenario, app, last=index == len(scenarios) - 1)
                 for index, (_, scenario) in enumerate(scenarios)
             ],
             spacing=0,
@@ -333,58 +280,33 @@ def build(app: AppState) -> ft.View:
             expand=True,
         )
         if scenarios
-        else c.empty_hint("Сохранённых сценариев пока нет.")
+        else c.empty_state(
+            "Сохранённых сценариев нет",
+            "Сценарий сохраняется на подготовке боя — меню «Ещё действия».",
+            icon=ft.Icons.BOOKMARK_BORDER,
+        )
     )
+    right = c.framed_card("Сценарии", scenario_body, expand=True)
 
-    right = c.framed_card(
-        "Сценарии",
-        scenario_body,
-        trailing=[
-            c.icon_button(
-                ft.Icons.ADD,
-                lambda: app.go(ROUTES["battle_setup"]),
-                size=t.BUTTON_XS_H,
-                icon_size=16,
-                tooltip="Собрать новый сценарий",
-            )
-        ],
-        footer=c.card_footer(
-            [
-                ft.Column(
-                    [
-                        t.caption("Конфигурация"),
-                        c.note(
-                            "Правки коэффициентов применяются без перезапуска. "
-                            "Эталонные значения в config/defaults не перезаписываются.",
-                            size=t.SIZE_ROW,
-                        ),
-                    ],
-                    spacing=4,
-                    tight=True,
-                    expand=True,
-                )
-            ],
-            height=None,
-        ),
-        expand=True,
-    )
-
-    scenario = app.scenario
+    engine = app.engine
+    going = engine is not None and engine.turn > 0 and not engine.finished
+    battle_route = ROUTES["battle"].format(id=app.scenario.id)
     return screen(
         app,
         active="home",
-        title="Главная",
-        subtitle="Текущий бой и переход в нужный раздел",
-        aside=scenario_aside(app),
+        title="Обзор",
+        subtitle="Что сейчас в бою и что было",
         actions=[
-            c.secondary_button("Настроить бой", lambda: app.go(ROUTES["battle_setup"])),
+            c.secondary_button("К подготовке", lambda: app.go(ROUTES["battle_setup"]))
+            if going
+            else c.secondary_button("Открыть пульт", lambda: app.go(battle_route)),
             c.primary_button(
-                "Продолжить бой" if app.engine is not None else "Начать бой",
-                lambda: app.go(ROUTES["battle"].format(id=scenario.id)),
+                "Продолжить бой" if going else "Новый бой",
+                lambda: app.go(battle_route if going else ROUTES["battle_setup"]),
                 icon=ft.Icons.PLAY_ARROW,
             ),
         ],
-        body=c.columns(left, right, right_width=340),
+        body=c.columns(left, right, right_width=360),
     )
 
 

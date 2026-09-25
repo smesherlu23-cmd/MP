@@ -85,7 +85,6 @@ def folder_header(
         bgcolor=t.ROW_EXPANDED if selected else t.SURFACE_ALT,
         padding=ft.Padding.symmetric(horizontal=t.PAD_ROW_X),
         border=t.border_bottom(t.BORDER_INNER),
-        on_click=None if on_click is None else (lambda *_: on_click()),
     )
     if on_click is None and not menu:
         return row

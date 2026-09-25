@@ -89,6 +89,8 @@ class TurnData:
     fire_intensity: dict[str, float] = field(default_factory=dict)
     in_contact: dict[str, bool] = field(default_factory=dict)
     side_success: dict[str, float] = field(default_factory=dict)
+    #: Стороны, которые в этом ходу стреляют вслепую — по тем, кто видит их.
+    blind_fire: set[str] = field(default_factory=set)
     breakdown: dict[str, list[tuple[str, float]]] = field(default_factory=dict)
 
 

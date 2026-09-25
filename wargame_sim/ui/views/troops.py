@@ -12,9 +12,9 @@ import flet as ft
 from core.config import ConfigError
 from core.config import folders as folder_ops
 from core.config.introspect import PatchError, append_entry, patch_scalar, remove_entry
-from core.staff import element_staff, soldier
+from core.staff import soldier
 from ui import theme as t
-from ui.shell import aside_block, screen
+from ui.shell import screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
 from ui.widgets import dialogs as dlg
@@ -30,6 +30,11 @@ DETAIL_W = 420
 #: Ширина поля в карточке.
 FIELD_W = 190
 
+#: Поле во всю ширину карточки: сама карточка DETAIL_W минус поля по краям.
+#: Задаётся числом, а не `expand`: в прокручиваемой колонке `expand`
+#: растягивал бы поле по высоте, а не по ширине.
+WIDE_W = 380
+
 COLUMNS: tuple[c.Col, ...] = (
     c.Col("Тип солдата", expand=True),
     c.Col("Обмундирование", 150, optional=2),
@@ -38,7 +43,7 @@ COLUMNS: tuple[c.Col, ...] = (
     c.Col("БК", 48, numeric=True, optional=4),
     c.Col("Огонь", 56, numeric=True),
     c.Col("ПТ", 48, numeric=True, optional=3),
-    c.Col("", 58),
+    c.Col("", 28),
 )
 
 #: Поля нового типа солдата.
@@ -62,7 +67,6 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
     selected = troop_id or app.selected_troop
     query = ""
 
-    message = ft.Text(style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3))
     error_holder = ft.Container()
     list_holder = ft.Container(expand=True)
     detail_holder = ft.Container(expand=True)
@@ -85,14 +89,16 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
     reload()
 
     def say(text: str) -> None:
-        message.value = text
-        app.refresh(message)
+        """Короткое сообщение — всплывающим уведомлением (см. materiel.say)."""
+        app.notify(text)
 
     def write(text: str) -> bool:
         try:
             store.save_text(SECTION, text)
         except ConfigError as error:
-            error_holder.content = c.error_banner(str(error))
+            error_holder.content = ft.Container(
+                content=c.error_banner(str(error)), margin=ft.Margin.only(bottom=t.GAP)
+            )
             app.refresh(error_holder)
             say("Изменения не применены — файл остался прежним.")
             return False
@@ -317,10 +323,10 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
             ),
         ]
 
-    def troop_menu(name: str) -> list[c.MenuItem]:
+    def troop_menu(name: str) -> list[c.MenuItem | None]:
         return [
-            c.MenuItem("Открыть", lambda: go(name), icon=ft.Icons.OPEN_IN_NEW),
             c.MenuItem("Копировать", lambda: duplicate(name), icon=ft.Icons.CONTENT_COPY),
+            c.MENU_DIVIDER,
             c.MenuItem(
                 "Удалить…", lambda: ask_remove(name), icon=ft.Icons.DELETE_OUTLINE, danger=True
             ),
@@ -347,27 +353,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
     def troop_row(name: str, *, last: bool) -> ft.Control:
         entry = troops[name]
         values = soldier(name, config)
-        actions = ft.Row(
-            [
-                c.spacer(),
-                c.icon_button(
-                    ft.Icons.CONTENT_COPY,
-                    lambda: duplicate(name),
-                    size=t.BUTTON_XS_H,
-                    icon_size=15,
-                    tooltip="Копировать",
-                ),
-                c.icon_button(
-                    ft.Icons.DELETE_OUTLINE,
-                    lambda: ask_remove(name),
-                    size=t.BUTTON_XS_H,
-                    icon_size=15,
-                    color=t.LOSS,
-                    tooltip="Удалить",
-                ),
-            ],
-            spacing=4,
-        )
+        menu = troop_menu(name)
         return table.row(
             [
                 t.text(
@@ -397,13 +383,13 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
                 t.num(str(entry.ammo)),
                 t.num(f"{values.firepower:.0f}"),
                 t.num(f"{values.anti_tank:.0f}"),
-                actions,
+                c.row_menu(menu),
             ],
-            height=t.TABLE_ROW_TALL_H,
+            height=t.TABLE_ROW_H + 6,
             bgcolor=t.ROW_EXPANDED if name == selected and not open_folder else None,
             last=last,
             on_click=lambda: go(name),
-            menu=troop_menu(name),
+            menu=menu,
         )
 
     def found() -> list[str]:
@@ -473,16 +459,7 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
     list_card = c.framed_card(
         "Типы солдат",
         ft.Column([table.head(), list_holder], spacing=0, expand=True),
-        trailing=[
-            search,
-            count,
-            c.secondary_button(
-                "Создать папку",
-                lambda: create_folder(open_folder),
-                icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
-                height=t.BUTTON_SM_H,
-            ),
-        ],
+        trailing=[search, count],
         footer=c.card_footer(
             [
                 ft.Text(
@@ -502,13 +479,16 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
         title_field, _ = c.text_field(
             entry.label,
             lambda value: set_field(name, "label", value),
-            width=FIELD_W * 2 + t.GAP_IN,
+            width=WIDE_W,
         )
         weapon_options = [(key, item.label) for key, item in config.weapons.weapons.items()]
         gear_options = [(key, item.label) for key, item in config.gear.gear.items()]
         folder_options = lib.folder_options(folders)
 
-        kit = c.flow(
+        # Списки комплекта — во всю ширину карточки: по два в строку они не
+        # помещались и всё равно вставали по одному, но обрезанными посредине
+        # («Бронежилет с разг»).
+        kit = ft.Column(
             [
                 c.labeled(
                     "Обмундирование",
@@ -516,9 +496,9 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
                         entry.gear,
                         gear_options,
                         lambda value: set_field(name, "gear", value),
-                        width=FIELD_W,
+                        width=WIDE_W,
                     ),
-                    width=FIELD_W,
+                    width=WIDE_W,
                 ),
                 c.labeled(
                     "Оружие",
@@ -526,9 +506,9 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
                         entry.weapon,
                         weapon_options,
                         lambda value: set_field(name, "weapon", value),
-                        width=FIELD_W,
+                        width=WIDE_W,
                     ),
-                    width=FIELD_W,
+                    width=WIDE_W,
                 ),
                 c.labeled(
                     "Доп. оружие",
@@ -536,9 +516,9 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
                         entry.secondary,
                         [("", "нет"), *weapon_options],
                         lambda value: set_field(name, "secondary", value),
-                        width=FIELD_W,
+                        width=WIDE_W,
                     ),
-                    width=FIELD_W,
+                    width=WIDE_W,
                 ),
                 c.labeled(
                     "Боекомплект · справочно",
@@ -552,7 +532,9 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
                     ),
                     width=FIELD_W,
                 ),
-            ]
+            ],
+            spacing=t.GAP_SM,
+            tight=True,
         )
 
         gear = config.gear_entry(entry.gear)
@@ -603,16 +585,16 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
                         f"ключ: {name}",
                         style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_PLACEHOLDER),
                     ),
-                    c.labeled("Название", title_field, width=FIELD_W * 2 + t.GAP_IN),
+                    c.labeled("Название", title_field, width=WIDE_W),
                     c.labeled(
                         "Папка",
                         c.select(
                             entry.folder if entry.folder in known_folders else "",
                             folder_options,
                             lambda value: set_field(name, "folder", value),
-                            width=FIELD_W,
+                            width=WIDE_W,
                         ),
-                        width=FIELD_W,
+                        width=WIDE_W,
                     ),
                     section("Комплект", kit),
                     section("Что даёт подразделению", computed),
@@ -666,48 +648,39 @@ def build(app: AppState, troop_id: str = "", folder: str = "") -> ft.View:
 
     render()
 
-    # -- из чего складывается штат -----------------------------------------
-    staffed = [
-        (type_name, element_staff(type_name, config))
-        for type_name in config.element_types.element_types
-    ]
-    staffed = [(name, summary) for name, summary in staffed if summary is not None]
-    aside = aside_block(
-        "Штат",
-        [
-            c.note(
-                "Из состава типа элемента по этим карточкам считаются "
-                "численность, огневая мощь и устойчивость подразделения.",
-                size=t.SIZE_META,
-            ),
-            *[
-                ft.Text(
-                    f"{name}: {summary.personnel} чел., огонь {summary.attack:.0f}",
-                    style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_3, height=1.5),
-                )
-                for name, summary in staffed[:6]
-            ],
-        ],
-    )
+    from ui.views.materiel import TROOPS, library_tabs
 
     return screen(
         app,
-        active="troops",
-        active_child=selected,
-        title="Сборка юнитов",
-        subtitle="Типы солдат: кому что выдано",
-        aside=aside,
+        active="materiel",
+        title="Мат.часть",
+        subtitle="Типы солдат: кому что выдано — из них считается штат подразделений",
+        tabs=library_tabs(app, TROOPS),
         actions=[
-            c.tertiary_button("Сбросить типы…", ask_reset_library, icon=ft.Icons.RESTORE),
             c.primary_button("Создать тип", create, icon=ft.Icons.ADD, tooltip="Ctrl+N"),
+            c.more_menu(
+                [
+                    c.MenuItem(
+                        "Создать папку",
+                        lambda: create_folder(open_folder),
+                        icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED,
+                    ),
+                    c.MENU_DIVIDER,
+                    c.MenuItem(
+                        "Сбросить библиотеку…",
+                        ask_reset_library,
+                        icon=ft.Icons.RESTORE,
+                        danger=True,
+                    ),
+                ]
+            ),
         ],
         body=ft.Column(
             [
-                message,
                 error_holder,
                 c.columns(list_card, detail_holder, right_width=DETAIL_W),
             ],
-            spacing=t.GAP_SM,
+            spacing=0,
             expand=True,
         ),
     )

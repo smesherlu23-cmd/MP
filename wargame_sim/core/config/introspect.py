@@ -338,6 +338,53 @@ class _InlineList:
         self.values = list(values)
 
 
+def field_notes(text: str) -> dict[tuple[str, ...], str]:
+    """Пояснение к каждому ключу — из комментариев самого конфига.
+
+    Конфиги в этом проекте подробно откомментированы по-русски, и редактор
+    коэффициентов показывал вместо этого голый ключ вроде ``PRESSURE_EXPONENT``.
+    Пояснение — комментарий в той же строке, а если его нет, то сплошной
+    блок комментариев прямо над ключом с тем же отступом.
+    """
+    notes: dict[tuple[str, ...], str] = {}
+    stack: list[tuple[int, str]] = []
+    block: list[str] = []
+    block_indent = -1
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            block, block_indent = [], -1
+            continue
+        if stripped.startswith("#"):
+            indent = len(line) - len(line.lstrip())
+            if block and indent != block_indent:
+                block = []
+            block_indent = indent
+            block.append(stripped.lstrip("#").strip())
+            continue
+        if stripped.startswith("-"):
+            block, block_indent = [], -1
+            continue
+        match = _LINE.match(line)
+        if match is None:
+            block, block_indent = [], -1
+            continue
+        indent = len(match["indent"])
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        stack.append((indent, match["key"].strip()))
+        rest = match["rest"]
+        comment_at = rest.find("#")
+        inline = rest[comment_at + 1 :].strip() if comment_at >= 0 else ""
+        above = " ".join(part for part in block if part) if block_indent == indent else ""
+        note = inline or above
+        if note:
+            notes[tuple(key for _, key in stack)] = note
+        block, block_indent = [], -1
+    return notes
+
+
 def patch_scalar(text: str, path: Sequence[str], value: Any) -> str:
     """Заменить одно значение прямо в тексте YAML.
 

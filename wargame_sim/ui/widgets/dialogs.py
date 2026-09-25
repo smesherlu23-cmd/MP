@@ -57,9 +57,14 @@ def confirm(
     *,
     confirm_label: str,
     on_confirm: Callable[[], None],
+    cancel_label: str = "Отмена",
     danger: bool = False,
 ) -> None:
-    """Спросить перед необратимым действием."""
+    """Спросить перед необратимым действием.
+
+    ``cancel_label`` — потому что не всякий вопрос отменяют: у сообщения
+    о конце боя вторая кнопка значит «остаться на пульте», а не «отмена».
+    """
 
     def accept() -> None:
         app.close_dialog()
@@ -70,7 +75,7 @@ def confirm(
             title,
             c.note(message),
             [
-                c.tertiary_button("Отмена", app.close_dialog),
+                c.tertiary_button(cancel_label, app.close_dialog),
                 c.primary_button(
                     confirm_label,
                     accept,

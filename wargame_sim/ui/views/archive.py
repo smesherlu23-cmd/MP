@@ -37,7 +37,7 @@ RESULT_COLUMNS: tuple[c.Col, ...] = (
     c.Col("Сид", 62, numeric=True, optional=2),
     c.Col("Потери A", 78, numeric=True),
     c.Col("Потери B", 78, numeric=True),
-    c.Col("", 72),
+    c.Col("", 28),
 )
 
 
@@ -87,12 +87,7 @@ def build(app: AppState) -> ft.View:
         app.go(ROUTES["battle_setup"])
 
     def ask_remove(path: Path, label: str, what: str) -> None:
-        """Спросить перед удалением: файл с диска возврату не подлежит.
-
-        Раньше это были два щелчка по одной кнопке с подписью «Точно?» —
-        приём из терминала, а не из настольного приложения: подтверждение
-        приходилось угадывать по сменившейся надписи.
-        """
+        """Спросить перед удалением: файл с диска возврату не подлежит."""
         dlg.confirm(
             app,
             f"Удалить {what} «{label}»?",
@@ -120,30 +115,20 @@ def build(app: AppState) -> ft.View:
     # -- проведённые бои ----------------------------------------------------
     def result_row(path: Path, result: BattleResult, *, last: bool) -> ft.Control:
         a, b = result.side_a.personnel_lost, result.side_b.personnel_lost
-        # Кнопки-значки, а не подписи: строка и так открывается щелчком, а
-        # полный набор действий лежит под правой кнопкой. Широкая колонка
-        # действий съедала место у названия сценария в узком окне.
-        actions = ft.Row(
-            [
-                c.spacer(),
-                c.icon_button(
-                    ft.Icons.REPLAY,
-                    lambda: replay(result),
-                    size=t.BUTTON_XS_H,
-                    icon_size=15,
-                    tooltip=f"Повтор по сиду {result.master_seed}",
-                ),
-                c.icon_button(
-                    ft.Icons.DELETE_OUTLINE,
-                    lambda: ask_remove(path, result.scenario_name, "запись о бое"),
-                    size=t.BUTTON_XS_H,
-                    icon_size=15,
-                    color=t.LOSS,
-                    tooltip="Удалить запись",
-                ),
-            ],
-            spacing=6,
-        )
+        menu: list[c.MenuItem | None] = [
+            c.MenuItem(
+                f"Повтор по сиду {result.master_seed}",
+                lambda: replay(result),
+                icon=ft.Icons.REPLAY,
+            ),
+            c.MENU_DIVIDER,
+            c.MenuItem(
+                "Удалить…",
+                lambda: ask_remove(path, result.scenario_name, "запись о бое"),
+                icon=ft.Icons.DELETE_OUTLINE,
+                danger=True,
+            ),
+        ]
         return table.row(
             [
                 t.text(result.scenario_name, size=t.SIZE_ROW, weight=t.W500, no_wrap=True),
@@ -158,25 +143,12 @@ def build(app: AppState) -> ft.View:
                 t.num(str(result.master_seed)),
                 t.num(str(a), color=t.LOSS if a >= b else t.TEXT),
                 t.num(str(b), color=t.LOSS if b > a else t.TEXT),
-                actions,
+                c.row_menu(menu),
             ],
-            height=t.TABLE_ROW_TALL_H,
+            height=t.TABLE_ROW_H + 6,
             last=last,
             on_click=lambda: open_result(result),
-            menu=[
-                c.MenuItem("Открыть", lambda: open_result(result), icon=ft.Icons.OPEN_IN_NEW),
-                c.MenuItem(
-                    f"Повтор по сиду {result.master_seed}",
-                    lambda: replay(result),
-                    icon=ft.Icons.REPLAY,
-                ),
-                c.MenuItem(
-                    "Удалить…",
-                    lambda: ask_remove(path, result.scenario_name, "запись о бое"),
-                    icon=ft.Icons.DELETE_OUTLINE,
-                    danger=True,
-                ),
-            ],
+            menu=menu,
         )
 
     def render_results() -> None:
@@ -198,18 +170,27 @@ def build(app: AppState) -> ft.View:
                 expand=True,
             )
         elif broken:
-            results_body.content = c.empty_hint(
-                f"Читаемых записей нет, а нечитаемых файлов {len(broken)} — "
-                "см. предупреждение над таблицей."
+            results_body.content = c.empty_state(
+                "Читаемых записей нет",
+                f"Нечитаемых файлов {len(broken)} — см. предупреждение над таблицей.",
+            )
+        elif app.results():
+            results_body.content = c.empty_state(
+                "Ничего не найдено", "Снимите фильтр по исходу или очистите поиск."
             )
         else:
-            results_body.content = c.empty_hint(
-                "Ничего не найдено — снимите фильтр или очистите поиск."
+            results_body.content = c.empty_state(
+                "Проведённых боёв пока нет",
+                "Законченный бой попадает сюда сам — с исходом, потерями и сидом.",
+                icon=ft.Icons.HISTORY,
             )
         broken_holder.content = (
-            c.warn_banner(
-                f"Не читается файлов результатов: {len(broken)}. Их нет в таблице. "
-                + "; ".join(f"{path.name} — {reason}" for path, reason in broken[:2])
+            ft.Container(
+                content=c.warn_banner(
+                    f"Не читается файлов результатов: {len(broken)}. Их нет в таблице. "
+                    + "; ".join(f"{path.name} — {reason}" for path, reason in broken[:2])
+                ),
+                margin=ft.Margin.only(bottom=t.GAP),
             )
             if broken
             else None
@@ -217,66 +198,21 @@ def build(app: AppState) -> ft.View:
         app.refresh(results_body, results_title, broken_holder)
 
     # -- сценарии -----------------------------------------------------------
-    def scenario_block(path: Path, scenario: Scenario, *, last: bool) -> ft.Control:
+    def scenario_row(path: Path, scenario: Scenario, *, last: bool) -> ft.Control:
+        """Сценарий строкой: щелчок открывает его в подготовке, «⋯» — остальное."""
         environment = scenario.environment
-        block = ft.Container(
-            content=ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Text(
-                                scenario.name,
-                                style=t.sans(size=t.SIZE_BODY, weight=t.W600),
-                                expand=True,
-                            ),
-                            ft.Text(
-                                f"сид {scenario.master_seed}",
-                                style=t.mono(size=t.SIZE_META, color=t.TEXT_MUTED),
-                            ),
-                        ],
-                        spacing=8,
-                    ),
-                    ft.Text(
-                        f"{scenario.battalion_a.name} · {scenario.battalion_a.order}"
-                        f" → {scenario.battalion_b.name} · {scenario.battalion_b.order}",
-                        style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3, height=1.5),
-                    ),
-                    ft.Text(
-                        f"{environment.terrain} · {environment.time_of_day}"
-                        f" · {environment.weather} · предел {environment.max_turns}",
-                        style=t.sans(size=t.SIZE_ROW, color=t.TEXT_3, height=1.5),
-                    ),
-                    ft.Row(
-                        [
-                            c.secondary_button(
-                                "Открыть",
-                                lambda: open_scenario(scenario),
-                                height=t.BUTTON_SM_H,
-                            ),
-                            c.tertiary_button(
-                                "Удалить",
-                                lambda: ask_remove(path, scenario.name, "сценарий"),
-                                height=t.BUTTON_SM_H,
-                                color=t.LOSS,
-                            ),
-                        ],
-                        spacing=t.GAP_SM,
-                    ),
-                ],
-                spacing=6,
-                tight=True,
-            ),
-            padding=ft.Padding.symmetric(vertical=14, horizontal=t.PAD_CARD),
-            border=None if last else t.border_bottom(t.BORDER_INNER),
-        )
-        return c.interactive(
-            block,
+        return c.list_row(
+            scenario.name,
+            f"{scenario.battalion_a.name} → {scenario.battalion_b.name} · "
+            f"{environment.terrain} · {environment.time_of_day} · сид {scenario.master_seed}",
+            on_click=lambda: open_scenario(scenario),
             menu=[
                 c.MenuItem(
                     "Открыть в подготовке",
                     lambda: open_scenario(scenario),
                     icon=ft.Icons.OPEN_IN_NEW,
                 ),
+                c.MENU_DIVIDER,
                 c.MenuItem(
                     "Удалить…",
                     lambda: ask_remove(path, scenario.name, "сценарий"),
@@ -284,7 +220,7 @@ def build(app: AppState) -> ft.View:
                     danger=True,
                 ),
             ],
-            hover=False,
+            last=last,
         )
 
     def render_scenarios() -> None:
@@ -292,7 +228,7 @@ def build(app: AppState) -> ft.View:
         if scenarios:
             scenarios_body.content = ft.Column(
                 [
-                    scenario_block(path, scenario, last=index == len(scenarios) - 1)
+                    scenario_row(path, scenario, last=index == len(scenarios) - 1)
                     for index, (path, scenario) in enumerate(scenarios)
                 ],
                 spacing=0,
@@ -300,7 +236,11 @@ def build(app: AppState) -> ft.View:
                 expand=True,
             )
         else:
-            scenarios_body.content = c.empty_hint("Сохранённых сценариев пока нет.")
+            scenarios_body.content = c.empty_state(
+                "Сохранённых сценариев нет",
+                "Сценарий сохраняется на подготовке боя — меню «Ещё действия».",
+                icon=ft.Icons.BOOKMARK_BORDER,
+            )
         app.refresh(scenarios_body)
 
     # -- сборка -------------------------------------------------------------
@@ -349,29 +289,18 @@ def build(app: AppState) -> ft.View:
     )
 
     scenarios_card = c.framed_card(
-        f"Сценарии · {len(app.scenarios())}",
-        scenarios_body,
-        trailing=[
-            c.icon_button(
-                ft.Icons.ADD,
-                lambda: app.go(ROUTES["battle_setup"]),
-                size=t.BUTTON_XS_H,
-                icon_size=16,
-                tooltip="Собрать новый сценарий",
-            )
-        ],
-        expand=True,
+        f"Сценарии · {len(app.scenarios())}", scenarios_body, expand=True
     )
 
     return screen(
         app,
         active="archive",
         title="Архив",
-        subtitle="Сценарии и проведённые бои; любой можно повторить",
+        subtitle="Проведённые бои и сценарии; любой бой повторяется по сиду",
         actions=[search],
         body=ft.Column(
             [broken_holder, c.columns(results_card, scenarios_card, right_width=SCENARIOS_W)],
-            spacing=t.GAP,
+            spacing=0,
             expand=True,
         ),
     )

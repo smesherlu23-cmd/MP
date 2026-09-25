@@ -112,6 +112,98 @@ def make_battalion(
     )
 
 
+#: Состав роты: три взвода и пулемётный взвод отдельной группой.
+COMPANY_COMPOSITION: tuple[tuple[str, str, int], ...] = (
+    ("отделение", "1-й взвод", 3),
+    ("отделение", "2-й взвод", 3),
+    ("отделение", "3-й взвод", 3),
+)
+
+
+def make_company(
+    battalion_id: str,
+    name: str,
+    side: Side,
+    config: AppConfig | None = None,
+    *,
+    order: Order = Order.ATTACK,
+    experience: int = 2,
+    morale: float = 75.0,
+    task: str = "",
+) -> Battalion:
+    """Рота: три взвода по три отделения плюс пулемётный расчёт.
+
+    Верхняя граница масштаба, на котором чаще всего идут бои, а кнопки для
+    неё не было: список подразделений предлагал пустой отряд, взвод и
+    батальон.
+    """
+    config = config or load_config()
+    head = make_element(
+        "штаб",
+        name,
+        "rota",
+        config,
+        experience=experience,
+        morale=morale,
+        with_vehicles=False,
+        echelon=Echelon.COMPANY,
+    )
+    elements = [head]
+    for index, (type_name, platoon_name, squads) in enumerate(
+        COMPANY_COMPOSITION, start=1
+    ):
+        platoon = make_element(
+            "штаб",
+            platoon_name,
+            f"vzv_{index}",
+            config,
+            experience=experience,
+            morale=morale,
+            with_vehicles=False,
+            echelon=Echelon.PLATOON,
+            parent=head.id,
+        )
+        elements.append(platoon)
+        for number in range(1, squads + 1):
+            elements.append(
+                make_element(
+                    type_name,
+                    f"{number}-е отделение",
+                    f"otd_{index}_{number}",
+                    config,
+                    experience=experience,
+                    morale=morale,
+                    with_vehicles=False,
+                    echelon=Echelon.SQUAD,
+                    parent=platoon.id,
+                )
+            )
+    elements.append(
+        make_element(
+            "пулемётный_расчёт",
+            "Пулемётный расчёт",
+            "pulemet",
+            config,
+            experience=experience,
+            morale=morale,
+            with_vehicles=False,
+            echelon=Echelon.TEAM,
+            parent=head.id,
+        )
+    )
+    return Battalion(
+        id=battalion_id,
+        name=name,
+        side=side,
+        scale=Echelon.COMPANY,
+        elements=elements,
+        commander_influence=55.0,
+        communications=82.0,
+        order=order,
+        task=task,
+    )
+
+
 def make_scenario(
     config: AppConfig | None = None,
     *,
@@ -145,10 +237,17 @@ def make_scenario(
 #: Мотострелковый взвод: три отделения и приданное танковое звено.
 #: Показывает, что программа считает бой любого масштаба, а техника
 #: живёт отдельной группой, а не полем внутри пехоты.
-PLATOON_COMPOSITION: tuple[tuple[str, str, int], ...] = (
-    ("стрелковая_рота", "1-е отделение", 9),
-    ("стрелковая_рота", "2-е отделение", 9),
-    ("стрелковая_рота", "3-е отделение", 9),
+#: Состав взвода: три отделения и пулемётный расчёт.
+#:
+#: Раньше отделения брались типом «стрелковая_рота» с переписанной руками
+#: численностью — и каждое отделение из девяти человек получало огневую
+#: мощь роты из ста двадцати. Теперь у малого масштаба свои типы, и числа
+#: считаются по их составу.
+PLATOON_COMPOSITION: tuple[tuple[str, str], ...] = (
+    ("отделение", "1-е отделение"),
+    ("отделение", "2-е отделение"),
+    ("отделение", "3-е отделение"),
+    ("пулемётный_расчёт", "Пулемётный расчёт"),
 )
 
 
@@ -180,9 +279,7 @@ def make_platoon(
     # Управление взвода — это сама группа: воюют её подгруппы, поэтому
     # собственные числа она получит сведением, а не руками.
     elements = [head]
-    for index, (type_name, element_name, personnel) in enumerate(
-        PLATOON_COMPOSITION, start=1
-    ):
+    for index, (type_name, element_name) in enumerate(PLATOON_COMPOSITION, start=1):
         squad = make_element(
             type_name,
             element_name,
@@ -194,9 +291,6 @@ def make_platoon(
             echelon=Echelon.SQUAD,
             parent=head.id,
         )
-        squad.personnel_current = 0
-        squad.personnel_full = personnel
-        squad.personnel_current = personnel
         elements.append(squad)
     crew = config.vehicle(vehicle_type).crew * vehicle_count
     armour = make_element(

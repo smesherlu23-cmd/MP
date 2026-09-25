@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Sequence
 from dataclasses import fields
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,7 +21,7 @@ from core.config import ConfigError, ConfigStore
 from core.config.introspect import flatten
 from core.config.schema import TogglesBody
 from core.engine import BattleEngine
-from core.models import COMMAND_ORDERS, Order, Side
+from core.models import COMMAND_ORDERS, Order, Side, Terrain
 from ui import shell
 from ui import theme as t
 from ui.app import ROUTE_TABLE, resolve
@@ -159,7 +160,7 @@ def test_active_navigation_item_is_highlighted(app: AppState) -> None:
     highlighted = [
         control
         for control in _walk(sidebar)
-        if getattr(control, "bgcolor", None) == t.TEXT and _has(control, "Подразделения")
+        if getattr(control, "bgcolor", None) == t.TEXT and _has(control, "Отряды")
     ]
     assert len(highlighted) == 1
 
@@ -321,7 +322,8 @@ def test_result_screen_after_battle(app: AppState) -> None:
 
 def test_result_screen_without_battle_explains_itself(app: AppState) -> None:
     view = resolve(app, ROUTES["battle_result"].format(id=app.scenario.id))
-    assert _has(view, "Бой ещё не проводился")
+    assert _has(view, "Боя ещё не было")
+    assert _has(view, "К подготовке")
 
 
 def test_batch_screen_with_results(app: AppState) -> None:
@@ -381,7 +383,10 @@ def test_materiel_lists_every_library(app: AppState, library: str, title: str) -
     entries = materiel.entries_of(app, materiel.LIBRARIES[library])
     assert _has(view, title)
     assert _has(view, str(len(entries))), "счётчик записей в шапке карточки"
-    assert _has(view, f"Мат.часть · {title}")
+    assert _has(view, "Мат.часть")
+    # все четыре библиотеки — вкладками одного экрана, солдаты среди них
+    for label in ("Техника", "Пехотное вооружение", "Обмундирование", "Солдаты"):
+        assert _has(view, label), label
 
 
 def test_materiel_groups_entries_by_folder(app: AppState) -> None:
@@ -434,7 +439,8 @@ def test_vehicle_in_use_is_not_deleted_silently(app: AppState) -> None:
 # --------------------------------------------------------------------------
 def test_troops_screen_shows_kit_and_computed_values(app: AppState) -> None:
     view = troops.build(app, "Гранатомётчик")
-    assert _has(view, "Сборка юнитов")
+    assert _has(view, "Солдаты"), "солдаты — вкладка мат.части"
+    assert view is not None and materiel.build(app, "troops").controls
     assert _has(view, "Комплект")
     assert _has(view, "Что даёт подразделению")
     # обмундирование, оружие и доп. оружие названы по-человечески
@@ -616,8 +622,9 @@ def test_unit_editor_offers_scale_and_reshaping(app: AppState) -> None:
     view = unit_editor.build(app, battalion.id)
 
     assert "масштаб отряда" in _labels(view)
-    assert _has(view, "Перестроить")
-    assert _has(view, "Разделить…")
+    # Перестроение — в «⋯» строки группы и по правой кнопке, а не третьей
+    # копией кнопок внутри раскрытой панели.
+    assert "Разделить…" in _menu_labels(view)
     assert "самостоятельная" in _labels(view)
 
 
@@ -781,11 +788,21 @@ def test_charts_follow_the_palette(app: AppState, light_theme) -> None:
 # --------------------------------------------------------------------------
 # Правая кнопка, диалоги и честность интерфейса
 # --------------------------------------------------------------------------
+def _menu_items(control: object) -> list[object]:
+    """Пункты меню контрола: и по правой кнопке, и под «⋯»."""
+    found: list[object] = []
+    for attribute in ("secondary_items", "items"):
+        value = getattr(control, attribute, None)
+        if isinstance(value, list):
+            found.extend(item for item in value if isinstance(item, ft.PopupMenuItem))
+    return found
+
+
 def _menu_labels(node: object) -> set[str]:
-    """Подписи всех пунктов контекстных меню экрана."""
+    """Подписи всех пунктов меню экрана — контекстных и под «⋯»."""
     labels: set[str] = set()
     for control in _walk(node):
-        for item in getattr(control, "secondary_items", None) or ():
+        for item in _menu_items(control):
             for child in _walk(item):
                 value = getattr(child, "value", None)
                 if isinstance(value, str) and value:
@@ -796,7 +813,7 @@ def _menu_labels(node: object) -> set[str]:
 def _menu_action(node: object, label: str):
     """Обработчик пункта меню с такой подписью."""
     for control in _walk(node):
-        for item in getattr(control, "secondary_items", None) or ():
+        for item in _menu_items(control):
             if label in {
                 value
                 for child in _walk(item)
@@ -806,12 +823,11 @@ def _menu_action(node: object, label: str):
     raise AssertionError(f"нет пункта меню «{label}»")
 
 
-def _click_by_label(node: object, label: str):
-    """Обработчик кнопки или плашки с такой подписью.
+def _clicks_by_label(node: object, label: str) -> list:
+    """Все обработчики кнопок с такой подписью, в порядке обхода.
 
-    Берётся последнее совпадение: содержимое экрана идёт после навигации,
-    а подпункт навигации бывает подписан так же, как кнопка (например,
-    «Итог» на пульте боя).
+    Одинаково подписанных кнопок на экране бывает несколько: в наряде сил
+    «Все» и «Никого» есть у каждой стороны.
     """
     found = [
         control.on_click
@@ -826,7 +842,17 @@ def _click_by_label(node: object, label: str):
     ]
     if not found:
         raise AssertionError(f"нет кнопки «{label}»")
-    return found[-1]
+    return found
+
+
+def _click_by_label(node: object, label: str):
+    """Обработчик кнопки или плашки с такой подписью.
+
+    Берётся последнее совпадение: содержимое экрана идёт после навигации,
+    а подпункт навигации бывает подписан так же, как кнопка (например,
+    «Итог» на пульте боя).
+    """
+    return _clicks_by_label(node, label)[-1]
 
 
 def _click_by_tooltip(node: object, tooltip: str):
@@ -865,9 +891,19 @@ def test_folder_row_carries_its_actions(app: AppState) -> None:
 
 
 def test_library_entry_row_carries_its_actions(app: AppState) -> None:
-    """У записи библиотеки — открыть, копировать, удалить по правой кнопке."""
-    labels = _menu_labels(materiel.build(app, "weapons"))
-    assert {"Открыть", "Копировать", "Удалить…"} <= labels
+    """У записи библиотеки — копировать и удалить: в «⋯» на строке и по правой кнопке.
+
+    «Открыть» в меню больше нет: запись открывает щелчок по строке.
+    """
+    view = materiel.build(app, "weapons")
+    assert {"Копировать", "Удалить…"} <= _menu_labels(view)
+    row_menus = [
+        control
+        for control in _walk(view)
+        if isinstance(control, ft.PopupMenuButton) and control.tooltip == "Действия"
+    ]
+    entries = materiel.entries_of(app, materiel.LIBRARIES["weapons"])
+    assert len(row_menus) == len(entries), "у каждой записи своё «⋯»"
 
 
 def test_deleting_a_folder_asks_first(app: AppState) -> None:
@@ -927,18 +963,26 @@ def test_split_dialog_hands_over_the_shares(app: AppState) -> None:
 
 
 def test_result_is_not_invented_before_the_battle_ends(app: AppState) -> None:
-    """«Итог» на пятом ходу не выдаёт ничью по лимиту ходов."""
+    """Вкладка «Итог» на третьем ходу не выдаёт ничью по лимиту ходов.
+
+    Она ведёт на экран итога, и тот честно говорит, что бой идёт, — и
+    предлагает довести его до конца, а не показывает конец, которого не было.
+    """
     engine = app.start_battle()
     engine.run_turns(3)
     assert not engine.finished
+    moves: list[str] = []
+    app.navigator = moves.append
 
-    box = _dialogs(app)
     view = resolve(app, ROUTES["battle"].format(id=app.scenario.id))
     _click_by_label(view, "Итог")()
-
+    result_route = ROUTES["battle_result"].format(id=app.scenario.id)
+    assert moves == [result_route]
     assert app.result is None, "итог собрался по незакончившемуся бою"
-    assert len(box) == 1
-    assert "не закончен" in box[0].title.value.casefold()
+
+    _click_by_label(resolve(app, result_route), "Довести до конца")()
+    assert engine.finished
+    assert app.result is not None and app.result.turns == engine.turn
 
 
 def test_journal_shows_the_latest_records(app: AppState) -> None:
@@ -975,33 +1019,42 @@ def test_journal_appends_instead_of_rebuilding(app: AppState) -> None:
 
 
 def test_changed_filter_rebuilds_the_journal(app: AppState) -> None:
-    """Смена фильтра — это другой список, и он собирается заново."""
+    """Смена фильтра — это другой список, и он собирается заново.
+
+    Проверяется показанное окно, а не объекты контролов: один ход даёт
+    больше записей, чем помещается в окно, поэтому «последние 300 всего
+    журнала» и «последние 300 второго хода» бывают одним и тем же набором.
+    """
     engine = app.start_battle()
     engine.run_turns(2)
     entries = list(engine.log.entries)
     view = journal.EntriesView()
     view.render(entries, "events")
-    first = list(view.__dict__["_tiles"].controls)
 
-    view.render([entry for entry in entries if entry.turn == 2], "events")
-    assert view.__dict__["_tiles"].controls != first
+    first_turn = [entry for entry in entries if entry.turn == 1]
+    view.render(first_turn, "events")
+    shown = view.__dict__["_window"]
+
+    assert shown, "после смены фильтра окно пустое"
+    assert all(entry.turn == 1 for entry in shown), "в окне остались записи чужого хода"
+    assert shown[-1] is first_turn[-1]
 
 
 def test_template_chip_actually_adds_a_group(app: AppState) -> None:
-    """Плашка шаблона добавляет группу этого типа, а не открывает первый отряд."""
+    """«Добавить группу» кладёт группу этого типа в открытый отряд.
+
+    Раньше шаблоны жили на экране списка и сначала спрашивали, в какой
+    отряд класть; ещё раньше любой шаблон просто открывал первый отряд.
+    Теперь они там, где ими пользуются, — в редакторе выбранного отряда.
+    """
     from ui.views import units as units_view
 
     type_name = sorted(app.config.element_types.element_types)[0]
     label = app.config.element_type(type_name).label
-
-    # Отрядов два, поэтому сначала спрашивают, куда класть.
-    box = _dialogs(app)
-    _click_by_label(units_view.build(app), label)()
-    assert len(box) == 1, "не спросил, в какой отряд добавлять"
-
-    target = app.units()[0][1]
+    target = app.units()[1][1]
     before = len(target.elements)
-    _click_by_label(box[0], "Добавить")()
+
+    _menu_action(units_view.build(app, unit_id=target.id), label)(None)
 
     saved = app.unit(target.id)
     assert saved is not None
@@ -1094,8 +1147,8 @@ def test_report_export_lands_in_the_chosen_folder(app: AppState, tmp_path: Path)
     _picker(app, target)
 
     view = battle_result.build(app, app.scenario.id)
-    for label in ("Markdown", "HTML", "CSV"):
-        _click_by_label(view, label)()
+    for label in ("Отчёт Markdown", "Страница HTML", "Таблица CSV"):
+        _menu_action(view, label)(None)
 
     assert {path.suffix for path in target.iterdir()} == {".md", ".html", ".csv"}
 
@@ -1128,7 +1181,7 @@ def test_import_offers_a_file_dialog(app: AppState, tmp_path: Path) -> None:
 
     app.file_asker = ask
     before = len(app.units())
-    _click_by_label(units_view.build(app), "Обзор…")()
+    _menu_action(units_view.build(app), "Загрузить из файла…")(None)
 
     assert asked and asked[0][1] == ("json",)
     assert len(app.units()) == before + 1
@@ -1172,9 +1225,10 @@ def test_folder_click_does_not_rebuild_the_screen(app: AppState) -> None:
 
     view = materiel.build(app, "weapons")
     taken = _routes_taken(app)
-    _menu_action(view, "Открыть")()
+    _click_by_label(view, "ГРАНАТОМЁТЫ")()
 
     assert taken == []
+    assert app.selected_folder["weapons"] == "Гранатомёты"
 
 
 def test_search_filters_the_library(app: AppState) -> None:
@@ -1282,7 +1336,8 @@ def test_result_route_does_not_invent_an_outcome(app: AppState) -> None:
     assert app.result is None
     assert not any("Ничья" in text for text in shown)
     assert f"Бой идёт, ход {engine.turn}" in shown
-    assert _has(view, "К пульту боя")
+    assert _has(view, "К пульту")
+    assert _has(view, "Довести до конца")
 
 
 def test_resets_ask_before_wiping(app: AppState) -> None:
@@ -1290,11 +1345,11 @@ def test_resets_ask_before_wiping(app: AppState) -> None:
     from ui.views import config_editor as cfg_view
 
     box = _dialogs(app)
-    _click_by_label(materiel.build(app, "vehicles"), "Сбросить библиотеку…")()
-    _click_by_label(troops.build(app), "Сбросить типы…")()
+    _menu_action(materiel.build(app, "vehicles"), "Сбросить библиотеку…")(None)
+    _menu_action(troops.build(app), "Сбросить библиотеку…")(None)
     view = cfg_view.build(app)
-    _click_by_label(view, "Сбросить раздел…")()
-    _click_by_label(view, "Сбросить всё…")()
+    _menu_action(view, "Сбросить раздел…")(None)
+    _menu_action(view, "Сбросить всё…")(None)
 
     assert len(box) == 4, "какой-то сброс срабатывает без вопроса"
     # и ничего при этом не сбросилось
@@ -1308,7 +1363,7 @@ def test_restart_asks_when_the_battle_has_started(app: AppState) -> None:
     box = _dialogs(app)
     route = ROUTES["battle"].format(id=app.scenario.id)
 
-    _click_by_tooltip(resolve(app, route), "Начать заново с тем же сидом")()
+    _menu_action(resolve(app, route), "Начать заново…")(None)
 
     assert len(box) == 1
     assert "заново" in box[0].title.value.casefold()
@@ -1323,15 +1378,15 @@ def _tables() -> list[tuple[str, tuple[common.Col, ...], int]]:
     """Все таблицы приложения и ширина правой колонки рядом с ними."""
     from ui.views import archive as archive_view
     from ui.views import unit_editor as editor_view
-    from ui.views import units as units_view
     from ui.widgets import orbat as orbat_widget
 
     tables = [
-        ("конструктор отряда", editor_view.COLUMNS, editor_view.SUMMARY_W),
+        # Список отрядов стоит слева от редактора, но для ширины таблицы
+        # сторона не важна — важно, сколько он отнимает.
+        ("редактор отряда", editor_view.COLUMNS, editor_view.LIST_W),
         ("пульт боя", orbat_widget.TREE_COLUMNS, 420),
         ("сборка юнитов", troops.COLUMNS, troops.DETAIL_W),
         ("архив", archive_view.RESULT_COLUMNS, archive_view.SCENARIOS_W),
-        ("подразделения", units_view.COLUMNS, 0),
     ]
     tables += [
         (f"мат.часть · {spec.label}", spec.columns, materiel.DETAIL_W)
@@ -1430,3 +1485,334 @@ def test_finished_battle_is_not_offered_as_unfinished(app: AppState) -> None:
 
     assert engine.finished
     assert not _has(resolve(app, ROUTES["home"]), "Незаконченные бои")
+
+
+# --------------------------------------------------------------------------
+# Настройка боя: экран показывает то, что в модели
+# --------------------------------------------------------------------------
+def _switches(node: object) -> list[ft.Switch]:
+    return [control for control in _walk(node) if isinstance(control, ft.Switch)]
+
+
+def _force_rows(node: object) -> list[ft.Container]:
+    """Живые строки наряда сил: у каждой свой тумблер и свой щелчок."""
+    return [
+        control
+        for control in _walk(node)
+        if isinstance(control, ft.Container)
+        and getattr(control, "on_click", None) is not None
+        and _switches(control)
+    ]
+
+
+def _counters(node: object) -> list[str]:
+    """Счётчики «в бою N из M» — по одному на сторону."""
+    return [
+        value
+        for control in _walk(node)
+        if isinstance(value := getattr(control, "value", None), str)
+        and value.startswith("в бою ")
+    ]
+
+
+def _segments(node: object, label: str) -> list[ft.Container]:
+    """Сегменты переключателя с такой подписью: щёлкаемые и подсвеченный."""
+    return [
+        control
+        for control in _walk(node)
+        if isinstance(control, ft.Container)
+        and control.border_radius == t.R_SEGMENT
+        and [
+            value
+            for child in _walk(control)
+            if isinstance(value := getattr(child, "value", None), str)
+        ]
+        == [label]
+    ]
+
+
+def _active_segment(node: object, labels: Sequence[str]) -> str:
+    """Какой из вариантов подсвечен: у активного нет обработчика и есть фон."""
+    active = [
+        label
+        for label in labels
+        for segment in _segments(node, label)
+        if segment.on_click is None and segment.bgcolor
+    ]
+    assert len(active) == 1, f"подсвечено не одно значение: {active}"
+    return active[0]
+
+
+def test_force_allocation_follows_the_model(app: AppState) -> None:
+    """Щелчок по строке наряда сил виден на самой строке.
+
+    Тумблер помнит значение, с которым его собрали, а карточка наряда сил
+    не пересобиралась вовсе: щелчок по строке уводил группу в резерв, но
+    тумблер оставался включённым, а счётчик «в бою» не менялся никогда.
+    """
+    battalion = app.scenario.battalion_a
+    total = len(battalion.leaf_elements)
+    view = resolve(app, ROUTES["battle_setup"])
+
+    assert _counters(view)[0] == f"в бою {total} из {total}"
+    assert _switches(view)[0].value is True
+
+    _force_rows(view)[0].on_click(None)
+
+    assert len(battalion.engaged_elements) == total - 1
+    assert _switches(view)[0].value is False, "тумблер показывает состояние, которого нет"
+    assert _counters(view)[0] == f"в бою {total - 1} из {total}"
+
+
+def test_force_allocation_has_bulk_actions(app: AppState) -> None:
+    """«Все» и «Никого» есть у каждой стороны и работают только на своей."""
+    view = resolve(app, ROUTES["battle_setup"])
+    _clicks_by_label(view, "Никого")[0]()
+
+    assert not app.scenario.battalion_a.engaged_elements
+    assert app.scenario.battalion_b.engaged_elements, "«Никого» задело чужую сторону"
+
+    _clicks_by_label(view, "Все")[0]()
+    assert len(app.scenario.battalion_a.engaged_elements) == len(
+        app.scenario.battalion_a.leaf_elements
+    )
+
+
+def test_a_side_left_in_reserve_does_not_start_a_battle(app: AppState) -> None:
+    """Бой, в котором одной стороне воевать нечем, не начинается.
+
+    Раньше «Начать бой» собирал такой бой молча, и он кончался на первом
+    ходу разгромом, которого никто не задумывал.
+    """
+    notes: list[str] = []
+    app.notifier = notes.append
+    view = resolve(app, ROUTES["battle_setup"])
+
+    _clicks_by_label(view, "Никого")[0]()
+    assert any("целиком в резерве" in value for value in _texts(view)), "предупреждения не видно"
+
+    _click_by_label(view, "Начать бой")()
+    assert app.engine is None, "бой начался без одной из сторон"
+    assert notes and "в резерве" in notes[-1]
+
+
+def test_conditions_highlight_moves_with_the_choice(app: AppState) -> None:
+    """Выбранная местность подсвечена: сегмент сам себя не перекрашивает."""
+    labels = [str(item) for item in Terrain]
+    view = resolve(app, ROUTES["battle_setup"])
+    assert _active_segment(view, labels) == str(app.scenario.environment.terrain)
+
+    _segments(view, str(Terrain.SWAMP))[0].on_click(None)
+
+    assert app.scenario.environment.terrain == Terrain.SWAMP
+    assert _active_segment(view, labels) == str(Terrain.SWAMP)
+
+
+def test_fortification_is_chosen_not_typed(app: AppState) -> None:
+    """Укрепления выбираются из шести уровней, и выбор виден на месте."""
+    view = resolve(app, ROUTES["battle_setup"])
+    _segments(view, "4")[0].on_click(None)
+
+    assert app.scenario.environment.fortification_A == 4
+    assert app.scenario.environment.fortification_B != 4, "укрепления поехали на обе стороны"
+    assert _segments(view, "4")[0].on_click is None, "подсветка осталась на прежнем уровне"
+
+
+def test_the_scenario_block_follows_the_conditions(app: AppState) -> None:
+    """Блок «Сценарий» в боковой колонке пересобирается вместе с условиями."""
+    view = resolve(app, ROUTES["battle_setup"])
+    _segments(view, str(Terrain.SWAMP))[0].on_click(None)
+
+    environment = app.scenario.environment
+    line = f"{environment.terrain} · {environment.time_of_day} · {environment.weather}"
+    assert line in _texts(view), "боковая колонка показывает прежние условия"
+
+
+def test_picking_a_unit_redraws_the_force_allocation(app: AppState) -> None:
+    """Смена подразделения меняет и дерево наряда сил, а не только список."""
+    from core.samples import make_platoon
+
+    platoon = make_platoon("bn_probe", "Взвод для проверки", Side.A, app.config)
+    app.save_unit(platoon)
+
+    view = resolve(app, ROUTES["battle_setup"])
+    dropdown = next(control for control in _walk(view) if isinstance(control, ft.Dropdown))
+    dropdown.value = platoon.id
+    dropdown.on_select(None)
+
+    assert app.scenario.battalion_a.name == platoon.name
+    leaves = app.scenario.battalion_a.leaf_elements
+    assert _counters(view)[0] == f"в бою {len(leaves)} из {len(leaves)}"
+    for element in leaves:
+        assert _has(view, element.name), "в наряде сил группы прежнего отряда"
+
+
+def test_random_seed_does_not_rebuild_the_screen(app: AppState) -> None:
+    """Новый сид перерисовывает поле, а не гоняет экран через переход."""
+    moves: list[str] = []
+    app.navigator = moves.append
+    view = resolve(app, ROUTES["battle_setup"])
+
+    _click_by_label(view, "Случайный")()
+
+    assert not moves, "смена сида собирает экран заново"
+    assert str(app.scenario.master_seed) in _texts(view), "в поле прежний сид"
+
+
+def test_the_edge_is_shown_as_numbers(app: AppState) -> None:
+    """Перевес показан двумя отношениями и выводом, а не абзацем из трёх фраз."""
+    from core import preview
+
+    edge = preview.edge(app.scenario, app.config)
+    shown = _texts(resolve(app, ROUTES["battle_setup"]))
+
+    assert f"{edge.ratio_a:.2f}" in shown
+    assert f"{edge.ratio_b:.2f}" in shown
+    assert edge.verdict in shown
+
+
+def test_setup_shortcuts_save_and_start(app: AppState) -> None:
+    """Ctrl+S сохраняет сценарий, Ctrl+Enter начинает бой."""
+    resolve(app, ROUTES["battle_setup"])
+
+    assert app.press("Ctrl+S")
+    assert app.scenarios(), "сценарий не сохранён"
+
+    assert app.press("Ctrl+Enter")
+    assert app.engine is not None
+
+
+def test_interactive_makes_the_row_clickable(app: AppState) -> None:
+    """`interactive` вешает щелчок сама.
+
+    Раньше она брала ``on_click`` только ради формы курсора, а вешать
+    обработчик должен был вызывающий: строка наряда сил показывала руку и
+    не делала ничего.
+    """
+    clicks: list[int] = []
+    row = ft.Container(content=ft.Text("строка"))
+    common.interactive(row, on_click=lambda: clicks.append(1))
+
+    assert row.on_click is not None, "строка осталась неживой"
+    row.on_click(None)
+    assert clicks == [1]
+
+
+# --------------------------------------------------------------------------
+# Бой не теряется, конец слышен, итог сохраняется
+# --------------------------------------------------------------------------
+def test_opening_the_setup_does_not_wipe_a_running_battle(app: AppState) -> None:
+    """Заход на экран настройки не сбрасывает проведённый бой.
+
+    Экран настройки звал `touch()` прямо при сборке, а `touch` ставит
+    `app.engine = None`: пять проведённых ходов пропадали от одного
+    перехода по навигации, и со стороны это выглядело так, будто отряды
+    вообще не несут потерь.
+    """
+    engine = app.start_battle()
+    engine.run_turns(5)
+    losses = engine.state.side("A").total_personnel_lost()
+    assert losses > 0
+
+    resolve(app, ROUTES["battle_setup"])
+
+    assert app.engine is engine, "бой заменён новым"
+    assert app.ensure_battle().turn == 5
+    assert app.engine.state.side("A").total_personnel_lost() == losses
+
+
+def test_finished_battle_announces_itself(app: AppState) -> None:
+    """Конец боя слышен: уведомление и окно с предложением разбора."""
+    notes: list[str] = []
+    app.notifier = notes.append
+    box = _dialogs(app)
+    app.engine = None
+
+    view = resolve(app, ROUTES["battle"].format(id=app.scenario.id))
+    _menu_action(view, "До конца боя")(None)
+
+    assert app.engine.finished
+    assert notes and notes[-1].startswith("Бой окончен"), notes
+    assert len(box) == 1, "окна о конце боя нет"
+    assert "окончен" in box[0].title.value.casefold()
+
+
+def test_a_finished_battle_goes_to_the_archive_by_itself(app: AppState) -> None:
+    """Законченный бой попадает в архив сам, без кнопки «В архив».
+
+    Раньше `finish_battle` считал итог только в памяти: бой, доведённый до
+    конца и закрытый, не оставлял следа, и раздел «Бои» в архиве был пуст.
+    """
+    assert not app.results()
+    engine = app.start_battle()
+    engine.run()
+
+    result = app.finish_battle()
+
+    assert app.result_path is not None
+    assert [saved.id for _, saved in app.results()] == [result.id]
+
+    # Итог считается один раз: иначе каждый заход на экран плодил копии.
+    for _ in range(3):
+        app.finish_battle()
+    assert len(app.results()) == 1
+    assert app.result is result
+
+
+def test_an_unfinished_battle_is_not_archived(app: AppState) -> None:
+    """Незаконченный бой в архив не идёт — итога у него ещё нет."""
+    engine = app.start_battle()
+    engine.run_turns(4)
+
+    app.finish_battle()
+
+    assert app.result_path is None
+    assert not app.results()
+
+
+def test_the_result_screen_says_where_the_battle_was_saved(app: AppState) -> None:
+    """Экран итога показывает файл архива вместо кнопки «В архив»."""
+    engine = app.start_battle()
+    engine.run()
+
+    view = resolve(app, ROUTES["battle_result"].format(id=app.scenario.id))
+
+    assert app.result_path is not None
+    assert _has(view, app.result_path.name)
+    assert not _has(view, "В архив"), "кнопка предлагает сделать уже сделанное"
+
+
+def test_every_visible_character_has_a_glyph(app: AppState) -> None:
+    """Каждый видимый символ есть в зарегистрированных шрифтах.
+
+    Символ, которого в шрифте нет, Flutter рисует пустым квадратом, и ни
+    одна другая проверка этого не видит: текст на месте, шрифт на месте.
+    Так на экране коэффициентов «⋯» в пояснении превращалось в квадрат —
+    в IBM Plex этого символа нет.
+    """
+    from fontTools.ttLib import TTFont
+
+    fonts = PROJECT_ROOT / "assets" / "fonts"
+    known = set(TTFont(fonts / "IBMPlexSans-400.ttf").getBestCmap())
+    known |= set(TTFont(fonts / "IBMPlexMono-400.ttf").getBestCmap())
+
+    engine = app.start_battle()
+    engine.run()
+    app.finish_battle()
+    routes = [*_routes(app), ROUTES["battle_result"].format(id=app.scenario.id)]
+    routes += [ROUTES["materiel"].format(library=key) for key in ("weapons", "gear", "troops")]
+
+    missing: dict[str, str] = {}
+    for route in routes:
+        view = resolve(app, route)
+        nodes = _walk(view)
+        nodes += [child for node in list(nodes) for item in _menu_items(node) for child in _walk(item)]
+        for node in nodes:
+            for attribute in ("value", "text", "tooltip"):
+                value = getattr(node, attribute, None)
+                if not isinstance(value, str):
+                    continue
+                for char in value:
+                    if char.isprintable() and ord(char) not in known:
+                        missing.setdefault(char, route)
+    assert not missing, f"символы без глифа в шрифте: {missing}"

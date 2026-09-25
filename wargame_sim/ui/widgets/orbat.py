@@ -26,10 +26,11 @@ ORDER_OPTIONS: tuple[tuple[str, str], ...] = (
     *((str(order), str(order)) for order in COMMAND_ORDERS),
 )
 
-#: Сторона, имя, численность, мораль и приказ остаются при любой ширине —
-#: без них пульт перестаёт быть пультом. Остальное уходит по очереди.
+#: Имя, численность, мораль и приказ остаются при любой ширине — без них
+#: пульт перестаёт быть пультом. Остальное уходит по очереди. Колонки
+#: стороны нет: на каждой строке стояла одна и та же буква, хотя стороны и
+#: так разделены своими шапками.
 TREE_COLUMNS: tuple[c.Col, ...] = (
-    c.Col("С", 22),
     c.Col("Группа", expand=True),
     c.Col("Масштаб", 84, optional=3),
     c.Col("Л/с", 76, numeric=True),
@@ -86,8 +87,19 @@ def nodes(
     return visible
 
 
-def _name_cell(node: Node, *, muted: bool, on_toggle: Callable[[], None] | None) -> ft.Control:
-    """Имя со сдвигом по уровню и «галочкой» раскрытия у старшей группы."""
+def name_cell(
+    node: Node,
+    *,
+    muted: bool,
+    on_toggle: Callable[[], None] | None,
+    counter: str | None = None,
+) -> ft.Control:
+    """Имя со сдвигом по уровню и «галочкой» раскрытия у старшей группы.
+
+    ``counter`` — приписка справа от названия у старшей группы. По
+    умолчанию это число подгрупп («из 3»); наряд сил ставит своё, потому
+    что там важно не сколько подгрупп всего, а сколько из них в бою.
+    """
     parts: list[ft.Control] = [ft.Container(width=node.depth * INDENT)]
     if node.children:
         parts.append(
@@ -112,7 +124,7 @@ def _name_cell(node: Node, *, muted: bool, on_toggle: Callable[[], None] | None)
     if node.children:
         parts.append(
             ft.Text(
-                f"из {node.children}",
+                counter if counter is not None else f"из {node.children}",
                 style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
             )
         )
@@ -158,8 +170,7 @@ def tree_row(
     )
     return table.row(
         [
-            ft.Text(node.side, style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED)),
-            _name_cell(node, muted=muted, on_toggle=on_toggle),
+            name_cell(node, muted=muted, on_toggle=on_toggle),
             state,
             c.fraction(roll.personnel_current, roll.personnel_full),
             c.fraction(roll.vehicles_current, roll.vehicles_full)

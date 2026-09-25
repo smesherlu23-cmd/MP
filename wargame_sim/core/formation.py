@@ -381,3 +381,15 @@ def set_engaged(battalion: Battalion, element_id: str, engaged: bool) -> list[El
     for leaf in touched:
         leaf.engaged = engaged
     return touched
+
+
+def set_all_engaged(battalion: Battalion, engaged: bool) -> list[Element]:
+    """Ввести в бой или отвести в резерв весь отряд целиком.
+
+    Отряд может расти из нескольких корней (техника часто живёт отдельной
+    группой), поэтому «весь» — это не поддерево одной группы, а все листья.
+    """
+    touched = [leaf for leaf in battalion.leaf_elements if leaf.engaged != engaged]
+    for leaf in touched:
+        leaf.engaged = engaged
+    return touched

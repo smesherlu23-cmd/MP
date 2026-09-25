@@ -38,6 +38,26 @@ class Factors:
         return list(self.items)
 
 
+def strength(element: Element, config: AppConfig) -> float:
+    """Сила элемента в «единицах силы» — численность, а не доля от штата.
+
+    Раньше в обмен входила ``personnel_ratio``, то есть доля оставшихся от
+    штата. Из этого следовало, что отделение в девять человек стреляет
+    ровно как рота в сто двадцать: ``attack`` — качество на человека
+    (``core.staff`` делит огонь состава на численность), и умножать его на
+    долю значило сравнивать плотности, а не силы.
+
+    Что это ломало, было видно на прогонах: деление роты на три взвода
+    умножало её огонь в 2.21 раза, а удвоение людей при том же числе групп
+    не помогало вовсе — сторона становилась только более крупной мишенью.
+
+    Давление остаётся отношением сил, поэтому доля потерь за ход от
+    масштаба не зависит: бой отделений считается теми же кривыми, что и
+    бой батальонов.
+    """
+    return element.personnel_current / config.cbt.strength_reference
+
+
 def state_coefficient(
     element: Element, battalion: Battalion, config: AppConfig
 ) -> tuple[float, Factors]:
@@ -199,7 +219,7 @@ def firepower(
 
     factors = Factors()
     factors.add_note("attack", element.attack)
-    factors.mul("численность", element.personnel_ratio)
+    factors.mul("численность", strength(element, config))
 
     state, state_factors = state_coefficient(element, battalion, config)
     factors.mul("K_сост", state)
@@ -236,7 +256,7 @@ def resilience(
 
     factors = Factors()
     factors.add_note("defense", element.defense)
-    factors.mul("численность", element.personnel_ratio)
+    factors.mul("численность", strength(element, config))
 
     state, state_factors = state_coefficient(element, battalion, config)
     factors.mul("K_сост", state)

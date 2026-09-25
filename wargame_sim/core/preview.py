@@ -33,12 +33,19 @@ class SideEdge:
 
 @dataclass(frozen=True)
 class Edge:
-    """Сравнение сторон и готовая формулировка для ГМ."""
+    """Сравнение сторон и готовая формулировка для ГМ.
+
+    ``verdict`` — только вывод: у кого перевес и почему. ``text`` — он же
+    вместе с обоими отношениями, одним абзацем. Разделено потому, что
+    интерфейс показывает отношения числами и пересказывать их словами ещё
+    раз не должен, а отчёт берёт абзац целиком.
+    """
 
     a: SideEdge
     b: SideEdge
     ratio_a: float
     ratio_b: float
+    verdict: str
     text: str
 
     @property
@@ -101,16 +108,23 @@ def edge(scenario: Scenario, config: AppConfig) -> Edge:
         f" ({b.firepower:.0f} против {a.resilience:.0f}).",
     ]
     if ratio_a > ratio_b:
-        lines.append(
+        verdict = (
             f"Перевес у A: приказ «{a.order}» против «{b.order}»"
             f" по местности «{environment.terrain}»."
         )
     elif ratio_b > ratio_a:
-        lines.append(
+        verdict = (
             f"Перевес у B: приказ «{b.order}» против «{a.order}»"
             f" по местности «{environment.terrain}»."
         )
     else:
-        lines.append("Перевеса нет: соотношения совпадают.")
+        verdict = "Перевеса нет: соотношения совпадают."
 
-    return Edge(a=a, b=b, ratio_a=ratio_a, ratio_b=ratio_b, text=" ".join(lines))
+    return Edge(
+        a=a,
+        b=b,
+        ratio_a=ratio_a,
+        ratio_b=ratio_b,
+        verdict=verdict,
+        text=" ".join([*lines, verdict]),
+    )

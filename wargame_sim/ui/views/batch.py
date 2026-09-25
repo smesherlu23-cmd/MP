@@ -1,4 +1,8 @@
-"""Массовое моделирование: N прогонов, вероятности, распределения, графики (§9).
+"""Прогоны: один сценарий много раз — вероятности, распределения, графики (§9).
+
+Параметры прогона стоят над результатами, а не в шапке экрана: там три
+поля без подписей делили место с четырьмя кнопками, а ниже пустовала вся
+остальная страница.
 
 Экран ничего не считает сам: он запускает :func:`core.batch.run_batch` в
 отдельном потоке и показывает то, что вернул движок. Прогон i использует сид
@@ -11,13 +15,12 @@ from pathlib import Path
 
 import flet as ft
 
-from core.batch import DEFAULT_RUNS
 from core.models import MAX_SEED, BatchResult, Distribution, RunRecord, Winner
 from core.report import batch_csv, batch_markdown, batch_text, winner_label
 from core.storage import write_text
 from ui import theme as t
 from ui.charts import losses_histogram, outcomes_chart, turns_chart
-from ui.shell import aside_block, screen
+from ui.shell import screen
 from ui.state import ROUTES, AppState
 from ui.widgets import common as c
 
@@ -99,15 +102,7 @@ def build(app: AppState) -> ft.View:
         app.refresh(status)
 
     # -- параметры ----------------------------------------------------------
-    def inline_field(label: str, control: ft.Control) -> ft.Control:
-        return ft.Row(
-            [t.caption(label), control],
-            spacing=6,
-            tight=True,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        )
-
-    runs_field = inline_field(
+    runs_field = c.labeled(
         "Прогонов",
         c.number_field(
             app.batch_runs,
@@ -115,10 +110,11 @@ def build(app: AppState) -> ft.View:
             minimum=MIN_RUNS,
             maximum=MAX_RUNS,
             integer=True,
-            width=70,
+            width=110,
         ),
+        width=110,
     )
-    seed_field = inline_field(
+    seed_field = c.labeled(
         "Базовый сид",
         c.number_field(
             app.batch_seed,
@@ -126,28 +122,34 @@ def build(app: AppState) -> ft.View:
             minimum=0,
             maximum=MAX_SEED,
             integer=True,
-            width=80,
+            width=130,
         ),
+        width=130,
     )
-    processes_field = inline_field(
-        "Процессов",
+    processes_field = c.labeled(
+        "Процессов · 0 — сколько ядер",
         c.number_field(
             app.batch_processes,
             lambda value: setattr(app, "batch_processes", int(value)),
             minimum=0,
             maximum=MAX_PROCESSES,
             integer=True,
-            width=64,
+            width=190,
         ),
+        width=190,
     )
 
     # -- запуск -------------------------------------------------------------
     def render_cancel() -> None:
-        cancel_holder.content = c.secondary_button(
-            "Отменить",
-            cancel,
-            icon=ft.Icons.CANCEL_OUTLINED,
-            disabled=not app.batch_running,
+        """Одна кнопка: «Запустить», пока прогонов нет, «Отменить» — пока идут.
+
+        Раньше рядом всегда стояли обе, и «Отменить» большую часть времени
+        была серой и ничего не делала.
+        """
+        cancel_holder.content = (
+            c.secondary_button("Отменить", cancel, icon=ft.Icons.CANCEL_OUTLINED)
+            if app.batch_running
+            else c.primary_button("Запустить", start, icon=ft.Icons.PLAY_ARROW)
         )
         app.refresh(cancel_holder)
 
@@ -343,11 +345,16 @@ def build(app: AppState) -> ft.View:
     def render_results() -> None:
         batch = app.batch
         if batch is None:
-            results.content = c.framed_card(
-                "Прогоны",
-                c.empty_hint(
-                    "Прогоны ещё не запускались — задайте число прогонов и нажмите «Запустить»."
-                ),
+            results.content = c.card(
+                [
+                    c.empty_state(
+                        "Прогоны ещё не запускались",
+                        "Сценарий сыграется столько раз, сколько указано, — каждый "
+                        "со своим сидом. Здесь появятся вероятности исходов, разброс "
+                        "потерь и длительности и таблица всех прогонов.",
+                        icon=ft.Icons.INSIGHTS_OUTLINED,
+                    )
+                ],
                 expand=True,
             )
             app.refresh(results)
@@ -423,32 +430,63 @@ def build(app: AppState) -> ft.View:
     render_cancel()
     render_results()
 
+    environment = scenario.environment
+    params = c.card(
+        [
+            ft.Row(
+                [
+                    runs_field,
+                    seed_field,
+                    processes_field,
+                    ft.Column(
+                        [
+                            t.caption("Сценарий"),
+                            t.text(
+                                f"{scenario.battalion_a.name} · {scenario.battalion_a.order}"
+                                f" → {scenario.battalion_b.name} · {scenario.battalion_b.order}",
+                                size=t.SIZE_ROW,
+                                no_wrap=True,
+                            ),
+                            ft.Text(
+                                f"{environment.terrain} · {environment.time_of_day} · "
+                                f"{environment.weather} · прогон i идёт с сидом base + i",
+                                style=t.mono(size=t.SIZE_META, color=t.TEXT_3),
+                                no_wrap=True,
+                            ),
+                        ],
+                        spacing=3,
+                        tight=True,
+                        expand=True,
+                    ),
+                    status,
+                ],
+                spacing=t.GAP,
+                vertical_alignment=ft.CrossAxisAlignment.END,
+            ),
+            progress,
+        ],
+        spacing=t.GAP_SM,
+    )
+
     return screen(
         app,
         active="batch",
-        title="Массовое моделирование",
-        subtitle=f"Сценарий «{scenario.name}»",
-        leading_extra=[
-            ft.Container(width=8),
-            runs_field,
-            seed_field,
-            processes_field,
-        ],
+        title="Прогоны",
+        subtitle=f"«{scenario.name}» много раз подряд: вероятности и разброс исходов",
         actions=[
             cancel_holder,
-            c.secondary_button("Markdown", lambda: export("md"), height=t.BUTTON_SM_H),
-            c.secondary_button("CSV", lambda: export("csv"), height=t.BUTTON_SM_H),
-            c.primary_button("Запустить", start, icon=ft.Icons.PLAY_ARROW),
+            c.more_menu(
+                [
+                    c.MenuItem(
+                        "Выгрузить отчёт Markdown",
+                        lambda: export("md"),
+                        icon=ft.Icons.DESCRIPTION,
+                    ),
+                    c.MenuItem(
+                        "Выгрузить таблицу CSV", lambda: export("csv"), icon=ft.Icons.TABLE_CHART
+                    ),
+                ]
+            ),
         ],
-        aside=aside_block(
-            "Прогон",
-            [
-                c.note(
-                    f"прогон i использует сид base_seed + i; по умолчанию {DEFAULT_RUNS} прогонов",
-                    size=t.SIZE_META,
-                ),
-                status,
-            ],
-        ),
-        body=ft.Column([progress, results], spacing=t.GAP_SM, expand=True),
+        body=ft.Column([params, results], spacing=t.GAP, expand=True),
     )
