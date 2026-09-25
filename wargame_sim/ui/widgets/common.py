@@ -853,7 +853,11 @@ def _field_shell(
         bgcolor=t.CARD_BG if nested else t.SURFACE_ALT,
         border=ft.Border.all(1, t.BORDER),
         border_radius=t.R_FIELD,
-        padding=ft.Padding.only(left=10, right=6),
+        # Стрелка выпадающего списка рисуется у самого правого края поля;
+        # при 6 px на узких колонках (сторона B в таблице «Стороны») она
+        # обрезалась о границу карточки. 10 px симметрично левому отступу
+        # дают ей клиренс на любой ширине.
+        padding=ft.Padding.only(left=10, right=10),
         alignment=ft.Alignment.CENTER_LEFT,
     )
 

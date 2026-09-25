@@ -149,7 +149,7 @@ def status_block(app: AppState) -> ft.Control:
                     overflow=ft.TextOverflow.ELLIPSIS,
                 ),
                 ft.Text(
-                    f"{state} · сид {scenario.master_seed}",
+                    state,
                     style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_3),
                     no_wrap=True,
                 ),

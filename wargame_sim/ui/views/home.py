@@ -26,7 +26,6 @@ RESULT_COLUMNS: tuple[c.Col, ...] = (
     c.Col("Исход", 110),
     c.Col("Причина", 130),
     c.Col("Ходов", 60, numeric=True),
-    c.Col("Сид", 70, numeric=True),
     c.Col("Потери A", 90, numeric=True),
     c.Col("Потери B", 90, numeric=True),
 )
@@ -117,7 +116,7 @@ def current_battle_card(app: AppState) -> ft.Control:
             t.card_title("Текущий бой"),
             c.spacer(),
             ft.Text(
-                f"{state} · сид {scenario.master_seed}",
+                state,
                 style=t.mono(size=t.SIZE_META, color=t.TEXT_3),
             ),
         ],
@@ -137,7 +136,6 @@ def result_row(result: BattleResult, app: AppState, *, last: bool) -> ft.Control
             t.text(winner_label(result.winner), size=t.SIZE_ROW, weight=t.W500),
             t.text(str(result.end_reason), size=t.SIZE_ROW, color=t.TEXT_3),
             t.num(str(result.turns)),
-            t.num(str(result.master_seed)),
             t.num(str(a), color=t.LOSS if a >= b else t.TEXT),
             t.num(str(b), color=t.LOSS if b > a else t.TEXT),
         ],
@@ -153,7 +151,7 @@ def scenario_row(scenario: Scenario, app: AppState, *, last: bool) -> ft.Control
     return c.list_row(
         scenario.name,
         f"{scenario.battalion_a.name} → {scenario.battalion_b.name} · "
-        f"{environment.terrain} · {environment.time_of_day} · сид {scenario.master_seed}",
+        f"{environment.terrain} · {environment.time_of_day}",
         on_click=lambda: _open_scenario(app, scenario),
         menu=[
             c.MenuItem(

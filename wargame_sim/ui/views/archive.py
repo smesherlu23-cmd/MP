@@ -1,7 +1,7 @@
-"""Архив: проведённые бои и сохранённые сценарии, повтор по сиду (§10).
+"""Архив: проведённые бои и сохранённые сценарии (§10).
 
-Поиск идёт по названию сценария и по сиду, фильтр — по исходу. Повтор
-подставляет сид сохранённого боя в сценарий: бой воспроизводится ход в ход.
+Поиск идёт по названию сценария, фильтр — по исходу. «Сыграть заново»
+поднимает тот же сценарий и начинает новый — сам по себе уникальный — бой.
 """
 
 from __future__ import annotations
@@ -33,8 +33,7 @@ RESULT_COLUMNS: tuple[c.Col, ...] = (
     c.Col("Сценарий", expand=True),
     c.Col("Исход", 86),
     c.Col("Причина", 110, optional=1),
-    c.Col("Ходов", 58, numeric=True, optional=3),
-    c.Col("Сид", 62, numeric=True, optional=2),
+    c.Col("Ходов", 58, numeric=True, optional=2),
     c.Col("Потери A", 78, numeric=True),
     c.Col("Потери B", 78, numeric=True),
     c.Col("", 28),
@@ -42,13 +41,13 @@ RESULT_COLUMNS: tuple[c.Col, ...] = (
 
 
 def matches(result: BattleResult, query: str, outcome: str) -> bool:
-    """Строка проходит фильтр по исходу и поиску по названию или сиду."""
+    """Строка проходит фильтр по исходу и поиску по названию сценария."""
     if outcome != ALL and str(result.winner) != outcome:
         return False
     if not query:
         return True
     needle = query.strip().lower()
-    return needle in result.scenario_name.lower() or needle in str(result.master_seed)
+    return needle in result.scenario_name.lower()
 
 
 #: Ширина правой колонки со сценариями.
@@ -72,13 +71,12 @@ def build(app: AppState) -> ft.View:
         app.go(ROUTES["battle_result"].format(id=result.scenario_id))
 
     def replay(result: BattleResult) -> None:
-        """Повтор по сиду: тот же сценарий и тот же сид — тот же бой (§7)."""
+        """Сыграть заново: тот же сценарий, новый — уникальный — бой."""
         found = [item for _, item in app.scenarios() if item.id == result.scenario_id]
         if found:
             app.load_scenario(found[0])
-        app.scenario.master_seed = result.master_seed
         app.start_battle()
-        app.notify(f"Повтор по сиду {result.master_seed}")
+        app.notify(f"Новый бой: «{app.scenario.name}»")
         app.go(ROUTES["battle"].format(id=app.scenario.id))
 
     def open_scenario(scenario: Scenario) -> None:
@@ -117,7 +115,7 @@ def build(app: AppState) -> ft.View:
         a, b = result.side_a.personnel_lost, result.side_b.personnel_lost
         menu: list[c.MenuItem | None] = [
             c.MenuItem(
-                f"Повтор по сиду {result.master_seed}",
+                "Сыграть заново",
                 lambda: replay(result),
                 icon=ft.Icons.REPLAY,
             ),
@@ -140,7 +138,6 @@ def build(app: AppState) -> ft.View:
                 ),
                 t.text(str(result.end_reason), size=t.SIZE_ROW, color=t.TEXT_3),
                 t.num(str(result.turns)),
-                t.num(str(result.master_seed)),
                 t.num(str(a), color=t.LOSS if a >= b else t.TEXT),
                 t.num(str(b), color=t.LOSS if b > a else t.TEXT),
                 c.row_menu(menu),
@@ -181,7 +178,7 @@ def build(app: AppState) -> ft.View:
         else:
             results_body.content = c.empty_state(
                 "Проведённых боёв пока нет",
-                "Законченный бой попадает сюда сам — с исходом, потерями и сидом.",
+                "Законченный бой попадает сюда сам — с исходом и потерями.",
                 icon=ft.Icons.HISTORY,
             )
         broken_holder.content = (
@@ -204,7 +201,7 @@ def build(app: AppState) -> ft.View:
         return c.list_row(
             scenario.name,
             f"{scenario.battalion_a.name} → {scenario.battalion_b.name} · "
-            f"{environment.terrain} · {environment.time_of_day} · сид {scenario.master_seed}",
+            f"{environment.terrain} · {environment.time_of_day}",
             on_click=lambda: open_scenario(scenario),
             menu=[
                 c.MenuItem(
@@ -248,7 +245,7 @@ def build(app: AppState) -> ft.View:
         content=c.segmented(OUTCOME_OPTIONS, app.archive_outcome, set_outcome)
     )
     search, focus_search = c.search_box(
-        app.archive_query, set_query, placeholder="Поиск по сценарию или сиду"
+        app.archive_query, set_query, placeholder="Поиск по сценарию"
     )
     app.bind("Ctrl+F", focus_search)
 
@@ -272,7 +269,7 @@ def build(app: AppState) -> ft.View:
                 c.card_footer(
                     [
                         ft.Text(
-                            "повтор по сиду воспроизводит бой ход в ход",
+                            "«Сыграть заново» поднимает тот же сценарий и начинает новый бой",
                             style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
                         )
                     ]
@@ -296,7 +293,7 @@ def build(app: AppState) -> ft.View:
         app,
         active="archive",
         title="Архив",
-        subtitle="Проведённые бои и сценарии; любой бой повторяется по сиду",
+        subtitle="Проведённые бои и сценарии",
         actions=[search],
         body=ft.Column(
             [broken_holder, c.columns(results_card, scenarios_card, right_width=SCENARIOS_W)],

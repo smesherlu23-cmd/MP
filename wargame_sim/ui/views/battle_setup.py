@@ -1,4 +1,4 @@
-"""Настройка боя: стороны, условия, наряд сил, сид и сравнение сторон.
+"""Настройка боя: стороны, условия, наряд сил и сравнение сторон.
 
 Экран собирается один раз и дальше перерисовывает только изменившееся:
 переход на самого себя увозил бы прокрутку в начало. Держатель есть у
@@ -27,7 +27,6 @@
 
 from __future__ import annotations
 
-import random
 from collections.abc import Callable, Sequence
 
 import flet as ft
@@ -35,7 +34,6 @@ import flet as ft
 from core import formation, preview
 from core.models import (
     COMMAND_ORDERS,
-    MAX_SEED,
     Battalion,
     IntelLevel,
     Order,
@@ -64,9 +62,6 @@ LIMIT_W = 120
 #: Подпись параметра в таблице сторон: слева от полей A и B.
 PARAM_W = 116
 
-#: Поле сида.
-SEED_W = 140
-
 #: Уровни укреплений: не набирать числом, а выбирать — их всего шесть.
 FORTIFICATION_LEVELS: tuple[str, ...] = ("0", "1", "2", "3", "4", "5")
 
@@ -88,7 +83,6 @@ def build(app: AppState) -> ft.View:
     forces_holder = ft.Container()
     compare_holder = ft.Container(expand=True)
     aside_holder = ft.Container()
-    seed_holder = ft.Container(width=SEED_W)
     fort_holders = {str(side): ft.Container() for side in Side}
 
     # -- перерисовка изменившегося -------------------------------------------
@@ -131,7 +125,7 @@ def build(app: AppState) -> ft.View:
         touch()
 
     def set_scenario(attribute: str, value: object) -> None:
-        """Название, заметки и сид: на сравнение сторон они не влияют.
+        """Название и заметки: на сравнение сторон они не влияют.
 
         Бой заново здесь не начинается вслух — правку ловит отпечаток
         сценария в ``AppState.ensure_battle``, поэтому пересобирать сводку
@@ -159,12 +153,6 @@ def build(app: AppState) -> ft.View:
         else:
             scenario.battalion_b = battalion
         unit_changed()
-
-    def random_seed() -> None:
-        scenario.master_seed = random.randint(0, MAX_SEED)
-        seed_holder.content = seed_field()
-        app.refresh(seed_holder)
-        touch()
 
     def save() -> None:
         if not scenario.id:
@@ -379,17 +367,6 @@ def build(app: AppState) -> ft.View:
                         lambda value, s=side: set_side(s, "order", Order(value)),
                         expand=True,
                     )
-                ),
-            ),
-            param_row(
-                "Задача боя",
-                by_side(
-                    lambda side: c.text_field(
-                        scenario.battalion(side).task,
-                        lambda value, s=side: set_side(s, "task", value),
-                        placeholder="не задана",
-                        expand=True,
-                    )[0]
                 ),
             ),
         ]
@@ -633,37 +610,18 @@ def build(app: AppState) -> ft.View:
             parts.append(c.warn_banner(idle_warning(idle)))
         return c.card(parts)
 
-    # -- сценарий и случайность ---------------------------------------------
-    def seed_field() -> ft.Control:
-        return c.number_field(
-            scenario.master_seed,
-            lambda value: set_scenario("master_seed", int(value)),
-            minimum=0,
-            maximum=MAX_SEED,
-            integer=True,
-            width=SEED_W,
-        )
-
-    seed_holder.content = seed_field()
+    # -- сценарий -------------------------------------------------------------
     randomness = c.card(
         [
-            t.card_title("Сценарий и случайность"),
-            ft.Row(
-                [
-                    c.labeled(
-                        "Название сценария",
-                        c.text_field(
-                            scenario.name,
-                            lambda value: set_scenario("name", value),
-                            expand=True,
-                        )[0],
-                        expand=True,
-                    ),
-                    c.labeled("Сид боя", seed_holder, width=SEED_W),
-                    c.secondary_button("Случайный", random_seed, icon=ft.Icons.CASINO, height=32),
-                ],
-                spacing=t.GAP_SM,
-                vertical_alignment=ft.CrossAxisAlignment.END,
+            t.card_title("Сценарий"),
+            c.labeled(
+                "Название сценария",
+                c.text_field(
+                    scenario.name,
+                    lambda value: set_scenario("name", value),
+                    expand=True,
+                )[0],
+                expand=True,
             ),
             c.labeled(
                 "Заметки",
@@ -676,7 +634,8 @@ def build(app: AppState) -> ft.View:
                 expand=True,
             ),
             c.note(
-                "Один и тот же сид даёт один и тот же бой — результат можно повторить точно."
+                "Каждый бой уникален: исход не повторить точь-в-точь даже с тем же "
+                "сценарием."
             ),
         ]
     )

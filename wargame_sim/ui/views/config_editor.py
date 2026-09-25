@@ -220,6 +220,7 @@ FIELD_LABELS: dict[str, str] = {
     "disengage_threshold": "Порог выхода из боя",
     "default_max_turns": "Предел ходов по умолчанию",
     "max_cover": "Потолок укрытия",
+    "stop_draw_margin": "Ничья при остановке, разница боеспособности",
     "external_supply_share": "Подвоз без своего тыла, доля",
     "source_efficiency_curve": "Эффективность тыла",
     "base_per_turn": "Расход за ход",

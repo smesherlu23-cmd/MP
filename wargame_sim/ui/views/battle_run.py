@@ -398,10 +398,6 @@ def build(app: AppState, battle_id: str) -> ft.View:
                 style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
                 expand=True,
             ),
-            ft.Text(
-                f"сид {engine.master_seed}",
-                style=t.mono(size=t.SIZE_LABEL, color=t.TEXT_MUTED),
-            ),
         ]
         app.refresh(journal_footer)
 
@@ -495,6 +491,24 @@ def build(app: AppState, battle_id: str) -> ft.View:
         app.save_battle()
         app.go(ROUTE.format(id=battle_id))
 
+    def stop_battle() -> None:
+        """Остановить бой прямо сейчас — решение ГМ, а не автомат."""
+        if engine.finished:
+            return
+        dlg.confirm(
+            app,
+            "Остановить бой?",
+            "Бой завершится на нынешнем ходу. Победитель определится по "
+            "остаточной боеспособности сторон, близкие силы — ничья. "
+            "Продолжить бой после этого будет нельзя.",
+            confirm_label="Остановить бой",
+            danger=True,
+            on_confirm=do_stop,
+        )
+
+    def do_stop() -> None:
+        run_in_background(engine.stop)
+
     def set_side_filter(value: str) -> None:
         app.run_side_filter = value
         side_switch.content = c.segmented(SIDE_OPTIONS, value, set_side_filter)
@@ -555,7 +569,7 @@ def build(app: AppState, battle_id: str) -> ft.View:
 
         def write(directory) -> None:
             path = write_text(
-                directory / f"journal_{scenario.id}_{engine.master_seed}.md",
+                directory / f"journal_{scenario.id}_{engine.turn:02d}.md",
                 engine.log.to_markdown(),
             )
             app.notify(f"Журнал выгружен: {path}")
@@ -631,6 +645,12 @@ def build(app: AppState, battle_id: str) -> ft.View:
                         "Выгрузить журнал…", export_journal, icon=ft.Icons.DOWNLOAD_OUTLINED
                     ),
                     c.MENU_DIVIDER,
+                    c.MenuItem(
+                        "Остановить бой…",
+                        stop_battle,
+                        icon=ft.Icons.STOP_CIRCLE_OUTLINED,
+                        danger=True,
+                    ),
                     c.MenuItem("Начать заново…", restart, icon=ft.Icons.REPLAY, danger=True),
                 ]
             ),
