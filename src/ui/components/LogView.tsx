@@ -82,6 +82,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
   const [side, setSide] = useTabState<'all' | 'A' | 'B'>(`${props.tabKey}:logSide`, 'all');
   const [phases, setPhases] = useTabState<Phase[]>(`${props.tabKey}:logPhases`, []);
   const [q, setQ] = useState('');
+  const [showFilters, setShowFilters] = useTabState(`${props.tabKey}:logFilters`, false);
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [limit, setLimit] = useState(1500);
   const listRef = useRef<HTMLDivElement>(null);
@@ -122,47 +123,73 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [b.log.length, filtered.length]);
 
+  const filtersActive = side !== 'all' || phases.length > 0 || !!q;
   return (
     <>
-      <div className="log-filters">
+      <div className="log-head">
+        <h3 className="grow">Журнал</h3>
         <Seg
           value={String(level) as '0' | '1' | '2'}
           onChange={(v) => setLevel(Number(v) as 0 | 1 | 2)}
           options={[
-            { value: '0', label: 'Ключевое', title: 'Только важнейшие события' },
-            { value: '1', label: 'Обычное', title: 'Потери, мораль, проверки' },
-            { value: '2', label: 'Подробное', title: 'Всё, включая огонь каждого элемента' },
+            { value: '0', label: 'Главное', title: 'Только важнейшие события' },
+            { value: '1', label: 'Обычно', title: 'Потери, мораль, проверки' },
+            { value: '2', label: 'Всё', title: 'Всё, включая огонь каждого элемента и обнаружение' },
           ]}
         />
-        <Seg
-          value={side}
-          onChange={setSide}
-          options={[
-            { value: 'all', label: 'Все' },
-            { value: 'A', label: b.sides.A.name },
-            { value: 'B', label: b.sides.B.name },
-          ]}
-        />
-        <input type="search" placeholder="Поиск…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 90 }} />
-        <div className="row" style={{ gap: 3, width: '100%' }}>
-          {PHASES.map((p) => (
-            <button
-              key={p.id}
-              className={`chip${phases.includes(p.id) ? ' accent' : ''}`}
-              style={{ cursor: 'pointer' }}
-              title={`Фильтр: ${p.label}`}
-              onClick={() => setPhases(phases.includes(p.id) ? phases.filter((x) => x !== p.id) : [...phases, p.id])}
-            >
-              {p.icon} {p.label}
-            </button>
-          ))}
+        <button className={`btn sm${showFilters || filtersActive ? ' active' : ''}`} onClick={() => setShowFilters(!showFilters)} title="Фильтры по стороне, фазе и тексту">
+          Фильтр{filtersActive ? ' •' : ''}
+        </button>
+      </div>
+      {(showFilters || props.focus) && (
+        <div className="log-filters">
+          {showFilters && (
+            <>
+              <Seg
+                value={side}
+                onChange={setSide}
+                options={[
+                  { value: 'all', label: 'Обе стороны' },
+                  { value: 'A', label: b.sides.A.name },
+                  { value: 'B', label: b.sides.B.name },
+                ]}
+              />
+              <input type="search" placeholder="Поиск…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 90 }} />
+              <div className="row" style={{ gap: 3, width: '100%' }}>
+                {PHASES.map((p) => (
+                  <button
+                    key={p.id}
+                    className={`chip${phases.includes(p.id) ? ' accent' : ''}`}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setPhases(phases.includes(p.id) ? phases.filter((x) => x !== p.id) : [...phases, p.id])}
+                  >
+                    {p.icon} {p.label}
+                  </button>
+                ))}
+                {filtersActive && (
+                  <a
+                    href="#"
+                    className="small"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSide('all');
+                      setPhases([]);
+                      setQ('');
+                    }}
+                  >
+                    сбросить
+                  </a>
+                )}
+              </div>
+            </>
+          )}
           {props.focus && (
             <button className="chip accent" style={{ cursor: 'pointer' }} onClick={props.onClearFocus} title="Снять фильтр по элементу">
               только: {b.elements.find((x) => x.id === props.focus)?.name} ×
             </button>
           )}
         </div>
-      </div>
+      )}
       <div
         className="log-list"
         ref={listRef}

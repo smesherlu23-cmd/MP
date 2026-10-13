@@ -9,7 +9,7 @@ import { MonteCarloPage } from './pages/MonteCarloPage';
 import { RulesetPage } from './pages/RulesetPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { Btn } from './components/ui';
+import { Btn, Menu } from './components/ui';
 import {
   activateTab,
   closeTab,
@@ -144,6 +144,7 @@ function SideSection(props: { id: string; title: string; count: number; onAdd?: 
 function Sidebar() {
   const s = useApp();
   const [q, setQ] = useState('');
+  const [allBattles, setAllBattles] = useState(false);
   const match = (name: string) => !q || name.toLowerCase().includes(q.toLowerCase());
   const activeTab = s.tabs.find((t) => t.key === s.active);
   const isActive = (kind: TabKind, ref?: string) => activeTab?.kind === kind && activeTab.ref === ref;
@@ -174,22 +175,25 @@ function Sidebar() {
         {scenarios.length ? scenarios.map((x) => item('scenario', x.id, x.name)) : <div className="side-empty">Нет сценариев</div>}
       </SideSection>
       <SideSection id="fm" title="Подразделения" count={formations.length} onAdd={() => createFormation()} addTitle="Новое подразделение">
-        {formations.length ? formations.map((x) => item('formation', `lib:${x.id}`, x.name, x.kind)) : <div className="side-empty">Библиотека пуста</div>}
+        {formations.length ? formations.map((x) => item('formation', `lib:${x.id}`, x.name)) : <div className="side-empty">Библиотека пуста</div>}
       </SideSection>
       <SideSection id="bt" title="Бои" count={battles.length}>
-        {battles.length ? battles.slice(0, 60).map((x) => item('battle', x.id, x.name, x.finished ? 'итог' : `ход ${x.turn}`)) : <div className="side-empty">Боёв пока нет</div>}
+        {battles.length ? (
+          battles.slice(0, allBattles || q ? 200 : 8).map((x) => item('battle', x.id, x.name, x.finished ? 'итог' : `ход ${x.turn}`))
+        ) : (
+          <div className="side-empty">Боёв пока нет</div>
+        )}
+        {!q && !allBattles && battles.length > 8 && (
+          <div className="side-empty">
+            <a href="#" onClick={(e) => (e.preventDefault(), setAllBattles(true))}>
+              показать все ({battles.length})
+            </a>
+          </div>
+        )}
       </SideSection>
       <SideSection id="rs" title="Наборы правил" count={rulesets.length} onAdd={() => createRuleset()} addTitle="Новый набор правил">
         {rulesets.map((x) => item('ruleset', x.id, x.name))}
       </SideSection>
-      <div className="side-section">
-        <div className={`side-item${isActive('help') ? ' active' : ''}`} style={{ paddingLeft: 10 }} onClick={() => openTab('help')}>
-          ? Справка по механикам
-        </div>
-        <div className={`side-item${isActive('settings') ? ' active' : ''}`} style={{ paddingLeft: 10 }} onClick={() => openTab('settings')}>
-          ⚙ Настройки
-        </div>
-      </div>
     </aside>
   );
 }
@@ -327,25 +331,61 @@ export function App() {
           ))}
         </nav>
         <div className="topbar-right">
-          {s.saving > 0 && <span className="saving-ind">сохранение…</span>}
-          <Btn kind="ghost" sm onClick={() => importFile()} title="Импорт набора правил, подразделения, сценария или боя из JSON">
-            Импорт
-          </Btn>
-          <Btn kind="ghost" sm icon title="Тема" onClick={() => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' })}>
-            {s.settings.theme === 'dark' ? '☀' : '☾'}
-          </Btn>
-          <Btn kind="ghost" sm icon title="Справка" onClick={() => openTab('help')}>
-            ?
-          </Btn>
-          <Btn kind="ghost" sm icon title="Настройки" onClick={() => openTab('settings')}>
-            ⚙
-          </Btn>
+          <Menu
+            sm
+            title="Меню"
+            items={[
+              { label: 'Импорт из файла…', onClick: () => importFile(), tip: 'Набор правил, подразделение, сценарий или бой в формате JSON' },
+              { label: s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', onClick: () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }) },
+              { label: s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор', onClick: () => updateSettings({ sidebar: !s.settings.sidebar }) },
+              'sep',
+              { label: 'Справка', onClick: () => openTab('help') },
+              { label: 'Настройки', onClick: () => openTab('settings') },
+            ]}
+          />
         </div>
       </header>
       <Sidebar />
       <main className="content">{active && <Page key={active.key} t={active} />}</main>
       <DialogHost />
       <Toasts />
+      <TooltipHost />
+    </div>
+  );
+}
+
+/** Одна всплывающая подсказка на всё окно: показывается у любого элемента с атрибутом data-tip. */
+function TooltipHost() {
+  const [tip, setTip] = useState<{ text: string; left: number; top: number; above: boolean } | null>(null);
+  useEffect(() => {
+    let cur: Element | null = null;
+    const over = (e: MouseEvent) => {
+      const t = (e.target as Element)?.closest?.('[data-tip]') ?? null;
+      if (t === cur) return;
+      cur = t;
+      const text = t?.getAttribute('data-tip');
+      if (!t || !text) return setTip(null);
+      const r = t.getBoundingClientRect();
+      const above = r.bottom + 90 > window.innerHeight;
+      setTip({ text, left: Math.min(Math.max(8, r.left + r.width / 2 - 170), window.innerWidth - 348), top: above ? r.top - 6 : r.bottom + 6, above });
+    };
+    const hide = () => {
+      cur = null;
+      setTip(null);
+    };
+    document.addEventListener('mouseover', over);
+    document.addEventListener('scroll', hide, true);
+    document.addEventListener('mousedown', hide);
+    return () => {
+      document.removeEventListener('mouseover', over);
+      document.removeEventListener('scroll', hide, true);
+      document.removeEventListener('mousedown', hide);
+    };
+  }, []);
+  if (!tip) return null;
+  return (
+    <div className="tooltip" style={{ left: tip.left, top: tip.top, transform: tip.above ? 'translateY(-100%)' : undefined }}>
+      {tip.text}
     </div>
   );
 }

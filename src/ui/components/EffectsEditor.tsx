@@ -13,30 +13,28 @@ export function EffectsEditor(props: { value: Effects; onChange: (v: Effects) =>
     props.onChange(next);
   };
   return (
-    <div className="stack" style={{ gap: 4 }}>
-      {keys.length === 0 && <span className="faint small">Нет эффектов — всё ×1.</span>}
-      {keys.map((k) => (
-        <div key={k} className="row" style={{ gap: 6, flexWrap: 'nowrap' }} title={STAT_HINTS[k]}>
-          <span className="grow small">{STAT_LABELS[k]}</span>
-          <span className="faint">×</span>
-          <Num value={props.value[k]} onChange={(v) => set(k, v)} min={0} step={0.05} width={70} />
-          <span className={`small nowrap ${(props.value[k] ?? 1) > 1 ? 'good' : (props.value[k] ?? 1) < 1 ? 'bad' : 'faint'}`} style={{ width: 44, textAlign: 'right' }}>
-            {(props.value[k] ?? 1) >= 1 ? '+' : '−'}
-            {Math.abs(Math.round(((props.value[k] ?? 1) - 1) * 100))}%
-          </span>
-          <Btn kind="ghost" sm icon title="Убрать эффект" onClick={() => set(k, undefined)}>
-            ×
-          </Btn>
-        </div>
-      ))}
+    <div className="stack" style={{ gap: 3 }}>
+      {keys.map((k) => {
+        const v = props.value[k] ?? 1;
+        return (
+          <div key={k} className="eff-row" data-tip={STAT_HINTS[k]}>
+            <span className="grow small">{STAT_LABELS[k]}</span>
+            <Num value={props.value[k]} onChange={(x) => set(k, x)} min={0} step={0.05} width={64} />
+            <span className={`eff-pct ${v > 1 ? 'good' : v < 1 ? 'bad' : 'faint'}`}>
+              {v >= 1 ? '+' : '−'}
+              {Math.abs(Math.round((v - 1) * 100))}%
+            </span>
+            <span className="eff-del">
+              <Btn kind="ghost" sm icon title="Убрать эффект" onClick={() => set(k, undefined)}>
+                ×
+              </Btn>
+            </span>
+          </div>
+        );
+      })}
       {free.length > 0 && (
-        <select
-          value=""
-          onChange={(e) => e.target.value && set(e.target.value as StatKey, 1)}
-          style={{ alignSelf: 'flex-start', color: 'var(--muted)' }}
-          title="Добавить эффект"
-        >
-          <option value="">+ эффект…</option>
+        <select className="eff-add" value="" onChange={(e) => e.target.value && set(e.target.value as StatKey, 1)} title="Добавить эффект (множитель характеристики)">
+          <option value="">+ эффект</option>
           {free.map((k) => (
             <option key={k} value={k} title={STAT_HINTS[k]}>
               {STAT_LABELS[k]}

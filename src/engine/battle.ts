@@ -306,7 +306,6 @@ function phaseDetection(E: EngineContext) {
       t.spotted = E.rng.chance(chance);
       if (t.spotted) t.everSpotted = true;
       if (E.logging) {
-        const changed = was !== t.spotted;
         const best = scores[0];
         const factors: Factor[] = [{ label: `Дистанция «${E.band?.name}»`, value: base, kind: 'base' }];
         if (best) {
@@ -323,7 +322,7 @@ function phaseDetection(E: EngineContext) {
         factors.push({ label: 'Итоговый шанс (до 3 наблюдателей)', value: chance, kind: 'chance' });
         E.log({
           phase: 'detection',
-          level: changed ? 1 : 2,
+          level: 2,
           side,
           severity: t.spotted ? 'good' : 'info',
           refs: [t.id],
@@ -685,7 +684,10 @@ function applyShots(E: EngineContext, shots: Shot[]) {
     }
     if (E.logging) {
       const parts: string[] = [];
-      if (loss.pers > 0) parts.push(`${loss.pers} чел. (убито ${loss.kia}, ранено ${loss.wia}, пропало ${loss.mia})`);
+      if (loss.pers > 0) {
+        const kinds = [loss.kia && `убито ${loss.kia}`, loss.wia && `ранено ${loss.wia}`, loss.mia && `пропало ${loss.mia}`].filter(Boolean).join(', ');
+        parts.push(`${loss.pers} чел. (${kinds})`);
+      }
       for (const [typeId, q] of loss.equip) {
         const sub: string[] = [];
         if (q.destroyed) sub.push(`уничтожено ${q.destroyed}`);
@@ -701,8 +703,9 @@ function applyShots(E: EngineContext, shots: Shot[]) {
         protectionMult(E, t, mainCls, undefined, pf);
         for (const x of pf) factors.push({ ...x, label: `Защищённость — ${x.label}` });
       }
-      if (E.f.suppression && suppGain > 0) factors.push({ label: 'Прирост подавления', value: round1(suppGain), kind: 'add' });
-      const who = [...shooters].map((id) => e(id)).join(', ');
+      if (E.f.suppression && suppGain > 0) factors.push({ label: `Подавление ${Math.round(before)} → ${Math.round(t.suppression)}%`, value: round1(suppGain), kind: 'add' });
+      const who = [...shooters].map((id) => E.elements.get(id)?.name ?? id).join(', ');
+      factors.unshift({ label: `Огонь вели: ${who}`, value: shooters.size, kind: 'base' });
       E.log({
         phase: 'losses',
         level: parts.length ? 1 : 2,
@@ -710,8 +713,8 @@ function applyShots(E: EngineContext, shots: Shot[]) {
         severity: parts.length ? 'bad' : 'info',
         refs: [t.id, ...shooters],
         text: parts.length
-          ? `${e(t)} под огнём (${who}): потери — ${parts.join('; ')}.${E.f.suppression ? ` Подавление ${Math.round(before)} → ${Math.round(t.suppression)}%.` : ''}`
-          : `${e(t)} под огнём (${who}), потерь нет.${E.f.suppression ? ` Подавление ${Math.round(before)} → ${Math.round(t.suppression)}%.` : ''}`,
+          ? `${e(t)}: потери — ${parts.join('; ')}.`
+          : `${e(t)} под огнём, потерь нет${E.f.suppression ? ` (подавление ${Math.round(t.suppression)}%)` : ''}.`,
         factors,
       });
     }
@@ -934,7 +937,7 @@ function phaseMorale(E: EngineContext) {
       if (Math.abs(delta) >= 0.5) {
         E.log({
           phase: 'morale',
-          level: Math.abs(delta) >= 3 ? 1 : 2,
+          level: Math.abs(delta) >= 5 ? 1 : 2,
           side: el.side,
           severity: delta < 0 ? 'bad' : 'good',
           refs: [el.id],
@@ -1118,7 +1121,7 @@ function phaseChecks(E: EngineContext) {
           setOrderByBehavior(E, el, 'retreat');
           E.log({ phase: 'checks', level: 0, side: el.side, severity: 'bad', refs: [el.id], text: `${e(el)} начинает отход${comms < 0.4 ? ' (без связи — приказ запоздал)' : ''}.`, factors: reasons });
         } else {
-          E.log({ phase: 'checks', level: 1, side: el.side, refs: [el.id], text: `${e(el)} держится, несмотря на тяжёлое положение (шанс отхода ${Math.round(chance * 100)}%).`, factors: reasons });
+          E.log({ phase: 'checks', level: 2, side: el.side, refs: [el.id], text: `${e(el)} держится, несмотря на тяжёлое положение (шанс отхода ${Math.round(chance * 100)}%).`, factors: reasons });
         }
       }
     }

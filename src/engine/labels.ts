@@ -65,12 +65,12 @@ export const STATUS_LABELS: Record<ElementStatus, string> = {
 };
 
 export const OBJECTIVE_LABELS: Record<ObjectiveType, string> = {
-  hold: 'Удержать позицию (ходов)',
+  hold: 'Удержать позицию',
   take: 'Захватить позицию',
-  inflict: 'Нанести потери не менее, %',
-  preserve: 'Потери не более, %',
-  recon: 'Разведать силы противника, %',
-  noRout: 'Сохранить управление (без бегства)',
+  inflict: 'Нанести потери не менее',
+  preserve: 'Свои потери не более',
+  recon: 'Разведать силы противника',
+  noRout: 'Не допустить бегства',
 };
 
 export const OBJECTIVE_SHORT: Record<ObjectiveType, (v: number) => string> = {

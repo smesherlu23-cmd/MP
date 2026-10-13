@@ -5,7 +5,7 @@ import { create } from 'zustand';
 import { createBattle, newId, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
 import { Histogram, StackBar } from '../components/Charts';
 import { Link } from '../components/Link';
-import { Btn, Card, Field, Num, Txt, fmt1 } from '../components/ui';
+import { Btn, Card, Field, Info, Menu, Num, Section, Txt, fmt1 } from '../components/ui';
 import { useTabState } from '../hooks';
 import { exportText, openTab, putBattle, toast, useApp, type Tab } from '../store';
 
@@ -49,23 +49,23 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
     }
   };
 
+  const colors = { A: sc.sides[0].color, B: sc.sides[1].color };
   return (
     <div className="page">
-      <div className="crumbs">
-        Массовое моделирование сценария{' '}
-        <Link kind="scenario" refId={sc.id}>
-          «{sc.name}»
-        </Link>
-      </div>
       <div className="page-head">
-        <h1 className="grow">Вероятности исходов</h1>
+        <h1 className="grow">
+          Прогоны:{' '}
+          <Link kind="scenario" refId={sc.id}>
+            {sc.name}
+          </Link>
+        </h1>
       </div>
       <Card>
         <div className="row" style={{ alignItems: 'flex-end', gap: 14 }}>
           <Field label="Число прогонов">
             <Num value={n} onChange={setN} min={1} max={20000} integer width={110} />
           </Field>
-          <Field label="Базовый сид" hint="Прогон №k использует сид «база#k» — любой можно повторить.">
+          <Field label="Базовый сид" hint="Прогон №k использует сид «база#k» — любой прогон можно повторить и открыть как бой.">
             <Txt value={seed} onChange={setSeed} width={200} />
           </Field>
           {run?.running ? (
@@ -84,70 +84,71 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
             </>
           ) : (
             <Btn kind="primary" onClick={start}>
-              ▶ Запустить {n} прогонов
+              ▶ Запустить
             </Btn>
           )}
+          <div className="grow" />
           {r && !run?.running && (
-            <>
-              <Btn onClick={() => exportText(`${sc.name} — прогоны`, toCsv(r, rs.componentTypes.map((t) => ({ id: t.id, name: t.name }))), 'csv')}>Экспорт CSV</Btn>
-              <Btn onClick={() => navigator.clipboard?.writeText(summaryText(r, sc.name)).then(() => toast('Сводка скопирована.', 'good'))}>Копировать сводку</Btn>
-            </>
+            <Menu
+              items={[
+                { label: 'Скопировать сводку', onClick: () => navigator.clipboard?.writeText(summaryText(r, sc.name)).then(() => toast('Сводка скопирована.', 'good')) },
+                { label: 'Сохранить таблицу прогонов (CSV)…', onClick: () => exportText(`${sc.name} — прогоны`, toCsv(r, rs.componentTypes.map((t) => ({ id: t.id, name: t.name }))), 'csv') },
+              ]}
+            />
           )}
         </div>
-        {stale && <div className="note warn" style={{ marginTop: 10 }}>Сценарий изменился после этого моделирования — запустите заново, чтобы учесть изменения.</div>}
+        {stale && <div className="note warn" style={{ marginTop: 10 }}>Сценарий изменился после этого моделирования — запустите заново.</div>}
       </Card>
 
       {r && (
-        <div className="stack" style={{ marginTop: 14 }}>
-          <div className="grid three">
-            <Card>
-              <div className="muted small">Победа: {r.sideNames.A}</div>
-              <div className="bignum" style={{ color: sc.sides[0].color }}>
-                {fmt1(r.winA)}%
+        <div className="stack" style={{ marginTop: 16 }}>
+          <Card title={`Исходы · ${r.n} прогонов`}>
+            <div className="stat-row" style={{ marginBottom: 12 }}>
+              <div className="stat">
+                <span className="k">Победа: {r.sideNames.A}</span>
+                <span className="v" style={{ color: colors.A, fontSize: 26 }}>
+                  {fmt1(r.winA)}%
+                </span>
               </div>
-            </Card>
-            <Card>
-              <div className="muted small">Ничья</div>
-              <div className="bignum">{fmt1(r.draw)}%</div>
-            </Card>
-            <Card>
-              <div className="muted small">Победа: {r.sideNames.B}</div>
-              <div className="bignum" style={{ color: sc.sides[1].color }}>
-                {fmt1(r.winB)}%
+              <div className="stat">
+                <span className="k">Ничья</span>
+                <span className="v" style={{ fontSize: 26 }}>
+                  {fmt1(r.draw)}%
+                </span>
               </div>
-            </Card>
-          </div>
-          <Card title={`Распределение исходов (${r.n} прогонов, ${(r.ms / 1000).toFixed(1)} с)`}>
+              <div className="stat">
+                <span className="k">Победа: {r.sideNames.B}</span>
+                <span className="v" style={{ color: colors.B, fontSize: 26 }}>
+                  {fmt1(r.winB)}%
+                </span>
+              </div>
+            </div>
             <StackBar
               parts={r.outcomes.map((o, i) => ({
                 label: o.label,
                 value: o.count,
-                color: o.winner ? shade(sc.sides[o.winner === 'A' ? 0 : 1].color, i, r.outcomes.length) : '#6b7785',
+                color: o.winner ? shade(colors[o.winner], i, r.outcomes.length) : '#6b7785',
+                title: `${o.label}: ${fmt1(o.pct)}% (${o.count})`,
               }))}
             />
-            <table className="tbl compact" style={{ marginTop: 10 }}>
-              <tbody>
-                {r.outcomes.map((o) => (
-                  <tr key={o.key}>
-                    <td>{o.label}</td>
-                    <td className="num">{o.count}</td>
-                    <td className="num" style={{ width: 80 }}>
-                      {fmt1(o.pct)}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="meta" style={{ marginTop: 8 }}>
+              {r.outcomes.map((o) => (
+                <span key={o.key}>
+                  {o.label} <b>{fmt1(o.pct)}%</b>
+                </span>
+              ))}
+            </div>
           </Card>
-          <MetricsTable r={r} colors={{ A: sc.sides[0].color, B: sc.sides[1].color }} metric={metric} setMetric={setMetric} />
-          <RunsTable r={r} scId={sc.id} colors={{ A: sc.sides[0].color, B: sc.sides[1].color }} />
+          <MetricsTable r={r} colors={colors} metric={metric} setMetric={setMetric} tabKey={tab.key} />
+          <Section id="mc-runs" title="Отдельные прогоны" summary="любой можно открыть как полноценный бой" tight>
+            <RunsTable r={r} scId={sc.id} colors={colors} />
+          </Section>
         </div>
       )}
       {!r && !run?.running && (
-        <div className="note" style={{ marginTop: 14 }}>
-          Каждый прогон — полный бой без вмешательства ГМ (приказы — из сценария, отход и паника — автоматически). Для балансировки меняйте подразделения,
-          условия или коэффициенты и сравнивайте результаты.
-        </div>
+        <p className="muted" style={{ marginTop: 16 }}>
+          Каждый прогон — полный бой без вмешательства ГМ: приказы из сценария, отход и паника — автоматически.
+        </p>
       )}
     </div>
   );
@@ -164,9 +165,13 @@ function shade(hex: string, i: number, n: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
-function MetricsTable({ r, colors, metric, setMetric }: { r: MonteCarloResult; colors: Record<SideId, string>; metric: string; setMetric: (m: string) => void }) {
+const MAIN_METRICS = ['personnelLoss', 'personnelLossPct', 'kia', 'ce', 'score'];
+
+function MetricsTable({ r, colors, metric, setMetric, tabKey }: { r: MonteCarloResult; colors: Record<SideId, string>; metric: string; setMetric: (m: string) => void; tabKey: string }) {
+  const [all, setAll] = useTabState(`${tabKey}:allMetrics`, false);
   const turns = r.metrics.find((m) => m.key === 'turns')!;
-  const keys = [...new Set(r.metrics.filter((m) => m.side).map((m) => m.key.slice(2)))];
+  const allKeys = [...new Set(r.metrics.filter((m) => m.side).map((m) => m.key.slice(2)))];
+  const keys = all ? allKeys : allKeys.filter((k) => MAIN_METRICS.includes(k));
   const sel = SIDES.map((s) => r.metrics.find((m) => m.key === `${s}.${metric}`)).filter(Boolean) as MonteCarloResult['metrics'];
   const tip = (x: MonteCarloResult['metrics'][number]) =>
     `среднее ${fmt1(x.stats.mean)} · медиана ${fmt1(x.stats.median)} · 10–90%: ${fmt1(x.stats.p10)}–${fmt1(x.stats.p90)} · мин–макс: ${fmt1(x.stats.min)}–${fmt1(x.stats.max)} · σ ${fmt1(x.stats.sd)}`;
@@ -187,8 +192,20 @@ function MetricsTable({ r, colors, metric, setMetric }: { r: MonteCarloResult; c
       </>
     );
   return (
-    <div className="grid two">
-      <Card title="Показатели по прогонам" tight actions={<span className="faint small">наведите на число — медиана, мин–макс, σ</span>}>
+    <div className="grid two align-start">
+      <Card
+        title={
+          <>
+            Показатели <Info text="Среднее и диапазон, в который попадают 80% прогонов (от 10-го до 90-го процентиля). Наведите на число — медиана, минимум, максимум. Нажмите на строку — гистограмма справа." />
+          </>
+        }
+        tight
+        actions={
+          <Btn sm kind="ghost" onClick={() => setAll(!all)}>
+            {all ? 'Основные' : `Все (${allKeys.length})`}
+          </Btn>
+        }
+      >
         <table className="tbl compact">
           <thead>
             <tr>
@@ -240,7 +257,6 @@ function MetricsTable({ r, colors, metric, setMetric }: { r: MonteCarloResult; c
       <div className="stack">
         <Card title={`Распределение: ${sel[0]?.label.trim() ?? metric}${sel[0]?.unit ? `, ${sel[0].unit}` : ''}`}>
           <Histogram series={sel.map((m) => ({ name: r.sideNames[m.side!], color: colors[m.side!], values: m.values }))} unit={sel[0]?.unit === '%' ? '%' : ''} />
-          <div className="faint small">Нажмите на строку таблицы, чтобы выбрать показатель.</div>
         </Card>
         <Card title="Длительность боя, ходов">
           <Histogram series={[{ name: 'Ходов', color: 'var(--accent)', values: turns.values }]} height={120} />
@@ -278,7 +294,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
     openTab('battle', b.id);
   };
   return (
-    <Card title="Прогоны" tight actions={<span className="muted small">Нажмите на заголовок, чтобы отсортировать — например, найти худший для стороны исход.</span>}>
+    <>
       <table className="tbl compact">
         <thead>
           <tr>
@@ -311,7 +327,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
               <td className="num">{Math.round(x.sides.A.ce)}%</td>
               <td className="num">{Math.round(x.sides.B.ce)}%</td>
               <td className="nowrap">
-                <Btn sm onClick={() => openRun(x, true)} title="Открыть этот бой целиком, с журналом">
+                <Btn sm kind="ghost" onClick={() => openRun(x, true)} title="Открыть этот бой целиком, с журналом">
                   Открыть
                 </Btn>{' '}
                 <Btn sm kind="ghost" onClick={() => openRun(x, false)} title="Пройти этот бой пошагово (тот же сид)">
@@ -335,7 +351,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
           </Btn>
         </div>
       )}
-    </Card>
+    </>
   );
 }
 

@@ -18,7 +18,6 @@ import {
   type ComponentType,
   type ConditionOp,
   type CustomModifier,
-  type Effects,
   type Features,
   type FormationDef,
   type LevelDef,
@@ -26,116 +25,107 @@ import {
   type OptionDef,
   type Ruleset,
 } from '../../engine';
-import { EffectsEditor, effectsText } from '../components/EffectsEditor';
-import { Area, Btn, Card, Check, Field, Num, Sel, Tags, Txt } from '../components/ui';
+import { EffectsEditor } from '../components/EffectsEditor';
+import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Sel, Seg, Tags, Txt } from '../components/ui';
 import { useTabState } from '../hooks';
 import { confirmDialog, createRuleset, deleteRuleset, exportJson, replaceRuleset, setTabSub, toast, updateRuleset, useApp, type Tab } from '../store';
 
 type Upd = (fn: (r: Ruleset) => void) => void;
 
-const SECTIONS: { id: string; label: string }[] = [
+const SECTIONS: { id: string; label: string; count?: (r: Ruleset) => number }[] = [
   { id: 'general', label: 'Общее' },
-  { id: 'features', label: 'Механики' },
-  { id: 'types', label: 'Каталог типов' },
-  { id: 'classes', label: 'Классы целей' },
-  { id: 'bands', label: 'Дистанции' },
-  { id: 'orders', label: 'Приказы' },
-  { id: 'experience', label: 'Уровни опыта' },
-  { id: 'command', label: 'Командиры' },
+  { id: 'types', label: 'Каталог типов', count: (r) => r.componentTypes.length },
+  { id: 'classes', label: 'Классы и дистанции' },
+  { id: 'orders', label: 'Приказы', count: (r) => r.orders.length },
+  { id: 'levels', label: 'Опыт и командиры' },
   { id: 'conditions', label: 'Условия боя' },
-  { id: 'fortifications', label: 'Укрепления' },
-  { id: 'intel', label: 'Разведданные' },
-  { id: 'modifiers', label: 'Свои правила' },
-  { id: 'outcomes', label: 'Уровни исхода' },
-  { id: 'coefficients', label: 'Коэффициенты и пороги' },
-  { id: 'json', label: 'JSON' },
+  { id: 'modifiers', label: 'Свои правила', count: (r) => r.modifiers.length },
+  { id: 'coefficients', label: 'Коэффициенты' },
+  { id: 'outcomes', label: 'Исходы' },
 ];
+
+/** Старые адреса разделов — на них ссылаются справка и другие страницы. */
+const ALIASES: Record<string, string> = { features: 'general', bands: 'classes', experience: 'levels', command: 'levels', fortifications: 'conditions', intel: 'conditions' };
 
 export function RulesetPage({ tab }: { tab: Tab }) {
   const r = useApp((s) => s.rulesets[tab.ref!]);
   if (!r) return <div className="empty">Набор правил не найден.</div>;
-  const sub = tab.sub ?? 'general';
+  const sub = ALIASES[tab.sub ?? ''] ?? tab.sub ?? 'general';
   const upd: Upd = (fn) => updateRuleset(r.id, fn);
-  const counts: Record<string, number> = {
-    types: r.componentTypes.length,
-    classes: r.targetClasses.length,
-    bands: r.rangeBands.length,
-    orders: r.orders.length,
-    experience: r.experienceLevels.length,
-    command: r.commandLevels.length,
-    conditions: r.conditions.length,
-    fortifications: r.fortifications.length,
-    intel: r.intelLevels.length,
-    modifiers: r.modifiers.length,
-    outcomes: r.outcomeLevels.length,
-  };
   return (
     <div className="page">
-      <div className="crumbs">Набор правил</div>
       <div className="page-head">
         <input className="title-input" value={r.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
-        <div className="toolbar">
-          <Btn onClick={() => createRuleset(r.id)} title="Создать копию для экспериментов">
-            Дублировать
-          </Btn>
-          <Btn onClick={() => exportJson('ruleset', r.name, r)}>Экспорт</Btn>
-          <Btn kind="danger" onClick={() => deleteRuleset(r.id)}>
-            Удалить
-          </Btn>
-        </div>
+        <Menu
+          items={[
+            { label: 'Дублировать', onClick: () => createRuleset(r.id), tip: 'Копия для экспериментов с балансом' },
+            { label: 'Сохранить в файл…', onClick: () => exportJson('ruleset', r.name, r) },
+            { label: 'Редактировать как JSON', onClick: () => setTabSub(tab.key, 'json') },
+            'sep',
+            { label: 'Удалить набор правил', danger: true, onClick: () => deleteRuleset(r.id) },
+          ]}
+        />
       </div>
-      <div className="split" style={{ gridTemplateColumns: '200px minmax(0, 1fr)' }}>
+      <div className="split" style={{ gridTemplateColumns: '190px minmax(0, 1fr)' }}>
         <nav className="vnav">
           {SECTIONS.map((x) => (
             <button key={x.id} className={sub === x.id ? 'on' : ''} onClick={() => setTabSub(tab.key, x.id)}>
               <span>{x.label}</span>
-              {counts[x.id] !== undefined && <span className="faint">{counts[x.id]}</span>}
+              {x.count && <span className="faint">{x.count(r)}</span>}
             </button>
           ))}
         </nav>
         <div className="stack">
-          {sub === 'general' && <General r={r} upd={upd} />}
-          {sub === 'features' && <FeaturesSection r={r} upd={upd} />}
+          {sub === 'general' && (
+            <>
+              <General r={r} upd={upd} />
+              <FeaturesSection r={r} upd={upd} />
+            </>
+          )}
           {sub === 'types' && <TypesSection r={r} upd={upd} tabKey={tab.key} />}
-          {sub === 'classes' && <ClassesSection r={r} upd={upd} />}
-          {sub === 'bands' && <BandsSection r={r} upd={upd} />}
+          {sub === 'classes' && (
+            <>
+              <ClassesSection r={r} upd={upd} />
+              <BandsSection r={r} upd={upd} />
+            </>
+          )}
           {sub === 'orders' && <OrdersSection r={r} upd={upd} />}
-          {sub === 'experience' && (
-            <LevelsSection
-              title="Уровни опыта"
-              hint="Опыт элемента задаётся номером уровня (1 — первый в списке). Эффекты уровня действуют на все характеристики элемента."
-              levels={r.experienceLevels}
-              set={(fn) => upd((d) => fn(d.experienceLevels))}
-            />
+          {sub === 'levels' && (
+            <>
+              <LevelsSection
+                title="Уровни опыта"
+                hint="Опыт элемента — номер уровня (1 — первый в списке). Эффекты уровня действуют на все характеристики элемента."
+                levels={r.experienceLevels}
+                set={(fn) => upd((d) => fn(d.experienceLevels))}
+              />
+              <LevelsSection
+                title="Уровни командиров"
+                hint="Командир влияет на все элементы своего формирования; влияние вышестоящих командиров ослабевает с каждым уровнем (коэффициент «Влияние вышестоящего командира»)."
+                levels={r.commandLevels}
+                set={(fn) => upd((d) => fn(d.commandLevels))}
+              />
+            </>
           )}
-          {sub === 'command' && (
-            <LevelsSection
-              title="Уровни командиров"
-              hint="Командир формирования влияет на все его элементы; влияние вышестоящих командиров ослабевает с каждым уровнем (коэффициент «Влияние вышестоящего командира»)."
-              levels={r.commandLevels}
-              set={(fn) => upd((d) => fn(d.commandLevels))}
-            />
-          )}
-          {sub === 'conditions' && <ConditionsSection r={r} upd={upd} />}
-          {sub === 'fortifications' && (
-            <OptionsSection
-              title="Уровни укреплений"
-              hint="Укрепления стороны действуют только на её элементы с приказами обороны, засады, закрепления или в резерве."
-              options={r.fortifications}
-              set={(fn) => upd((d) => fn(d.fortifications))}
-            />
-          )}
-          {sub === 'intel' && (
-            <OptionsSection
-              title="Уровни разведданных"
-              hint="Разведданные стороны влияют на все её элементы — обычно на обнаружение и инициативу."
-              options={r.intelLevels}
-              set={(fn) => upd((d) => fn(d.intelLevels))}
-            />
+          {sub === 'conditions' && (
+            <>
+              <ConditionsSection r={r} upd={upd} />
+              <OptionsSection
+                title="Укрепления"
+                hint="Действуют на элементы своей стороны с приказами обороны, засады, закрепления или в резерве."
+                options={r.fortifications}
+                set={(fn) => upd((d) => fn(d.fortifications))}
+              />
+              <OptionsSection
+                title="Разведданные"
+                hint="Влияют на все элементы своей стороны — обычно на обнаружение и инициативу."
+                options={r.intelLevels}
+                set={(fn) => upd((d) => fn(d.intelLevels))}
+              />
+            </>
           )}
           {sub === 'modifiers' && <ModifiersSection r={r} upd={upd} />}
-          {sub === 'outcomes' && <OutcomesSection r={r} upd={upd} />}
           {sub === 'coefficients' && <CoefficientsSection r={r} upd={upd} />}
+          {sub === 'outcomes' && <OutcomesSection r={r} upd={upd} />}
           {sub === 'json' && <JsonSection r={r} />}
         </div>
       </div>
@@ -145,80 +135,65 @@ export function RulesetPage({ tab }: { tab: Tab }) {
 
 // ------------------------------------------------------------------ общее
 
-function usage(r: Ruleset) {
-  const s = useApp.getState();
-  const scenarios = Object.values(s.scenarios).filter((x) => x.rulesetId === r.id);
-  const formations = Object.values(s.formations).filter((x) => x.rulesetId === r.id);
-  return { scenarios, formations };
-}
-
 function General({ r, upd }: { r: Ruleset; upd: Upd }) {
-  const { scenarios, formations } = usage(r);
   return (
-    <>
-      <Card title="Описание">
-        <div className="fields two">
-          <Field label="Название">
-            <Txt value={r.name} onChange={(v) => upd((d) => void (d.name = v))} />
-          </Field>
-          <Field label="Эпоха / сеттинг">
-            <Txt value={r.era ?? ''} onChange={(v) => upd((d) => void (d.era = v))} placeholder="например: Вторая мировая" />
-          </Field>
-          <Field label="Минут в одном ходу" hint="Для отображения времени боя.">
-            <Num value={r.turnMinutes} onChange={(v) => upd((d) => void (d.turnMinutes = v))} min={1} integer />
-          </Field>
-          <Field label="Тег разведки" hint="Элементы и типы с этим тегом — лучшие наблюдатели (как при приказе «разведка»).">
-            <Txt value={r.reconTag} onChange={(v) => upd((d) => void (d.reconTag = v))} />
-          </Field>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <Field label="Описание">
-            <Area value={r.description ?? ''} onChange={(v) => upd((d) => void (d.description = v))} rows={4} />
-          </Field>
-        </div>
-      </Card>
-      <Card title="Использование">
-        <p className="muted small">
-          Сценариев: {scenarios.length} · подразделений в библиотеке: {formations.length}. Изменения правил сразу действуют на новые бои; уже идущие бои хранят
-          собственную копию правил.
-        </p>
-      </Card>
-    </>
+    <Card title="Описание">
+      <div className="fields">
+        <Field label="Название">
+          <Txt value={r.name} onChange={(v) => upd((d) => void (d.name = v))} />
+        </Field>
+        <Field label="Эпоха">
+          <Txt value={r.era ?? ''} onChange={(v) => upd((d) => void (d.era = v))} placeholder="например: Вторая мировая" />
+        </Field>
+        <Field label="Минут в ходу" hint="Только для отображения времени боя.">
+          <Num value={r.turnMinutes} onChange={(v) => upd((d) => void (d.turnMinutes = v))} min={1} integer width="100%" />
+        </Field>
+        <Field label="Тег разведки" hint="Элементы и типы с этим тегом — лучшие наблюдатели, как при приказе «разведка».">
+          <Txt value={r.reconTag} onChange={(v) => upd((d) => void (d.reconTag = v))} />
+        </Field>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <Area value={r.description ?? ''} onChange={(v) => upd((d) => void (d.description = v))} rows={3} placeholder="Описание (необязательно)" />
+      </div>
+    </Card>
   );
 }
 
+const FEATURE_HINTS: Record<keyof Features, string> = {
+  detection: 'Без неё все элементы всегда видны противнику.',
+  initiative: 'Без неё стороны стреляют одновременно и без бонусов.',
+  suppression: 'Подавление снижает огонь, движение и мораль.',
+  ammo: 'Расход и подвоз боезапаса, падение огня при нехватке.',
+  fuel: 'Расход топлива техникой, неподвижность без топлива.',
+  equipment: 'Износ снаряжения и его влияние на огонь.',
+  fatigue: 'Накопление усталости и её влияние на огонь и мораль.',
+  morale: 'Изменение морали, её влияние на огонь и проверки.',
+  cohesion: 'Слаженность снижается от потерь и влияет на огонь и мораль.',
+  readiness: 'Готовность элемента влияет на его огонь.',
+  vehicleCondition: 'Техсостояние влияет на огонь техники и поломки.',
+  comms: 'Связь влияет на огонь, инициативу и слаженность.',
+  command: 'Уровни командиров влияют на элементы формирований.',
+  breakdowns: 'Небоевые поломки техники при движении.',
+  panic: 'Проверка паники при низкой морали.',
+  retreat: 'Проверка отхода при низкой морали и больших потерях.',
+};
+
 function FeaturesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
-  const hints: Record<keyof Features, string> = {
-    detection: 'Без неё все элементы всегда видны противнику.',
-    initiative: 'Без неё стороны стреляют одновременно и без бонусов.',
-    suppression: 'Подавление снижает огонь, движение и мораль.',
-    ammo: 'Расход и подвоз боезапаса, падение огня при нехватке.',
-    fuel: 'Расход топлива техникой, неподвижность без топлива.',
-    equipment: 'Износ снаряжения и его влияние на огонь.',
-    fatigue: 'Накопление усталости и её влияние на огонь и мораль.',
-    morale: 'Изменение морали, её влияние на огонь и проверки.',
-    cohesion: 'Слаженность снижается от потерь и влияет на огонь и мораль.',
-    readiness: 'Готовность элемента влияет на его огонь.',
-    vehicleCondition: 'Техсостояние влияет на огонь техники и поломки.',
-    comms: 'Связь влияет на огонь, инициативу и слаженность.',
-    command: 'Уровни командиров влияют на элементы формирований.',
-    breakdowns: 'Небоевые поломки техники при движении.',
-    panic: 'Проверка паники при низкой морали.',
-    retreat: 'Проверка отхода при низкой морали и больших потерях.',
-  };
   return (
-    <Card title="Механики">
-      <p className="muted small">Выключенная механика не участвует в расчёте, а соответствующие поля скрываются в редакторах. Так можно упростить правила под свою игру.</p>
-      <div className="fields two" style={{ marginTop: 10 }}>
+    <Card
+      title={
+        <>
+          Механики <Info text="Выключенная механика не участвует в расчёте, а её поля скрываются в редакторах — так правила упрощаются под вашу игру." />
+        </>
+      }
+    >
+      <div className="feature-grid">
         {(Object.keys(FEATURE_LABELS) as (keyof Features)[]).map((k) => (
-          <div key={k}>
+          <span key={k} data-tip={FEATURE_HINTS[k]}>
             <Check value={r.features[k]} onChange={(v) => upd((d) => void (d.features[k] = v))}>
-              <b>{FEATURE_LABELS[k]}</b>
+              {FEATURE_LABELS[k]}
             </Check>
-            <div className="faint small" style={{ marginLeft: 22 }}>
-              {hints[k]}
-            </div>
-          </div>
+          </span>
         ))}
       </div>
     </Card>
@@ -269,15 +244,17 @@ function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: string
     <>
       <div className="row">
         <Btn kind="primary" onClick={add}>
-          + Новый тип
+          + Тип
         </Btn>
         <div className="grow" />
-        <Btn active={view === 'edit'} onClick={() => setView('edit')}>
-          Редактор
-        </Btn>
-        <Btn active={view === 'table'} onClick={() => setView('table')}>
-          Сводная таблица
-        </Btn>
+        <Seg
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'edit', label: 'Карточки' },
+            { value: 'table', label: 'Таблица', title: 'Все типы и их огневая мощь в одной таблице' },
+          ]}
+        />
       </div>
       {view === 'table' ? (
         <TypesTable r={r} onPick={(id) => (setSel(id), setView('edit'))} />
@@ -321,31 +298,31 @@ function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Component
     <Card
       title={t.name}
       actions={
-        <div className="row">
-          <Btn
-            sm
-            onClick={() => {
-              const id = newId('type');
-              upd((d) => {
-                const i = d.componentTypes.findIndex((y) => y.id === t.id);
-                d.componentTypes.splice(i + 1, 0, { ...clone(t), id, name: `${t.name} (копия)` });
-              });
-              onSelect(id);
-            }}
-          >
-            Дублировать
-          </Btn>
-          <Btn
-            sm
-            kind="danger"
-            onClick={async () => {
-              if (!(await confirmDialog(`Удалить тип «${t.name}»?`, used ? `Он используется в ${used} элементах — там он перестанет учитываться.` : undefined, 'Удалить', true))) return;
-              upd((d) => void (d.componentTypes = d.componentTypes.filter((y) => y.id !== t.id)));
-            }}
-          >
-            Удалить
-          </Btn>
-        </div>
+        <Menu
+          sm
+          items={[
+            {
+              label: 'Дублировать',
+              onClick: () => {
+                const id = newId('type');
+                upd((d) => {
+                  const i = d.componentTypes.findIndex((y) => y.id === t.id);
+                  d.componentTypes.splice(i + 1, 0, { ...clone(t), id, name: `${t.name} (копия)` });
+                });
+                onSelect(id);
+              },
+            },
+            'sep',
+            {
+              label: 'Удалить тип',
+              danger: true,
+              onClick: async () => {
+                if (!(await confirmDialog(`Удалить тип «${t.name}»?`, used ? `Он используется в ${used} элементах — там он перестанет учитываться.` : undefined, 'Удалить', true))) return;
+                upd((d) => void (d.componentTypes = d.componentTypes.filter((y) => y.id !== t.id)));
+              },
+            },
+          ]}
+        />
       }
     >
       <div className="fields">
@@ -402,7 +379,10 @@ function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Component
           <Tags value={t.tags} onChange={(v) => ut((x) => void (x.tags = v))} suggestions={allTags} />
         </Field>
       </div>
-      <h4 style={{ margin: '16px 0 6px' }}>Огневая мощь (поражений за ход одной единицей)</h4>
+      <div className="row" style={{ margin: '16px 0 6px', gap: 6 }}>
+        <h4>Огневая мощь одной единицы за ход</h4>
+        <Info text="Пример: 0,04 — сто таких единиц за ход в идеальных условиях выводят из строя около 4 целей этого класса. Реальный результат умножается на состояние, условия, приказы и защищённость цели." />
+      </div>
       <div style={{ overflowX: 'auto' }}>
         <table className="tbl matrix" style={{ width: 'auto' }}>
           <thead>
@@ -439,16 +419,7 @@ function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Component
           </tbody>
         </table>
       </div>
-      <p className="faint small" style={{ marginTop: 6 }}>
-        Пример: 0,04 — сто таких единиц за ход в идеальных условиях выводят из строя около 4 целей этого класса. Реальный результат умножается на состояние,
-        условия, приказы и защищённость цели.
-      </p>
-      <div style={{ marginTop: 10 }}>
-        <Field label="Описание">
-          <Area value={t.description ?? ''} onChange={(v) => ut((x) => void (x.description = v))} rows={2} />
-        </Field>
-      </div>
-      <p className="faint small">Используется в элементах: {used}.</p>
+      {used > 0 && <p className="faint small" style={{ margin: '8px 0 0' }}>Используется в элементах: {used}</p>}
     </Card>
   );
 }
@@ -508,25 +479,26 @@ function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => void })
 function ClassesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
   return (
     <Card
-      title="Классы целей"
+      title={
+        <>
+          Классы целей{' '}
+          <Info text="Класс определяет, каким оружием цель эффективно поражать: огневая мощь типов задаётся отдельно по каждому классу. Для другой эпохи это может быть «пехота / кавалерия / артиллерия» или «пехота / корабли»." />
+        </>
+      }
       actions={
-        <Btn sm onClick={() => upd((d) => void d.targetClasses.push({ id: newId('cls'), name: 'Новый класс', lethality: 1 }))}>
+        <Btn sm kind="ghost" onClick={() => upd((d) => void d.targetClasses.push({ id: newId('cls'), name: 'Новый класс', lethality: 1 }))}>
           + Класс
         </Btn>
       }
+      tight
     >
-      <p className="muted small">
-        Класс цели определяет, каким оружием её эффективно поражать: в каталоге типов огневая мощь задаётся отдельно по каждому классу. Для другой эпохи это
-        может быть «пехота / кавалерия / артиллерия» или «пехота / корабли».
-      </p>
-      <table className="tbl" style={{ marginTop: 8 }}>
+      <table className="tbl">
         <thead>
           <tr>
             <th>Название</th>
-            <th className="num" title="Доля воздействия, превращающаяся в потери">
+            <th className="num" data-tip="Доля воздействия, превращающаяся в потери">
               Летальность
             </th>
-            <th>Описание</th>
             <th />
           </tr>
         </thead>
@@ -534,18 +506,17 @@ function ClassesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
           {r.targetClasses.map((c, i) => (
             <tr key={c.id}>
               <td>
-                <Txt value={c.name} onChange={(v) => upd((d) => void (d.targetClasses[i].name = v))} />
+                <Txt value={c.name} onChange={(v) => upd((d) => void (d.targetClasses[i].name = v))} width="100%" />
               </td>
-              <td className="num">
+              <td className="num" style={{ width: 110 }}>
                 <Num value={c.lethality} onChange={(v) => upd((d) => void (d.targetClasses[i].lethality = v))} min={0} step={0.05} width={80} />
               </td>
-              <td>
-                <Txt value={c.description ?? ''} onChange={(v) => upd((d) => void (d.targetClasses[i].description = v))} width="100%" />
-              </td>
-              <td>
+              <td style={{ width: 36 }}>
                 <Btn
                   sm
-                  kind="danger"
+                  kind="ghost"
+                  icon
+                  title="Удалить класс"
                   disabled={r.targetClasses.length <= 1}
                   onClick={async () => {
                     if (!(await confirmDialog(`Удалить класс «${c.name}»?`, 'Огневая мощь по этому классу будет удалена из всех типов; типы этого класса перейдут в первый оставшийся класс.', 'Удалить', true))) return;
@@ -579,68 +550,69 @@ function BandsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
     });
   return (
     <Card
-      title="Дистанции (от дальней к ближней)"
+      title={
+        <>
+          Дистанции{' '}
+          <Info text="Список — от дальней к ближней. Бой начинается с дистанции из сценария; пока атакующие давят достаточно сильно, дистанция сокращается к следующей строке." />
+        </>
+      }
       actions={
-        <Btn sm onClick={() => upd((d) => void d.rangeBands.push({ id: newId('band'), name: 'Новая дистанция', detection: 0.8, turnsToClose: 2 }))}>
+        <Btn sm kind="ghost" onClick={() => upd((d) => void d.rangeBands.push({ id: newId('band'), name: 'Новая дистанция', detection: 0.8, turnsToClose: 2 }))}>
           + Дистанция
         </Btn>
       }
+      tight
     >
-      <p className="muted small">
-        Бой начинается на дистанции, выбранной в сценарии. Пока атакующая сторона давит достаточно сильно, дистанция сокращается к следующей строке. Огневая
-        мощь типов задаётся для каждой дистанции.
-      </p>
-      <table className="tbl" style={{ marginTop: 8 }}>
+      <table className="tbl">
         <thead>
           <tr>
-            <th />
             <th>Название</th>
-            <th className="num">Обнаружение</th>
-            <th className="num" title="Сколько ходов полноценного наступления нужно, чтобы перейти на следующую дистанцию">
+            <th className="num" data-tip="Базовый шанс обнаружить противника на этой дистанции">
+              Обнаружение
+            </th>
+            <th className="num" data-tip="Сколько ходов полноценного наступления нужно, чтобы перейти на следующую дистанцию">
               Ходов до сближения
             </th>
-            <th>Описание</th>
             <th />
           </tr>
         </thead>
         <tbody>
           {r.rangeBands.map((b, i) => (
             <tr key={b.id}>
-              <td className="nowrap">
-                <Btn sm kind="ghost" icon disabled={i === 0} onClick={() => move(i, -1)} title="Выше (дальше)">
-                  ↑
-                </Btn>
-                <Btn sm kind="ghost" icon disabled={i === r.rangeBands.length - 1} onClick={() => move(i, 1)} title="Ниже (ближе)">
-                  ↓
-                </Btn>
-              </td>
               <td>
-                <Txt value={b.name} onChange={(v) => upd((d) => void (d.rangeBands[i].name = v))} />
+                <Txt value={b.name} onChange={(v) => upd((d) => void (d.rangeBands[i].name = v))} width="100%" />
               </td>
-              <td className="num">
+              <td className="num" style={{ width: 120 }}>
                 <Num value={Math.round(b.detection * 100)} onChange={(v) => upd((d) => void (d.rangeBands[i].detection = v / 100))} min={0} max={100} suffix="%" width={80} />
               </td>
-              <td className="num">
-                <Num value={b.turnsToClose} onChange={(v) => upd((d) => void (d.rangeBands[i].turnsToClose = v))} min={0.25} step={0.5} width={80} disabled={i === r.rangeBands.length - 1} />
+              <td className="num" style={{ width: 140 }}>
+                {i < r.rangeBands.length - 1 ? (
+                  <Num value={b.turnsToClose} onChange={(v) => upd((d) => void (d.rangeBands[i].turnsToClose = v))} min={0.25} step={0.5} width={80} />
+                ) : (
+                  <span className="faint">—</span>
+                )}
               </td>
-              <td>
-                <Txt value={b.description ?? ''} onChange={(v) => upd((d) => void (d.rangeBands[i].description = v))} width="100%" />
-              </td>
-              <td>
-                <Btn
+              <td style={{ width: 36 }}>
+                <Menu
                   sm
-                  kind="danger"
-                  disabled={r.rangeBands.length <= 1}
-                  onClick={async () => {
-                    if (!(await confirmDialog(`Удалить дистанцию «${b.name}»?`, undefined, 'Удалить', true))) return;
-                    upd((d) => {
-                      d.rangeBands = d.rangeBands.filter((x) => x.id !== b.id);
-                      for (const t of d.componentTypes) for (const c of Object.keys(t.firepower)) delete t.firepower[c][b.id];
-                    });
-                  }}
-                >
-                  ×
-                </Btn>
+                  items={[
+                    { label: 'Выше (дальше)', disabled: i === 0, onClick: () => move(i, -1) },
+                    { label: 'Ниже (ближе)', disabled: i === r.rangeBands.length - 1, onClick: () => move(i, 1) },
+                    'sep',
+                    {
+                      label: 'Удалить',
+                      danger: true,
+                      disabled: r.rangeBands.length <= 1,
+                      onClick: async () => {
+                        if (!(await confirmDialog(`Удалить дистанцию «${b.name}»?`, undefined, 'Удалить', true))) return;
+                        upd((d) => {
+                          d.rangeBands = d.rangeBands.filter((x) => x.id !== b.id);
+                          for (const t of d.componentTypes) for (const c of Object.keys(t.firepower)) delete t.firepower[c][b.id];
+                        });
+                      },
+                    },
+                  ]}
+                />
               </td>
             </tr>
           ))}
@@ -661,181 +633,165 @@ function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
           Нет приказа с поведением: {missing.map((b) => BEHAVIOR_LABELS[b].split(' (')[0]).join(', ')}. Проверки отхода и паники не смогут сменить приказ.
         </div>
       )}
-      <div className="row">
-        <Btn
-          kind="primary"
-          onClick={() => upd((d) => void d.orders.push({ id: newId('order'), name: 'Новый приказ', behavior: 'defend', exposure: 1, effects: {} }))}
-        >
-          + Приказ
-        </Btn>
-        <span className="muted small">Поведение определяет логику движка; эффекты — численные множители. Например, «Штурм» = поведение «атака» с огнём ×1.3 и усталостью ×2.</span>
-      </div>
-      <div className="grid two">
-        {r.orders.map((o, i) => (
-          <Card
-            key={o.id}
-            title={o.name}
-            actions={
-              <Btn
-                sm
-                kind="danger"
-                disabled={r.orders.length <= 1}
-                onClick={async () => {
-                  if (await confirmDialog(`Удалить приказ «${o.name}»?`, 'Элементы с этим приказом получат приказ своего формирования.', 'Удалить', true))
-                    upd((d) => void (d.orders = d.orders.filter((x) => x.id !== o.id)));
-                }}
-              >
-                Удалить
-              </Btn>
-            }
-          >
-            <div className="fields">
-              <Field label="Название">
-                <Txt value={o.name} onChange={(v) => upd((d) => void (d.orders[i].name = v))} />
-              </Field>
-              <Field label="Поведение">
-                <Sel value={o.behavior} onChange={(v) => upd((d) => void (d.orders[i].behavior = v))} options={BEHAVIORS.map((b) => ({ value: b, label: BEHAVIOR_LABELS[b] }))} />
-              </Field>
-              <Field label="Подставленность" hint="0 — вне огня, 1 — полностью.">
-                <Num value={o.exposure} onChange={(v) => upd((d) => void (d.orders[i].exposure = v))} min={0} max={3} step={0.05} />
-              </Field>
-            </div>
-            <div style={{ marginTop: 10 }}>
+      <Card
+        title={
+          <>
+            Приказы{' '}
+            <Info text="Поведение определяет логику движка, эффекты — численные множители. Например, «Штурм» = поведение «атака» с огнём ×1.3 и усталостью ×2." />
+          </>
+        }
+        actions={
+          <Btn sm kind="ghost" onClick={() => upd((d) => void d.orders.push({ id: newId('order'), name: 'Новый приказ', behavior: 'defend', exposure: 1, effects: {} }))}>
+            + Приказ
+          </Btn>
+        }
+      >
+        <div className="grid two">
+          {r.orders.map((o, i) => (
+            <div key={o.id} className="kpi stack" style={{ gap: 8 }}>
+              <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
+                <Txt value={o.name} onChange={(v) => upd((d) => void (d.orders[i].name = v))} width="100%" />
+                <Menu
+                  sm
+                  items={[
+                    {
+                      label: 'Удалить приказ',
+                      danger: true,
+                      disabled: r.orders.length <= 1,
+                      onClick: async () => {
+                        if (await confirmDialog(`Удалить приказ «${o.name}»?`, 'Элементы с этим приказом получат приказ своего формирования.', 'Удалить', true))
+                          upd((d) => void (d.orders = d.orders.filter((x) => x.id !== o.id)));
+                      },
+                    },
+                  ]}
+                />
+              </div>
+              <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
+                <div className="grow">
+                  <Sel value={o.behavior} width="100%" onChange={(v) => upd((d) => void (d.orders[i].behavior = v))} options={BEHAVIORS.map((b) => ({ value: b, label: BEHAVIOR_LABELS[b] }))} title="Поведение" />
+                </div>
+                <Num value={o.exposure} onChange={(v) => upd((d) => void (d.orders[i].exposure = v))} min={0} max={3} step={0.05} width={64} title="Подставленность под огонь: 0 — вне огня, 1 — полностью" />
+              </div>
               <EffectsEditor value={o.effects} onChange={(v) => upd((d) => void (d.orders[i].effects = v))} />
             </div>
-            <div style={{ marginTop: 8 }}>
-              <Txt value={o.description ?? ''} onChange={(v) => upd((d) => void (d.orders[i].description = v))} placeholder="Описание" width="100%" />
-            </div>
-          </Card>
-        ))}
-      </div>
+          ))}
+        </div>
+      </Card>
     </>
   );
 }
 
 function LevelsSection({ title, hint, levels, set }: { title: string; hint: string; levels: LevelDef[]; set: (fn: (l: LevelDef[]) => void) => void }) {
   return (
-    <>
-      <div className="row">
-        <h3>{title}</h3>
-        <Btn kind="primary" onClick={() => set((l) => void l.push({ name: `Уровень ${l.length + 1}`, effects: {} }))}>
+    <Card
+      title={
+        <>
+          {title} <Info text={hint} />
+        </>
+      }
+      actions={
+        <Btn sm kind="ghost" onClick={() => set((l) => void l.push({ name: `Уровень ${l.length + 1}`, effects: {} }))}>
           + Уровень
         </Btn>
-        <span className="muted small grow">{hint}</span>
-      </div>
-      <div className="grid two">
+      }
+    >
+      <div className="grid three">
         {levels.map((lv, i) => (
-          <Card
-            key={i}
-            title={`${i + 1}. ${lv.name}`}
-            actions={
-              <div className="row">
-                <Btn sm kind="ghost" icon disabled={i === 0} onClick={() => set((l) => void ([l[i - 1], l[i]] = [l[i], l[i - 1]]))} title="Выше">
-                  ↑
-                </Btn>
-                <Btn sm kind="ghost" icon disabled={i === levels.length - 1} onClick={() => set((l) => void ([l[i + 1], l[i]] = [l[i], l[i + 1]]))} title="Ниже">
-                  ↓
-                </Btn>
-                <Btn sm kind="danger" disabled={levels.length <= 1} onClick={() => set((l) => void l.splice(i, 1))}>
-                  ×
-                </Btn>
-              </div>
-            }
-          >
-            <div className="stack" style={{ gap: 8 }}>
-              <Txt value={lv.name} onChange={(v) => set((l) => void (l[i].name = v))} />
-              <EffectsEditor value={lv.effects} onChange={(v) => set((l) => void (l[i].effects = v))} />
-              <Txt value={lv.description ?? ''} onChange={(v) => set((l) => void (l[i].description = v))} placeholder="Описание" />
+          <div key={i} className="kpi stack" style={{ gap: 6 }}>
+            <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
+              <span className="faint">{i + 1}.</span>
+              <Txt value={lv.name} onChange={(v) => set((l) => void (l[i].name = v))} width="100%" />
+              <Menu
+                sm
+                items={[
+                  { label: 'Выше', disabled: i === 0, onClick: () => set((l) => void ([l[i - 1], l[i]] = [l[i], l[i - 1]])) },
+                  { label: 'Ниже', disabled: i === levels.length - 1, onClick: () => set((l) => void ([l[i + 1], l[i]] = [l[i], l[i + 1]])) },
+                  'sep',
+                  { label: 'Удалить', danger: true, disabled: levels.length <= 1, onClick: () => set((l) => void l.splice(i, 1)) },
+                ]}
+              />
             </div>
-          </Card>
+            <EffectsEditor value={lv.effects} onChange={(v) => set((l) => void (l[i].effects = v))} />
+          </div>
         ))}
       </div>
-    </>
+    </Card>
   );
 }
 
 function OptionsSection({ title, hint, options, set }: { title: string; hint: string; options: OptionDef[]; set: (fn: (o: OptionDef[]) => void) => void }) {
   return (
-    <>
-      <div className="row">
-        <Btn kind="primary" onClick={() => set((o) => void o.push({ id: newId('opt'), name: 'Новый вариант', effects: {} }))}>
+    <Card
+      title={
+        <>
+          {title} <Info text={hint} />
+        </>
+      }
+      actions={
+        <Btn sm kind="ghost" onClick={() => set((o) => void o.push({ id: newId('opt'), name: 'Новый вариант', effects: {} }))}>
           + Вариант
         </Btn>
-        <span className="muted small">{hint}</span>
-      </div>
-      <div className="grid two">
-        {options.map((op, i) => (
-          <Card
-            key={op.id}
-            title={op.name}
-            actions={
-              <Btn sm kind="danger" disabled={options.length <= 1} onClick={() => set((o) => void o.splice(i, 1))}>
-                ×
-              </Btn>
-            }
-          >
-            <div className="stack" style={{ gap: 8 }}>
-              <Txt value={op.name} onChange={(v) => set((o) => void (o[i].name = v))} />
-              <EffectsEditor value={op.effects} onChange={(v) => set((o) => void (o[i].effects = v))} />
-              <Txt value={op.description ?? ''} onChange={(v) => set((o) => void (o[i].description = v))} placeholder="Описание" />
-            </div>
-          </Card>
-        ))}
-      </div>
-      <span className="faint small">{title}: эффекты действуют как множители характеристик.</span>
-    </>
+      }
+    >
+      <OptionGrid options={options} set={set} />
+    </Card>
+  );
+}
+
+function OptionGrid({ options, set }: { options: OptionDef[]; set: (fn: (o: OptionDef[]) => void) => void }) {
+  return (
+    <div className="grid three">
+      {options.map((op, i) => (
+        <div key={op.id} className="kpi stack" style={{ gap: 6 }}>
+          <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
+            <Txt value={op.name} onChange={(v) => set((o) => void (o[i].name = v))} width="100%" />
+            <Btn sm kind="ghost" icon disabled={options.length <= 1} onClick={() => set((o) => void o.splice(i, 1))} title="Удалить вариант">
+              ×
+            </Btn>
+          </div>
+          <EffectsEditor value={op.effects} onChange={(v) => set((o) => void (o[i].effects = v))} />
+        </div>
+      ))}
+    </div>
   );
 }
 
 function ConditionsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
   return (
     <>
-      <div className="row">
-        <Btn kind="primary" onClick={() => upd((d) => void d.conditions.push({ id: newId('cat'), name: 'Новая категория', options: [{ id: newId('opt'), name: 'Обычно', effects: {} }] }))}>
-          + Категория условий
-        </Btn>
-        <span className="muted small">Местность, время суток, погода — или свои: сезон, высота, радиационная обстановка… Эффекты варианта действуют на все элементы обеих сторон.</span>
-      </div>
       {r.conditions.map((cat, ci) => (
         <Card
           key={cat.id}
-          title={
-            <input className="title-input" style={{ fontSize: 14, minWidth: 200 }} value={cat.name} onChange={(e) => upd((d) => void (d.conditions[ci].name = e.target.value))} />
-          }
+          title={<input className="title-input" style={{ fontSize: 14, minWidth: 180 }} value={cat.name} onChange={(e) => upd((d) => void (d.conditions[ci].name = e.target.value))} />}
           actions={
-            <div className="row">
-              <Btn sm onClick={() => upd((d) => void d.conditions[ci].options.push({ id: newId('opt'), name: 'Новый вариант', effects: {} }))}>
+            <div className="row" style={{ gap: 4 }}>
+              <Btn sm kind="ghost" onClick={() => upd((d) => void d.conditions[ci].options.push({ id: newId('opt'), name: 'Новый вариант', effects: {} }))}>
                 + Вариант
               </Btn>
-              <Btn
+              <Menu
                 sm
-                kind="danger"
-                onClick={async () => {
-                  if (await confirmDialog(`Удалить категорию «${cat.name}»?`, undefined, 'Удалить', true)) upd((d) => void d.conditions.splice(ci, 1));
-                }}
-              >
-                Удалить
-              </Btn>
+                items={[
+                  {
+                    label: 'Удалить категорию',
+                    danger: true,
+                    onClick: async () => {
+                      if (await confirmDialog(`Удалить категорию «${cat.name}»?`, undefined, 'Удалить', true)) upd((d) => void d.conditions.splice(ci, 1));
+                    },
+                  },
+                ]}
+              />
             </div>
           }
         >
-          <div className="grid three">
-            {cat.options.map((op, oi) => (
-              <div key={op.id} className="kpi stack" style={{ gap: 6 }}>
-                <div className="row" style={{ flexWrap: 'nowrap' }}>
-                  <Txt value={op.name} onChange={(v) => upd((d) => void (d.conditions[ci].options[oi].name = v))} />
-                  <Btn sm kind="ghost" icon disabled={cat.options.length <= 1} onClick={() => upd((d) => void d.conditions[ci].options.splice(oi, 1))} title="Удалить вариант">
-                    ×
-                  </Btn>
-                </div>
-                <EffectsEditor value={op.effects} onChange={(v) => upd((d) => void (d.conditions[ci].options[oi].effects = v))} />
-                <span className="faint small mono">id: {op.id}</span>
-              </div>
-            ))}
-          </div>
-          <span className="faint small mono">id категории: {cat.id} (для своих правил: поле «cond.{cat.id}»)</span>
+          <OptionGrid options={cat.options} set={(fn) => upd((d) => fn(d.conditions[ci].options))} />
         </Card>
       ))}
+      <div className="row" style={{ gap: 6 }}>
+        <Btn kind="ghost" onClick={() => upd((d) => void d.conditions.push({ id: newId('cat'), name: 'Новая категория', options: [{ id: newId('opt'), name: 'Обычно', effects: {} }] }))}>
+          + Категория условий
+        </Btn>
+        <Info text="Кроме местности, времени суток и погоды можно добавить свои категории: сезон, высота, радиационная обстановка… Эффекты варианта действуют на все элементы обеих сторон." />
+      </div>
     </>
   );
 }
@@ -971,9 +927,7 @@ function ModifiersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
         >
           + Правило
         </Btn>
-        <span className="muted small">
-          «Если все условия выполнены — характеристика ×N». Условия «противника» и «класса цели» проверяются для каждой пары стрелок — цель.
-        </span>
+        <Info text="«Если все условия выполнены — характеристика ×N». Условия о противнике и классе цели проверяются для каждой пары стрелок — цель." />
       </div>
       {!r.modifiers.length && <div className="empty">Своих правил пока нет.</div>}
       {r.modifiers.map((m, i) => (
@@ -1036,18 +990,19 @@ function ModifiersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
 function OutcomesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
   return (
     <Card
-      title="Уровни исхода"
+      title={
+        <>
+          Уровни исхода{' '}
+          <Info text="Каждая сторона получает оценку выполнения своих задач от 0 до 100%. Исход определяется разницей оценок: выбирается первый уровень (по убыванию порога), порог которого не больше разницы. Уровень с порогом 0 — ничья." />
+        </>
+      }
       actions={
-        <Btn sm onClick={() => upd((d) => void d.outcomeLevels.push({ id: newId('out'), name: 'Новый уровень', minDiff: 0.3 }))}>
+        <Btn sm kind="ghost" onClick={() => upd((d) => void d.outcomeLevels.push({ id: newId('out'), name: 'Новый уровень', minDiff: 0.3 }))}>
           + Уровень
         </Btn>
       }
     >
-      <p className="muted small">
-        Каждая сторона получает оценку выполнения своих задач от 0 до 100%. Исход определяется разницей оценок: выбирается первый уровень (по убыванию порога),
-        порог которого не больше разницы. Уровень с порогом 0 — ничья.
-      </p>
-      <table className="tbl" style={{ marginTop: 8, width: 'auto' }}>
+      <table className="tbl" style={{ width: 'auto' }}>
         <thead>
           <tr>
             <th>Название</th>
@@ -1082,52 +1037,55 @@ function OutcomesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
 
 function CoefficientsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
   const [q, setQ] = useState('');
-  const changed = COEFFICIENTS.filter((m) => r.coefficients[m.key] !== m.default).length;
+  const isChanged = (key: string, def: number) => (r.coefficients[key] ?? def) !== def;
+  const changed = COEFFICIENTS.filter((m) => isChanged(m.key, m.default)).length;
+  const query = q.trim().toLowerCase();
   return (
     <>
       <div className="row">
         <input type="search" placeholder="Найти коэффициент…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 280 }} />
-        <span className="muted small">Изменено относительно стандартных значений: {changed}</span>
+        {changed > 0 && <span className="muted small">изменено: {changed}</span>}
         <div className="grow" />
-        <Btn
-          sm
-          disabled={!changed}
-          onClick={async () => {
-            if (await confirmDialog('Сбросить все коэффициенты к стандартным значениям?', undefined, 'Сбросить', true))
-              upd((d) => void (d.coefficients = Object.fromEntries(COEFFICIENTS.map((m) => [m.key, m.default]))));
-          }}
-        >
-          Сбросить все
-        </Btn>
+        {changed > 0 && (
+          <Btn
+            sm
+            kind="ghost"
+            onClick={async () => {
+              if (await confirmDialog('Сбросить все коэффициенты к стандартным значениям?', undefined, 'Сбросить', true))
+                upd((d) => void (d.coefficients = Object.fromEntries(COEFFICIENTS.map((m) => [m.key, m.default]))));
+            }}
+          >
+            Сбросить все
+          </Btn>
+        )}
       </div>
       {COEFFICIENT_GROUPS.map((g) => {
-        const items = COEFFICIENTS.filter((m) => m.group === g && (!q || `${m.label} ${m.description} ${m.key}`.toLowerCase().includes(q.toLowerCase())));
+        const items = COEFFICIENTS.filter((m) => m.group === g && (!query || `${m.label} ${m.description} ${m.key}`.toLowerCase().includes(query)));
         if (!items.length) return null;
+        const groupChanged = items.filter((m) => isChanged(m.key, m.default)).length;
         return (
-          <Card key={g} title={g} tight>
+          <Section key={g} id={`coef-${g}`} title={g} summary={groupChanged ? `изменено: ${groupChanged}` : String(items.length)} forceOpen={!!query} tight>
             <table className="tbl">
               <tbody>
                 {items.map((m) => {
                   const off = m.feature && !r.features[m.feature];
                   const v = r.coefficients[m.key] ?? m.default;
                   return (
-                    <tr key={m.key} className={off ? 'dim' : ''} title={off ? `Механика «${FEATURE_LABELS[m.feature!]}» выключена` : undefined}>
-                      <td style={{ width: '34%' }}>
-                        <div>{m.label}</div>
-                        <div className="faint small mono">{m.key}</div>
+                    <tr key={m.key} className={off ? 'dim' : ''}>
+                      <td>
+                        <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                          {m.label}
+                          <Info text={`${m.description ? `${m.description}\n` : ''}${off ? `Механика «${FEATURE_LABELS[m.feature!]}» выключена.\n` : ''}Ключ: ${m.key} · по умолчанию ${m.default}`} />
+                        </span>
                       </td>
                       <td style={{ width: 120 }}>
-                        <Num value={v} onChange={(x) => upd((d) => void (d.coefficients[m.key] = x))} min={m.min} max={m.max} step={m.step ?? 0.05} width={110} />
+                        <Num value={v} onChange={(x) => upd((d) => void (d.coefficients[m.key] = x))} min={m.min} max={m.max} step={m.step ?? 0.05} width={100} />
                       </td>
-                      <td className="small muted">
-                        {m.description}
+                      <td style={{ width: 90 }} className="small">
                         {v !== m.default && (
-                          <>
-                            {' '}
-                            <a href="#" onClick={(e) => (e.preventDefault(), upd((d) => void (d.coefficients[m.key] = m.default)))}>
-                              сбросить ({m.default})
-                            </a>
-                          </>
+                          <a href="#" onClick={(e) => (e.preventDefault(), upd((d) => void (d.coefficients[m.key] = m.default)))}>
+                            сбросить
+                          </a>
                         )}
                       </td>
                     </tr>
@@ -1135,7 +1093,7 @@ function CoefficientsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                 })}
               </tbody>
             </table>
-          </Card>
+          </Section>
         );
       })}
     </>
@@ -1148,7 +1106,11 @@ function JsonSection({ r }: { r: Ruleset }) {
   const [err, setErr] = useState('');
   return (
     <Card
-      title="Набор правил в формате JSON"
+      title={
+        <>
+          JSON <Info text="Для опытных пользователей: правьте напрямую, затем «Применить». Недостающие поля будут заполнены значениями по умолчанию." />
+        </>
+      }
       actions={
         <div className="row">
           <Btn sm onClick={() => setText(JSON.stringify(useApp.getState().rulesets[r.id], null, 2))}>
@@ -1174,10 +1136,8 @@ function JsonSection({ r }: { r: Ruleset }) {
         </div>
       }
     >
-      <p className="muted small">Для опытных пользователей: правьте напрямую, затем «Применить». Недостающие поля будут заполнены значениями по умолчанию.</p>
       {err && <div className="note bad">Ошибка: {err}</div>}
       <textarea className="mono" style={{ width: '100%', minHeight: 520, fontSize: 12 }} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
-      <p className="faint small">Эффекты условий: {r.conditions.map((c) => `${c.name}: ${c.options.map((o) => `${o.name} (${effectsText(o.effects as Effects)})`).join('; ')}`).join(' | ')}</p>
     </Card>
   );
 }

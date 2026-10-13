@@ -1,6 +1,7 @@
 // Базовые элементы интерфейса.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 export function Btn(props: {
   children?: ReactNode;
@@ -51,7 +52,7 @@ export function Num(props: {
     return x;
   };
   return (
-    <span className={`numwrap${props.suffix ? ' has-suffix' : ''}`} style={{ width: props.width ?? 90 }} title={props.title}>
+    <span className={`numwrap${props.suffix ? (props.suffix.length > 1 ? ' has-suffix long-suffix' : ' has-suffix') : ''}`} style={{ width: props.width ?? 90 }} title={props.title}>
       <input
         type="text"
         inputMode="decimal"
@@ -130,7 +131,7 @@ export function Txt(props: { value: string; onChange: (v: string) => void; place
 }
 
 export function Area(props: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number }) {
-  return <textarea value={props.value ?? ''} rows={props.rows ?? 3} placeholder={props.placeholder} onChange={(e) => props.onChange(e.target.value)} />;
+  return <textarea value={props.value ?? ''} rows={props.rows ?? 3} placeholder={props.placeholder} style={{ width: '100%' }} onChange={(e) => props.onChange(e.target.value)} />;
 }
 
 export function Sel<T extends string | number>(props: {
@@ -169,12 +170,143 @@ export function Check(props: { value: boolean; onChange: (v: boolean) => void; c
   );
 }
 
-export function Field(props: { label: ReactNode; hint?: ReactNode; children: ReactNode; style?: React.CSSProperties }) {
+/** Поле формы. Пояснение (hint) не занимает место — оно во всплывающей подсказке у значка «?». */
+export function Field(props: { label: ReactNode; hint?: string; children: ReactNode; style?: React.CSSProperties }) {
   return (
     <div className="field" style={props.style}>
-      <div className="label">{props.label}</div>
+      <div className="label">
+        {props.label}
+        {props.hint && <Info text={props.hint} />}
+      </div>
       {props.children}
-      {props.hint && <div className="hint">{props.hint}</div>}
+    </div>
+  );
+}
+
+/** Значок «?» с подсказкой. */
+export function Info({ text }: { text: string }) {
+  return (
+    <span className="hint-icon" data-tip={text}>
+      ?
+    </span>
+  );
+}
+
+export interface MenuItem {
+  label: ReactNode;
+  onClick: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+  tip?: string;
+}
+
+/** Кнопка «⋯» с выпадающим списком второстепенных действий. */
+export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefined)[]; label?: ReactNode; title?: string; sm?: boolean }) {
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!pos) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Element;
+      if (!t.closest?.('.menu-pop') && !btn.current?.contains(t)) setPos(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPos(null);
+    const close = () => setPos(null);
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', close);
+    };
+  }, [pos]);
+  const items = props.items.filter(Boolean) as (MenuItem | 'sep')[];
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        className={`btn ${props.label ? '' : 'icon'} ${props.sm ? 'sm' : ''} ${pos ? 'active' : ''}`}
+        title={props.title ?? 'Ещё'}
+        onClick={() => {
+          if (pos) return setPos(null);
+          const r = btn.current!.getBoundingClientRect();
+          setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
+        }}
+      >
+        {props.label ?? '⋯'}
+      </button>
+      {pos &&
+        createPortal(
+          <div className="menu-pop" style={{ top: pos.top, right: pos.right }}>
+            {items.map((it, i) =>
+              it === 'sep' ? (
+                i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? <div key={i} className="menu-sep" /> : null
+              ) : (
+                <button
+                  key={i}
+                  type="button"
+                  className={`menu-item${it.danger ? ' danger' : ''}`}
+                  disabled={it.disabled}
+                  data-tip={it.tip}
+                  onClick={() => {
+                    setPos(null);
+                    it.onClick();
+                  }}
+                >
+                  {it.label}
+                </button>
+              ),
+            )}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+function readOpen(id: string | undefined, def: boolean): boolean {
+  if (!id) return def;
+  try {
+    const v = localStorage.getItem(`warsim-sec-${id}`);
+    return v === null ? def : v === '1';
+  } catch {
+    return def;
+  }
+}
+
+/** Сворачиваемый блок: заголовок со сводкой, содержимое — по клику. Состояние запоминается. */
+export function Section(props: {
+  id?: string;
+  title: ReactNode;
+  summary?: ReactNode;
+  actions?: ReactNode;
+  defaultOpen?: boolean;
+  forceOpen?: boolean;
+  tight?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(() => readOpen(props.id, !!props.defaultOpen));
+  const isOpen = props.forceOpen || open;
+  const toggle = () => {
+    setOpen(!isOpen);
+    try {
+      if (props.id) localStorage.setItem(`warsim-sec-${props.id}`, isOpen ? '0' : '1');
+    } catch {
+      /* без сохранения */
+    }
+  };
+  return (
+    <div className={`card section${isOpen ? ' open' : ''}`}>
+      <div className="card-head" onClick={toggle}>
+        <span className="chev">{isOpen ? '▾' : '▸'}</span>
+        <h3>{props.title}</h3>
+        {props.summary !== undefined && <span className="sec-summary">{props.summary}</span>}
+        <span className="grow" />
+        {props.actions && <span onClick={(e) => e.stopPropagation()}>{props.actions}</span>}
+      </div>
+      {isOpen && <div className={`card-body${props.tight ? ' tight' : ''}`}>{props.children}</div>}
     </div>
   );
 }
