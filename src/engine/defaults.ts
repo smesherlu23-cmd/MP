@@ -471,7 +471,7 @@ export function makeDemoBattalion(): FormationDef {
       newElement('Штаб батальона', { id: 'demo-bn-hq', role: 'штаб', echelon: 'rear', isHQ: true, composition: [comp('rifleman', 20), comp('apc', 2), comp('truck', 4)] }),
       company(1),
       company(2),
-      company(3),
+      { ...company(3), order: 'reserve', echelon: 'rear', notes: 'Резерв командира батальона: введите его в бой сменой приказа.' },
       newElement('Миномётная батарея', { id: 'demo-bn-mort', role: 'батарея', echelon: 'support', composition: [comp('mortar', 6), comp('truck', 6)] }),
       newElement('Разведвзвод', { id: 'demo-bn-recon', role: 'взвод', echelon: 'front', order: 'recon', experience: 3, composition: [comp('scout', 20), comp('apc', 3)] }),
       newElement('Танковая рота', { id: 'demo-bn-tank', role: 'рота', echelon: 'support', experience: 3, composition: [comp('tank', 10, 9)] }),
@@ -504,7 +504,8 @@ export function makeDemoScenario(): Scenario {
   const rs = makeUniversalRuleset();
   const sc = newScenario(rs, 'Пример: атака на высоту 212', 'DEMO-0001');
   sc.id = 'sc-demo';
-  sc.description = 'Мотострелковый батальон с танковой ротой атакует подготовленный оборонительный узел усиленной роты. Сумерки, холмы.';
+  sc.description =
+    'Мотострелковый батальон с танковой ротой атакует подготовленный оборонительный узел усиленной роты. Сумерки, холмы. 3-я рота — в резерве комбата: ГМ может ввести её в бой между ходами (смена приказа), иначе она вступит, только если первая линия выбудет.';
   sc.conditions = { terrain: 'hills', time: 'twilight', weather: 'clear' };
   sc.maxTurns = 16;
   sc.sides[0].name = 'Синие';

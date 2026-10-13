@@ -882,6 +882,7 @@ function phaseMorale(E: EngineContext) {
   for (const el of E.b.elements) {
     if (el.status !== 'active') continue;
     const lossPct = (el.turnValueLost / Math.max(1e-9, el.startValue)) * 100;
+    const persPct = (el.turnPersonnelLost / Math.max(1, el.startPersonnel)) * 100;
     if (f.morale) {
       const factors: Factor[] = [];
       let neg = 0;
@@ -890,7 +891,9 @@ function phaseMorale(E: EngineContext) {
         neg += v;
         factors.push({ label, value: -round1(v), kind: 'add' });
       };
-      addNeg(`Потери за ход ${lossPct.toFixed(1)}%`, lossPct * k.moralePerLossPct);
+      const w = clamp(k.moraleValueWeight, 0, 1);
+      const moraleLossPct = persPct * (1 - w) + lossPct * w;
+      addNeg(`Потери за ход: люди ${persPct.toFixed(1)}%, боевая ценность ${lossPct.toFixed(1)}%`, moraleLossPct * k.moralePerLossPct);
       if (f.suppression) addNeg(`Подавление ${Math.round(el.suppression)}%`, el.suppression * k.moraleSuppression);
       if (f.fatigue && el.fatigue > k.moraleFatigueThreshold) addNeg(`Изнурение (усталость ${Math.round(el.fatigue)}%)`, k.moraleHighFatigue);
       if (f.ammo && el.ammo <= 0) addNeg('Нет боезапаса', k.moraleNoAmmo);
@@ -920,7 +923,12 @@ function phaseMorale(E: EngineContext) {
         pos += k.moraleSuccess;
         factors.push({ label: 'Противник несёт большие потери', value: k.moraleSuccess, kind: 'add' });
       }
-      const delta = -neg * negMult + pos;
+      let negTotal = neg * negMult;
+      if (k.moraleMaxLossPerTurn > 0 && negTotal > k.moraleMaxLossPerTurn) {
+        factors.push({ label: `Ограничение потерь морали за ход`, value: k.moraleMaxLossPerTurn, kind: 'base' });
+        negTotal = k.moraleMaxLossPerTurn;
+      }
+      const delta = -negTotal + pos;
       const before = el.morale;
       el.morale = clamp(el.morale + delta, 0, 100);
       if (Math.abs(delta) >= 0.5) {
