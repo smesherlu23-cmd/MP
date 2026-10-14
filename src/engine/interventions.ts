@@ -73,8 +73,8 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
         changes.push(`снабжение ${f.supply}%`);
       }
       if (typeof p.commandLevel === 'number') {
-        f.commandLevel = clamp(Math.round(p.commandLevel), 1, Math.max(1, b.ruleset.commandLevels.length));
-        changes.push(`командир: ${b.ruleset.commandLevels[f.commandLevel - 1]?.name ?? f.commandLevel}`);
+        f.commandLevel = clamp(Math.round(p.commandLevel), 0, Math.max(1, b.ruleset.commandLevels.length));
+        changes.push(`командир: ${f.commandLevel ? (b.ruleset.commandLevels[f.commandLevel - 1]?.name ?? f.commandLevel) : 'нет'}`);
       }
       if (typeof p.orderId === 'string' && E.orders.get(p.orderId)) {
         f.orderId = p.orderId;

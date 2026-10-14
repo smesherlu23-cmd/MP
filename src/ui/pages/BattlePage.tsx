@@ -341,7 +341,7 @@ function FormationRows(props: { b: Battle; E: EngineContext; fs: FormationState;
             <a
               href="#"
               onClick={(e) => (e.preventDefault(), props.onFormation(fs.id))}
-              data-tip={`${fs.kind}${fs.commanderName ? ` · ${fs.commanderName}` : ''}\nПриказ всему формированию, командир, связь, снабжение`}
+              data-tip={`${fs.level}${fs.commanderName ? ` · ${fs.commanderName}` : ''}\nПриказ всему формированию, командир, связь, снабжение`}
             >
               {fs.name}
             </a>
@@ -762,7 +762,7 @@ function UnitTable({ u }: { u: UnitSummary }) {
 
 function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onElement: (id: string) => void }) {
   const lib = useApp((s) => s.formations);
-  const linked = b.scenario.sides.some((s) => s.formations.some((f) => f.sourceId && lib[f.sourceId]));
+  const linked = b.scenario.sides.some((s) => s.formations.some((f) => f.templateId && lib[f.templateId]));
   const keyEvents = b.log.filter((x) => x.level === 0 && x.phase !== 'turn' && x.phase !== 'setup' && x.phase !== 'end');
   return (
     <div className="stack">

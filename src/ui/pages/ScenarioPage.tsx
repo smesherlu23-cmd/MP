@@ -1,17 +1,17 @@
 // Сценарий: условия боя, стороны, их подразделения, укрепления, разведданные и задачи.
 
+import { useState } from 'react';
 import {
   OBJECTIVE_HAS_VALUE,
   OBJECTIVE_LABELS,
   OBJECTIVE_TYPES,
-  copyFormation,
   createBattle,
-  newFormation,
   newId,
+  newRootUnit,
   newObjective,
   randomSeed,
+  summarizeUnits,
   validateScenario,
-  type FormationDef,
   type ObjectiveType,
   type Ruleset,
   type Scenario,
@@ -20,12 +20,8 @@ import { effectsText } from '../components/EffectsEditor';
 import { Link } from '../components/Link';
 import { Area, Btn, Card, Field, Info, Menu, Num, Section, Sel, Txt, fmt0, fmt1 } from '../components/ui';
 import { useTabState } from '../hooks';
-import { confirmDialog, deleteScenario, duplicateScenario, exportJson, openTab, putBattle, updateScenario, useApp, type Tab } from '../store';
-import { summarizeDef } from './FormationPage';
-
-function allEls(f: FormationDef): FormationDef['elements'] {
-  return [...f.elements, ...f.subunits.flatMap(allEls)];
-}
+import { confirmDialog, deleteScenario, duplicateScenario, exportJson, instantiateLibrary, openTab, putBattle, toast, updateScenario, useApp, type Tab } from '../store';
+import { DND_LIB, DND_NODE } from './FormationPage';
 
 export async function startBattle(sc: Scenario, rs: Ruleset, seed: string) {
   const issues = validateScenario(sc, rs);
@@ -175,6 +171,61 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
   const side = sc.sides[i];
   const upd = (fn: (s: Scenario['sides'][number]) => void) => updateScenario(sc.id, (d) => fn(d.sides[i]));
   const library = Object.values(st.formations).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const [over, setOver] = useState<string | null>(null);
+  const scRef = `sc:${sc.id}`;
+  const defaultOrderName = rs.orders.find((o) => o.behavior === 'defend')?.name ?? 'Оборона';
+  const accepts = (e: React.DragEvent) => e.dataTransfer.types.includes(DND_LIB) || e.dataTransfer.types.includes(DND_NODE);
+  const dragged = (e: React.DragEvent): { id: string; side: number } | null => {
+    const raw = e.dataTransfer.getData(DND_NODE);
+    if (!raw) return null;
+    const x = JSON.parse(raw) as { ref: string; id: string; side?: number };
+    return x.ref === scRef && typeof x.side === 'number' ? { id: x.id, side: x.side } : null;
+  };
+  /** Бросили на подразделение — придать ему. */
+  const onRowDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOver(null);
+    const libId = e.dataTransfer.getData(DND_LIB);
+    if (libId) {
+      const c = instantiateLibrary(libId, { attachedFrom: '' });
+      if (c) upd((d) => void d.formations.find((f) => f.id === targetId)?.children.push(c));
+      if (c) toast(`«${c.name}» придано.`, 'good');
+      return;
+    }
+    const x = dragged(e);
+    if (!x || x.id === targetId) return;
+    let name = '';
+    updateScenario(sc.id, (d) => {
+      const from = d.sides[x.side].formations;
+      const k = from.findIndex((f) => f.id === x.id);
+      const target = d.sides[i].formations.find((f) => f.id === targetId);
+      if (k < 0 || !target) return;
+      const [u] = from.splice(k, 1);
+      u.attachedFrom = u.attachedFrom ?? '';
+      name = u.name;
+      target.children.push(u);
+    });
+    if (name) toast(`«${name}» придано подразделению. Отделить можно в его меню «⋯».`, 'good');
+  };
+  /** Бросили на список стороны — добавить копию из библиотеки или перевести с другой стороны. */
+  const onListDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setOver(null);
+    const libId = e.dataTransfer.getData(DND_LIB);
+    if (libId) {
+      const c = instantiateLibrary(libId);
+      if (c) upd((d) => void d.formations.push(c));
+      return;
+    }
+    const x = dragged(e);
+    if (!x || x.side === i) return;
+    updateScenario(sc.id, (d) => {
+      const from = d.sides[x.side].formations;
+      const k = from.findIndex((f) => f.id === x.id);
+      if (k >= 0) d.sides[i].formations.push(from.splice(k, 1)[0]);
+    });
+  };
   return (
     <div className="card side-card" style={{ ['--side' as string]: side.color }}>
       <div className="card-head">
@@ -182,11 +233,40 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
         <input className="title-input" style={{ fontSize: 15, fontWeight: 600, minWidth: 100, flex: 1 }} value={side.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
       </div>
       <div className="card-body stack" style={{ gap: 14 }}>
-        <div>
+        <div
+          className={`side-drop${over === 'list' ? ' over' : ''}`}
+          onDragOver={(e) => {
+            if (!accepts(e)) return;
+            e.preventDefault();
+            if (over !== 'list') setOver('list');
+          }}
+          onDragLeave={(e) => e.currentTarget === e.target && setOver(null)}
+          onDrop={onListDrop}
+        >
           {side.formations.map((f, fi) => {
-            const s = summarizeDef(allEls(f), rs);
+            const s = summarizeUnits([f], rs);
+            const attached = f.children.filter((c) => c.attachedFrom !== undefined);
             return (
-              <div key={f.id} className="row" style={{ flexWrap: 'nowrap', padding: '3px 0' }}>
+              <div
+                key={f.id}
+                className={`side-unit${over === f.id ? ' drop-inside' : ''}`}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(DND_NODE, JSON.stringify({ ref: scRef, id: f.id, side: i }));
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(e) => {
+                  if (!accepts(e)) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (over !== f.id) setOver(f.id);
+                }}
+                onDrop={(e) => onRowDrop(e, f.id)}
+                data-tip="Перетащите на другое подразделение, чтобы придать его; на другую сторону — чтобы перевести"
+              >
+                <span className="faint" style={{ cursor: 'grab' }}>
+                  ⠿
+                </span>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <Link kind="formation" refId={`sc:${sc.id}:${f.id}`}>
                     {f.name}
@@ -195,8 +275,20 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
                     {' '}
                     · {fmt0(s.persCur)} чел.
                   </span>
+                  {attached.length > 0 && (
+                    <span className="faint small" data-tip={attached.map((c) => c.name).join('\n')}>
+                      {' '}
+                      · придано: {attached.length}
+                    </span>
+                  )}
                 </div>
-                <Sel value={f.order ?? ''} width={130} onChange={(v) => upd((d) => void (d.formations[fi].order = v))} options={rs.orders.map((o) => ({ value: o.id, label: o.name }))} title="Приказ подразделению" />
+                <Sel
+                  value={f.order ?? ''}
+                  width={130}
+                  onChange={(v) => upd((d) => void (d.formations[fi].order = v || null))}
+                  options={[{ value: '', label: `${defaultOrderName} (по умолч.)` }, ...rs.orders.map((o) => ({ value: o.id, label: o.name }))]}
+                  title="Приказ подразделению"
+                />
                 <Btn
                   sm
                   kind="ghost"
@@ -212,20 +304,21 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
               </div>
             );
           })}
-          {!side.formations.length && <div className="muted">Нет подразделений</div>}
+          {!side.formations.length && <div className="muted" style={{ padding: '6px 4px' }}>Нет подразделений — перетащите сюда из навигатора слева или добавьте ниже</div>}
           <div className="row" style={{ marginTop: 6, gap: 6 }}>
             <select
               value=""
               style={{ flex: 1 }}
               onChange={(e) => {
-                const f = st.formations[e.target.value];
-                if (f) upd((d) => void d.formations.push(copyFormation(f)));
+                const c = instantiateLibrary(e.target.value);
+                if (c) upd((d) => void d.formations.push(c));
               }}
               title="В сценарий добавляется копия — её можно менять, не трогая библиотеку"
             >
               <option value="">+ Добавить из библиотеки…</option>
               {library.map((f) => (
                 <option key={f.id} value={f.id}>
+                  {f.level ? `${f.level} · ` : ''}
                   {f.name}
                   {f.rulesetId && f.rulesetId !== sc.rulesetId ? ' (другой набор правил)' : ''}
                 </option>
@@ -234,7 +327,7 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
             <Btn
               kind="ghost"
               onClick={() => {
-                const f = newFormation('Новое подразделение', { rulesetId: rs.id, order: i === 0 ? 'attack' : 'defend' });
+                const f = newRootUnit('Новое подразделение', { order: i === 0 ? 'attack' : 'defend' });
                 upd((d) => void d.formations.push(f));
                 openTab('formation', `sc:${sc.id}:${f.id}`);
               }}
@@ -296,7 +389,7 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
 }
 
 function ForceRatio({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
-  const sums = sc.sides.map((s) => summarizeDef(s.formations.flatMap(allEls), rs));
+  const sums = sc.sides.map((s) => summarizeUnits(s.formations, rs));
   const band = sc.startBand;
   const ratio = (a: number, b: number) => (a <= 0 && b <= 0 ? '—' : b <= 0 ? '∞' : a <= 0 ? '0' : a >= b ? `${fmt1(a / b)} : 1` : `1 : ${fmt1(b / a)}`);
   const rows: { label: string; a: number; b: number; fmt?: (v: number) => string }[] = [

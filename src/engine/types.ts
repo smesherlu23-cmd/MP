@@ -158,6 +158,8 @@ export interface Ruleset {
   turnMinutes: number;
   /** Тег, отмечающий разведывательные элементы/типы. */
   reconTag: string;
+  /** Уровни подразделений эпохи (подсказки в конструкторе): отделение, взвод, рота… */
+  unitLevels: string[];
   features: Features;
   targetClasses: TargetClass[];
   rangeBands: RangeBand[];
@@ -188,58 +190,52 @@ export interface ComponentEntry {
 
 export type Echelon = 'front' | 'support' | 'rear';
 
-export interface ElementDef {
+/** Параметры состояния, которые подразделение может задать само или унаследовать от старшего. */
+export const STATE_KEYS = ['experience', 'morale', 'cohesion', 'readiness', 'ammo', 'fuel', 'equipment', 'fatigue', 'vehicleCondition'] as const;
+export type StateKey = (typeof STATE_KEYS)[number];
+export type UnitState = Record<StateKey, number>;
+
+/**
+ * Подразделение любого уровня — от группы в 2–3 бойца до корпуса. У него может быть свой состав
+ * (люди, вооружение, техника) и подчинённые подразделения. Незаданные параметры наследуются от старшего.
+ */
+export interface UnitNode {
   id: Id;
-  /** Откуда скопирован (элемент библиотеки), чтобы вернуть результаты боя. */
-  sourceId?: Id;
   name: string;
-  /** Роль/тип элемента — свободный текст: «рота», «штаб», «миномётная батарея». */
-  role: string;
-  echelon: Echelon;
-  /** null — наследовать приказ формирования. */
-  order: Id | null;
+  /** Уровень: отделение, взвод, рота… — свободный текст, подсказки берутся из набора правил. */
+  level: string;
+  /** Собственный состав (может быть пустым у чисто управленческого узла). */
   composition: ComponentEntry[];
-  /** Уровень опыта, 1..N. */
-  experience: number;
-  morale: number;
-  cohesion: number;
-  readiness: number;
-  ammo: number;
-  fuel: number;
-  equipment: number;
-  fatigue: number;
-  vehicleCondition: number;
-  /** Атака, % (100 = как в каталоге). */
+  children: UnitNode[];
+  commanderName: string;
+  /** Уровень командира 1..N; null — своего командира нет. */
+  commandLevel: number | null;
+  /** null — как у старшего. */
+  order: Id | null;
+  echelon: Echelon | null;
+  comms: number | null;
+  supply: number | null;
+  /** Свои значения состояния; отсутствующий ключ — как у старшего. */
+  state: Partial<UnitState>;
+  /** Атака и защита, % (100 = как в каталоге). */
   attackMod: number;
-  /** Защита, % (100 = как в каталоге). */
   defenseMod: number;
+  /** Штаб: его потеря лишает старшее подразделение командира и ухудшает связь. */
   isHQ: boolean;
   /** «Стоять насмерть»: не отходит добровольно. */
   holdFast: boolean;
   tags: string[];
   notes?: string;
-}
-
-export interface FormationDef {
-  id: Id;
-  sourceId?: Id;
-  name: string;
-  /** Свободный текст: батальон, рота, отряд… */
-  kind: string;
+  /** Корень копии: из какого подразделения библиотеки вставлено (шаблон). */
+  templateId?: Id;
+  /** Отпечаток шаблона на момент вставки или обновления — чтобы заметить изменения шаблона. */
+  templateHash?: string;
+  /** Узел копии: какому узлу шаблона он соответствует. */
+  srcNodeId?: Id;
+  /** Придано: откуда (пустая строка — просто «придано»). */
+  attachedFrom?: string;
+  /** Набор правил (только у подразделений библиотеки). */
   rulesetId?: Id;
-  commanderName: string;
-  /** Уровень командира 1..N (ruleset.commandLevels). */
-  commandLevel: number;
-  /** Связь, %. null — как у вышестоящего. */
-  comms: number | null;
-  /** Уровень снабжения, %. null — как у вышестоящего. */
-  supply: number | null;
-  /** Приказ по умолчанию. null — как у вышестоящего. */
-  order: Id | null;
-  elements: ElementDef[];
-  subunits: FormationDef[];
-  tags: string[];
-  notes?: string;
   updatedAt?: string;
 }
 
@@ -261,7 +257,8 @@ export interface SideDef {
   id: SideId;
   name: string;
   color: string;
-  formations: FormationDef[];
+  /** Подразделения стороны (каждое — дерево). */
+  formations: UnitNode[];
   fortification: Id;
   intel: Id;
   /** Пусто — задачи выводятся из приказов автоматически. */
@@ -303,10 +300,10 @@ export type ElementStatus = 'active' | 'withdrawn' | 'routed' | 'destroyed';
 
 export interface ElementState {
   id: Id;
+  /** Узел подразделения, из которого создан элемент. */
   defId: Id;
-  sourceId?: Id;
   name: string;
-  role: string;
+  level: string;
   side: SideId;
   formationId: Id;
   echelon: Echelon;
@@ -348,17 +345,22 @@ export interface ElementState {
   turnPersonnelLost: number;
   /** Морально-боевые показатели в начале боя (для отчёта). */
   startMorale: number;
+  /** Свой командир элемента (0 — нет), его связь и снабжение (null — как у формирования). */
+  ownCommandLevel?: number;
+  ownCommanderName?: string;
+  comms?: number | null;
+  supply?: number | null;
 }
 
 export interface FormationState {
   id: Id;
   defId: Id;
-  sourceId?: Id;
   name: string;
-  kind: string;
+  level: string;
   side: SideId;
   parentId: Id | null;
   commanderName: string;
+  /** 0 — своего командира нет. */
   commandLevel: number;
   comms: number;
   supply: number;

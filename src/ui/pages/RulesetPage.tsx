@@ -13,13 +13,14 @@ import {
   clone,
   newId,
   normalizeRuleset,
+  walkUnits,
   type Behavior,
   type ComponentKind,
   type ComponentType,
   type ConditionOp,
   type CustomModifier,
   type Features,
-  type FormationDef,
+  type UnitNode,
   type LevelDef,
   type ModifierCondition,
   type OptionDef,
@@ -153,6 +154,11 @@ function General({ r, upd }: { r: Ruleset; upd: Upd }) {
         </Field>
       </div>
       <div style={{ marginTop: 12 }}>
+        <Field label="Уровни подразделений" hint="Подсказки для поля «Уровень» в конструкторе, от младшего к старшему. «Добавить подчинённое» предлагает уровень на ступень ниже.">
+          <Tags value={r.unitLevels} onChange={(v) => upd((d) => void (d.unitLevels = v))} placeholder="отделение, взвод, рота…" />
+        </Field>
+      </div>
+      <div style={{ marginTop: 12 }}>
         <Area value={r.description ?? ''} onChange={(v) => upd((d) => void (d.description = v))} rows={3} placeholder="Описание (необязательно)" />
       </div>
     </Card>
@@ -205,10 +211,10 @@ function FeaturesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
 function typeUsage(typeId: string): number {
   const s = useApp.getState();
   let n = 0;
-  const walk = (f: FormationDef) => {
-    for (const e of f.elements) if (e.composition.some((c) => c.typeId === typeId)) n++;
-    f.subunits.forEach(walk);
-  };
+  const walk = (root: UnitNode) =>
+    walkUnits(root, (u) => {
+      if (u.composition.some((c) => c.typeId === typeId)) n++;
+    });
   Object.values(s.formations).forEach(walk);
   Object.values(s.scenarios).forEach((sc) => sc.sides.forEach((sd) => sd.formations.forEach(walk)));
   return n;

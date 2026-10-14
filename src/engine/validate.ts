@@ -1,27 +1,27 @@
 // Проверка сценария и подразделений на ошибки до начала боя.
 
-import type { FormationDef, Ruleset, Scenario } from './types';
+import type { Ruleset, Scenario, UnitNode } from './types';
 
 export interface Issue {
   level: 'error' | 'warning';
   text: string;
 }
 
-export function validateFormation(f: FormationDef, rs: Ruleset, path = ''): Issue[] {
+export function validateUnit(root: UnitNode, rs: Ruleset, path = ''): Issue[] {
   const issues: Issue[] = [];
   const types = new Set(rs.componentTypes.map((t) => t.id));
   const orders = new Set(rs.orders.map((o) => o.id));
-  const where = path ? `${path} / ${f.name}` : f.name;
-  if (f.order && !orders.has(f.order)) issues.push({ level: 'warning', text: `${where}: приказ «${f.order}» отсутствует в наборе правил.` });
-  for (const e of f.elements) {
-    if (!e.composition.length) issues.push({ level: 'warning', text: `${where} / ${e.name}: нет состава — элемент не участвует в бою.` });
-    for (const c of e.composition) {
-      if (!types.has(c.typeId)) issues.push({ level: 'error', text: `${where} / ${e.name}: тип «${c.typeId}» отсутствует в наборе правил «${rs.name}».` });
-      if (c.current > c.authorized) issues.push({ level: 'warning', text: `${where} / ${e.name}: в строю больше штата.` });
+  const walk = (n: UnitNode, where: string) => {
+    const here = where ? `${where} / ${n.name}` : n.name;
+    if (n.order && !orders.has(n.order)) issues.push({ level: 'warning', text: `${here}: приказ «${n.order}» отсутствует в наборе правил.` });
+    if (!n.composition.length && !n.children.length) issues.push({ level: 'warning', text: `${here}: нет ни состава, ни подчинённых — в бою не участвует.` });
+    for (const c of n.composition) {
+      if (!types.has(c.typeId)) issues.push({ level: 'error', text: `${here}: тип «${c.typeId}» отсутствует в наборе правил «${rs.name}».` });
+      else if (c.current > c.authorized) issues.push({ level: 'warning', text: `${here}: в строю больше штата.` });
     }
-    if (e.order && !orders.has(e.order)) issues.push({ level: 'warning', text: `${where} / ${e.name}: приказ «${e.order}» отсутствует в наборе правил.` });
-  }
-  for (const s of f.subunits) issues.push(...validateFormation(s, rs, where));
+    for (const ch of n.children) walk(ch, here);
+  };
+  walk(root, path);
   return issues;
 }
 
@@ -36,7 +36,7 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
   }
   for (const side of sc.sides) {
     if (!side.formations.length) issues.push({ level: 'error', text: `У стороны «${side.name}» нет подразделений.` });
-    for (const f of side.formations) issues.push(...validateFormation(f, rs, side.name));
+    for (const f of side.formations) issues.push(...validateUnit(f, rs, side.name));
   }
   return issues;
 }

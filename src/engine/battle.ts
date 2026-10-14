@@ -9,10 +9,8 @@ import type {
   Battle,
   Behavior,
   CompState,
-  ElementDef,
   ElementState,
   Factor,
-  FormationDef,
   FormationState,
   Id,
   Ruleset,
@@ -20,7 +18,9 @@ import type {
   SideId,
   SideSnapshot,
   SideState,
+  UnitNode,
 } from './types';
+import { migrateUnit, resolveChild, ROOT_RESOLVED, type Resolved } from './units';
 
 export interface CreateOptions {
   seed?: string;
@@ -83,32 +83,52 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       lostHoldTurn: 0,
       initiative: 0,
     };
-    const addFormation = (def: FormationDef, parent: FormationState | null) => {
-      const order = def.order && orderIds.has(def.order) ? def.order : (parent?.orderId ?? defaultOrder);
-      const f: FormationState = {
-        id: `f${++fCount}`,
-        defId: def.id,
-        sourceId: def.sourceId,
-        name: def.name,
-        kind: def.kind,
-        side: sd.id,
-        parentId: parent?.id ?? null,
-        commanderName: def.commanderName,
-        commandLevel: clamp(Math.round(def.commandLevel || 1), 1, Math.max(1, rs.commandLevels.length)),
-        comms: def.comms ?? parent?.comms ?? 100,
-        supply: def.supply ?? parent?.supply ?? 100,
-        orderId: order,
-        hqLost: false,
-        broken: false,
-      };
-      b.formations.push(f);
-      for (const ed of def.elements) {
-        const el = makeElement(ed, f, `e${++eCount}`, rs, typeIds, orderIds, warnings);
-        if (el) b.elements.push(el);
+    const maxCmd = Math.max(1, rs.commandLevels.length);
+    const cmd = (v: number | null | undefined) => (v ? clamp(Math.round(v), 1, maxCmd) : 0);
+    /**
+     * Узел с подчинёнными (и любой корень) становится формированием — звеном управления.
+     * Узел с собственным составом становится элементом — тем, что стреляет и несёт потери.
+     */
+    const addNode = (node: UnitNode, parentF: FormationState | null, parentRes: Resolved) => {
+      const res = resolveChild(node, parentRes);
+      const order = res.order && orderIds.has(res.order) ? res.order : (parentF?.orderId ?? defaultOrder);
+      const isGroup = node.children.length > 0 || !parentF;
+      let f = parentF!;
+      if (isGroup) {
+        f = {
+          id: `f${++fCount}`,
+          defId: node.id,
+          name: node.name,
+          level: node.level,
+          side: sd.id,
+          parentId: parentF?.id ?? null,
+          commanderName: node.commanderName,
+          commandLevel: cmd(node.commandLevel),
+          comms: clamp(res.comms, 0, 100),
+          supply: clamp(res.supply, 0, 100),
+          orderId: order,
+          hqLost: false,
+          broken: false,
+        };
+        b.formations.push(f);
       }
-      for (const sub of def.subunits) addFormation(sub, f);
+      if (node.composition.length) {
+        const own = isGroup && node.children.length > 0;
+        const el = makeElement(node, own ? `${node.name} (${node.isHQ ? 'управление' : 'свой состав'})` : node.name, f, `e${++eCount}`, rs, typeIds, res, order, warnings);
+        if (!own) {
+          // Свой командир, связь и снабжение у подразделения без подчинённых.
+          el.ownCommandLevel = cmd(node.commandLevel);
+          el.ownCommanderName = node.commanderName;
+          el.comms = node.comms;
+          el.supply = node.supply;
+        }
+        b.elements.push(el);
+      } else if (!node.children.length) {
+        warnings.push(`подразделение «${node.name}» без состава и подчинённых — в бою не участвует.`);
+      }
+      for (const ch of node.children) addNode(ch, f, res);
     };
-    for (const f of sd.formations) addFormation(f, null);
+    for (const f of sd.formations) addNode(migrateUnit(f), null, ROOT_RESOLVED);
   }
 
   let E = new EngineContext(b);
@@ -119,7 +139,7 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
   }
   const empty = b.elements.filter((x) => x.startValue <= 0);
   if (empty.length) {
-    for (const x of empty) warnings.push(`элемент «${x.name}» не имеет боевого состава и в бою не участвует.`);
+    for (const x of empty) warnings.push(`подразделение «${x.name}» не имеет боевого состава и в бою не участвует.`);
     b.elements = b.elements.filter((x) => x.startValue > 0);
     E = new EngineContext(b);
   }
@@ -154,47 +174,49 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
 }
 
 function makeElement(
-  d: ElementDef,
+  d: UnitNode,
+  name: string,
   f: FormationState,
   id: Id,
   rs: Ruleset,
   typeIds: Set<Id>,
-  orderIds: Set<Id>,
+  res: Resolved,
+  orderId: Id,
   warnings: string[],
-): ElementState | null {
+): ElementState {
   const comps: CompState[] = [];
   for (const c of d.composition) {
     if (!typeIds.has(c.typeId)) {
-      warnings.push(`у элемента «${d.name}» тип «${c.typeId}» отсутствует в наборе правил и не учитывается.`);
+      warnings.push(`у подразделения «${d.name}» тип «${c.typeId}» отсутствует в наборе правил и не учитывается.`);
       continue;
     }
     const cur = Math.max(0, Math.floor(c.current));
     comps.push({ typeId: c.typeId, authorized: Math.max(cur, Math.floor(c.authorized)), start: cur, current: cur, destroyed: 0, damaged: 0, abandoned: 0, kia: 0, wia: 0, mia: 0 });
   }
   const maxExp = Math.max(1, rs.experienceLevels.length);
+  const st = res.state;
   return {
     id,
     defId: d.id,
-    sourceId: d.sourceId,
-    name: d.name,
-    role: d.role,
+    name,
+    level: d.level,
     side: f.side,
     formationId: f.id,
-    echelon: d.echelon ?? 'front',
-    orderId: d.order && orderIds.has(d.order) ? d.order : f.orderId,
+    echelon: res.echelon ?? 'front',
+    orderId,
     holdFast: !!d.holdFast,
     isHQ: !!d.isHQ,
     ownTags: [...(d.tags ?? [])],
     comps,
-    experience: clamp(Math.round(d.experience || 1), 1, maxExp),
-    morale: clamp(d.morale, 0, 100),
-    cohesion: clamp(d.cohesion, 0, 100),
-    readiness: clamp(d.readiness, 0, 100),
-    ammo: clamp(d.ammo, 0, 100),
-    fuel: clamp(d.fuel, 0, 100),
-    equipment: clamp(d.equipment, 0, 100),
-    fatigue: clamp(d.fatigue, 0, 100),
-    vehicleCondition: clamp(d.vehicleCondition, 0, 100),
+    experience: clamp(Math.round(st.experience || 1), 1, maxExp),
+    morale: clamp(st.morale, 0, 100),
+    cohesion: clamp(st.cohesion, 0, 100),
+    readiness: clamp(st.readiness, 0, 100),
+    ammo: clamp(st.ammo, 0, 100),
+    fuel: clamp(st.fuel, 0, 100),
+    equipment: clamp(st.equipment, 0, 100),
+    fatigue: clamp(st.fatigue, 0, 100),
+    vehicleCondition: clamp(st.vehicleCondition, 0, 100),
     attackMod: Math.max(0, d.attackMod ?? 100),
     defenseMod: Math.max(1, d.defenseMod ?? 100),
     suppression: 0,
@@ -214,7 +236,10 @@ function makeElement(
     scattered: 0,
     turnValueLost: 0,
     turnPersonnelLost: 0,
-    startMorale: clamp(d.morale, 0, 100),
+    startMorale: clamp(st.morale, 0, 100),
+    ownCommandLevel: 0,
+    comms: null,
+    supply: null,
   };
 }
 
@@ -1141,7 +1166,8 @@ function phaseChecks(E: EngineContext) {
     const ids = subtreeIds(E, f2.id);
     const els = b.elements.filter((x) => ids.has(x.formationId));
     const total = els.reduce((a, x) => a + x.startValue, 0);
-    if (total <= 0) continue;
+    // Распад имеет смысл только для звена из нескольких элементов.
+    if (total <= 0 || els.length < 2) continue;
     const gone = els.filter((x) => x.status !== 'active' || ['retreat', 'rout'].includes(E.behavior(x))).reduce((a, x) => a + x.startValue, 0);
     if (gone / total >= k.formationBreakShare) {
       f2.broken = true;

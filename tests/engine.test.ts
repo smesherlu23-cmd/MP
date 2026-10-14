@@ -2,14 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   applyIntervention,
   clone,
-  copyFormation,
+  canMove,
   createBattle,
   formatReport,
   makeDemoScenario,
   makeLinearRuleset,
   makeUniversalRuleset,
-  newElement,
-  newFormation,
+  instantiate,
+  isOutdated,
+  migrateUnit,
+  moveUnit,
+  newRootUnit,
+  newUnit,
+  nextName,
+  resolveUnit,
+  unitHash,
+  updateFromTemplate,
   newScenario,
   replayBattle,
   Rng,
@@ -18,22 +26,24 @@ import {
   stepTurn,
   validateScenario,
   type Battle,
-  type FormationDef,
+  type UnitNode,
   type Ruleset,
   type Scenario,
 } from '../src/engine';
 
 const strip = (b: Battle) => JSON.stringify({ el: b.elements, hist: b.history, res: b.result ? { ...b.result, keyEvents: [] } : null, rng: b.rng });
 
-function infantry(name: string, n: number, order = 'attack', patch: Partial<FormationDef> = {}): FormationDef {
-  return newFormation(name, {
+const rifles = (n: number, cur = n) => [{ typeId: 'rifleman', authorized: n, current: cur }];
+
+function infantry(name: string, n: number, order = 'attack', patch: Partial<UnitNode> = {}): UnitNode {
+  return newRootUnit(name, {
     order,
-    elements: [newElement(`${name} — группа`, { composition: [{ typeId: 'rifleman', authorized: n, current: n }] })],
+    children: [newUnit(`${name} — группа`, { composition: rifles(n) })],
     ...patch,
   });
 }
 
-function duel(rs: Ruleset, a: FormationDef, b: FormationDef, patch: Partial<Scenario> = {}): Scenario {
+function duel(rs: Ruleset, a: UnitNode, b: UnitNode, patch: Partial<Scenario> = {}): Scenario {
   const sc = newScenario(rs, 'Тест', 'T-1');
   sc.sides[0].formations = [a];
   sc.sides[1].formations = [b];
@@ -146,10 +156,10 @@ describe('бой', () => {
 
   it('тысячи бойцов считаются быстро и без переполнений', () => {
     const big = (name: string, order: string) =>
-      newFormation(name, {
+      newRootUnit(name, {
         order,
-        elements: Array.from({ length: 12 }, (_, i) =>
-          newElement(`${name} ${i + 1}`, { composition: [{ typeId: 'rifleman', authorized: 250, current: 250 }, { typeId: 'mg', authorized: 9, current: 9 }] }),
+        children: Array.from({ length: 12 }, (_, i) =>
+          newUnit(`${name} ${i + 1}`, { composition: [{ typeId: 'rifleman', authorized: 250, current: 250 }, { typeId: 'mg', authorized: 9, current: 9 }] }),
         ),
       });
     const s = duel(rs, big('Полк А', 'attack'), big('Полк Б', 'defend'));
@@ -216,12 +226,9 @@ describe('бой', () => {
   });
 
   it('резерв вводится в бой, когда первая линия выбыла', () => {
-    const d = newFormation('Оборона', {
+    const d = newRootUnit('Оборона', {
       order: 'defend',
-      elements: [
-        newElement('Застава', { composition: [{ typeId: 'rifleman', authorized: 5, current: 5 }] }),
-        newElement('Резерв', { order: 'reserve', echelon: 'rear', composition: [{ typeId: 'rifleman', authorized: 30, current: 30 }] }),
-      ],
+      children: [newUnit('Застава', { composition: rifles(5) }), newUnit('Резерв', { order: 'reserve', echelon: 'rear', composition: rifles(30) })],
     });
     const s = duel(rs, infantry('Атака', 150), d, { startBand: 'close', maxTurns: 25 });
     let committed = 0;
@@ -245,12 +252,12 @@ describe('бой', () => {
   it('набор правил другой эпохи работает', () => {
     const lr = makeLinearRuleset();
     const line = (name: string, order: string) =>
-      newFormation(name, {
+      newRootUnit(name, {
         order,
-        elements: [
-          newElement('Батальон мушкетёров', { composition: [{ typeId: 'musketeer', authorized: 600, current: 560 }] }),
-          newElement('Эскадрон гусар', { echelon: 'support', composition: [{ typeId: 'hussar', authorized: 120, current: 110 }] }),
-          newElement('Батарея', { echelon: 'support', composition: [{ typeId: 'fieldgun', authorized: 8, current: 8 }] }),
+        children: [
+          newUnit('Батальон мушкетёров', { composition: [{ typeId: 'musketeer', authorized: 600, current: 560 }] }),
+          newUnit('Эскадрон гусар', { echelon: 'support', composition: [{ typeId: 'hussar', authorized: 120, current: 110 }] }),
+          newUnit('Батарея', { echelon: 'support', composition: [{ typeId: 'fieldgun', authorized: 8, current: 8 }] }),
         ],
       });
     const s = newScenario(lr, 'Линейный бой', 'L');
@@ -265,18 +272,138 @@ describe('бой', () => {
 
   it('проверка сценария находит неизвестные типы, а бой их пропускает с предупреждением', () => {
     const f = infantry('Чужие', 10);
-    f.elements[0].composition.push({ typeId: 'laser', authorized: 1, current: 1 });
+    f.children[0].composition.push({ typeId: 'laser', authorized: 1, current: 1 });
     const s = duel(rs, f, infantry('Свои', 10, 'defend'));
     expect(validateScenario(s, rs).some((x) => x.level === 'error' && x.text.includes('laser'))).toBe(true);
     const b = createBattle(s, rs, { seed: 'V' });
     expect(b.log.some((x) => x.text.includes('laser'))).toBe(true);
   });
 
-  it('копия подразделения получает новые идентификаторы и ссылку на оригинал', () => {
+  it('копия подразделения получает новые идентификаторы и ссылку на шаблон', () => {
     const f = makeDemoScenario().sides[0].formations[0];
-    const c = copyFormation(f);
+    const c = instantiate(f);
     expect(c.id).not.toBe(f.id);
-    expect(c.sourceId).toBe(f.id);
-    expect(c.elements[0].sourceId).toBe(f.elements[0].id);
+    expect(c.templateId).toBe(f.id);
+    expect(c.children[0].srcNodeId).toBe(f.children[0].id);
+    expect(isOutdated(c, f)).toBe(false);
+  });
+
+  it('узел с подчинёнными и своим составом: формирование и отдельный элемент', () => {
+    const root = newRootUnit('Батальон', {
+      order: 'defend',
+      composition: rifles(10),
+      isHQ: true,
+      children: [newUnit('Рота', { composition: rifles(50) }), newUnit('Группа', { children: [newUnit('Отделение', { composition: rifles(8) })] })],
+    });
+    const sc = duel(rs, root, infantry('Противник', 60, 'attack'));
+    const b = createBattle(sc, rs, { seed: 'tree' });
+    const own = b.formations.filter((f) => f.side === 'A');
+    expect(own.map((f) => f.name)).toEqual(['Батальон', 'Группа']);
+    const els = b.elements.filter((x) => x.side === 'A');
+    expect(els.map((x) => x.name)).toEqual(['Батальон (управление)', 'Рота', 'Отделение']);
+    expect(els[2].formationId).toBe(own[1].id);
+    expect(own[1].parentId).toBe(own[0].id);
+  });
+
+  it('параметры наследуются от старшего и переопределяются на любом уровне', () => {
+    const root = newRootUnit('Полк', {
+      state: { morale: 60, experience: 3 },
+      supply: 40,
+      children: [newUnit('Батальон', { state: { morale: 90 }, children: [newUnit('Рота', { composition: rifles(50) })] }), newUnit('Рота 2', { composition: rifles(50), state: { experience: 1 } })],
+    });
+    const r1 = resolveUnit(root, root.children[0].children[0].id)!;
+    expect(r1.state.morale).toBe(90);
+    expect(r1.state.experience).toBe(3);
+    expect(r1.supply).toBe(40);
+    const r2 = resolveUnit(root, root.children[1].id)!;
+    expect(r2.state.morale).toBe(60);
+    expect(r2.state.experience).toBe(1);
+    const sc = duel(rs, root, infantry('Противник', 60));
+    const b = createBattle(sc, rs, { seed: 'inh' });
+    const roty = b.elements.filter((x) => x.side === 'A');
+    expect(roty.map((x) => x.morale)).toEqual([90, 60]);
+    expect(roty.map((x) => x.experience)).toEqual([3, 1]);
+  });
+
+  it('обновление копии из шаблона: устройство из шаблона, потери и названия копии сохраняются', () => {
+    const tpl = newRootUnit('Взвод', { level: 'взвод', composition: rifles(30), children: [newUnit('Отделение', { composition: rifles(10) })] });
+    const copy = instantiate(tpl, { name: '1-й взвод' });
+    copy.composition[0].current = 22; // потери
+    copy.children[0].name = '1-е отделение';
+    copy.children.push(newUnit('Снайперская пара', { composition: rifles(2) })); // добавлено вручную
+    expect(isOutdated(copy, tpl)).toBe(false);
+    // Шаблон меняется: больше людей, новый пулемёт, ещё одно отделение
+    tpl.composition = [{ typeId: 'rifleman', authorized: 32, current: 32 }, { typeId: 'mg', authorized: 2, current: 2 }];
+    tpl.children.push(newUnit('Отделение', { composition: rifles(10) }));
+    expect(isOutdated(copy, tpl)).toBe(true);
+    const upd = updateFromTemplate(copy, tpl);
+    expect(isOutdated(upd, tpl)).toBe(false);
+    expect(upd.name).toBe('1-й взвод');
+    expect(upd.composition).toEqual([
+      { typeId: 'rifleman', authorized: 32, current: 22, recoverable: undefined },
+      { typeId: 'mg', authorized: 2, current: 2 },
+    ]);
+    expect(upd.children.map((c) => c.name)).toEqual(['1-е отделение', 'Отделение', 'Снайперская пара']);
+    expect(upd.children[0].id).toBe(copy.children[0].id);
+  });
+
+  it('вложенные шаблоны: рота из взводов обновляется по цепочке', () => {
+    const vzvod = newRootUnit('Взвод', { level: 'взвод', composition: rifles(30) });
+    const rota = newRootUnit('Рота', { level: 'рота', children: [instantiate(vzvod, { name: '1-й взвод' }), instantiate(vzvod, { name: '2-й взвод' })] });
+    const bn = newRootUnit('Батальон', { children: [instantiate(rota, { name: '1-я рота' })] });
+    vzvod.composition = rifles(35);
+    expect(isOutdated(rota.children[0], vzvod)).toBe(true);
+    rota.children = rota.children.map((c) => updateFromTemplate(c, vzvod));
+    expect(isOutdated(bn.children[0], rota)).toBe(true);
+    bn.children[0] = updateFromTemplate(bn.children[0], rota);
+    expect(bn.children[0].children.map((c) => [c.name, c.composition[0].authorized])).toEqual([
+      ['1-й взвод', 35],
+      ['2-й взвод', 35],
+    ]);
+    expect(isOutdated(bn.children[0].children[0], vzvod)).toBe(false);
+    expect(unitHash(bn.children[0])).toBe(unitHash(rota));
+  });
+
+  it('перемещение и придание: нельзя переместить в своих подчинённых', () => {
+    const tank = newRootUnit('Танковая рота', { composition: [{ typeId: 'tank', authorized: 10, current: 10 }] });
+    const bn = newRootUnit('Батальон', { children: [newUnit('1-я рота', { composition: rifles(80) }), newUnit('2-я рота', { composition: rifles(80) })] });
+    const roots = [bn, tank];
+    expect(moveUnit(roots, tank.id, bn.id, 'inside')).toBe(true);
+    expect(roots.length).toBe(1);
+    expect(bn.children.map((c) => c.name)).toEqual(['1-я рота', '2-я рота', 'Танковая рота']);
+    expect(canMove(roots, bn.id, bn.children[0].id)).toBe(false);
+    expect(moveUnit(roots, bn.children[2].id, bn.children[0].id, 'before')).toBe(true);
+    expect(bn.children.map((c) => c.name)).toEqual(['Танковая рота', '1-я рота', '2-я рота']);
+  });
+
+  it('размножение: следующие номера в названиях', () => {
+    expect(nextName('1-й взвод', 1)).toBe('2-й взвод');
+    expect(nextName('Отделение 3', 2)).toBe('Отделение 5');
+    expect(nextName('Дозор', 1)).toBe('Дозор 2');
+  });
+
+  it('старый формат «формирование + элементы» переносится без потери данных', () => {
+    const legacy = {
+      id: 'old-bn',
+      name: 'Старый батальон',
+      kind: 'батальон',
+      commanderName: 'майор',
+      commandLevel: 4,
+      comms: 70,
+      supply: 60,
+      order: 'attack',
+      elements: [{ id: 'old-e1', name: 'Рота', role: 'рота', echelon: 'front', order: null, composition: rifles(90, 80), experience: 3, morale: 65, cohesion: 70, readiness: 90, ammo: 100, fuel: 100, equipment: 100, fatigue: 5, vehicleCondition: 90, attackMod: 100, defenseMod: 100, isHQ: false, holdFast: false, tags: [] }],
+      subunits: [{ id: 'old-sub', name: 'Группа', kind: 'группа', commanderName: '', commandLevel: 3, comms: null, supply: null, order: null, elements: [], subunits: [], tags: [] }],
+      tags: [],
+    };
+    const u = migrateUnit(legacy);
+    expect(u.level).toBe('батальон');
+    expect(u.comms).toBe(70);
+    expect(u.children.map((c) => c.name)).toEqual(['Рота', 'Группа']);
+    expect(u.children[0].state.morale).toBe(65);
+    expect(u.children[0].composition[0].current).toBe(80);
+    const sc = duel(rs, legacy as unknown as UnitNode, infantry('Противник', 50));
+    const b = createBattle(sc, rs, { seed: 'legacy' });
+    expect(b.elements.find((x) => x.name === 'Рота')?.morale).toBe(65);
   });
 });

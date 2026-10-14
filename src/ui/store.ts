@@ -5,19 +5,26 @@ import { produce } from 'immer';
 import { create } from 'zustand';
 import {
   clone,
-  copyFormation,
+  cloneUnit,
+  findUnit,
+  instantiate,
+  isOutdated,
   makeBlankRuleset,
   makeDemoBattalion,
   makeDemoDefenders,
   makeDemoScenario,
+  makeDemoTemplates,
+  migrateUnit,
   makeLinearRuleset,
   makeUniversalRuleset,
-  newFormation,
+  newRootUnit,
+  updateFromTemplate,
+  walkUnits,
   newId,
   newScenario,
   normalizeRuleset,
   type Battle,
-  type FormationDef,
+  type UnitNode,
   type Id,
   type Ruleset,
   type Scenario,
@@ -60,7 +67,7 @@ export interface Dialog {
 interface AppState {
   loaded: boolean;
   rulesets: Record<Id, Ruleset>;
-  formations: Record<Id, FormationDef>;
+  formations: Record<Id, UnitNode>;
   scenarios: Record<Id, Scenario>;
   battleIndex: Record<Id, BattleMeta>;
   tabs: Tab[];
@@ -169,10 +176,11 @@ export async function initApp() {
   ]);
   const rulesets: Record<Id, Ruleset> = {};
   for (const r of rs as Ruleset[]) if (r?.id) rulesets[r.id] = normalizeRuleset(r);
-  const formations: Record<Id, FormationDef> = {};
-  for (const f of fs as FormationDef[]) if (f?.id) formations[f.id] = f;
+  // Старые файлы («формирование + элементы») переводятся в дерево подразделений при загрузке.
+  const formations: Record<Id, UnitNode> = {};
+  for (const f of fs as UnitNode[]) if (f?.id) formations[f.id] = migrateUnit(f);
   const scenarios: Record<Id, Scenario> = {};
-  for (const x of sc as Scenario[]) if (x?.id) scenarios[x.id] = x;
+  for (const x of sc as Scenario[]) if (x?.id) scenarios[x.id] = migrateScenario(x);
   const battleIndex: Record<Id, BattleMeta> = {};
   for (const b of bt as BattleMeta[]) if (b?.id) battleIndex[b.id] = b;
 
@@ -197,22 +205,23 @@ export async function initApp() {
   });
 }
 
+export function migrateScenario(sc: Scenario): Scenario {
+  return { ...sc, sides: sc.sides.map((sd) => ({ ...sd, formations: (sd.formations ?? []).map((f) => migrateUnit(f)) })) as Scenario['sides'] };
+}
+
 export async function installExamples() {
   const universal = makeUniversalRuleset();
   const linear = makeLinearRuleset();
-  const bn = { ...makeDemoBattalion(), rulesetId: universal.id };
-  const def = { ...makeDemoDefenders(), rulesetId: universal.id };
+  const units = [...makeDemoTemplates(), makeDemoBattalion(), makeDemoDefenders()].map((u) => ({ ...u, rulesetId: universal.id }));
   const sc = makeDemoScenario();
-  // Связываем копии в сценарии с библиотекой, чтобы можно было вернуть результаты боя.
-  sc.sides[0].formations = [copyFormation(bn)];
-  sc.sides[1].formations = [copyFormation(def)];
+  const formations = Object.fromEntries(units.map((u) => [u.id, u]));
   set((s) => ({
     rulesets: { ...s.rulesets, [universal.id]: universal, [linear.id]: linear },
-    formations: { ...s.formations, [bn.id]: bn, [def.id]: def },
+    formations: { ...s.formations, ...formations },
     scenarios: { ...s.scenarios, [sc.id]: sc },
   }));
   for (const r of [universal, linear]) await storage.save('rulesets', r.id, r);
-  for (const f of [bn, def]) await storage.save('formations', f.id, f);
+  for (const f of units) await storage.save('formations', f.id, f);
   await storage.save('scenarios', sc.id, sc);
 }
 
@@ -350,7 +359,7 @@ export async function deleteRuleset(id: Id) {
 // ------------------------------------------------------------------ подразделения
 
 /** ref: «lib:<id>» — библиотека; «sc:<scenarioId>:<formationId>» — копия в сценарии. */
-export function resolveFormation(ref: string): { f: FormationDef; rulesetId?: Id; scenario?: Scenario; sideIndex?: number } | null {
+export function resolveFormation(ref: string): { f: UnitNode; rulesetId?: Id; scenario?: Scenario; sideIndex?: number } | null {
   const s = get();
   const [scope, a, b] = ref.split(':');
   if (scope === 'lib') {
@@ -366,7 +375,7 @@ export function resolveFormation(ref: string): { f: FormationDef; rulesetId?: Id
   return null;
 }
 
-export function updateFormationRef(ref: string, fn: (f: FormationDef) => void) {
+export function updateFormationRef(ref: string, fn: (f: UnitNode) => void) {
   const [scope, a, b] = ref.split(':');
   if (scope === 'lib') return updateFormation(a, fn);
   updateScenario(a, (sc) => {
@@ -377,7 +386,7 @@ export function updateFormationRef(ref: string, fn: (f: FormationDef) => void) {
   });
 }
 
-export function updateFormation(id: Id, fn: (f: FormationDef) => void) {
+export function updateFormation(id: Id, fn: (f: UnitNode) => void) {
   set((s) => {
     if (!s.formations[id]) return {};
     const next = produce(s.formations[id], (d) => {
@@ -389,7 +398,7 @@ export function updateFormation(id: Id, fn: (f: FormationDef) => void) {
   scheduleSave('formations', id, () => get().formations[id]);
 }
 
-export function addFormation(f: FormationDef, open = true): Id {
+export function addFormation(f: UnitNode, open = true): Id {
   set((s) => ({ formations: { ...s.formations, [f.id]: f } }));
   scheduleSave('formations', f.id, () => get().formations[f.id], 0);
   if (open) openTab('formation', `lib:${f.id}`);
@@ -398,20 +407,13 @@ export function addFormation(f: FormationDef, open = true): Id {
 
 export function createFormation(rulesetId?: Id): Id {
   const rs = rulesetId ?? Object.keys(get().rulesets)[0];
-  return addFormation(newFormation('Новое подразделение', { rulesetId: rs }));
+  return addFormation(newRootUnit('Новое подразделение', { rulesetId: rs }));
 }
 
 export function duplicateFormation(id: Id): Id | undefined {
   const f = get().formations[id];
   if (!f) return;
-  const c = copyFormation(f);
-  delete c.sourceId;
-  const strip = (x: FormationDef) => {
-    delete x.sourceId;
-    x.elements.forEach((e) => delete e.sourceId);
-    x.subunits.forEach(strip);
-  };
-  strip(c);
+  const c = cloneUnit(f);
   c.name = `${f.name} (копия)`;
   return addFormation(c);
 }
@@ -574,11 +576,11 @@ export async function importFile() {
       sc.id = newId('sc');
       sc.name = `${sc.name} (импорт)`;
     }
-    addScenario(sc);
+    addScenario(migrateScenario(sc));
     if (!s.rulesets[sc.rulesetId]) toast('Набор правил сценария не найден — выберите другой в сценарии.', 'bad');
     else toast(`Импортирован сценарий «${sc.name}».`, 'good');
-  } else if (data?.elements && data?.subunits) {
-    const f = data as FormationDef;
+  } else if ((data?.elements && data?.subunits) || (data?.children && data?.composition)) {
+    const f = migrateUnit(data);
     if (s.formations[f.id]) {
       f.id = newId('fm');
       f.name = `${f.name} (импорт)`;
@@ -589,3 +591,64 @@ export async function importFile() {
     toast('Не удалось распознать содержимое файла.', 'bad');
   }
 }
+
+// ------------------------------------------------------------------ шаблоны
+
+/** Все копии подразделения библиотеки: в библиотеке и в сценариях. */
+export function templateUsages(templateId: Id): { ref: string; owner: string; nodeId: Id; outdated: boolean }[] {
+  const s = get();
+  const tpl = s.formations[templateId];
+  const out: { ref: string; owner: string; nodeId: Id; outdated: boolean }[] = [];
+  const scan = (root: UnitNode, ref: string, owner: string) =>
+    walkUnits(root, (n) => {
+      if (n.templateId === templateId && n.id !== templateId) out.push({ ref, owner, nodeId: n.id, outdated: isOutdated(n, tpl) });
+    });
+  for (const f of Object.values(s.formations)) if (f.id !== templateId) scan(f, `lib:${f.id}`, f.name);
+  for (const sc of Object.values(s.scenarios)) for (const sd of sc.sides) for (const f of sd.formations) scan(f, `sc:${sc.id}:${f.id}`, sc.name);
+  return out;
+}
+
+/** Обновить одну копию по её шаблону (на месте). */
+export function updateCopy(ref: string, nodeId: Id) {
+  updateFormationRef(ref, (root) => {
+    const replace = (list: UnitNode[]): boolean => {
+      const i = list.findIndex((x) => x.id === nodeId);
+      if (i >= 0) {
+        const tpl = get().formations[list[i].templateId ?? ''];
+        if (tpl) list[i] = updateFromTemplate(JSON.parse(JSON.stringify(list[i])), tpl);
+        return true;
+      }
+      return list.some((x) => replace(x.children));
+    };
+    if (root.id === nodeId) {
+      const tpl = get().formations[root.templateId ?? ''];
+      if (tpl) Object.assign(root, updateFromTemplate(JSON.parse(JSON.stringify(root)), tpl), { id: root.id });
+    } else replace(root.children);
+  });
+}
+
+/** Обновить все устаревшие копии шаблона. */
+export function updateAllCopies(templateId: Id): number {
+  const list = templateUsages(templateId).filter((u) => u.outdated);
+  for (const u of list) updateCopy(u.ref, u.nodeId);
+  if (list.length) toast(`Обновлено копий: ${list.length}.`, 'good');
+  return list.length;
+}
+
+/** Копия подразделения библиотеки для вставки. */
+export function instantiateLibrary(id: Id, opts: { attachedFrom?: string; name?: string } = {}): UnitNode | null {
+  const tpl = get().formations[id];
+  return tpl ? instantiate(tpl, opts) : null;
+}
+
+/** Есть ли в дереве узел из этого шаблона (чтобы не вставить шаблон сам в себя). */
+export function containsTemplate(root: UnitNode, templateId: Id): boolean {
+  if (root.id === templateId) return true;
+  let found = false;
+  walkUnits(root, (n) => {
+    if (n.templateId === templateId) found = true;
+  });
+  return found;
+}
+
+export { findUnit };

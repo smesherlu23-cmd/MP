@@ -1,164 +1,359 @@
-// Конструктор подразделения: дерево структуры (формирования → подразделения → элементы),
-// состав и состояние каждого элемента, сводка сил.
+// Конструктор подразделений: структура войск в виде оргсхемы или списка (с перетаскиванием),
+// редактор выбранного подразделения, вставка из библиотеки (шаблоны), придание.
 
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   BEHAVIOR_LABELS,
   ECHELON_LABELS,
   KIND_LABELS,
-  clone,
-  copyFormation,
-  newElement,
-  newFormation,
-  newId,
-  validateFormation,
+  ROOT_RESOLVED,
+  STATE_LABELS,
+  cloneUnit,
+  findParent,
+  findUnit,
+  insertUnit,
+  isOutdated,
+  moveUnit,
+  newUnit,
+  nextName,
+  removeUnit,
+  resolveTree,
+  summarizeUnits,
+  validateUnit,
   type ComponentKind,
-  type ElementDef,
+  type DropPos,
   type Echelon,
-  type FormationDef,
+  type Id,
+  type Resolved,
   type Ruleset,
+  type Scenario,
+  type StateKey,
+  type UnitNode,
 } from '../../engine';
 import { Link } from '../components/Link';
-import { Area, Btn, Card, Check, Field, Menu, Num, Range, Section, Sel, Tags, Txt, fmt0, fmt1 } from '../components/ui';
+import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, Seg, Tags, Txt, fmt0, fmt1, type MenuItem } from '../components/ui';
 import { useTabState } from '../hooks';
 import {
   addFormation,
   confirmDialog,
+  containsTemplate,
   deleteFormation,
   duplicateFormation,
   exportJson,
+  instantiateLibrary,
   openTab,
+  promptDialog,
   resolveFormation,
+  templateUsages,
   toast,
+  updateAllCopies,
+  updateCopy,
   updateFormationRef,
+  updateScenario,
   useApp,
   type Tab,
 } from '../store';
 
-type NodeSel = { t: 'f' | 'e'; id: string };
+export const DND_NODE = 'application/x-warsim-unit';
+export const DND_LIB = 'application/x-warsim-lib';
 
-// ------------------------------------------------------------------ операции над деревом
+// ------------------------------------------------------------------ сводки по поддеревьям
 
-function findFormation(root: FormationDef, id: string): FormationDef | null {
-  if (root.id === id) return root;
-  for (const s of root.subunits) {
-    const f = findFormation(s, id);
-    if (f) return f;
-  }
-  return null;
-}
-
-function parentOf(root: FormationDef, id: string): FormationDef | null {
-  if (root.elements.some((e) => e.id === id) || root.subunits.some((s) => s.id === id)) return root;
-  for (const s of root.subunits) {
-    const p = parentOf(s, id);
-    if (p) return p;
-  }
-  return null;
-}
-
-function findElement(root: FormationDef, id: string): ElementDef | null {
-  for (const e of root.elements) if (e.id === id) return e;
-  for (const s of root.subunits) {
-    const e = findElement(s, id);
-    if (e) return e;
-  }
-  return null;
-}
-
-function allElements(f: FormationDef): ElementDef[] {
-  return [...f.elements, ...f.subunits.flatMap(allElements)];
-}
-
-export interface DefSummary {
+export interface NodeStats {
+  pers: number;
   persAuth: number;
-  persCur: number;
-  recoverable: number;
-  equip: { id: string; name: string; kind: ComponentKind; auth: number; cur: number; rec: number }[];
-  value: number;
-  valueAuth: number;
-  fire: Record<string, Record<string, number>>;
-  elements: number;
-  morale: number;
+  equip: number;
+  equipList: Map<string, number>;
 }
 
-export function summarizeDef(els: ElementDef[], rs: Ruleset): DefSummary {
+/** Люди и техника каждого узла вместе с подчинёнными (один проход снизу вверх). */
+export function computeStats(root: UnitNode, rs: Ruleset): Map<Id, NodeStats> {
   const types = new Map(rs.componentTypes.map((t) => [t.id, t]));
-  const out: DefSummary = { persAuth: 0, persCur: 0, recoverable: 0, equip: [], value: 0, valueAuth: 0, fire: {}, elements: els.length, morale: 0 };
-  const eq = new Map<string, DefSummary['equip'][number]>();
-  let mw = 0;
-  for (const e of els) {
-    let ev = 0;
-    for (const c of e.composition) {
+  const out = new Map<Id, NodeStats>();
+  const go = (n: UnitNode): NodeStats => {
+    const s: NodeStats = { pers: 0, persAuth: 0, equip: 0, equipList: new Map() };
+    for (const c of n.composition) {
       const t = types.get(c.typeId);
       if (!t) continue;
       const crew = t.kind === 'personnel' ? 1 : t.crew;
-      out.persAuth += c.authorized * crew;
-      out.persCur += c.current * crew;
-      if (t.kind === 'personnel') out.recoverable += c.recoverable ?? 0;
-      out.value += c.current * t.value;
-      out.valueAuth += c.authorized * t.value;
-      ev += c.current * t.value;
+      s.pers += c.current * crew;
+      s.persAuth += c.authorized * crew;
       if (t.kind !== 'personnel') {
-        const q = eq.get(t.id) ?? { id: t.id, name: t.name, kind: t.kind, auth: 0, cur: 0, rec: 0 };
-        q.auth += c.authorized;
-        q.cur += c.current;
-        q.rec += c.recoverable ?? 0;
-        eq.set(t.id, q);
+        s.equip += c.current;
+        s.equipList.set(t.name, (s.equipList.get(t.name) ?? 0) + c.current);
       }
-      for (const cls of rs.targetClasses)
-        for (const b of rs.rangeBands) {
-          out.fire[cls.id] ??= {};
-          out.fire[cls.id][b.id] = (out.fire[cls.id][b.id] ?? 0) + (t.firepower[cls.id]?.[b.id] ?? 0) * c.current * ((e.attackMod ?? 100) / 100);
-        }
     }
-    out.morale += e.morale * ev;
-    mw += ev;
-  }
-  out.morale = mw > 0 ? out.morale / mw : 0;
-  out.equip = [...eq.values()];
+    for (const ch of n.children) {
+      const cs = go(ch);
+      s.pers += cs.pers;
+      s.persAuth += cs.persAuth;
+      s.equip += cs.equip;
+      for (const [k, v] of cs.equipList) s.equipList.set(k, (s.equipList.get(k) ?? 0) + v);
+    }
+    out.set(n.id, s);
+    return s;
+  };
+  go(root);
   return out;
 }
 
-export function riskOf(e: ElementDef, rs: Ruleset): { label: string; cls: string } {
+export function statsLine(s: NodeStats | undefined): string {
+  if (!s) return '';
+  return `${fmt0(s.pers)} чел.${s.equip ? ` · ${fmt0(s.equip)} ед.` : ''}`;
+}
+
+export function statsTip(s: NodeStats | undefined): string | undefined {
+  if (!s || !s.equipList.size) return undefined;
+  return [...s.equipList.entries()].map(([k, v]) => `${k}: ${v}`).join('\n');
+}
+
+export function riskOf(state: Resolved['state'], rs: Ruleset): { label: string; cls: string } {
   const k = rs.coefficients;
-  const panicMult = rs.experienceLevels[e.experience - 1]?.effects.panic ?? 1;
-  const m = e.morale / Math.max(0.3, panicMult);
+  const panicMult = rs.experienceLevels[state.experience - 1]?.effects.panic ?? 1;
+  const m = state.morale / Math.max(0.3, panicMult);
   if (rs.features.panic && m < k.panicMorale) return { label: 'высокий: паника', cls: 'bad' };
   if (rs.features.retreat && m < k.retreatMorale) return { label: 'повышенный: отход', cls: 'warn' };
   if (m < k.retreatMorale + 15) return { label: 'умеренный', cls: 'warn' };
   return { label: 'низкий', cls: 'good' };
 }
 
+const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
+/** Сохранить подразделение (поддерево) в библиотеку как самостоятельный шаблон. */
+function saveToLibrary(node: UnitNode, rs: Ruleset) {
+  const c = cloneUnit(node);
+  delete c.templateId;
+  delete c.templateHash;
+  delete c.srcNodeId;
+  delete c.attachedFrom;
+  c.rulesetId = rs.id;
+  addFormation(c, false);
+  toast(`«${c.name}» сохранено в библиотеку — его можно вставлять в другие подразделения.`, 'good');
+}
+
+// ------------------------------------------------------------------ контекст страницы
+
+interface Ctx {
+  root: UnitNode;
+  rs: Ruleset;
+  ref: string;
+  isLib: boolean;
+  lib: Record<Id, UnitNode>;
+  scenario?: Scenario;
+  sideIndex?: number;
+  upd: (fn: (root: UnitNode) => void) => void;
+  sel: Id;
+  setSel: (id: Id) => void;
+  resolved: Map<Id, Resolved>;
+  stats: Map<Id, NodeStats>;
+  collapsed: Set<Id>;
+  toggle: (id: Id) => void;
+  openInsert: (targetId: Id, attach: boolean) => void;
+  drop: { id: Id; pos: DropPos } | null;
+  setDrop: (d: { id: Id; pos: DropPos } | null) => void;
+  onDrop: (e: React.DragEvent, targetId: Id, pos: DropPos) => void;
+}
+
+/** Подразделение библиотеки, которое сейчас редактируется (или из которого скопировано). */
+function hostLibraryId(ctx: Ctx): Id | undefined {
+  return ctx.isLib ? ctx.root.id : ctx.root.templateId;
+}
+
+/** Нельзя вставить шаблон в самого себя или в подразделение, которое он сам содержит. */
+function canInsertTemplate(ctx: Ctx, templateId: Id): boolean {
+  const host = hostLibraryId(ctx);
+  const tpl = ctx.lib[templateId];
+  if (!tpl) return false;
+  if (!host) return true;
+  return templateId !== host && !containsTemplate(tpl, host);
+}
+
+function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false)[] {
+  const isRoot = node.id === ctx.root.id;
+  const parent = isRoot ? null : findParent(ctx.root, node.id);
+  const idx = parent ? parent.children.findIndex((c) => c.id === node.id) : -1;
+  const tpl = node.templateId ? ctx.lib[node.templateId] : undefined;
+  const outdated = isOutdated(node, tpl);
+  const un = (fn: (n: UnitNode) => void) => ctx.upd((d) => fn(findUnit(d, node.id)!));
+  const levels = ctx.rs.unitLevels;
+  const li = levels.indexOf(node.level);
+  const childLevel = li > 0 ? levels[li - 1] : '';
+  return [
+    {
+      label: 'Добавить подчинённое',
+      onClick: () => {
+        const ch = newUnit(`${cap(childLevel) || 'Подразделение'} ${node.children.length + 1}`, { level: childLevel });
+        un((n) => void n.children.push(ch));
+        ctx.setSel(ch.id);
+      },
+    },
+    { label: 'Вставить из библиотеки…', onClick: () => ctx.openInsert(node.id, false), tip: 'Готовое подразделение из библиотеки как шаблон: взвод, роту, батарею…' },
+    { label: 'Придать из библиотеки…', onClick: () => ctx.openInsert(node.id, true), tip: 'То же, но с отметкой «придано»' },
+    'sep',
+    !isRoot && {
+      label: 'Размножить…',
+      tip: 'Сделать несколько одинаковых подразделений с номерами по порядку',
+      onClick: async () => {
+        const v = await promptDialog('Сколько всего должно быть таких подразделений?', '3', `Будут созданы копии «${node.name}» с номерами по порядку.`);
+        const n = Math.min(50, Math.round(Number(v)));
+        if (!v || !Number.isFinite(n) || n < 2) return;
+        ctx.upd((d) => {
+          const p = findParent(d, node.id)!;
+          const i = p.children.findIndex((c) => c.id === node.id);
+          const copies = Array.from({ length: n - 1 }, (_, k) => {
+            const c = cloneUnit(node);
+            c.name = nextName(node.name, k + 1);
+            return c;
+          });
+          p.children.splice(i + 1, 0, ...copies);
+        });
+      },
+    },
+    !isRoot && {
+      label: 'Дублировать',
+      onClick: () =>
+        ctx.upd((d) => {
+          const p = findParent(d, node.id)!;
+          const c = cloneUnit(node);
+          c.name = nextName(node.name, 1);
+          p.children.splice(p.children.findIndex((x) => x.id === node.id) + 1, 0, c);
+        }),
+    },
+    !isRoot && { label: 'Раньше в списке', disabled: idx <= 0, onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx - 1].id, 'before', true)) },
+    !isRoot && { label: 'Позже в списке', disabled: !parent || idx >= parent.children.length - 1, onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx + 1].id, 'after', true)) },
+    'sep',
+    { label: 'Сохранить в библиотеку', tip: 'Чтобы вставлять это подразделение в другие как шаблон', onClick: () => saveToLibrary(node, ctx.rs) },
+    !!tpl && outdated && { label: 'Обновить из шаблона', onClick: () => updateCopy(ctx.ref, node.id), tip: `Шаблон «${tpl.name}» изменён после вставки` },
+    !!node.templateId &&
+      !(ctx.isLib && isRoot) && {
+        label: 'Отвязать от шаблона',
+        tip: 'Подразделение перестанет отслеживать изменения шаблона',
+        onClick: () =>
+          un((n) => {
+            delete n.templateId;
+            delete n.templateHash;
+          }),
+      },
+    !isRoot && node.attachedFrom !== undefined && { label: 'Снять отметку «придано»', onClick: () => un((n) => void delete n.attachedFrom) },
+    !isRoot &&
+      !ctx.isLib && {
+        label: node.attachedFrom !== undefined ? 'Отделить (снова самостоятельное)' : 'Выделить в самостоятельное',
+        tip: 'Станет отдельным подразделением этой стороны сценария',
+        onClick: () => {
+          const sc = ctx.scenario!;
+          updateScenario(sc.id, (d) => {
+            const side = d.sides[ctx.sideIndex!];
+            const root = side.formations.find((f) => f.id === ctx.root.id);
+            if (!root) return;
+            const x = removeUnit(root.children, node.id);
+            if (!x) return;
+            delete x.attachedFrom;
+            side.formations.push(x);
+          });
+          ctx.setSel(ctx.root.id);
+          toast(`«${node.name}» — теперь самостоятельное подразделение стороны.`, 'good');
+        },
+      },
+    'sep',
+    !isRoot && {
+      label: 'Удалить',
+      danger: true,
+      onClick: async () => {
+        if (!(await confirmDialog(`Удалить «${node.name}»${node.children.length ? ' со всеми подчинёнными' : ''}?`, undefined, 'Удалить', true))) return;
+        ctx.upd((d) => void removeUnit(d.children, node.id));
+        ctx.setSel(parent?.id ?? ctx.root.id);
+      },
+    },
+  ];
+}
+
+// ------------------------------------------------------------------ перетаскивание
+
+function dragStart(e: React.DragEvent, ref: string, id: Id) {
+  e.stopPropagation();
+  e.dataTransfer.setData(DND_NODE, JSON.stringify({ ref, id }));
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function acceptsDrop(e: React.DragEvent): boolean {
+  return e.dataTransfer.types.includes(DND_NODE) || e.dataTransfer.types.includes(DND_LIB);
+}
+
 // ------------------------------------------------------------------ страница
 
 export function FormationPage({ tab }: { tab: Tab }) {
   const ref = tab.ref!;
-  const state = useApp();
+  const st = useApp();
   const res = resolveFormation(ref);
-  const [sel, setSel] = useTabState<NodeSel>(`${tab.key}:sel`, { t: 'f', id: res?.f.id ?? '' });
-  if (!res) return <div className="empty">Подразделение не найдено.</div>;
-  const root = res.f;
-  const rs = state.rulesets[res.rulesetId ?? ''] ?? Object.values(state.rulesets)[0];
+  const [selId, setSel] = useTabState<string>(`${tab.key}:sel`, res?.f.id ?? '');
+  const [view, setView] = useTabState<'chart' | 'list'>('unit-view', 'chart');
+  const [collapsedArr, setCollapsed] = useTabState<string[]>(`${tab.key}:collapsed`, []);
+  const [insert, setInsert] = useState<{ id: Id; attach: boolean } | null>(null);
+  const [drop, setDrop] = useState<{ id: Id; pos: DropPos } | null>(null);
+  const root = res?.f;
+  const rs = st.rulesets[res?.rulesetId ?? ''] ?? Object.values(st.rulesets)[0];
+  const resolved = useMemo(() => (root ? resolveTree(root) : new Map<Id, Resolved>()), [root]);
+  const stats = useMemo(() => (root && rs ? computeStats(root, rs) : new Map<Id, NodeStats>()), [root, rs]);
+  if (!res || !root) return <div className="empty">Подразделение не найдено.</div>;
   if (!rs) return <div className="empty">Нет ни одного набора правил.</div>;
   const isLib = ref.startsWith('lib:');
-  const upd = (fn: (f: FormationDef) => void) => updateFormationRef(ref, fn);
-  const selF = sel.t === 'f' ? findFormation(root, sel.id) : null;
-  const selE = sel.t === 'e' ? findElement(root, sel.id) : null;
-  const current: NodeSel = selF || selE ? sel : { t: 'f', id: root.id };
-  const issues = validateFormation(root, rs);
-  const hasOriginal = !!root.sourceId && !!state.formations[root.sourceId];
+  const collapsed = new Set(collapsedArr);
 
-  const rulesetPicker = isLib ? (
-    <Field label="Набор правил" hint="Из его каталога берутся типы людей, вооружения и техники.">
-      <Sel value={rs.id} onChange={(v) => upd((d) => void (d.rulesetId = v))} options={Object.values(state.rulesets).map((r) => ({ value: r.id, label: r.name }))} />
-    </Field>
-  ) : null;
+  const ctx: Ctx = {
+    root,
+    rs,
+    ref,
+    isLib,
+    lib: st.formations,
+    scenario: res.scenario,
+    sideIndex: res.sideIndex,
+    upd: (fn) => updateFormationRef(ref, fn),
+    sel: findUnit(root, selId) ? selId : root.id,
+    setSel,
+    resolved,
+    stats,
+    collapsed,
+    toggle: (id) => setCollapsed(collapsed.has(id) ? collapsedArr.filter((x) => x !== id) : [...collapsedArr, id]),
+    openInsert: (id, attach) => setInsert({ id, attach }),
+    drop,
+    setDrop,
+    onDrop: (e, targetId, posIn) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDrop(null);
+      const pos: DropPos = targetId === root.id ? 'inside' : posIn;
+      const libId = e.dataTransfer.getData(DND_LIB);
+      if (libId) {
+        if (!canInsertTemplate(ctx, libId)) {
+          toast('Нельзя вставить подразделение само в себя.', 'bad');
+          return;
+        }
+        const copy = instantiateLibrary(libId);
+        if (!copy) return;
+        ctx.upd((d) => insertUnit([d], copy, targetId, pos));
+        setSel(copy.id);
+        return;
+      }
+      const raw = e.dataTransfer.getData(DND_NODE);
+      if (!raw) return;
+      const { ref: from, id } = JSON.parse(raw) as { ref: string; id: Id };
+      if (from !== ref) return;
+      ctx.upd((d) => {
+        if (!moveUnit([d], id, targetId, pos, true)) toast('Так переместить нельзя: подразделение не может стать подчинённым самого себя.', 'bad');
+      });
+    },
+  };
+  const sel = findUnit(root, ctx.sel) ?? root;
+  const issues = validateUnit(root, rs);
+  const tpl = root.templateId ? st.formations[root.templateId] : undefined;
+  const usages = isLib ? templateUsages(root.id) : [];
+  const outdatedUsages = usages.filter((u) => u.outdated).length;
 
   return (
     <div className="page">
       {!isLib && (
         <div className="crumbs">
-          Копия в сценарии{' '}
+          В сценарии{' '}
           <Link kind="scenario" refId={res.scenario!.id}>
             «{res.scenario!.name}»
           </Link>{' '}
@@ -166,245 +361,286 @@ export function FormationPage({ tab }: { tab: Tab }) {
         </div>
       )}
       <div className="page-head">
-        <input className="title-input" value={root.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
+        <input className="title-input" value={root.name} onChange={(e) => ctx.upd((d) => void (d.name = e.target.value))} />
+        <Seg
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'chart', label: 'Схема', title: 'Штатная схема блоками' },
+            { value: 'list', label: 'Список', title: 'Компактное дерево' },
+          ]}
+        />
         <Menu
-          items={
-            isLib
+          items={[
+            { label: 'Развернуть всё', onClick: () => setCollapsed([]) },
+            'sep',
+            ...(isLib
               ? [
                   { label: 'Дублировать', onClick: () => duplicateFormation(root.id) },
                   { label: 'Сохранить в файл…', onClick: () => exportJson('formation', root.name, root) },
-                  'sep',
+                  'sep' as const,
                   { label: 'Удалить из библиотеки', danger: true, onClick: () => deleteFormation(root.id) },
                 ]
               : [
-                  {
-                    label: 'Сохранить копию в библиотеку',
-                    tip: 'С текущим составом и состоянием',
-                    onClick: () => {
-                      const c = copyFormation(root);
-                      c.rulesetId = rs.id;
-                      c.name = root.name;
-                      delete c.sourceId;
-                      addFormation(c);
-                      toast('Копия сохранена в библиотеку.', 'good');
-                    },
-                  },
-                  hasOriginal && { label: 'Открыть оригинал из библиотеки', onClick: () => openTab('formation', `lib:${root.sourceId}`) },
-                ]
-          }
+                  !!tpl && { label: `Открыть в библиотеке «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
+                  { label: 'Сохранить в библиотеку', onClick: () => saveToLibrary(root, rs) },
+                ]),
+          ]}
         />
       </div>
 
-      {issues.length > 0 && (
-        <div className="muted small" style={{ marginTop: -8, marginBottom: 12 }} data-tip={issues.map((x) => `• ${x.text}`).join('\n')}>
-          <span className="warn">⚠</span> Замечаний: {issues.length} — наведите, чтобы прочитать
+      <div className="meta" style={{ marginTop: -8, marginBottom: 14 }}>
+        {!isLib && tpl && (
+          <span>
+            из библиотеки:{' '}
+            <Link kind="formation" refId={`lib:${tpl.id}`}>
+              {tpl.name}
+            </Link>
+            {isOutdated(root, tpl) && (
+              <>
+                {' '}
+                — <span className="warn">изменено в библиотеке</span>{' '}
+                <a href="#" onClick={(e) => (e.preventDefault(), updateCopy(ref, root.id))}>
+                  обновить
+                </a>
+              </>
+            )}
+          </span>
+        )}
+        {isLib && usages.length > 0 && (
+          <span data-tip={[...new Set(usages.map((u) => u.owner))].join('\n')}>
+            копий в других подразделениях и сценариях: <b>{usages.length}</b>
+            {outdatedUsages > 0 && (
+              <>
+                {' '}
+                · <span className="warn">отличаются от шаблона: {outdatedUsages}</span>{' '}
+                <a href="#" onClick={(e) => (e.preventDefault(), updateAllCopies(root.id))}>
+                  обновить все
+                </a>
+              </>
+            )}
+          </span>
+        )}
+        {issues.length > 0 && (
+          <span data-tip={issues.map((x) => `• ${x.text}`).join('\n')}>
+            <span className="warn">⚠</span> замечаний: {issues.length}
+          </span>
+        )}
+        <span className="faint">
+          перетаскивайте подразделения мышью · из навигатора слева можно перетащить подразделение библиотеки
+        </span>
+      </div>
+
+      {view === 'chart' ? (
+        <div className="stack">
+          <Card tight className="org-card">
+            <OrgChart ctx={ctx} />
+          </Card>
+          <div className="grid align-start" style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(260px, 1fr)' }}>
+            <NodeEditor key={sel.id} ctx={ctx} node={sel} />
+            <SummaryCard node={sel} rs={rs} resolved={resolved} />
+          </div>
+        </div>
+      ) : (
+        <div className="split wide-left">
+          <div className="stack">
+            <Card tight>
+              <TreeList ctx={ctx} />
+            </Card>
+            <SummaryCard node={sel} rs={rs} resolved={resolved} />
+          </div>
+          <NodeEditor key={sel.id} ctx={ctx} node={sel} />
         </div>
       )}
+      {insert && <InsertDialog ctx={ctx} targetId={insert.id} attach={insert.attach} onClose={() => setInsert(null)} />}
+    </div>
+  );
+}
 
-      <div className="split wide-left">
-        <div className="stack">
-          <Card title="Структура" tight>
-            <div className="tree" style={{ padding: '0 6px' }}>
-              <TreeFormation f={root} root={root} rs={rs} sel={current} setSel={setSel} upd={upd} depth={0} />
-            </div>
-          </Card>
-          <SummaryCard els={allElements(root)} rs={rs} />
-        </div>
-        <div className="stack">
-          {current.t === 'f' && (
-            <FormationEditor f={selF ?? root} isRoot={(selF ?? root).id === root.id} rs={rs} upd={upd} root={root} rulesetPicker={rulesetPicker} />
-          )}
-          {current.t === 'e' && selE && <ElementEditor e={selE} rs={rs} upd={upd} root={root} />}
-        </div>
+// ------------------------------------------------------------------ значки узла
+
+function NodeBadges({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
+  const tpl = node.templateId ? ctx.lib[node.templateId] : undefined;
+  const outdated = isOutdated(node, tpl);
+  const isLibRoot = ctx.isLib && node.id === ctx.root.id;
+  return (
+    <>
+      {node.isHQ && <span className="badge warn">штаб</span>}
+      {node.attachedFrom !== undefined && (
+        <span className="badge info" data-tip={node.attachedFrom ? `Придано из: ${node.attachedFrom}` : 'Придано'}>
+          придано
+        </span>
+      )}
+      {tpl && !isLibRoot && (
+        <span className={`badge${outdated ? ' bad' : ''}`} data-tip={outdated ? `Шаблон «${tpl.name}» изменён — можно обновить` : `Из шаблона «${tpl.name}»`}>
+          {outdated ? 'шаблон ⟳' : 'шаблон'}
+        </span>
+      )}
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ оргсхема
+
+function OrgChart({ ctx }: { ctx: Ctx }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // При открытии и смене выбора — показать выбранный блок (по умолчанию корень в центре).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const box = el.querySelector('.org-box.sel') as HTMLElement | null;
+    if (!box) return;
+    const cr = el.getBoundingClientRect();
+    const br = box.getBoundingClientRect();
+    if (br.left < cr.left || br.right > cr.right || ctx.sel === ctx.root.id) el.scrollLeft += br.left + br.width / 2 - (cr.left + cr.width / 2);
+    if (br.top < cr.top || br.bottom > cr.bottom) el.scrollTop += br.top - cr.top - 20;
+  }, [ctx.sel]);
+  return (
+    <div className="org-scroll" ref={ref}>
+      <div className="org">
+        <ul>
+          <OrgNode ctx={ctx} node={ctx.root} />
+        </ul>
       </div>
     </div>
   );
 }
 
-// ------------------------------------------------------------------ дерево
-
-function TreeFormation(props: {
-  f: FormationDef;
-  root: FormationDef;
-  rs: Ruleset;
-  sel: NodeSel;
-  setSel: (s: NodeSel) => void;
-  upd: (fn: (f: FormationDef) => void) => void;
-  depth: number;
-}) {
-  const { f, root, rs, sel, setSel, upd } = props;
-  const sum = summarizeDef(allElements(f), rs);
-  const isRoot = f.id === root.id;
-  const addElement = () => {
-    const e = newElement(`Элемент ${f.elements.length + 1}`);
-    upd((d) => findFormation(d, f.id)!.elements.push(e));
-    setSel({ t: 'e', id: e.id });
-  };
-  const addSub = () => {
-    const s = newFormation(`Подразделение ${f.subunits.length + 1}`, { kind: 'рота', comms: null, supply: null, order: null });
-    upd((d) => findFormation(d, f.id)!.subunits.push(s));
-    setSel({ t: 'f', id: s.id });
-  };
-  const moveSub = (dir: -1 | 1) =>
-    upd((d) => {
-      const p = parentOf(d, f.id);
-      if (!p) return;
-      const i = p.subunits.findIndex((x) => x.id === f.id);
-      const j = i + dir;
-      if (j < 0 || j >= p.subunits.length) return;
-      [p.subunits[i], p.subunits[j]] = [p.subunits[j], p.subunits[i]];
-    });
+function OrgBox({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
+  const st = ctx.stats.get(node.id);
+  const isRoot = node.id === ctx.root.id;
+  const order = node.order ? ctx.rs.orders.find((o) => o.id === node.order)?.name : undefined;
+  const isDrop = ctx.drop?.id === node.id;
   return (
-    <div>
-      <div className={`tree-node${sel.t === 'f' && sel.id === f.id ? ' sel' : ''}`} onClick={() => setSel({ t: 'f', id: f.id })}>
-        <span>▦</span>
-        <span className="tn-name">
-          <b>{f.name}</b> <span className="faint">{f.kind}</span>
-        </span>
-        <span className="tn-meta">{fmt0(sum.persCur)} чел.</span>
-        <span className="tn-actions" onClick={(e) => e.stopPropagation()}>
-          <Btn sm kind="ghost" icon title="Добавить элемент" onClick={addElement}>
-            +
-          </Btn>
-          <Btn sm kind="ghost" icon title="Добавить вложенное подразделение" onClick={addSub}>
-            ⊞
-          </Btn>
-          {!isRoot && (
-            <>
-              <Btn sm kind="ghost" icon title="Выше" onClick={() => moveSub(-1)}>
-                ↑
-              </Btn>
-              <Btn sm kind="ghost" icon title="Ниже" onClick={() => moveSub(1)}>
-                ↓
-              </Btn>
-              <Btn
-                sm
-                kind="ghost"
-                icon
-                title="Дублировать"
-                onClick={() =>
-                  upd((d) => {
-                    const p = parentOf(d, f.id)!;
-                    const c = copyFormation(f);
-                    const strip = (x: FormationDef) => {
-                      delete x.sourceId;
-                      x.elements.forEach((e) => delete e.sourceId);
-                      x.subunits.forEach(strip);
-                    };
-                    strip(c);
-                    c.name = `${f.name} (копия)`;
-                    p.subunits.splice(p.subunits.findIndex((x) => x.id === f.id) + 1, 0, c);
-                  })
-                }
-              >
-                ⧉
-              </Btn>
-              <Btn
-                sm
-                kind="ghost"
-                icon
-                title="Удалить"
-                onClick={async () => {
-                  if (!(await confirmDialog(`Удалить «${f.name}» со всеми элементами?`, undefined, 'Удалить', true))) return;
-                  upd((d) => {
-                    const p = parentOf(d, f.id)!;
-                    p.subunits = p.subunits.filter((x) => x.id !== f.id);
-                  });
-                  setSel({ t: 'f', id: root.id });
-                }}
-              >
-                ✕
-              </Btn>
-            </>
-          )}
+    <div
+      className={`org-box${ctx.sel === node.id ? ' sel' : ''}${isDrop ? ' drop-inside' : ''}${node.composition.length ? '' : ' group'}`}
+      draggable={!isRoot}
+      onDragStart={(e) => dragStart(e, ctx.ref, node.id)}
+      onDragOver={(e) => {
+        if (!acceptsDrop(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (ctx.drop?.id !== node.id) ctx.setDrop({ id: node.id, pos: 'inside' });
+      }}
+      onDragLeave={() => ctx.drop?.id === node.id && ctx.setDrop(null)}
+      onDrop={(e) => ctx.onDrop(e, node.id, 'inside')}
+      onClick={() => ctx.setSel(node.id)}
+    >
+      <div className="org-top">
+        <span className="org-level">{node.level || '\u00a0'}</span>
+        <span className="org-menu" onClick={(e) => e.stopPropagation()}>
+          <Menu sm items={nodeActions(ctx, node)} />
         </span>
       </div>
-      <div className="tree-children">
-        {f.elements.map((e, i) => (
-          <TreeElement key={e.id} e={e} i={i} f={f} rs={rs} sel={sel} setSel={setSel} upd={upd} />
-        ))}
-        {f.subunits.map((s) => (
-          <TreeFormation key={s.id} {...props} f={s} depth={props.depth + 1} />
-        ))}
-        {!f.elements.length && !f.subunits.length && (
-          <div className="faint small" style={{ padding: '4px 6px' }}>
-            Пусто —{' '}
-            <a href="#" onClick={(e) => (e.preventDefault(), addElement())}>
-              добавить элемент
-            </a>
+      <div className="org-name">{node.name}</div>
+      <div className="org-stats" data-tip={statsTip(st)}>
+        {statsLine(st)}
+        {order ? ` · ${order}` : ''}
+      </div>
+      <div className="org-badges">
+        <NodeBadges ctx={ctx} node={node} />
+      </div>
+    </div>
+  );
+}
+
+function OrgNode({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
+  const folded = ctx.collapsed.has(node.id);
+  // Подчинённые без своих подчинённых (взводы роты, отделения взвода) — столбиком: так схема не расползается вширь.
+  // У корня столбик — только когда подчинённых много, иначе верхний уровень читается лучше в ряд.
+  const n = node.children.length;
+  const stack = n > 1 && node.children.every((c) => !c.children.length) && (node.id !== ctx.root.id || n > 10);
+  return (
+    <li>
+      <OrgBox ctx={ctx} node={node} />
+      {node.children.length > 0 && (
+        <button className="org-fold" onClick={() => ctx.toggle(node.id)} title={folded ? 'Развернуть' : 'Свернуть'}>
+          {folded ? `▸ ${node.children.length}` : '▾'}
+        </button>
+      )}
+      {node.children.length > 0 &&
+        !folded &&
+        (stack ? (
+          <div className="org-leaves">
+            {node.children.map((c) => (
+              <div key={c.id} className="org-leaf">
+                <OrgBox ctx={ctx} node={c} />
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+        ) : (
+          <ul>
+            {node.children.map((c) => (
+              <OrgNode key={c.id} ctx={ctx} node={c} />
+            ))}
+          </ul>
+        ))}
+    </li>
+  );
+}
+
+// ------------------------------------------------------------------ список
+
+function TreeList({ ctx }: { ctx: Ctx }) {
+  return (
+    <div className="unit-tree">
+      <TreeRow ctx={ctx} node={ctx.root} depth={0} />
     </div>
   );
 }
 
-function TreeElement({ e, i, f, rs, sel, setSel, upd }: { e: ElementDef; i: number; f: FormationDef; rs: Ruleset; sel: NodeSel; setSel: (s: NodeSel) => void; upd: (fn: (f: FormationDef) => void) => void }) {
-  const sum = summarizeDef([e], rs);
-  const risk = riskOf(e, rs);
-  const order = e.order ? rs.orders.find((o) => o.id === e.order)?.name : null;
-  const move = (dir: -1 | 1) =>
-    upd((d) => {
-      const p = findFormation(d, f.id)!;
-      const j = i + dir;
-      if (j < 0 || j >= p.elements.length) return;
-      [p.elements[i], p.elements[j]] = [p.elements[j], p.elements[i]];
-    });
+function TreeRow({ ctx, node, depth }: { ctx: Ctx; node: UnitNode; depth: number }) {
+  const st = ctx.stats.get(node.id);
+  const isRoot = node.id === ctx.root.id;
+  const folded = ctx.collapsed.has(node.id);
+  const drop = ctx.drop?.id === node.id ? ctx.drop.pos : null;
+  const r = ctx.resolved.get(node.id)!;
+  const risk = node.composition.length ? riskOf(r.state, ctx.rs) : null;
   return (
-    <div className={`tree-node${sel.t === 'e' && sel.id === e.id ? ' sel' : ''}`} onClick={() => setSel({ t: 'e', id: e.id })}>
-      <span className={risk.cls} title={`Риск паники/отхода: ${risk.label}`}>
-        ●
-      </span>
-      <span className="tn-name">
-        {e.isHQ && <span className="badge warn" style={{ marginRight: 4 }}>штаб</span>}
-        {e.name}
-        {order && <span className="faint"> · {order}</span>}
-      </span>
-      <span className="tn-meta">
-        {fmt0(sum.persCur)}
-        {sum.equip.length ? ` · ${sum.equip.reduce((a, q) => a + q.cur, 0)} ед.` : ''}
-      </span>
-      <span className="tn-actions" onClick={(ev) => ev.stopPropagation()}>
-        <Btn sm kind="ghost" icon title="Выше" onClick={() => move(-1)}>
-          ↑
-        </Btn>
-        <Btn sm kind="ghost" icon title="Ниже" onClick={() => move(1)}>
-          ↓
-        </Btn>
-        <Btn
-          sm
-          kind="ghost"
-          icon
-          title="Дублировать"
-          onClick={() =>
-            upd((d) => {
-              const p = findFormation(d, f.id)!;
-              const c = { ...clone(e), id: newId('el'), name: `${e.name} (копия)` };
-              delete c.sourceId;
-              p.elements.splice(i + 1, 0, c);
-            })
-          }
-        >
-          ⧉
-        </Btn>
-        <Btn
-          sm
-          kind="ghost"
-          icon
-          title="Удалить"
-          onClick={async () => {
-            if (!(await confirmDialog(`Удалить элемент «${e.name}»?`, undefined, 'Удалить', true))) return;
-            upd((d) => {
-              const p = findFormation(d, f.id)!;
-              p.elements = p.elements.filter((x) => x.id !== e.id);
-            });
-            setSel({ t: 'f', id: f.id });
+    <>
+      <div
+        className={`unit-row${ctx.sel === node.id ? ' sel' : ''}${drop ? ` drop-${drop}` : ''}`}
+        style={{ paddingLeft: 6 + depth * 18 }}
+        draggable={!isRoot}
+        onDragStart={(e) => dragStart(e, ctx.ref, node.id)}
+        onDragOver={(e) => {
+          if (!acceptsDrop(e)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          const y = (e.clientY - rect.top) / rect.height;
+          const pos: DropPos = isRoot ? 'inside' : y < 0.28 ? 'before' : y > 0.72 ? 'after' : 'inside';
+          if (ctx.drop?.id !== node.id || ctx.drop.pos !== pos) ctx.setDrop({ id: node.id, pos });
+        }}
+        onDragLeave={() => ctx.drop?.id === node.id && ctx.setDrop(null)}
+        onDrop={(e) => ctx.onDrop(e, node.id, ctx.drop?.pos ?? 'inside')}
+        onClick={() => ctx.setSel(node.id)}
+      >
+        <span
+          className="unit-fold"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (node.children.length) ctx.toggle(node.id);
           }}
         >
-          ✕
-        </Btn>
-      </span>
-    </div>
+          {node.children.length ? (folded ? '▸' : '▾') : ''}
+        </span>
+        {risk && <span className={`status-dot ${risk.cls}`} data-tip={`Риск паники и отхода: ${risk.label}`} />}
+        <span className="unit-name">
+          {node.level && <span className="faint">{node.level} · </span>}
+          {node.name}
+        </span>
+        <NodeBadges ctx={ctx} node={node} />
+        <span className="grow" />
+        <span className="faint small nowrap" data-tip={statsTip(st)}>
+          {statsLine(st)}
+        </span>
+        <span className="unit-menu" onClick={(e) => e.stopPropagation()}>
+          <Menu sm items={nodeActions(ctx, node)} />
+        </span>
+      </div>
+      {!folded && node.children.map((c) => <TreeRow key={c.id} ctx={ctx} node={c} depth={depth + 1} />)}
+    </>
   );
 }
 
@@ -439,12 +675,12 @@ function FireTable({ fire, rs }: { fire: Record<string, Record<string, number>>;
   );
 }
 
-export function SummaryCard({ els, rs }: { els: ElementDef[]; rs: Ruleset }) {
-  const s = summarizeDef(els, rs);
+function SummaryCard({ node, rs, resolved }: { node: UnitNode; rs: Ruleset; resolved: Map<Id, Resolved> }) {
+  const s = summarizeUnits([node], rs, resolved);
   const shortage = s.persAuth > 0 ? (1 - s.persCur / s.persAuth) * 100 : 0;
   return (
-    <>
-      <Card title="Сводка">
+    <div className="stack">
+      <Card title={node.children.length ? 'Сводка с подчинёнными' : 'Сводка'}>
         <div className="stat-row">
           <div className="stat">
             <span className="k">Личный состав</span>
@@ -453,17 +689,22 @@ export function SummaryCard({ els, rs }: { els: ElementDef[]; rs: Ruleset }) {
             </span>
           </div>
           <div className="stat" data-tip="Сумма очков боевой ценности всех единиц">
-            <span className="k">Боевая ценность</span>
+            <span className="k">Ценность</span>
             <span className="v">{fmt0(s.value)}</span>
           </div>
-          {rs.features.morale && (
+          {rs.features.morale && s.combatUnits > 0 && (
             <div className="stat">
               <span className="k">Мораль</span>
               <span className="v">{Math.round(s.morale)}</span>
             </div>
           )}
         </div>
-        {shortage >= 1 && <div className="faint small" style={{ marginTop: 4 }}>некомплект {fmt1(shortage)}%{s.recoverable ? ` · раненых ${s.recoverable}` : ''}</div>}
+        <div className="faint small row" style={{ marginTop: 4, gap: 4 }}>
+          в бою — элементов: {s.combatUnits}
+          <Info text="Каждое подразделение с собственным составом сражается в бою как отдельный элемент: стреляет, несёт потери, может отступить." />
+          {shortage >= 1 ? ` · некомплект ${fmt1(shortage)}%` : ''}
+          {s.recoverable ? ` · раненых ${s.recoverable}` : ''}
+        </div>
         {s.equip.length > 0 && (
           <table className="tbl compact" style={{ marginTop: 10 }}>
             <tbody>
@@ -480,252 +721,246 @@ export function SummaryCard({ els, rs }: { els: ElementDef[]; rs: Ruleset }) {
           </table>
         )}
       </Card>
-      <Section id="formation-fire" title="Огневая мощь" summary="поражений за ход, без модификаторов" tight>
+      <Section id="formation-fire" title="Огневая мощь" summary="за ход, без модификаторов" tight>
         <FireTable fire={s.fire} rs={rs} />
       </Section>
-    </>
+    </div>
   );
 }
 
-// ------------------------------------------------------------------ редактор формирования
+// ------------------------------------------------------------------ редактор подразделения
 
-const BULK_FIELDS: { key: keyof ElementDef; label: string; feature?: keyof Ruleset['features'] }[] = [
-  { key: 'morale', label: 'Мораль', feature: 'morale' },
-  { key: 'cohesion', label: 'Слаженность', feature: 'cohesion' },
-  { key: 'readiness', label: 'Готовность', feature: 'readiness' },
-  { key: 'ammo', label: 'Боезапас', feature: 'ammo' },
-  { key: 'fuel', label: 'Топливо', feature: 'fuel' },
-  { key: 'equipment', label: 'Снаряжение', feature: 'equipment' },
-  { key: 'fatigue', label: 'Усталость', feature: 'fatigue' },
-  { key: 'vehicleCondition', label: 'Состояние техники', feature: 'vehicleCondition' },
-  { key: 'experience', label: 'Опыт (уровень)' },
-];
-
-function FormationEditor(props: { f: FormationDef; isRoot: boolean; rs: Ruleset; upd: (fn: (f: FormationDef) => void) => void; root: FormationDef; rulesetPicker: React.ReactNode }) {
-  const { f, isRoot, rs, upd, root } = props;
-  const uf = (fn: (x: FormationDef) => void) => upd((d) => fn(findFormation(d, f.id)!));
-  const [bulkKey, setBulkKey] = useTabState<string>(`bulk:${root.id}`, 'morale');
-  const [bulkVal, setBulkVal] = useTabState<number>(`bulkv:${root.id}`, 80);
-  const parent = isRoot ? null : parentOf(root, f.id);
-  const inherit = (v: number | null, parentVal: number | null | undefined) => (v === null ? (parentVal ?? 100) : v);
-  const inheritToggle = (key: 'comms' | 'supply') =>
-    !isRoot && (
-      <Check value={f[key] === null} onChange={(v) => uf((x) => void (x[key] = v ? null : inherit(null, parent?.[key])))} title="Брать значение у вышестоящего подразделения">
-        <span className="faint">как у старшего</span>
-      </Check>
-    );
+function InheritRange(props: { label: string; own: number | null | undefined; inherited: number; isRoot: boolean; onSet: (v: number) => void; onClear: () => void; hint?: string }) {
+  const isOwn = props.own !== undefined && props.own !== null;
   return (
-    <>
-      <Card title={isRoot ? 'Подразделение' : 'Вложенное подразделение'}>
-        <div className="fields">
-          <Field label="Название">
-            <Txt value={f.name} onChange={(v) => uf((x) => void (x.name = v))} />
-          </Field>
-          <Field label="Тип">
-            <Txt value={f.kind} onChange={(v) => uf((x) => void (x.kind = v))} placeholder="батальон, рота, отряд…" />
-          </Field>
-          <Field label="Командир">
-            <Txt value={f.commanderName} onChange={(v) => uf((x) => void (x.commanderName = v))} placeholder="звание, фамилия" />
-          </Field>
-          {rs.features.command && (
-            <Field label="Уровень командира">
-              <Sel value={f.commandLevel} onChange={(v) => uf((x) => void (x.commandLevel = v))} options={rs.commandLevels.map((l, i) => ({ value: i + 1, label: `${i + 1}. ${l.name}` }))} />
-            </Field>
+    <Field
+      label={
+        <>
+          {props.label}
+          {isOwn ? (
+            <a href="#" className="small" onClick={(e) => (e.preventDefault(), props.onClear())} data-tip={props.isRoot ? 'Вернуть значение по умолчанию' : 'Брать значение у старшего'}>
+              ↺
+            </a>
+          ) : (
+            <span className="faint small">{props.isRoot ? '· по умолчанию' : '· как у старшего'}</span>
           )}
-          <Field label="Приказ" hint="Элементы без своего приказа выполняют этот.">
-            <Sel
-              value={f.order ?? ''}
-              onChange={(v) => uf((x) => void (x.order = v || null))}
-              options={[...(isRoot ? [] : [{ value: '', label: '— как у старшего —' }]), ...rs.orders.map((o) => ({ value: o.id, label: o.name, title: BEHAVIOR_LABELS[o.behavior] }))]}
-            />
-          </Field>
-          {isRoot && props.rulesetPicker}
-        </div>
-        <div className="fields two" style={{ marginTop: 12 }}>
-          {rs.features.comms && (
-            <Field label={<>Связь, % {inheritToggle('comms')}</>}>
-              <Range value={inherit(f.comms, parent?.comms)} onChange={(v) => uf((x) => void (x.comms = v))} disabled={f.comms === null} />
-            </Field>
-          )}
-          <Field label={<>Снабжение, % {inheritToggle('supply')}</>} hint="Скорость подвоза боезапаса и топлива во время боя.">
-            <Range value={inherit(f.supply, parent?.supply)} onChange={(v) => uf((x) => void (x.supply = v))} disabled={f.supply === null} />
-          </Field>
-        </div>
-      </Card>
-      <Section id="formation-bulk" title="Массовое изменение" summary="одно значение всем элементам">
-        <div className="row">
-          <Sel value={bulkKey} onChange={setBulkKey} options={BULK_FIELDS.filter((b) => !b.feature || rs.features[b.feature]).map((b) => ({ value: b.key as string, label: b.label }))} />
-          <Num value={bulkVal} onChange={setBulkVal} min={bulkKey === 'experience' ? 1 : 0} max={bulkKey === 'experience' ? rs.experienceLevels.length : 100} />
-          <Btn
-            onClick={() =>
-              uf((x) => {
-                for (const e of allElements(x)) (e as unknown as Record<string, number>)[bulkKey] = bulkVal;
-              })
-            }
-          >
-            Применить ко всем
-          </Btn>
-          <Btn
-            kind="ghost"
-            onClick={() =>
-              uf((x) => {
-                for (const e of allElements(x)) for (const c of e.composition) c.current = c.authorized;
-              })
-            }
-          >
-            Укомплектовать до штата
-          </Btn>
-        </div>
-      </Section>
-      <Section id="formation-extra" title="Теги и заметки" summary={[...f.tags, f.notes ? 'есть заметки' : ''].filter(Boolean).join(', ') || undefined}>
-        <div className="stack" style={{ gap: 10 }}>
-          <Field label="Теги" hint="Используются в своих правилах набора правил.">
-            <Tags value={f.tags} onChange={(v) => uf((x) => void (x.tags = v))} />
-          </Field>
-          <Area value={f.notes ?? ''} onChange={(v) => uf((x) => void (x.notes = v))} rows={2} placeholder="Заметки" />
-        </div>
-      </Section>
-    </>
+        </>
+      }
+      hint={props.hint}
+    >
+      <Range value={isOwn ? props.own! : props.inherited} onChange={props.onSet} />
+    </Field>
   );
 }
 
-// ------------------------------------------------------------------ редактор элемента
-
-function ElementEditor({ e, rs, upd, root }: { e: ElementDef; rs: Ruleset; upd: (fn: (f: FormationDef) => void) => void; root: FormationDef }) {
-  const ue = (fn: (x: ElementDef) => void) => upd((d) => fn(findElement(d, e.id)!));
-  const types = new Map(rs.componentTypes.map((t) => [t.id, t]));
-  const parent = parentOf(root, e.id);
-  const inheritedOrder = (() => {
-    let f: FormationDef | null = parent;
-    while (f) {
-      if (f.order) return rs.orders.find((o) => o.id === f!.order)?.name;
-      f = parentOf(root, f.id);
-    }
-    return undefined;
-  })();
-  const risk = riskOf(e, rs);
+function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
+  const { rs } = ctx;
+  const isRoot = node.id === ctx.root.id;
+  const parent = isRoot ? null : findParent(ctx.root, node.id);
+  const pr = parent ? ctx.resolved.get(parent.id)! : ROOT_RESOLVED;
   const ft = rs.features;
-  const stateFields: { key: keyof ElementDef; label: string; show: boolean }[] = [
-    { key: 'morale', label: 'Мораль', show: ft.morale },
-    { key: 'cohesion', label: 'Слаженность', show: ft.cohesion },
-    { key: 'readiness', label: 'Готовность', show: ft.readiness },
-    { key: 'fatigue', label: 'Усталость, %', show: ft.fatigue },
-    { key: 'ammo', label: 'Боезапас, %', show: ft.ammo },
-    { key: 'fuel', label: 'Топливо, %', show: ft.fuel },
-    { key: 'equipment', label: 'Снаряжение, %', show: ft.equipment },
-    { key: 'vehicleCondition', label: 'Состояние техники, %', show: ft.vehicleCondition },
-  ];
-  const sum = summarizeDef([e], rs);
-  const showRecoverable = e.composition.some((c) => (c.recoverable ?? 0) > 0);
+  const un = (fn: (n: UnitNode) => void) => ctx.upd((d) => fn(findUnit(d, node.id)!));
+  const setState = (k: StateKey, v: number | undefined) =>
+    un((n) => {
+      if (v === undefined) delete n.state[k];
+      else n.state[k] = v;
+    });
+  const inheritText = isRoot ? 'по умолчанию' : 'как у старшего';
+  const orderName = (id: Id | null) => (id ? (rs.orders.find((o) => o.id === id)?.name ?? id) : (rs.orders.find((o) => o.behavior === 'defend')?.name ?? 'Оборона'));
+  const expName = (lv: number) => `${lv}. ${rs.experienceLevels[lv - 1]?.name ?? ''}`;
+  const types = new Map(rs.componentTypes.map((t) => [t.id, t]));
+  let ownCur = 0;
+  let ownAuth = 0;
+  for (const c of node.composition) {
+    const t = types.get(c.typeId);
+    if (!t) continue;
+    const crew = t.kind === 'personnel' ? 1 : t.crew;
+    ownCur += c.current * crew;
+    ownAuth += c.authorized * crew;
+  }
+  const showRecoverable = node.composition.some((c) => (c.recoverable ?? 0) > 0);
+  const stateKeys = (['morale', 'cohesion', 'readiness', 'fatigue', 'ammo', 'fuel', 'equipment', 'vehicleCondition'] as StateKey[]).filter(
+    (k) => (ft as unknown as Record<string, boolean>)[k] !== false,
+  );
+  const tpl = node.templateId ? ctx.lib[node.templateId] : undefined;
+  const isLibRoot = ctx.isLib && isRoot;
+
   return (
-    <>
-      <Card title="Элемент" actions={<span className="muted small" data-tip="Оценка по морали и опыту: насколько вероятны паника и отход в бою">риск паники: <b className={risk.cls}>{risk.label}</b></span>}>
+    <div className="stack">
+      <Card
+        title={<input className="title-input" style={{ fontSize: 15, minWidth: 160, width: '100%' }} value={node.name} onChange={(e) => un((n) => void (n.name = e.target.value))} />}
+        actions={<Menu sm items={nodeActions(ctx, node)} />}
+      >
+        {((tpl && !isLibRoot) || node.attachedFrom !== undefined) && (
+          <div className="meta" style={{ marginBottom: 10 }}>
+            {tpl && !isLibRoot && (
+              <span>
+                шаблон:{' '}
+                <Link kind="formation" refId={`lib:${tpl.id}`}>
+                  {tpl.name}
+                </Link>
+                {isOutdated(node, tpl) && (
+                  <>
+                    {' '}
+                    — <span className="warn">изменён</span>{' '}
+                    <a href="#" onClick={(e) => (e.preventDefault(), updateCopy(ctx.ref, node.id))}>
+                      обновить
+                    </a>
+                  </>
+                )}
+              </span>
+            )}
+            {node.attachedFrom !== undefined && (
+              <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                придано из
+                <input value={node.attachedFrom} placeholder="откуда (необязательно)" onChange={(e) => un((n) => void (n.attachedFrom = e.target.value))} style={{ minHeight: 24, width: 200 }} />
+              </span>
+            )}
+          </div>
+        )}
         <div className="fields">
-          <Field label="Название">
-            <Txt value={e.name} onChange={(v) => ue((x) => void (x.name = v))} />
-          </Field>
-          <Field label="Роль">
-            <Txt value={e.role} onChange={(v) => ue((x) => void (x.role = v))} placeholder="рота, штаб, батарея…" />
-          </Field>
-          <Field label="Эшелон" hint="Насколько элемент подставлен под прямой огонь.">
-            <Sel value={e.echelon} onChange={(v) => ue((x) => void (x.echelon = v as Echelon))} options={(Object.keys(ECHELON_LABELS) as Echelon[]).map((k) => ({ value: k, label: ECHELON_LABELS[k] }))} />
+          <Field label="Уровень">
+            <input list={`levels-${rs.id}`} value={node.level} placeholder="рота, взвод…" onChange={(e) => un((n) => void (n.level = e.target.value))} />
+            <datalist id={`levels-${rs.id}`}>
+              {rs.unitLevels.map((l) => (
+                <option key={l} value={l} />
+              ))}
+            </datalist>
           </Field>
           <Field label="Приказ">
             <Sel
-              value={e.order ?? ''}
-              onChange={(v) => ue((x) => void (x.order = v || null))}
-              options={[{ value: '', label: inheritedOrder ? `${inheritedOrder} (как у подразделения)` : '— как у подразделения —' }, ...rs.orders.map((o) => ({ value: o.id, label: o.name, title: BEHAVIOR_LABELS[o.behavior] }))]}
+              value={node.order ?? ''}
+              onChange={(v) => un((n) => void (n.order = v || null))}
+              options={[{ value: '', label: `${orderName(pr.order)} (${inheritText})` }, ...rs.orders.map((o) => ({ value: o.id, label: o.name, title: BEHAVIOR_LABELS[o.behavior] }))]}
             />
           </Field>
+          <Field label="Эшелон" hint="Насколько подразделение подставлено под прямой огонь.">
+            <Sel
+              value={node.echelon ?? ''}
+              onChange={(v) => un((n) => void (n.echelon = (v || null) as Echelon | null))}
+              options={[{ value: '', label: `${ECHELON_LABELS[pr.echelon]} (${inheritText})` }, ...(Object.keys(ECHELON_LABELS) as Echelon[]).map((k) => ({ value: k, label: ECHELON_LABELS[k] }))]}
+            />
+          </Field>
+          <Field label="Командир">
+            <Txt value={node.commanderName} onChange={(v) => un((n) => void (n.commanderName = v))} placeholder="звание, фамилия" />
+          </Field>
+          {ft.command && (
+            <Field label="Уровень командира" hint="Командир влияет на подразделение и всех подчинённых; влияние старших командиров ослабевает с каждым уровнем.">
+              <Sel
+                value={node.commandLevel ?? 0}
+                onChange={(v) => un((n) => void (n.commandLevel = v || null))}
+                options={[{ value: 0, label: '— нет своего —' }, ...rs.commandLevels.map((l, i) => ({ value: i + 1, label: `${i + 1}. ${l.name}` }))]}
+              />
+            </Field>
+          )}
         </div>
         <div className="row" style={{ marginTop: 10, gap: 18 }}>
-          <Check value={e.isHQ} onChange={(v) => ue((x) => void (x.isHQ = v))} title="Потеря штаба снижает связь и лишает формирование влияния командира">
+          <Check value={node.isHQ} onChange={(v) => un((n) => void (n.isHQ = v))} title="Потеря штаба лишает старшее подразделение командира и ухудшает связь">
             Штаб
           </Check>
-          <Check value={e.holdFast} onChange={(v) => ue((x) => void (x.holdFast = v))} title="Не отходит добровольно; шанс паники вдвое ниже">
+          <Check value={node.holdFast} onChange={(v) => un((n) => void (n.holdFast = v))} title="Не отходит добровольно; шанс паники вдвое ниже">
             Стоять насмерть
           </Check>
+          {!isRoot && node.attachedFrom === undefined && (
+            <Check value={false} onChange={() => un((n) => void (n.attachedFrom = ''))} title="Отметить как приданное подразделение">
+              Придано
+            </Check>
+          )}
         </div>
       </Card>
 
       <Card
-        title={`Состав · ${fmt0(sum.persCur)} из ${fmt0(sum.persAuth)} чел.`}
+        title={
+          <>
+            Собственный состав{' '}
+            <Info text="Люди, вооружение и техника самого подразделения, без подчинённых. Подразделение с собственным составом сражается в бою как отдельный элемент; без состава — только управляет подчинёнными." />
+          </>
+        }
         actions={
-          <Btn sm kind="ghost" onClick={() => ue((x) => x.composition.forEach((c) => (c.current = c.authorized)))}>
-            До штата
-          </Btn>
+          node.composition.length > 0 && (
+            <span className="row" style={{ gap: 8 }}>
+              <span className="muted small">
+                {fmt0(ownCur)} из {fmt0(ownAuth)} чел.
+              </span>
+              <Btn sm kind="ghost" onClick={() => un((n) => n.composition.forEach((c) => (c.current = c.authorized)))}>
+                До штата
+              </Btn>
+            </span>
+          )
         }
         tight
       >
-        <div style={{ overflowX: 'auto' }}>
-          <table className="tbl comp-table">
-            <thead>
-              <tr>
-                <th>Тип</th>
-                <th className="num">Штат</th>
-                <th className="num">В строю</th>
-                {showRecoverable && (
-                  <th className="num" data-tip="Раненые (люди) или техника в ремонте — могут вернуться в строй">
-                    Ран./ремонт
-                  </th>
-                )}
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {e.composition.map((c, i) => (
-                <tr key={i}>
-                  <td>
-                    <Sel value={c.typeId} onChange={(v) => ue((x) => void (x.composition[i].typeId = v))} options={rs.componentTypes.map((tt) => ({ value: tt.id, label: tt.name }))} />
-                  </td>
-                  <td className="num">
-                    <Num value={c.authorized} onChange={(v) => ue((x) => void (x.composition[i].authorized = v))} min={0} integer width={80} />
-                  </td>
-                  <td className="num">
-                    <Num value={c.current} onChange={(v) => ue((x) => void (x.composition[i].current = v))} min={0} integer width={80} />
-                  </td>
+        {node.composition.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="tbl comp-table">
+              <thead>
+                <tr>
+                  <th>Тип</th>
+                  <th className="num">Штат</th>
+                  <th className="num">В строю</th>
                   {showRecoverable && (
-                    <td className="num nowrap">
-                      {c.recoverable ? (
-                        <>
-                          {c.recoverable}{' '}
-                          <Btn
-                            sm
-                            kind="ghost"
-                            title="Вернуть в строй"
-                            onClick={() =>
-                              ue((x) => {
-                                const cc = x.composition[i];
-                                cc.current += cc.recoverable ?? 0;
-                                cc.recoverable = 0;
-                              })
-                            }
-                          >
-                            вернуть
-                          </Btn>
-                        </>
-                      ) : (
-                        <span className="faint">—</span>
-                      )}
-                    </td>
+                    <th className="num" data-tip="Раненые (люди) или техника в ремонте — могут вернуться в строй">
+                      Ран./ремонт
+                    </th>
                   )}
-                  <td style={{ width: 30 }}>
-                    <Btn sm kind="ghost" icon title="Убрать" onClick={() => ue((x) => void x.composition.splice(i, 1))}>
-                      ×
-                    </Btn>
-                  </td>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ padding: '8px 14px 4px' }}>
+              </thead>
+              <tbody>
+                {node.composition.map((c, i) => (
+                  <tr key={i}>
+                    <td>
+                      <Sel value={c.typeId} onChange={(v) => un((n) => void (n.composition[i].typeId = v))} options={rs.componentTypes.map((tt) => ({ value: tt.id, label: tt.name }))} />
+                    </td>
+                    <td className="num">
+                      <Num value={c.authorized} onChange={(v) => un((n) => void (n.composition[i].authorized = v))} min={0} integer width={80} />
+                    </td>
+                    <td className="num">
+                      <Num value={c.current} onChange={(v) => un((n) => void (n.composition[i].current = v))} min={0} integer width={80} />
+                    </td>
+                    {showRecoverable && (
+                      <td className="num nowrap">
+                        {c.recoverable ? (
+                          <>
+                            {c.recoverable}{' '}
+                            <Btn
+                              sm
+                              kind="ghost"
+                              title="Вернуть в строй"
+                              onClick={() =>
+                                un((n) => {
+                                  const cc = n.composition[i];
+                                  cc.current += cc.recoverable ?? 0;
+                                  cc.recoverable = 0;
+                                })
+                              }
+                            >
+                              вернуть
+                            </Btn>
+                          </>
+                        ) : (
+                          <span className="faint">—</span>
+                        )}
+                      </td>
+                    )}
+                    <td style={{ width: 30 }}>
+                      <Btn sm kind="ghost" icon title="Убрать" onClick={() => un((n) => void n.composition.splice(i, 1))}>
+                        ×
+                      </Btn>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div style={{ padding: '6px 14px 4px' }}>
           {types.size ? (
             <select
               value=""
               onChange={(ev) => {
                 const id = ev.target.value;
-                if (id) ue((x) => void x.composition.push({ typeId: id, authorized: 10, current: 10 }));
+                if (id) un((n) => void n.composition.push({ typeId: id, authorized: 10, current: 10 }));
               }}
             >
               <option value="">+ Добавить из каталога…</option>
@@ -753,44 +988,142 @@ function ElementEditor({ e, rs, upd, root }: { e: ElementDef; rs: Ruleset; upd: 
         </div>
       </Card>
 
-      <Card title="Состояние">
+      <Card
+        title={
+          <>
+            Состояние{' '}
+            <Info text="Незаданное значение берётся у старшего подразделения — так можно задать мораль или опыт целому батальону и уточнить только отдельные роты. Значок ↺ возвращает наследование." />
+          </>
+        }
+      >
         <div className="fields two">
-          <Field label="Опыт">
-            <Sel value={e.experience} onChange={(v) => ue((x) => void (x.experience = v))} options={rs.experienceLevels.map((l, i) => ({ value: i + 1, label: `${i + 1}. ${l.name}` }))} />
+          <Field label={<>Опыт{node.state.experience === undefined && <span className="faint small">· {inheritText}</span>}</>}>
+            <Sel
+              value={node.state.experience ?? 0}
+              onChange={(v) => setState('experience', v || undefined)}
+              options={[{ value: 0, label: `${expName(pr.state.experience)} (${inheritText})` }, ...rs.experienceLevels.map((_, i) => ({ value: i + 1, label: expName(i + 1) }))]}
+            />
           </Field>
-          {stateFields
-            .filter((x) => x.show)
-            .map((x) => (
-              <Field key={x.key} label={x.label}>
-                <Range value={e[x.key] as number} onChange={(v) => ue((el) => void ((el as unknown as Record<string, number>)[x.key] = v))} />
-              </Field>
-            ))}
+          {stateKeys.map((k) => (
+            <InheritRange
+              key={k}
+              label={`${STATE_LABELS[k]}${k === 'morale' || k === 'cohesion' || k === 'readiness' ? '' : ', %'}`}
+              own={node.state[k]}
+              inherited={pr.state[k]}
+              isRoot={isRoot}
+              onSet={(v) => setState(k, v)}
+              onClear={() => setState(k, undefined)}
+            />
+          ))}
+          {ft.comms && (
+            <InheritRange label="Связь, %" own={node.comms} inherited={pr.comms} isRoot={isRoot} onSet={(v) => un((n) => void (n.comms = v))} onClear={() => un((n) => void (n.comms = null))} />
+          )}
+          <InheritRange
+            label="Снабжение, %"
+            own={node.supply}
+            inherited={pr.supply}
+            isRoot={isRoot}
+            onSet={(v) => un((n) => void (n.supply = v))}
+            onClear={() => un((n) => void (n.supply = null))}
+            hint="Скорость подвоза боезапаса и топлива во время боя."
+          />
         </div>
       </Card>
 
       <Section
-        id="element-extra"
+        id="unit-extra"
         title="Дополнительно"
-        summary={[e.attackMod !== 100 && `атака ${e.attackMod}%`, e.defenseMod !== 100 && `защита ${e.defenseMod}%`, ...e.tags].filter(Boolean).join(', ') || 'атака и защита, теги, заметки'}
+        summary={[node.attackMod !== 100 && `атака ${node.attackMod}%`, node.defenseMod !== 100 && `защита ${node.defenseMod}%`, ...node.tags].filter(Boolean).join(', ') || 'атака и защита, теги, заметки'}
       >
         <div className="stack" style={{ gap: 10 }}>
           <div className="row">
             <Field label="Атака, %" hint="100% — как в каталоге. Особое вооружение, выучка, тактика.">
-              <Num value={e.attackMod} onChange={(v) => ue((x) => void (x.attackMod = v))} min={0} />
+              <Num value={node.attackMod} onChange={(v) => un((n) => void (n.attackMod = v))} min={0} />
             </Field>
             <Field label="Защита, %">
-              <Num value={e.defenseMod} onChange={(v) => ue((x) => void (x.defenseMod = v))} min={1} />
+              <Num value={node.defenseMod} onChange={(v) => un((n) => void (n.defenseMod = v))} min={1} />
             </Field>
           </div>
-          <Field label="Теги" hint={`Используются в своих правилах. Тег «${rs.reconTag}» делает элемент разведчиком.`}>
-            <Tags value={e.tags} onChange={(v) => ue((x) => void (x.tags = v))} suggestions={[...new Set(rs.componentTypes.flatMap((t) => t.tags).concat(rs.reconTag ? [rs.reconTag] : []))]} />
+          <Field label="Теги" hint={`Используются в своих правилах. Тег «${rs.reconTag}» делает подразделение разведчиком.`}>
+            <Tags value={node.tags} onChange={(v) => un((n) => void (n.tags = v))} suggestions={[...new Set(rs.componentTypes.flatMap((t) => t.tags).concat(rs.reconTag ? [rs.reconTag] : []))]} />
           </Field>
-          <Area value={e.notes ?? ''} onChange={(v) => ue((x) => void (x.notes = v))} rows={2} placeholder="Заметки" />
+          <Area value={node.notes ?? ''} onChange={(v) => un((n) => void (n.notes = v))} rows={2} placeholder="Заметки" />
         </div>
       </Section>
-      <Section id="element-fire" title="Огневая мощь элемента" tight>
-        <FireTable fire={sum.fire} rs={rs} />
-      </Section>
-    </>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ вставка из библиотеки
+
+function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; targetId: Id; attach: boolean; onClose: () => void }) {
+  const target = findUnit(ctx.root, targetId);
+  const [q, setQ] = useState('');
+  const [pick, setPick] = useState<Id | null>(null);
+  const [count, setCount] = useState(1);
+  const [att, setAtt] = useState(attach);
+  const [from, setFrom] = useState('');
+  const items = Object.values(ctx.lib)
+    .filter((u) => (!u.rulesetId || u.rulesetId === ctx.rs.id) && canInsertTemplate(ctx, u.id))
+    .filter((u) => !q || `${u.name} ${u.level}`.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const doInsert = (id: Id | null = pick) => {
+    const tpl = id ? ctx.lib[id] : undefined;
+    if (!tpl || !target) return;
+    const numbered = /^\d/.test(tpl.name);
+    const copies = Array.from({ length: count }, (_, i) => {
+      // «1-й взвод» → «1-й», «2-й»…; «Взвод» → «Взвод 1», «Взвод 2»…
+      const name = count > 1 ? (numbered ? nextName(tpl.name, i) : `${tpl.name} ${i + 1}`) : undefined;
+      return instantiateLibrary(tpl.id, { attachedFrom: att ? from.trim() : undefined, name })!;
+    });
+    ctx.upd((d) => void findUnit(d, targetId)!.children.push(...copies));
+    ctx.setSel(copies[0].id);
+    onClose();
+  };
+  return (
+    <Modal
+      title={`${attach ? 'Придать' : 'Вставить'} в «${target?.name ?? ''}»`}
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <span className="row" style={{ gap: 6 }}>
+            <span className="muted small">Количество</span>
+            <Num value={count} onChange={setCount} min={1} max={50} integer width={70} />
+          </span>
+          <Check value={att} onChange={setAtt} title="Отметить как приданное подразделение">
+            придано
+          </Check>
+          {att && <input value={from} placeholder="откуда (необязательно)" onChange={(e) => setFrom(e.target.value)} style={{ width: 200 }} />}
+          <div className="grow" />
+          <Btn onClick={onClose}>Отмена</Btn>
+          <Btn kind="primary" disabled={!pick} onClick={() => doInsert()}>
+            {count > 1 ? `Вставить ×${count}` : 'Вставить'}
+          </Btn>
+        </>
+      }
+    >
+      <input type="search" autoFocus placeholder="Поиск по библиотеке…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
+      <div className="insert-list">
+        {items.map((u) => {
+          const s = summarizeUnits([u], ctx.rs);
+          return (
+            <div key={u.id} className={`insert-item${pick === u.id ? ' sel' : ''}`} onClick={() => setPick(u.id)} onDoubleClick={() => doInsert(u.id)}>
+              <span className="grow">
+                {u.level && <span className="faint">{u.level} · </span>}
+                {u.name}
+              </span>
+              <span className="faint small nowrap">
+                {fmt0(s.persCur)} чел.{u.children.length ? ` · подчинённых: ${u.children.length}` : ''}
+              </span>
+            </div>
+          );
+        })}
+        {!items.length && <div className="empty">Подходящих подразделений в библиотеке нет. Соберите взвод или роту и сохраните в библиотеку через меню «⋯».</div>}
+      </div>
+      <p className="faint small" style={{ marginBottom: 0 }}>
+        Копия помнит свой шаблон: если позже изменить шаблон в библиотеке, копию можно обновить, не теряя её потерь и состояния.
+      </p>
+    </Modal>
   );
 }

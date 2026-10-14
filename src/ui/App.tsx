@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { BattlePage } from './pages/BattlePage';
-import { FormationPage } from './pages/FormationPage';
+import { DND_LIB, FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
 import { HomePage } from './pages/HomePage';
 import { MonteCarloPage } from './pages/MonteCarloPage';
@@ -148,11 +148,17 @@ function Sidebar() {
   const match = (name: string) => !q || name.toLowerCase().includes(q.toLowerCase());
   const activeTab = s.tabs.find((t) => t.key === s.active);
   const isActive = (kind: TabKind, ref?: string) => activeTab?.kind === kind && activeTab.ref === ref;
-  const item = (kind: TabKind, ref: string, name: string, sub?: string) => (
+  const item = (kind: TabKind, ref: string, name: string, sub?: string, dragLib?: string) => (
     <div
       key={ref}
       className={`side-item${isActive(kind, ref) ? ' active' : ''}`}
-      title={name}
+      title={dragLib ? `${name}\nМожно перетащить в структуру подразделения или на сторону сценария` : name}
+      draggable={!!dragLib}
+      onDragStart={(e) => {
+        if (!dragLib) return;
+        e.dataTransfer.setData(DND_LIB, dragLib);
+        e.dataTransfer.effectAllowed = 'copy';
+      }}
       onClick={(e) => openTab(kind, ref, { background: e.ctrlKey || e.metaKey })}
       onAuxClick={(e) => e.button === 1 && openTab(kind, ref, { background: true })}
     >
@@ -175,7 +181,7 @@ function Sidebar() {
         {scenarios.length ? scenarios.map((x) => item('scenario', x.id, x.name)) : <div className="side-empty">Нет сценариев</div>}
       </SideSection>
       <SideSection id="fm" title="Подразделения" count={formations.length} onAdd={() => createFormation()} addTitle="Новое подразделение">
-        {formations.length ? formations.map((x) => item('formation', `lib:${x.id}`, x.name)) : <div className="side-empty">Библиотека пуста</div>}
+        {formations.length ? formations.map((x) => item('formation', `lib:${x.id}`, x.name, x.level, x.id)) : <div className="side-empty">Библиотека пуста</div>}
       </SideSection>
       <SideSection id="bt" title="Бои" count={battles.length}>
         {battles.length ? (

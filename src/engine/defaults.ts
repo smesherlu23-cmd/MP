@@ -2,10 +2,9 @@
 // ГМ может скопировать, переименовать или удалить их в программе.
 
 import { COEFFICIENT_DEFAULTS, DEFAULT_FEATURES } from './coefficients';
+import { instantiate, newRootUnit, newUnit } from './units';
 import type {
   ComponentType,
-  ElementDef,
-  FormationDef,
   Id,
   LevelDef,
   Objective,
@@ -13,6 +12,7 @@ import type {
   Ruleset,
   Scenario,
   SideDef,
+  UnitNode,
 } from './types';
 
 export const SCHEMA_VERSION = 1;
@@ -148,6 +148,7 @@ export function makeUniversalRuleset(): Ruleset {
       'Пример набора правил. Классы целей, дистанции, каталог типов, приказы, условия и все коэффициенты можно менять — или создать свой набор для другой эпохи.',
     turnMinutes: 15,
     reconTag: 'разведка',
+    unitLevels: ['группа', 'отделение', 'взвод', 'рота', 'батарея', 'батальон', 'дивизион', 'полк', 'бригада', 'дивизия'],
     features: { ...DEFAULT_FEATURES },
     targetClasses: [
       { id: 'inf', name: 'Живая сила', lethality: 1, description: 'Пехота, расчёты, открыто расположенные люди.' },
@@ -240,6 +241,7 @@ export function makeLinearRuleset(): Ruleset {
     description: 'Пример набора правил для эпохи гладкоствольного оружия: мушкеты, кавалерия, полевая артиллерия. Показывает, как настроить симулятор под другую эпоху.',
     turnMinutes: 20,
     reconTag: 'лёгкая',
+    unitLevels: ['взвод', 'рота', 'эскадрон', 'батарея', 'батальон', 'полк', 'бригада', 'дивизия', 'корпус'],
     targetClasses: [
       { id: 'inf', name: 'Пехота', lethality: 1 },
       { id: 'cav', name: 'Кавалерия', lethality: 1 },
@@ -350,54 +352,12 @@ export function normalizeRuleset(r: Ruleset): Ruleset {
   out.fortifications = r.fortifications?.length ? r.fortifications : base.fortifications;
   out.intelLevels = r.intelLevels?.length ? r.intelLevels : base.intelLevels;
   out.modifiers = r.modifiers ?? [];
+  out.unitLevels = Array.isArray(r.unitLevels) ? r.unitLevels : base.unitLevels;
   out.outcomeLevels = r.outcomeLevels?.length ? r.outcomeLevels : base.outcomeLevels;
   return out;
 }
 
 // ---------------------------------------------------------------- фабрики
-
-export function newElement(name = 'Новый элемент', patch: Partial<ElementDef> = {}): ElementDef {
-  return {
-    id: newId('el'),
-    name,
-    role: '',
-    echelon: 'front',
-    order: null,
-    composition: [],
-    experience: 2,
-    morale: 75,
-    cohesion: 75,
-    readiness: 90,
-    ammo: 100,
-    fuel: 100,
-    equipment: 100,
-    fatigue: 10,
-    vehicleCondition: 90,
-    attackMod: 100,
-    defenseMod: 100,
-    isHQ: false,
-    holdFast: false,
-    tags: [],
-    ...patch,
-  };
-}
-
-export function newFormation(name = 'Новое подразделение', patch: Partial<FormationDef> = {}): FormationDef {
-  return {
-    id: newId('fm'),
-    name,
-    kind: 'батальон',
-    commanderName: '',
-    commandLevel: 3,
-    comms: 80,
-    supply: 80,
-    order: 'defend',
-    elements: [],
-    subunits: [],
-    tags: [],
-    ...patch,
-  };
-}
 
 export function newObjective(type: Objective['type'], value = 0, weight = 1): Objective {
   return { id: newId('obj'), type, value, weight };
@@ -432,70 +392,102 @@ export function newScenario(rs: Ruleset, name = 'Новый сценарий', s
   };
 }
 
-/** Глубокая копия формирования с новыми идентификаторами (sourceId указывает на оригинал). */
-export function copyFormation(f: FormationDef): FormationDef {
-  const c = clone(f);
-  const walk = (x: FormationDef, src: FormationDef) => {
-    x.sourceId = src.id;
-    x.id = newId('fm');
-    x.elements.forEach((e, i) => {
-      e.sourceId = src.elements[i].id;
-      e.id = newId('el');
-    });
-    x.subunits.forEach((s, i) => walk(s, src.subunits[i]));
-  };
-  walk(c, f);
-  return c;
-}
-
 // ---------------------------------------------------------------- демонстрационные данные
 
 const comp = (typeId: string, authorized: number, current = authorized) => ({ typeId, authorized, current });
 
-export function makeDemoBattalion(): FormationDef {
-  const company = (n: number) =>
-    newElement(`${n}-я мотострелковая рота`, {
-      id: `demo-bn-c${n}`,
-      role: 'рота',
-      composition: [comp('rifleman', 90, 84), comp('mg', 3), comp('at', 3), comp('apc', 10, 9)],
-    });
-  return newFormation('1-й мотострелковый батальон (пример)', {
+/** Шаблоны: из них в примерах собраны батальон и оборонительный узел. */
+export function makeDemoTemplates(): UnitNode[] {
+  return [
+    newRootUnit('Мотострелковый взвод', {
+      id: 'demo-tpl-msv',
+      level: 'взвод',
+      commandLevel: null,
+      composition: [comp('rifleman', 30), comp('mg', 2), comp('at', 1)],
+    }),
+    newRootUnit('Мотострелковая рота', {
+      id: 'demo-tpl-msr',
+      level: 'рота',
+      commandLevel: null,
+      composition: [comp('rifleman', 90), comp('mg', 3), comp('at', 3), comp('apc', 10)],
+    }),
+    newRootUnit('Танковая рота', {
+      id: 'demo-tpl-tr',
+      level: 'рота',
+      commandLevel: null,
+      state: { experience: 3 },
+      composition: [comp('tank', 10)],
+    }),
+  ];
+}
+
+const tpl = (id: string) => makeDemoTemplates().find((t) => t.id === id)!;
+
+function fromTemplate(id: string, name: string, patch: Partial<UnitNode> = {}, current: Record<string, number> = {}): UnitNode {
+  const c = instantiate(tpl(id), { name });
+  // У вставленной копии свои значения состояния не задаём — она наследует их от старшего.
+  c.state = { ...(patch.state ?? {}) };
+  c.comms = null;
+  c.supply = null;
+  c.echelon = null;
+  c.order = null;
+  Object.assign(c, { ...patch, state: c.state });
+  for (const [typeId, v] of Object.entries(current)) {
+    const e = c.composition.find((x) => x.typeId === typeId);
+    if (e) e.current = v;
+  }
+  return c;
+}
+
+/** Копия может отличаться от шаблона: здесь у резервного взвода нет противотанкового средства. */
+function withoutType(u: UnitNode, typeId: string): UnitNode {
+  u.composition = u.composition.filter((c) => c.typeId !== typeId);
+  return u;
+}
+
+export function makeDemoBattalion(): UnitNode {
+  return newRootUnit('1-й мотострелковый батальон (пример)', {
     id: 'demo-bn',
-    kind: 'батальон',
+    level: 'батальон',
     commanderName: 'майор Орлов',
     commandLevel: 4,
     comms: 85,
     supply: 80,
     order: 'attack',
-    elements: [
-      newElement('Штаб батальона', { id: 'demo-bn-hq', role: 'штаб', echelon: 'rear', isHQ: true, composition: [comp('rifleman', 20), comp('apc', 2), comp('truck', 4)] }),
-      company(1),
-      company(2),
-      { ...company(3), order: 'reserve', echelon: 'rear', notes: 'Резерв командира батальона: введите его в бой сменой приказа.' },
-      newElement('Миномётная батарея', { id: 'demo-bn-mort', role: 'батарея', echelon: 'support', composition: [comp('mortar', 6), comp('truck', 6)] }),
-      newElement('Разведвзвод', { id: 'demo-bn-recon', role: 'взвод', echelon: 'front', order: 'recon', experience: 3, composition: [comp('scout', 20), comp('apc', 3)] }),
-      newElement('Танковая рота', { id: 'demo-bn-tank', role: 'рота', echelon: 'support', experience: 3, composition: [comp('tank', 10, 9)] }),
+    children: [
+      newUnit('Штаб батальона', { id: 'demo-bn-hq', level: 'штаб', echelon: 'rear', isHQ: true, composition: [comp('rifleman', 20), comp('apc', 2), comp('truck', 4)] }),
+      fromTemplate('demo-tpl-msr', '1-я мотострелковая рота', { id: 'demo-bn-c1' }, { rifleman: 84, apc: 9 }),
+      fromTemplate('demo-tpl-msr', '2-я мотострелковая рота', { id: 'demo-bn-c2' }, { rifleman: 84, apc: 9 }),
+      fromTemplate(
+        'demo-tpl-msr',
+        '3-я мотострелковая рота',
+        { id: 'demo-bn-c3', order: 'reserve', echelon: 'rear', notes: 'Резерв командира батальона: введите её в бой сменой приказа.' },
+        { rifleman: 84, apc: 9 },
+      ),
+      newUnit('Миномётная батарея', { id: 'demo-bn-mort', level: 'батарея', echelon: 'support', composition: [comp('mortar', 6), comp('truck', 6)] }),
+      newUnit('Разведвзвод', { id: 'demo-bn-recon', level: 'взвод', order: 'recon', state: { experience: 3 }, composition: [comp('scout', 20), comp('apc', 3)] }),
+      fromTemplate('demo-tpl-tr', 'Танковая рота', { id: 'demo-bn-tank', echelon: 'support', attachedFrom: 'отдельный танковый батальон', state: { experience: 3 } }, { tank: 9 }),
     ],
   });
 }
 
-export function makeDemoDefenders(): FormationDef {
-  return newFormation('Оборонительный узел «Высота 212» (пример)', {
+export function makeDemoDefenders(): UnitNode {
+  return newRootUnit('Оборонительный узел «Высота 212» (пример)', {
     id: 'demo-def',
-    kind: 'усиленная рота',
+    level: 'усиленная рота',
     commanderName: 'капитан Вольф',
     commandLevel: 3,
     comms: 70,
     supply: 60,
     order: 'defend',
-    elements: [
-      newElement('Командный пункт', { id: 'demo-def-hq', role: 'штаб', echelon: 'rear', isHQ: true, composition: [comp('rifleman', 10)] }),
-      newElement('1-й взвод', { id: 'demo-def-p1', role: 'взвод', experience: 3, composition: [comp('rifleman', 30, 28), comp('mg', 2), comp('at', 1)] }),
-      newElement('2-й взвод', { id: 'demo-def-p2', role: 'взвод', composition: [comp('rifleman', 30, 27), comp('mg', 2), comp('at', 1)] }),
-      newElement('3-й взвод', { id: 'demo-def-p3', role: 'взвод', composition: [comp('rifleman', 30, 30), comp('mg', 2), comp('at', 1)] }),
-      newElement('Противотанковый взвод', { id: 'demo-def-at', role: 'взвод', echelon: 'support', composition: [comp('at', 6), comp('truck', 3)] }),
-      newElement('Миномётный взвод', { id: 'demo-def-mort', role: 'взвод', echelon: 'support', composition: [comp('mortar', 4)] }),
-      newElement('Резервный взвод', { id: 'demo-def-res', role: 'взвод', echelon: 'rear', order: 'reserve', composition: [comp('rifleman', 30, 26), comp('mg', 2)] }),
+    children: [
+      newUnit('Командный пункт', { id: 'demo-def-hq', level: 'штаб', echelon: 'rear', isHQ: true, composition: [comp('rifleman', 10)] }),
+      fromTemplate('demo-tpl-msv', '1-й взвод', { id: 'demo-def-p1', state: { experience: 3 } }, { rifleman: 28 }),
+      fromTemplate('demo-tpl-msv', '2-й взвод', { id: 'demo-def-p2' }, { rifleman: 27 }),
+      fromTemplate('demo-tpl-msv', '3-й взвод', { id: 'demo-def-p3' }),
+      newUnit('Противотанковый взвод', { id: 'demo-def-at', level: 'взвод', echelon: 'support', composition: [comp('at', 6), comp('truck', 3)] }),
+      newUnit('Миномётный взвод', { id: 'demo-def-mort', level: 'взвод', echelon: 'support', composition: [comp('mortar', 4)] }),
+      withoutType(fromTemplate('demo-tpl-msv', 'Резервный взвод', { id: 'demo-def-res', order: 'reserve', echelon: 'rear' }, { rifleman: 26 }), 'at'),
     ],
   });
 }
@@ -505,15 +497,15 @@ export function makeDemoScenario(): Scenario {
   const sc = newScenario(rs, 'Пример: атака на высоту 212', 'DEMO-0001');
   sc.id = 'sc-demo';
   sc.description =
-    'Мотострелковый батальон с танковой ротой атакует подготовленный оборонительный узел усиленной роты. Сумерки, холмы. 3-я рота — в резерве комбата: ГМ может ввести её в бой между ходами (смена приказа), иначе она вступит, только если первая линия выбудет.';
+    'Мотострелковый батальон с приданной танковой ротой атакует подготовленный оборонительный узел усиленной роты. Сумерки, холмы. 3-я рота — в резерве комбата: ГМ может ввести её в бой между ходами (смена приказа), иначе она вступит, только если первая линия выбудет.';
   sc.conditions = { terrain: 'hills', time: 'twilight', weather: 'clear' };
   sc.maxTurns = 16;
   sc.sides[0].name = 'Синие';
-  sc.sides[0].formations = [copyFormation(makeDemoBattalion())];
+  sc.sides[0].formations = [instantiate(makeDemoBattalion())];
   sc.sides[0].intel = 'partial';
   sc.sides[0].objectives = [newObjective('take', 0, 2), newObjective('preserve', 25, 1)];
   sc.sides[1].name = 'Красные';
-  sc.sides[1].formations = [copyFormation(makeDemoDefenders())];
+  sc.sides[1].formations = [instantiate(makeDemoDefenders())];
   sc.sides[1].fortification = 'prepared';
   sc.sides[1].intel = 'partial';
   sc.sides[1].objectives = [newObjective('hold', 12, 2), newObjective('inflict', 20, 1)];

@@ -202,26 +202,31 @@ export class EngineContext {
   comms(el: ElementState): number {
     if (!this.f.comms) return 1;
     const chain = this.chain(el);
-    let c = chain[0].comms / 100;
+    let c = (el.comms ?? chain[0].comms) / 100;
     for (const f of chain) if (f.hqLost) c *= this.k.hqLossComms;
     return Math.max(0, Math.min(1, c));
   }
 
   supply(el: ElementState): number {
-    return Math.max(0, Math.min(1, this.formationOf(el).supply / 100));
+    return Math.max(0, Math.min(1, (el.supply ?? this.formationOf(el).supply) / 100));
   }
 
+  /** Командиры элемента: свой (если есть), затем командиры старших звеньев с ослабевающим влиянием. */
   commandLevels(el: ElementState): { level: LevelDef; weight: number; name: string }[] {
     if (!this.f.command) return [];
     const out: { level: LevelDef; weight: number; name: string }[] = [];
     let w = 1;
-    for (const f of this.chain(el)) {
-      if (!f.hqLost) {
-        const level = this.rs.commandLevels[f.commandLevel - 1];
-        if (level) out.push({ level, weight: w, name: f.commanderName || f.name });
-      }
+    if (el.ownCommandLevel) {
+      const level = this.rs.commandLevels[el.ownCommandLevel - 1];
+      if (level) out.push({ level, weight: w, name: el.ownCommanderName || el.name });
       w *= this.k.commandChainWeight;
+    }
+    for (const f of this.chain(el)) {
       if (w < 0.01) break;
+      if (!f.commandLevel) continue;
+      const level = this.rs.commandLevels[f.commandLevel - 1];
+      if (level && !f.hqLost) out.push({ level, weight: w, name: f.commanderName || f.name });
+      w *= this.k.commandChainWeight;
     }
     return out;
   }
