@@ -52,6 +52,7 @@ export interface Toast {
   id: number;
   text: string;
   kind: 'info' | 'good' | 'bad';
+  action?: { label: string; run: () => void };
 }
 
 export interface Dialog {
@@ -109,10 +110,14 @@ const get = useApp.getState;
 // ------------------------------------------------------------------ уведомления и диалоги
 
 let toastId = 0;
-export function toast(text: string, kind: Toast['kind'] = 'info') {
+export function toast(text: string, kind: Toast['kind'] = 'info', action?: Toast['action']) {
   const id = ++toastId;
-  set((s) => ({ toasts: [...s.toasts, { id, text, kind }] }));
-  setTimeout(() => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === 'bad' ? 6000 : 3500);
+  set((s) => ({ toasts: [...s.toasts.slice(-3), { id, text, kind, action }] }));
+  setTimeout(() => dismissToast(id), kind === 'bad' || action ? 6000 : 3500);
+}
+
+export function dismissToast(id: number) {
+  set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
 }
 
 function openDialog(d: Omit<Dialog, 'resolve'>): Promise<string | boolean | null> {
@@ -163,6 +168,157 @@ function scheduleSave(col: Collection, id: Id, getData: () => unknown, delay = 4
 /** Немедленно выполнить отложенные сохранения (перед закрытием окна). */
 export async function flushSaves() {
   await Promise.all([...pendingSaves.values()].map((fn) => fn()));
+}
+
+// ------------------------------------------------------------------ отмена и повтор
+
+// История хранит прежние версии изменённых объектов (наборов правил, подразделений, сценариев).
+// Изменения одного тика объединяются в один шаг; непрерывный ввод текста (и движение ползунка)
+// в одном объекте — тоже. Клики, перетаскивания и команды всегда отдельные шаги.
+
+type Col = 'rulesets' | 'formations' | 'scenarios';
+type Op = 'edit' | 'add' | 'delete' | 'custom';
+
+interface HistEntry {
+  items: Map<string, unknown>;
+  op: Op;
+  label: string;
+  at: number;
+  typing?: boolean;
+}
+
+/** Изменение вызвано вводом в поле (событие input), а не кликом или командой. */
+const isTyping = () => typeof window !== 'undefined' && (window.event as Event | undefined)?.type === 'input';
+
+const HIST_LIMIT = 200;
+const COALESCE_MS = 1200;
+const undoStack: HistEntry[] = [];
+const redoStack: HistEntry[] = [];
+let pendingEntry: HistEntry | null = null;
+
+export const useHistory = create<{ undo: string | null; redo: string | null }>(() => ({ undo: null, redo: null }));
+
+function syncHistory() {
+  useHistory.setState({ undo: undoStack[undoStack.length - 1]?.label ?? null, redo: redoStack[redoStack.length - 1]?.label ?? null });
+}
+
+const NOUN: Record<Col, string> = { rulesets: 'набор правил', formations: 'подразделение', scenarios: 'сценарий' };
+
+function splitKey(key: string): [Col, Id] {
+  const i = key.indexOf(':');
+  return [key.slice(0, i) as Col, key.slice(i + 1)];
+}
+
+function describe(e: HistEntry): string {
+  const [key] = e.items.keys();
+  const [col, id] = splitKey(key);
+  const obj = (e.items.get(key) ?? get()[col][id]) as { name?: string } | undefined;
+  const name = `«${obj?.name ?? ''}»`;
+  const more = e.items.size > 1 ? ` и ещё ${e.items.size - 1}` : '';
+  if (e.op === 'add') return `создание: ${NOUN[col]} ${name}${more}`;
+  if (e.op === 'delete') return `удаление: ${NOUN[col]} ${name}${more}`;
+  return `изменения в ${name}${more}`;
+}
+
+function commitPending() {
+  const e = pendingEntry;
+  pendingEntry = null;
+  if (!e || !e.items.size) return;
+  if (!e.label) e.label = describe(e);
+  undoStack.push(e);
+  if (undoStack.length > HIST_LIMIT) undoStack.shift();
+  syncHistory();
+}
+
+function openEntry(op: Op, label = '') {
+  pendingEntry = { items: new Map(), op, label, at: Date.now(), typing: op === 'edit' && isTyping() };
+  redoStack.length = 0;
+  queueMicrotask(commitPending);
+}
+
+/** Запомнить прежнюю версию объекта перед изменением. */
+function record(col: Col, id: Id, op: Op) {
+  if (!get().loaded) return;
+  const key = `${col}:${id}`;
+  if (!pendingEntry) {
+    const last = undoStack[undoStack.length - 1];
+    const now = Date.now();
+    if (op === 'edit' && last?.typing && isTyping() && last.items.size === 1 && last.items.has(key) && now - last.at < COALESCE_MS) {
+      last.at = now;
+      redoStack.length = 0;
+      syncHistory();
+      return;
+    }
+    openEntry(op);
+  }
+  if (!pendingEntry!.items.has(key)) pendingEntry!.items.set(key, get()[col][id]);
+}
+
+/** Следующие изменения (в этом же тике) — один шаг истории с понятным названием. */
+export function historyStep(label: string) {
+  commitPending();
+  openEntry('custom', label);
+}
+
+function applyEntry(e: HistEntry): HistEntry {
+  const inv: HistEntry = { items: new Map(), op: e.op, label: e.label, at: 0 };
+  set((s) => {
+    const next = { rulesets: { ...s.rulesets }, formations: { ...s.formations }, scenarios: { ...s.scenarios } } as Record<Col, Record<Id, unknown>>;
+    for (const [key, val] of e.items) {
+      const [col, id] = splitKey(key);
+      inv.items.set(key, s[col][id]);
+      if (val === undefined) delete next[col][id];
+      else next[col][id] = val;
+    }
+    return next as Pick<AppState, Col>;
+  });
+  for (const key of e.items.keys()) {
+    const [col, id] = splitKey(key);
+    if (get()[col][id]) scheduleSave(col, id, () => get()[col][id], 0);
+    else void storage.remove(col, id);
+  }
+  closeTabsWhere((t) => !tabExists(t));
+  return inv;
+}
+
+/** Уведомления с кнопками отмены/повтора после нового шага истории уже неактуальны. */
+function dropActionToasts() {
+  set((s) => ({ toasts: s.toasts.filter((t) => !t.action) }));
+}
+
+export function undo() {
+  commitPending();
+  dropActionToasts();
+  const e = undoStack.pop();
+  if (!e) return toast('Отменять нечего.');
+  redoStack.push(applyEntry(e));
+  syncHistory();
+  toast(`Отменено: ${e.label}`, 'info', { label: 'Повторить', run: redo });
+}
+
+export function redo() {
+  commitPending();
+  dropActionToasts();
+  const e = redoStack.pop();
+  if (!e) return toast('Повторять нечего.');
+  undoStack.push({ ...applyEntry(e), at: 0 });
+  syncHistory();
+  toast(`Повторено: ${e.label}`);
+}
+
+/** Уведомление с кнопкой «Отменить» для только что сделанного шага. */
+export function toastUndoable(text: string, kind: Toast['kind'] = 'info') {
+  queueMicrotask(() => {
+    commitPending();
+    const e = undoStack[undoStack.length - 1];
+    toast(text, kind, {
+      label: 'Отменить',
+      run: () => {
+        if (undoStack[undoStack.length - 1] === e) undo();
+        else toast('После этого были другие изменения — отменяйте по шагам (Ctrl+Z).', 'bad');
+      },
+    });
+  });
 }
 
 // ------------------------------------------------------------------ загрузка
@@ -312,6 +468,7 @@ export function moveTab(from: string, to: string) {
 // ------------------------------------------------------------------ наборы правил
 
 export function updateRuleset(id: Id, fn: (r: Ruleset) => void) {
+  if (get().rulesets[id]) record('rulesets', id, 'edit');
   set((s) => {
     if (!s.rulesets[id]) return {};
     const next = produce(s.rulesets[id], (d) => {
@@ -325,6 +482,7 @@ export function updateRuleset(id: Id, fn: (r: Ruleset) => void) {
 
 export function replaceRuleset(r: Ruleset) {
   const n = normalizeRuleset(r);
+  record('rulesets', n.id, get().rulesets[n.id] ? 'edit' : 'add');
   set((s) => ({ rulesets: { ...s.rulesets, [n.id]: n } }));
   scheduleSave('rulesets', n.id, () => get().rulesets[n.id], 0);
 }
@@ -348,10 +506,12 @@ export async function deleteRuleset(id: Id) {
   const users = Object.values(s.scenarios).filter((x) => x.rulesetId === id).length;
   const ok = await confirmDialog(`Удалить набор правил «${r.name}»?`, users ? `Его используют сценарии: ${users}. Их придётся перевести на другой набор.` : undefined, 'Удалить', true);
   if (!ok) return;
+  record('rulesets', id, 'delete');
   set((st) => {
     const { [id]: _, ...rest } = st.rulesets;
     return { rulesets: rest };
   });
+  toastUndoable(`Набор правил «${r.name}» удалён.`);
   await storage.remove('rulesets', id);
   closeTabsWhere((t) => t.kind === 'ruleset' && t.ref === id);
 }
@@ -387,6 +547,7 @@ export function updateFormationRef(ref: string, fn: (f: UnitNode) => void) {
 }
 
 export function updateFormation(id: Id, fn: (f: UnitNode) => void) {
+  if (get().formations[id]) record('formations', id, 'edit');
   set((s) => {
     if (!s.formations[id]) return {};
     const next = produce(s.formations[id], (d) => {
@@ -399,6 +560,7 @@ export function updateFormation(id: Id, fn: (f: UnitNode) => void) {
 }
 
 export function addFormation(f: UnitNode, open = true): Id {
+  record('formations', f.id, 'add');
   set((s) => ({ formations: { ...s.formations, [f.id]: f } }));
   scheduleSave('formations', f.id, () => get().formations[f.id], 0);
   if (open) openTab('formation', `lib:${f.id}`);
@@ -422,10 +584,12 @@ export async function deleteFormation(id: Id) {
   const f = get().formations[id];
   if (!f) return;
   if (!(await confirmDialog(`Удалить подразделение «${f.name}» из библиотеки?`, 'Копии в сценариях останутся.', 'Удалить', true))) return;
+  record('formations', id, 'delete');
   set((s) => {
     const { [id]: _, ...rest } = s.formations;
     return { formations: rest };
   });
+  toastUndoable(`Подразделение «${f.name}» удалено из библиотеки.`);
   await storage.remove('formations', id);
   closeTabsWhere((t) => t.kind === 'formation' && t.ref === `lib:${id}`);
 }
@@ -433,6 +597,7 @@ export async function deleteFormation(id: Id) {
 // ------------------------------------------------------------------ сценарии
 
 export function updateScenario(id: Id, fn: (s: Scenario) => void) {
+  if (get().scenarios[id]) record('scenarios', id, 'edit');
   set((s) => {
     if (!s.scenarios[id]) return {};
     const next = produce(s.scenarios[id], (d) => {
@@ -445,6 +610,7 @@ export function updateScenario(id: Id, fn: (s: Scenario) => void) {
 }
 
 export function addScenario(sc: Scenario, open = true): Id {
+  record('scenarios', sc.id, 'add');
   set((s) => ({ scenarios: { ...s.scenarios, [sc.id]: sc } }));
   scheduleSave('scenarios', sc.id, () => get().scenarios[sc.id], 0);
   if (open) openTab('scenario', sc.id);
@@ -471,10 +637,12 @@ export async function deleteScenario(id: Id) {
   const sc = get().scenarios[id];
   if (!sc) return;
   if (!(await confirmDialog(`Удалить сценарий «${sc.name}»?`, 'Сохранённые бои по нему останутся.', 'Удалить', true))) return;
+  record('scenarios', id, 'delete');
   set((s) => {
     const { [id]: _, ...rest } = s.scenarios;
     return { scenarios: rest };
   });
+  toastUndoable(`Сценарий «${sc.name}» удалён.`);
   await storage.remove('scenarios', id);
   closeTabsWhere((t) => ((t.kind === 'scenario' || t.kind === 'montecarlo') && t.ref === id) || (t.kind === 'formation' && !!t.ref?.startsWith(`sc:${id}:`)));
 }

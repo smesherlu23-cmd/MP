@@ -33,7 +33,7 @@ import { confirmDialog, createRuleset, deleteRuleset, exportJson, replaceRuleset
 
 type Upd = (fn: (r: Ruleset) => void) => void;
 
-const SECTIONS: { id: string; label: string; count?: (r: Ruleset) => number }[] = [
+export const SECTIONS: { id: string; label: string; count?: (r: Ruleset) => number }[] = [
   { id: 'general', label: 'Общее' },
   { id: 'types', label: 'Каталог типов', count: (r) => r.componentTypes.length },
   { id: 'classes', label: 'Классы и дистанции' },

@@ -12,16 +12,18 @@ import {
   randomSeed,
   summarizeUnits,
   validateScenario,
+  walkUnits,
   type ObjectiveType,
   type Ruleset,
   type Scenario,
+  type UnitNode,
 } from '../../engine';
 import { effectsText } from '../components/EffectsEditor';
 import { Link } from '../components/Link';
 import { Area, Btn, Card, Field, Info, Menu, Num, Section, Sel, Txt, fmt0, fmt1 } from '../components/ui';
-import { useTabState } from '../hooks';
-import { confirmDialog, deleteScenario, duplicateScenario, exportJson, instantiateLibrary, openTab, putBattle, toast, updateScenario, useApp, type Tab } from '../store';
-import { DND_LIB, DND_NODE } from './FormationPage';
+import { openUnit, useTabState } from '../hooks';
+import { confirmDialog, deleteScenario, duplicateScenario, exportJson, historyStep, instantiateLibrary, openTab, putBattle, toast, toastUndoable, updateScenario, useApp, type Tab } from '../store';
+import { DND_LIB, DND_NODE, computeStats, statsLine, statsTip } from './FormationPage';
 
 export async function startBattle(sc: Scenario, rs: Ruleset, seed: string) {
   const issues = validateScenario(sc, rs);
@@ -166,6 +168,32 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
   );
 }
 
+/** Структура подразделения стороны: компактное дерево, щелчок открывает узел в конструкторе. */
+function SideTree({ root, refId, rs }: { root: UnitNode; refId: string; rs: Ruleset }) {
+  const stats = computeStats(root, rs);
+  const orders = new Map(rs.orders.map((o) => [o.id, o.name]));
+  const LIMIT = 150;
+  const rows: { n: UnitNode; depth: number }[] = [];
+  walkUnits(root, (n, _p, depth) => void (depth > 0 && rows.push({ n, depth })));
+  return (
+    <div className="side-tree">
+      {rows.slice(0, LIMIT).map(({ n, depth }) => (
+        <div key={n.id} className="side-node" style={{ paddingLeft: 4 + (depth - 1) * 16 }} onClick={(e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey)} title="Открыть в конструкторе">
+          {n.level && <span className="faint">{n.level}</span>}
+          <span className="side-node-name">{n.name}</span>
+          {n.attachedFrom !== undefined && <span className="badge info">придано</span>}
+          {n.order && <span className="badge">{orders.get(n.order) ?? n.order}</span>}
+          <span className="grow" />
+          <span className="faint small nowrap" data-tip={statsTip(stats.get(n.id))}>
+            {statsLine(stats.get(n.id))}
+          </span>
+        </div>
+      ))}
+      {rows.length > LIMIT && <div className="faint small" style={{ padding: '2px 4px' }}>… и ещё {rows.length - LIMIT} — откройте подразделение</div>}
+    </div>
+  );
+}
+
 function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
   const st = useApp();
   const side = sc.sides[i];
@@ -174,6 +202,7 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
   const [over, setOver] = useState<string | null>(null);
   const scRef = `sc:${sc.id}`;
   const defaultOrderName = rs.orders.find((o) => o.behavior === 'defend')?.name ?? 'Оборона';
+  const [openIds, setOpenIds] = useTabState<string[]>(`sc-tree:${sc.id}`, []);
   const accepts = (e: React.DragEvent) => e.dataTransfer.types.includes(DND_LIB) || e.dataTransfer.types.includes(DND_NODE);
   const dragged = (e: React.DragEvent): { id: string; side: number } | null => {
     const raw = e.dataTransfer.getData(DND_NODE);
@@ -246,61 +275,70 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
           {side.formations.map((f, fi) => {
             const s = summarizeUnits([f], rs);
             const attached = f.children.filter((c) => c.attachedFrom !== undefined);
+            const isOpen = openIds.includes(f.id);
             return (
-              <div
-                key={f.id}
-                className={`side-unit${over === f.id ? ' drop-inside' : ''}`}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData(DND_NODE, JSON.stringify({ ref: scRef, id: f.id, side: i }));
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
-                onDragOver={(e) => {
-                  if (!accepts(e)) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (over !== f.id) setOver(f.id);
-                }}
-                onDrop={(e) => onRowDrop(e, f.id)}
-                data-tip="Перетащите на другое подразделение, чтобы придать его; на другую сторону — чтобы перевести"
-              >
-                <span className="faint" style={{ cursor: 'grab' }}>
-                  ⠿
-                </span>
-                <div className="grow" style={{ minWidth: 0 }}>
-                  <Link kind="formation" refId={`sc:${sc.id}:${f.id}`}>
-                    {f.name}
-                  </Link>
-                  <span className="faint small" data-tip={s.equip.length ? s.equip.map((q) => `${q.name}: ${q.cur}`).join('\n') : undefined}>
-                    {' '}
-                    · {fmt0(s.persCur)} чел.
-                  </span>
-                  {attached.length > 0 && (
-                    <span className="faint small" data-tip={attached.map((c) => c.name).join('\n')}>
-                      {' '}
-                      · придано: {attached.length}
-                    </span>
-                  )}
-                </div>
-                <Sel
-                  value={f.order ?? ''}
-                  width={130}
-                  onChange={(v) => upd((d) => void (d.formations[fi].order = v || null))}
-                  options={[{ value: '', label: `${defaultOrderName} (по умолч.)` }, ...rs.orders.map((o) => ({ value: o.id, label: o.name }))]}
-                  title="Приказ подразделению"
-                />
-                <Btn
-                  sm
-                  kind="ghost"
-                  icon
-                  title="Убрать из сценария"
-                  onClick={async () => {
-                    if (await confirmDialog(`Убрать «${f.name}» из сценария?`, 'Копия в сценарии будет удалена; в библиотеке подразделение останется.', 'Убрать', true))
-                      upd((d) => void d.formations.splice(fi, 1));
+              <div key={f.id}>
+                <div
+                  className={`side-unit${over === f.id ? ' drop-inside' : ''}`}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(DND_NODE, JSON.stringify({ ref: scRef, id: f.id, side: i }));
+                    e.dataTransfer.effectAllowed = 'move';
                   }}
+                  onDragOver={(e) => {
+                    if (!accepts(e)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (over !== f.id) setOver(f.id);
+                  }}
+                  onDrop={(e) => onRowDrop(e, f.id)}
+                  data-tip="Перетащите на другое подразделение, чтобы придать его; на другую сторону — чтобы перевести"
                 >
-                  ×
-                </Btn>
+                  <button
+                    className="side-fold"
+                    disabled={!f.children.length}
+                    onClick={() => setOpenIds(isOpen ? openIds.filter((x) => x !== f.id) : [...openIds, f.id])}
+                    title={f.children.length ? (isOpen ? 'Скрыть структуру' : 'Показать структуру') : undefined}
+                  >
+                    {f.children.length ? (isOpen ? '▾' : '▸') : ''}
+                  </button>
+                  <div className="grow" style={{ minWidth: 0 }}>
+                    <Link kind="formation" refId={`sc:${sc.id}:${f.id}`}>
+                      {f.name}
+                    </Link>
+                    <span className="faint small" data-tip={s.equip.length ? s.equip.map((q) => `${q.name}: ${q.cur}`).join('\n') : undefined}>
+                      {' '}
+                      · {fmt0(s.persCur)} чел.
+                    </span>
+                    {attached.length > 0 && (
+                      <span className="faint small" data-tip={attached.map((c) => c.name).join('\n')}>
+                        {' '}
+                        · придано: {attached.length}
+                      </span>
+                    )}
+                  </div>
+                  <Sel
+                    value={f.order ?? ''}
+                    width={130}
+                    onChange={(v) => upd((d) => void (d.formations[fi].order = v || null))}
+                    options={[{ value: '', label: `${defaultOrderName} (по умолч.)` }, ...rs.orders.map((o) => ({ value: o.id, label: o.name }))]}
+                    title="Приказ подразделению"
+                  />
+                  <Btn
+                    sm
+                    kind="ghost"
+                    icon
+                    title="Убрать из сценария"
+                    onClick={() => {
+                      historyStep(`удаление «${f.name}» из сценария`);
+                      upd((d) => void d.formations.splice(fi, 1));
+                      toastUndoable(`«${f.name}» убрано из сценария.`);
+                    }}
+                  >
+                    ×
+                  </Btn>
+                </div>
+                {isOpen && <SideTree root={f} refId={`sc:${sc.id}:${f.id}`} rs={rs} />}
               </div>
             );
           })}

@@ -1,5 +1,7 @@
+import { summarizeUnits } from '../../engine';
 import { Link } from '../components/Link';
-import { Btn, Card } from '../components/ui';
+import { openPalette } from '../components/Palette';
+import { Btn, Card, fmt0 } from '../components/ui';
 import { createFormation, createScenario, openTab, useApp } from '../store';
 import { startBattle } from './ScenarioPage';
 
@@ -23,11 +25,20 @@ export function HomePage() {
           <div className="home-list">
             {scenarios.map((x) => {
               const rs = s.rulesets[x.rulesetId];
+              const forces = rs ? x.sides.map((sd) => fmt0(summarizeUnits(sd.formations, rs).persCur)).join(' : ') : '';
               return (
                 <div key={x.id} className="row">
                   <Link kind="scenario" refId={x.id} className="grow">
                     {x.name}
                   </Link>
+                  {forces && (
+                    <span className="faint small nowrap" data-tip={`Личный состав сторон: ${x.sides.map((sd) => sd.name).join(' : ')}`}>
+                      {forces} чел.
+                    </span>
+                  )}
+                  <Btn sm kind="ghost" onClick={() => openTab('montecarlo', x.id)} title="Массовые прогоны">
+                    ∑
+                  </Btn>
                   <Btn sm kind="ghost" disabled={!rs} onClick={() => rs && startBattle(x, rs, x.seed)} title="Начать бой">
                     ▶
                   </Btn>
@@ -58,6 +69,12 @@ export function HomePage() {
           в справке
         </a>
         .
+      </p>
+      <p className="faint small">
+        <a href="#" onClick={(e) => (e.preventDefault(), openPalette())}>
+          Ctrl+K
+        </a>{' '}
+        — найти любое подразделение, сценарий или команду · Ctrl+Z / Ctrl+Y — отменить / повторить · Ctrl+B — навигатор · Ctrl+W — закрыть вкладку
       </p>
     </div>
   );

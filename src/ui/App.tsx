@@ -9,6 +9,7 @@ import { MonteCarloPage } from './pages/MonteCarloPage';
 import { RulesetPage } from './pages/RulesetPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { Palette, openPalette } from './components/Palette';
 import { Btn, Menu } from './components/ui';
 import {
   activateTab,
@@ -16,13 +17,17 @@ import {
   createFormation,
   createRuleset,
   createScenario,
+  dismissToast,
   importFile,
   moveTab,
   openTab,
+  redo,
   resolveFormation,
+  undo,
   updateSettings,
   useApp,
   useBattles,
+  useHistory,
   type Tab,
   type TabKind,
 } from './store';
@@ -260,7 +265,18 @@ function Toasts() {
     <div className="toasts">
       {toasts.map((t) => (
         <div key={t.id} className={`toast ${t.kind}`}>
-          {t.text}
+          <span>{t.text}</span>
+          {t.action && (
+            <button
+              className="toast-action"
+              onClick={() => {
+                dismissToast(t.id);
+                t.action!.run();
+              }}
+            >
+              {t.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>
@@ -292,6 +308,7 @@ function Page({ t }: { t: Tab }) {
 
 export function App() {
   const s = useApp();
+  const hist = useHistory();
   const active = useMemo(() => s.tabs.find((t) => t.key === s.active) ?? s.tabs[0], [s.tabs, s.active]);
 
   useEffect(() => {
@@ -316,9 +333,20 @@ export function App() {
           e.preventDefault();
           activateTab(t.key);
         }
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.code === 'KeyK' || e.code === 'KeyP')) {
+        e.preventDefault();
+        openPalette();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         updateSettings({ sidebar: !st.settings.sidebar });
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+        // Отмена своя для всей программы (и в полях ввода): незаконченный ввод сначала применяется.
+        if (st.dialog || document.querySelector('.backdrop')) return;
+        e.preventDefault();
+        const a = document.activeElement as HTMLElement | null;
+        if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur();
+        if (e.code === 'KeyY' || e.shiftKey) redo();
+        else undo();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -337,13 +365,20 @@ export function App() {
           ))}
         </nav>
         <div className="topbar-right">
+          <button className="find-btn" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
+            <span>Найти…</span>
+            <span className="kbd">Ctrl+K</span>
+          </button>
           <Menu
             sm
             title="Меню"
             items={[
+              { label: 'Отменить', kbd: 'Ctrl+Z', disabled: !hist.undo, tip: hist.undo ?? undefined, onClick: undo },
+              { label: 'Повторить', kbd: 'Ctrl+Y', disabled: !hist.redo, tip: hist.redo ?? undefined, onClick: redo },
+              'sep',
               { label: 'Импорт из файла…', onClick: () => importFile(), tip: 'Набор правил, подразделение, сценарий или бой в формате JSON' },
               { label: s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', onClick: () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }) },
-              { label: s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор', onClick: () => updateSettings({ sidebar: !s.settings.sidebar }) },
+              { label: s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор', kbd: 'Ctrl+B', onClick: () => updateSettings({ sidebar: !s.settings.sidebar }) },
               'sep',
               { label: 'Справка', onClick: () => openTab('help') },
               { label: 'Настройки', onClick: () => openTab('settings') },
@@ -354,6 +389,7 @@ export function App() {
       <Sidebar />
       <main className="content">{active && <Page key={active.key} t={active} />}</main>
       <DialogHost />
+      <Palette />
       <Toasts />
       <TooltipHost />
     </div>

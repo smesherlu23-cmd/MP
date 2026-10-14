@@ -371,7 +371,7 @@ function FormationRows(props: { b: Battle; E: EngineContext; fs: FormationState;
             </td>
             <td>
               {active && E.behavior(el) !== 'rout' ? (
-                <Sel value={el.orderId} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={orderOptions} />
+                <Sel value={el.orderId} width={124} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={orderOptions} />
               ) : (
                 <span className={`small ${st.cls}`}>{st.label}</span>
               )}

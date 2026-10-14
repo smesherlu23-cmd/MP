@@ -1,7 +1,7 @@
 // Конструктор подразделений: структура войск в виде оргсхемы или списка (с перетаскиванием),
 // редактор выбранного подразделения, вставка из библиотеки (шаблоны), придание.
 
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   BEHAVIOR_LABELS,
   ECHELON_LABELS,
@@ -16,6 +16,7 @@ import {
   moveUnit,
   newUnit,
   nextName,
+  pathTo,
   removeUnit,
   resolveTree,
   summarizeUnits,
@@ -35,17 +36,18 @@ import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, 
 import { useTabState } from '../hooks';
 import {
   addFormation,
-  confirmDialog,
   containsTemplate,
   deleteFormation,
   duplicateFormation,
   exportJson,
+  historyStep,
   instantiateLibrary,
   openTab,
   promptDialog,
   resolveFormation,
   templateUsages,
   toast,
+  toastUndoable,
   updateAllCopies,
   updateCopy,
   updateFormationRef,
@@ -168,6 +170,43 @@ function canInsertTemplate(ctx: Ctx, templateId: Id): boolean {
   return templateId !== host && !containsTemplate(tpl, host);
 }
 
+function addChild(ctx: Ctx, node: UnitNode) {
+  const levels = ctx.rs.unitLevels;
+  const li = levels.indexOf(node.level);
+  const childLevel = li > 0 ? levels[li - 1] : '';
+  const ch = newUnit(`${cap(childLevel) || 'Подразделение'} ${node.children.length + 1}`, { level: childLevel });
+  ctx.upd((d) => void findUnit(d, node.id)!.children.push(ch));
+  ctx.setSel(ch.id);
+}
+
+function duplicateNode(ctx: Ctx, node: UnitNode) {
+  if (node.id === ctx.root.id) return;
+  const c = cloneUnit(node);
+  const taken = new Set(findParent(ctx.root, node.id)?.children.map((x) => x.name));
+  let k = 1;
+  while (taken.has(nextName(node.name, k)) && k < 500) k++;
+  c.name = nextName(node.name, k);
+  ctx.upd((d) => {
+    const p = findParent(d, node.id)!;
+    p.children.splice(p.children.findIndex((x) => x.id === node.id) + 1, 0, c);
+  });
+  ctx.setSel(c.id);
+}
+
+/** Удалить узел без подтверждения: шаг можно отменить. */
+function deleteNode(ctx: Ctx, node: UnitNode) {
+  if (node.id === ctx.root.id) return;
+  const parent = findParent(ctx.root, node.id);
+  const sib = parent?.children ?? [];
+  const i = sib.findIndex((c) => c.id === node.id);
+  const next = sib[i + 1] ?? sib[i - 1] ?? parent;
+  historyStep(`удаление «${node.name}»`);
+  ctx.upd((d) => void removeUnit(d.children, node.id));
+  ctx.setSel(next?.id ?? ctx.root.id);
+  const n = node.children.length ? ` вместе с подчинёнными` : '';
+  toastUndoable(`«${node.name}» удалено${n}.`);
+}
+
 function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false)[] {
   const isRoot = node.id === ctx.root.id;
   const parent = isRoot ? null : findParent(ctx.root, node.id);
@@ -175,18 +214,8 @@ function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false)[] {
   const tpl = node.templateId ? ctx.lib[node.templateId] : undefined;
   const outdated = isOutdated(node, tpl);
   const un = (fn: (n: UnitNode) => void) => ctx.upd((d) => fn(findUnit(d, node.id)!));
-  const levels = ctx.rs.unitLevels;
-  const li = levels.indexOf(node.level);
-  const childLevel = li > 0 ? levels[li - 1] : '';
   return [
-    {
-      label: 'Добавить подчинённое',
-      onClick: () => {
-        const ch = newUnit(`${cap(childLevel) || 'Подразделение'} ${node.children.length + 1}`, { level: childLevel });
-        un((n) => void n.children.push(ch));
-        ctx.setSel(ch.id);
-      },
-    },
+    { label: 'Добавить подчинённое', kbd: 'Ins', onClick: () => addChild(ctx, node) },
     { label: 'Вставить из библиотеки…', onClick: () => ctx.openInsert(node.id, false), tip: 'Готовое подразделение из библиотеки как шаблон: взвод, роту, батарею…' },
     { label: 'Придать из библиотеки…', onClick: () => ctx.openInsert(node.id, true), tip: 'То же, но с отметкой «придано»' },
     'sep',
@@ -209,16 +238,7 @@ function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false)[] {
         });
       },
     },
-    !isRoot && {
-      label: 'Дублировать',
-      onClick: () =>
-        ctx.upd((d) => {
-          const p = findParent(d, node.id)!;
-          const c = cloneUnit(node);
-          c.name = nextName(node.name, 1);
-          p.children.splice(p.children.findIndex((x) => x.id === node.id) + 1, 0, c);
-        }),
-    },
+    !isRoot && { label: 'Дублировать', kbd: 'Ctrl+D', onClick: () => duplicateNode(ctx, node) },
     !isRoot && { label: 'Раньше в списке', disabled: idx <= 0, onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx - 1].id, 'before', true)) },
     !isRoot && { label: 'Позже в списке', disabled: !parent || idx >= parent.children.length - 1, onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx + 1].id, 'after', true)) },
     'sep',
@@ -258,13 +278,81 @@ function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false)[] {
     !isRoot && {
       label: 'Удалить',
       danger: true,
-      onClick: async () => {
-        if (!(await confirmDialog(`Удалить «${node.name}»${node.children.length ? ' со всеми подчинёнными' : ''}?`, undefined, 'Удалить', true))) return;
-        ctx.upd((d) => void removeUnit(d.children, node.id));
-        ctx.setSel(parent?.id ?? ctx.root.id);
-      },
+      kbd: 'Del',
+      onClick: () => deleteNode(ctx, node),
     },
   ];
+}
+
+// ------------------------------------------------------------------ клавиатура
+
+const KEYS_HELP = [
+  'Клавиши (когда курсор не в поле ввода):',
+  '↑ ↓ ← → — выбор подразделения',
+  'Ins — добавить подчинённое',
+  'Ctrl+D — дублировать',
+  'Del — удалить (можно отменить)',
+  'F2 или Enter — переименовать',
+  'Ctrl+Z / Ctrl+Y — отменить / повторить',
+].join('\n');
+
+/** Видимые узлы по порядку (свёрнутые ветки пропускаются). */
+function visibleNodes(ctx: Ctx): UnitNode[] {
+  const out: UnitNode[] = [];
+  const go = (n: UnitNode) => {
+    out.push(n);
+    if (!ctx.collapsed.has(n.id)) n.children.forEach(go);
+  };
+  go(ctx.root);
+  return out;
+}
+
+/** Подчинённые этого узла на схеме идут столбиком (см. OrgNode). */
+function isStacked(ctx: Ctx, n: UnitNode): boolean {
+  const k = n.children.length;
+  return k > 1 && n.children.every((c) => !c.children.length) && (n.id !== ctx.root.id || k > 10);
+}
+
+function treeKey(ctx: Ctx, e: KeyboardEvent, view: 'chart' | 'list'): boolean {
+  const node = findUnit(ctx.root, ctx.sel) ?? ctx.root;
+  const parent = findParent(ctx.root, node.id);
+  const sib = parent?.children ?? [node];
+  const i = sib.findIndex((c) => c.id === node.id);
+  const open = (n: UnitNode) => ctx.collapsed.has(n.id) && ctx.toggle(n.id);
+  const ctrl = e.ctrlKey || e.metaKey;
+  const go = (n: UnitNode | null | undefined) => n && ctx.setSel(n.id);
+  if (ctrl && e.code === 'KeyD') return duplicateNode(ctx, node), true;
+  if (ctrl) return false;
+  if (e.key === 'Delete') return deleteNode(ctx, node), true;
+  if (e.key === 'Insert') return addChild(ctx, node), true;
+  if (e.key === 'F2' || e.key === 'Enter') {
+    const el = document.querySelector('.node-title') as HTMLInputElement | null;
+    el?.focus();
+    el?.select();
+    return !!el;
+  }
+  if (!e.key.startsWith('Arrow')) return false;
+  if (view === 'list') {
+    const vis = visibleNodes(ctx);
+    const k = vis.findIndex((n) => n.id === node.id);
+    if (e.key === 'ArrowUp') go(vis[k - 1]);
+    else if (e.key === 'ArrowDown') go(vis[k + 1]);
+    else if (e.key === 'ArrowLeft') node.children.length && !ctx.collapsed.has(node.id) ? ctx.toggle(node.id) : go(parent);
+    else if (e.key === 'ArrowRight') ctx.collapsed.has(node.id) ? open(node) : go(node.children[0]);
+    return true;
+  }
+  // Схема: по вертикали — старший/подчинённый (в столбике — соседи), по горизонтали — соседи.
+  const stacked = !!parent && isStacked(ctx, parent);
+  if (e.key === 'ArrowUp') go(stacked && i > 0 ? sib[i - 1] : parent);
+  else if (e.key === 'ArrowDown') {
+    if (stacked && !node.children.length) go(sib[i + 1]);
+    else if (node.children.length) {
+      open(node);
+      go(node.children[0]);
+    }
+  } else if (e.key === 'ArrowLeft') go(stacked ? parent : sib[i - 1]);
+  else if (e.key === 'ArrowRight') go(stacked ? undefined : sib[i + 1]);
+  return true;
 }
 
 // ------------------------------------------------------------------ перетаскивание
@@ -290,6 +378,22 @@ export function FormationPage({ tab }: { tab: Tab }) {
   const [collapsedArr, setCollapsed] = useTabState<string[]>(`${tab.key}:collapsed`, []);
   const [insert, setInsert] = useState<{ id: Id; attach: boolean } | null>(null);
   const [drop, setDrop] = useState<{ id: Id; pos: DropPos } | null>(null);
+  const ctxRef = useRef<Ctx | null>(null);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const ctx = ctxRef.current;
+      if (!ctx || e.altKey) return;
+      const t = e.target as HTMLElement;
+      if (t.closest('input, textarea, select, [contenteditable]') || document.querySelector('.backdrop, .menu-pop')) return;
+      // Enter и пробел на кнопке или ссылке — их собственное действие.
+      if ((e.key === 'Enter' || e.key === ' ') && t.closest('button, a')) return;
+      if (treeKey(ctx, e, viewRef.current)) e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const root = res?.f;
   const rs = st.rulesets[res?.rulesetId ?? ''] ?? Object.values(st.rulesets)[0];
   const resolved = useMemo(() => (root ? resolveTree(root) : new Map<Id, Resolved>()), [root]);
@@ -297,7 +401,10 @@ export function FormationPage({ tab }: { tab: Tab }) {
   if (!res || !root) return <div className="empty">Подразделение не найдено.</div>;
   if (!rs) return <div className="empty">Нет ни одного набора правил.</div>;
   const isLib = ref.startsWith('lib:');
-  const collapsed = new Set(collapsedArr);
+  const selValid = findUnit(root, selId) ? selId : root.id;
+  // Старшие выбранного узла всегда развёрнуты: выбранное видно, даже если открыто из поиска.
+  const selPath = new Set(pathTo(root, selValid).map((n) => n.id));
+  const collapsed = new Set(collapsedArr.filter((id) => id === selValid || !selPath.has(id)));
 
   const ctx: Ctx = {
     root,
@@ -308,12 +415,16 @@ export function FormationPage({ tab }: { tab: Tab }) {
     scenario: res.scenario,
     sideIndex: res.sideIndex,
     upd: (fn) => updateFormationRef(ref, fn),
-    sel: findUnit(root, selId) ? selId : root.id,
+    sel: selValid,
     setSel,
     resolved,
     stats,
     collapsed,
-    toggle: (id) => setCollapsed(collapsed.has(id) ? collapsedArr.filter((x) => x !== id) : [...collapsedArr, id]),
+    toggle: (id) => {
+      if (collapsed.has(id)) return setCollapsed(collapsedArr.filter((x) => x !== id));
+      if (selPath.has(id)) setSel(id);
+      setCollapsed([...collapsedArr.filter((x) => x !== id), id]);
+    },
     openInsert: (id, attach) => setInsert({ id, attach }),
     drop,
     setDrop,
@@ -343,6 +454,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
       });
     },
   };
+  ctxRef.current = ctx;
   const sel = findUnit(root, ctx.sel) ?? root;
   const issues = validateUnit(root, rs);
   const tpl = root.templateId ? st.formations[root.templateId] : undefined;
@@ -427,7 +539,8 @@ export function FormationPage({ tab }: { tab: Tab }) {
           </span>
         )}
         <span className="faint">
-          перетаскивайте подразделения мышью · из навигатора слева можно перетащить подразделение библиотеки
+          перетаскивайте мышью — в том числе из навигатора слева
+          <Info text={KEYS_HELP} />
         </span>
       </div>
 
@@ -484,6 +597,25 @@ function NodeBadges({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
 
 function OrgChart({ ctx }: { ctx: Ctx }) {
   const ref = useRef<HTMLDivElement>(null);
+  const org = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  zoomRef.current = zoom;
+  // Широкая схема уменьшается, чтобы помещаться по ширине (не мельче 70%), дальше — прокрутка.
+  useLayoutEffect(() => {
+    const box = ref.current;
+    const el = org.current;
+    if (!box || !el) return;
+    const fit = () => {
+      const natural = el.getBoundingClientRect().width / zoomRef.current;
+      const next = Math.max(0.7, Math.min(1, (box.clientWidth - 16) / Math.max(1, natural)));
+      if (Math.abs(next - zoomRef.current) > 0.01) setZoom(Math.round(next * 100) / 100);
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [ctx.root, ctx.collapsed.size]);
   // При открытии и смене выбора — показать выбранный блок (по умолчанию корень в центре).
   useLayoutEffect(() => {
     const el = ref.current;
@@ -494,10 +626,10 @@ function OrgChart({ ctx }: { ctx: Ctx }) {
     const br = box.getBoundingClientRect();
     if (br.left < cr.left || br.right > cr.right || ctx.sel === ctx.root.id) el.scrollLeft += br.left + br.width / 2 - (cr.left + cr.width / 2);
     if (br.top < cr.top || br.bottom > cr.bottom) el.scrollTop += br.top - cr.top - 20;
-  }, [ctx.sel]);
+  }, [ctx.sel, zoom]);
   return (
     <div className="org-scroll" ref={ref}>
-      <div className="org">
+      <div className="org" ref={org} style={zoom < 1 ? { zoom } : undefined}>
         <ul>
           <OrgNode ctx={ctx} node={ctx.root} />
         </ul>
@@ -548,8 +680,7 @@ function OrgNode({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
   const folded = ctx.collapsed.has(node.id);
   // Подчинённые без своих подчинённых (взводы роты, отделения взвода) — столбиком: так схема не расползается вширь.
   // У корня столбик — только когда подчинённых много, иначе верхний уровень читается лучше в ряд.
-  const n = node.children.length;
-  const stack = n > 1 && node.children.every((c) => !c.children.length) && (node.id !== ctx.root.id || n > 10);
+  const stack = isStacked(ctx, node);
   return (
     <li>
       <OrgBox ctx={ctx} node={node} />
@@ -582,8 +713,12 @@ function OrgNode({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
 // ------------------------------------------------------------------ список
 
 function TreeList({ ctx }: { ctx: Ctx }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    ref.current?.querySelector('.unit-row.sel')?.scrollIntoView({ block: 'nearest' });
+  }, [ctx.sel]);
   return (
-    <div className="unit-tree">
+    <div className="unit-tree" ref={ref}>
       <TreeRow ctx={ctx} node={ctx.root} depth={0} />
     </div>
   );
@@ -711,7 +846,7 @@ function SummaryCard({ node, rs, resolved }: { node: UnitNode; rs: Ruleset; reso
               {s.equip.map((q) => (
                 <tr key={q.id}>
                   <td>{q.name}</td>
-                  <td className="num">
+                  <td className="num nowrap">
                     {q.cur} <span className="faint">из {q.auth}</span>
                     {q.rec ? <span className="faint"> (+{q.rec} в ремонте)</span> : null}
                   </td>
@@ -788,7 +923,15 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
   return (
     <div className="stack">
       <Card
-        title={<input className="title-input" style={{ fontSize: 15, minWidth: 160, width: '100%' }} value={node.name} onChange={(e) => un((n) => void (n.name = e.target.value))} />}
+        title={
+          <input
+            className="title-input node-title"
+            style={{ fontSize: 15, minWidth: 160, width: '100%' }}
+            value={node.name}
+            onChange={(e) => un((n) => void (n.name = e.target.value))}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === 'Escape') && e.currentTarget.blur()}
+          />
+        }
         actions={<Menu sm items={nodeActions(ctx, node)} />}
       >
         {((tpl && !isLibRoot) || node.attachedFrom !== undefined) && (

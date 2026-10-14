@@ -198,6 +198,8 @@ export interface MenuItem {
   danger?: boolean;
   disabled?: boolean;
   tip?: string;
+  /** Сочетание клавиш — показывается справа. */
+  kbd?: string;
 }
 
 /** Кнопка «⋯» с выпадающим списком второстепенных действий. */
@@ -256,6 +258,7 @@ export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefine
                   }}
                 >
                   {it.label}
+                  {it.kbd && <span className="kbd">{it.kbd}</span>}
                 </button>
               ),
             )}

@@ -1027,17 +1027,22 @@ table.tbl {
 .battle-body {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 440px;
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 36%, 480px);
   min-height: 0;
 }
 .battle-body.log-wide {
-  grid-template-columns: minmax(0, 1fr) 640px;
+  grid-template-columns: minmax(0, 1fr) clamp(440px, 50%, 680px);
 }
 @media (max-width: 1200px) {
+  /* узкое окно: силы сверху, журнал снизу, у каждого своя прокрутка */
   .battle-body,
   .battle-body.log-wide {
-    grid-template-columns: 1fr;
-    overflow: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+  }
+  .battle-log {
+    border-left: none;
+    border-top: 1px solid var(--border);
   }
 }
 .battle-main {
@@ -1275,13 +1280,30 @@ table.tbl {
   z-index: 200;
 }
 .toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   background: var(--panel3);
   border: 1px solid var(--border2);
   border-left: 3px solid var(--info);
   padding: 8px 14px;
   border-radius: 6px;
   box-shadow: var(--shadow);
-  max-width: 420px;
+  max-width: 460px;
+}
+.toast-action {
+  flex: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--link);
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.toast-action:hover {
+  background: var(--panel2);
 }
 .toast.good {
   border-left-color: var(--good);
@@ -1499,7 +1521,9 @@ h4 {
   padding: 4px;
 }
 .menu-item {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 24px;
   width: 100%;
   text-align: left;
   font: inherit;
@@ -1516,6 +1540,11 @@ h4 {
 }
 .menu-item.danger {
   color: var(--bad);
+}
+.menu-item .kbd {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 11px;
 }
 .menu-item:disabled {
   opacity: 0.45;
@@ -2041,4 +2070,142 @@ select.eff-add:hover {
   top: 22px;
   width: 12px;
   border-top: 1px solid var(--border2);
+}
+
+/* быстрый переход */
+.find-btn {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 26px;
+  margin-right: 6px;
+  padding: 0 8px 0 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.find-btn:hover {
+  border-color: var(--border2);
+  color: var(--text);
+}
+.find-btn .kbd,
+.pal-foot {
+  color: var(--faint);
+  font-size: 11px;
+}
+.pal-backdrop {
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+.palette {
+  width: 600px;
+  max-width: 100%;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.pal-input {
+  width: 100%;
+  font-size: 15px;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.pal-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+.pal-list {
+  overflow: auto;
+  padding: 4px 6px 6px;
+}
+.pal-group {
+  padding: 8px 8px 3px;
+  font-size: 11px;
+  color: var(--faint);
+}
+.pal-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 0;
+}
+.pal-item.cur {
+  background: var(--accent-soft);
+}
+.pal-title {
+  white-space: nowrap;
+}
+.pal-sub {
+  color: var(--faint);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.pal-empty {
+  padding: 18px 10px;
+  color: var(--faint);
+}
+.pal-foot {
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+}
+.meta .hint-icon {
+  margin-left: 5px;
+  vertical-align: -2px;
+}
+
+/* структура стороны в сценарии */
+.side-fold {
+  width: 18px;
+  flex: none;
+  padding: 0;
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.side-fold:disabled {
+  cursor: default;
+}
+.side-tree {
+  margin: 0 0 6px 26px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+.side-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.side-node:hover {
+  background: var(--panel2);
+}
+.side-node-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
