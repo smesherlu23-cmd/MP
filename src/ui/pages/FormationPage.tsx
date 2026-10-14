@@ -919,6 +919,14 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
   );
   const tpl = node.templateId ? ctx.lib[node.templateId] : undefined;
   const isLibRoot = ctx.isLib && isRoot;
+  // Сводка свёрнутого «Состояния»: только заданные здесь значения.
+  const own = [
+    node.state.experience !== undefined && `опыт ${node.state.experience}`,
+    ...stateKeys.filter((k) => node.state[k] !== undefined).map((k) => `${STATE_LABELS[k].toLowerCase()} ${Math.round(node.state[k]!)}`),
+    ft.comms && node.comms !== null && `связь ${node.comms}`,
+    node.supply !== null && `снабжение ${node.supply}`,
+  ].filter(Boolean);
+  const stateSummary = own.length ? own.join(', ') : isRoot ? 'по умолчанию' : 'всё как у старшего';
 
   return (
     <div className="stack">
@@ -1131,13 +1139,15 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
         </div>
       </Card>
 
-      <Card
+      <Section
+        id="unit-state"
         title={
           <>
             Состояние{' '}
             <Info text="Незаданное значение берётся у старшего подразделения — так можно задать мораль или опыт целому батальону и уточнить только отдельные роты. Значок ↺ возвращает наследование." />
           </>
         }
+        summary={stateSummary}
       >
         <div className="fields two">
           <Field label={<>Опыт{node.state.experience === undefined && <span className="faint small">· {inheritText}</span>}</>}>
@@ -1171,7 +1181,7 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
             hint="Скорость подвоза боезапаса и топлива во время боя."
           />
         </div>
-      </Card>
+      </Section>
 
       <Section
         id="unit-extra"

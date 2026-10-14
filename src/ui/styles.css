@@ -1080,13 +1080,26 @@ table.tbl {
 .log-turn {
   position: sticky;
   top: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   background: var(--bg2);
-  padding: 6px 10px 3px;
+  padding: 7px 10px 4px;
   font-weight: 600;
   color: var(--accent);
   border-bottom: 1px solid var(--border);
   z-index: 1;
   font-size: 12px;
+}
+.turn-loss {
+  display: flex;
+  gap: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.turn-loss small {
+  font-weight: 400;
+  opacity: 0.8;
 }
 .log-entry {
   display: grid;
@@ -1102,22 +1115,46 @@ table.tbl {
 .log-entry:hover {
   background: var(--panel);
 }
-.log-entry.good {
+/* Цвет — только у метки слева и значка фазы; текст спокойный, имена окрашены цветом стороны. */
+.log-entry.sev-good {
   border-left-color: var(--good);
 }
-.log-entry.bad {
-  border-left-color: var(--bad);
+.log-entry.sev-bad {
+  border-left-color: var(--bad-soft);
 }
-.log-entry.critical {
+.log-entry.sev-critical {
   border-left-color: var(--bad);
   background: var(--bad-soft);
 }
-.log-entry.lvl0 {
+.log-entry.lvl0:not(.ph-setup) {
   font-weight: 600;
 }
+.log-entry.ph-setup {
+  color: var(--muted);
+}
 .log-entry .ph {
-  opacity: 0.75;
+  color: var(--faint);
   text-align: center;
+}
+.log-entry.sev-bad .ph,
+.log-entry.sev-critical .ph {
+  color: var(--bad);
+}
+.log-entry.sev-good .ph {
+  color: var(--good);
+}
+.log-entry {
+  position: relative;
+}
+.fx-hint {
+  position: absolute;
+  right: 6px;
+  top: 3px;
+  color: var(--faint);
+  opacity: 0;
+}
+.log-entry:hover .fx-hint {
+  opacity: 1;
 }
 .factors {
   grid-column: 2;
@@ -2208,4 +2245,36 @@ select.eff-add:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+/* стороны рядом */
+.tbl.compare td:first-child {
+  color: var(--muted);
+}
+.tbl.compare th.num,
+.tbl.compare td.num {
+  width: 32%;
+  white-space: nowrap;
+}
+.tbl.compare th .dot {
+  margin-right: 2px;
+}
+.objectives {
+  line-height: 1.7;
+}
+
+/* состояние элемента — полоски */
+.state-list {
+  display: grid;
+  gap: 7px;
+}
+.state-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 30px;
+  gap: 10px;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+.state-row .num {
+  text-align: right;
 }

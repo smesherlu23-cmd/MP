@@ -18,10 +18,8 @@ import {
   type FormationState,
   type SideId,
   type SideResult,
-  type UnitSummary,
 } from '../../engine';
 import { LineChart } from '../components/Charts';
-import { Link } from '../components/Link';
 import { LogView, RichText } from '../components/LogView';
 import { Btn, Card, Check, Field, Menu, Meter, Modal, Num, Section, Sel, fmt0, pct } from '../components/ui';
 import { useTabState } from '../hooks';
@@ -129,7 +127,9 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             !b.finished && { label: 'Изменить условия и дистанцию…', onClick: () => setCondModal(true) },
             !b.finished && { label: 'Завершить бой сейчас', onClick: () => iv('endBattle', { reason: 'Бой остановлен ГМ' }), tip: 'Подвести итоги на текущем ходу' },
             'sep',
-            { label: 'Переиграть с тем же сидом', onClick: () => restart(b.seed), tip: 'Тот же сид и те же решения дают тот же бой' },
+            { label: 'Открыть сценарий', onClick: () => openTab('scenario', b.scenarioId) },
+            'sep',
+            { label: `Переиграть с тем же сидом (${b.seed})`, onClick: () => restart(b.seed), tip: 'Тот же сид и те же решения дают тот же бой' },
             { label: 'Переиграть с новым сидом', onClick: () => restart(randomSeed()) },
             b.interventions.length > 0 && { label: 'Повторить с решениями ГМ', onClick: () => restart(b.seed, true), tip: 'Воспроизвести бой вместе с вашими вмешательствами до текущего хода' },
             'sep',
@@ -156,12 +156,6 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             </span>
           )}
           {b.finished && <b style={{ color: winnerColor }}>{result.headline}</b>}
-          <span className="faint">
-            <Link kind="scenario" refId={b.scenarioId}>
-              сценарий
-            </Link>{' '}
-            · сид {b.seed}
-          </span>
         </div>
       </div>
 
@@ -213,51 +207,101 @@ function statusOf(E: EngineContext, el: ElementState): { label: string; cls: str
   return { label: STATUS_LABELS.withdrawn, cls: 'status-out' };
 }
 
-function Stat({ k, v, sub, color }: { k: string; v: React.ReactNode; sub?: string; color?: string }) {
-  return (
-    <div className="stat">
-      <span className="k">{k}</span>
-      <span className="v" style={color ? { color } : undefined}>
-        {v} {sub && <small>{sub}</small>}
-      </span>
-    </div>
-  );
-}
-
-function SideSummary({ b, side, r }: { b: Battle; side: SideId; r: SideResult }) {
-  const p = r.personnel;
+/** Стороны рядом: только то, что нужно, чтобы понять ход боя. full — для итогов (с техникой по типам). */
+function SideCompare({ b, result, full }: { b: Battle; result: BattleResult; full?: boolean }) {
   const f = b.ruleset.features;
-  const lostEq = r.equipment.filter((q) => q.losses > 0);
-  const objectives = r.objectives.map((o) => `${pct(o.score * 100)} — ${o.label}`).join('\n');
+  const R = SIDES.map((s) => result.sides[s]);
+  const eqTotal = (r: SideResult) => r.equipment.reduce((a, q) => ({ cur: a.cur + q.current, start: a.start + q.start, lost: a.lost + q.losses }), { cur: 0, start: 0, lost: 0 });
+  const eqTip = (r: SideResult) => r.equipment.filter((q) => q.losses).map((q) => `${q.name}: −${q.losses}`).join('\n') || undefined;
+  const lostTypes = [...new Set(R.flatMap((r) => r.equipment.filter((q) => q.losses > 0).map((q) => q.typeId)))];
+  const row = (label: React.ReactNode, cell: (r: SideResult) => React.ReactNode, tip?: (r: SideResult) => string | undefined) => (
+    <tr>
+      <td>{label}</td>
+      {R.map((r) => (
+        <td key={r.side} className="num" data-tip={tip?.(r)}>
+          {cell(r)}
+        </td>
+      ))}
+    </tr>
+  );
   return (
-    <div className="card side-card" style={{ ['--side' as string]: b.sides[side].color }}>
-      <div className="card-head">
-        <span className="dot" style={{ background: b.sides[side].color }} />
-        <h3>{b.sides[side].name}</h3>
-        <span className="muted small" data-tip={`Выполнение задач:\n${objectives}`}>
-          задачи {pct(r.score * 100)}
-        </span>
-      </div>
-      <div className="card-body">
-        <div className="stat-row">
-          <Stat k="Личный состав" v={fmt0(p.current)} sub={`из ${fmt0(p.start)}`} />
-          <Stat k="Потери" v={pct(p.lossPct)} sub={`${fmt0(p.losses)} чел.`} color={p.lossPct > 30 ? 'var(--bad)' : undefined} />
-          <Stat k="Боеспособность" v={pct(r.combatEffectiveness)} />
-          {f.morale && <Stat k="Мораль" v={Math.round(r.morale)} />}
-        </div>
-        <div className="meta" style={{ marginTop: 8 }}>
-          <span>
-            организация <b>{pct(r.organization)}</b>
-          </span>
-          {f.ammo && (
-            <span>
-              боезапас <b>{pct(r.supply.ammo)}</b>
+    <table className="tbl compare">
+      <thead>
+        <tr>
+          <th />
+          {R.map((r) => (
+            <th key={r.side} className="num">
+              <span className="dot" style={{ background: b.sides[r.side].color }} /> {r.name}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {row('Личный состав', (r) => (
+          <>
+            <b>{fmt0(r.personnel.current)}</b> <span className="faint">из {fmt0(r.personnel.start)}</span>
+          </>
+        ))}
+        {row(
+          'Потери',
+          (r) => (
+            <span className={r.personnel.lossPct > 25 ? 'bad' : ''}>
+              {fmt0(r.personnel.losses)} <span className="faint">· {pct(r.personnel.lossPct)}</span>
             </span>
+          ),
+          (r) => `убито ${fmt0(r.personnel.kia)}, ранено ${fmt0(r.personnel.wia)}, пропало без вести ${fmt0(r.personnel.mia)}`,
+        )}
+        {!full &&
+          R.some((r) => r.equipment.length) &&
+          row(
+            'Вооружение и техника',
+            (r) => {
+              const t = eqTotal(r);
+              if (!t.start) return <span className="faint">—</span>;
+              return (
+                <>
+                  {t.cur} <span className="faint">из {t.start}</span>
+                  {t.lost > 0 && <span className="bad"> −{t.lost}</span>}
+                </>
+              );
+            },
+            eqTip,
           )}
-          {lostEq.length > 0 && <span className="bad">техника: {lostEq.map((q) => `${q.name} −${q.losses}`).join(', ')}</span>}
-        </div>
-      </div>
-    </div>
+        {full &&
+          lostTypes.map((id) => {
+            const name = R.map((r) => r.equipment.find((q) => q.typeId === id)?.name).find(Boolean);
+            return (
+              <tr key={id}>
+                <td className="muted">{name}</td>
+                {R.map((r) => {
+                  const q = r.equipment.find((x) => x.typeId === id);
+                  return (
+                    <td key={r.side} className="num" data-tip={q?.losses ? `уничтожено ${q.destroyed}, повреждено ${q.damaged}, брошено ${q.abandoned}` : undefined}>
+                      {q ? (
+                        <>
+                          {q.current} <span className="faint">из {q.start}</span>
+                          {q.losses > 0 && <span className="bad"> −{q.losses}</span>}
+                        </>
+                      ) : (
+                        <span className="faint">—</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        {row('Боеспособность', (r) => <b>{pct(r.combatEffectiveness)}</b>)}
+        {f.morale && row('Мораль', (r) => Math.round(r.morale))}
+        {full && row('Организация', (r) => pct(r.organization))}
+        {full && f.ammo && row('Боезапас', (r) => pct(r.supply.ammo), (r) => `топливо ${pct(r.supply.fuel)}, снаряжение ${pct(r.supply.equipment)}`)}
+        {row(
+          'Задачи',
+          (r) => <b className={r.score >= 0.75 ? 'good' : r.score < 0.4 ? 'bad' : 'warn'}>{pct(r.score * 100)}</b>,
+          (r) => r.objectives.map((o) => `${pct(o.score * 100)} — ${o.label}`).join('\n') || undefined,
+        )}
+      </tbody>
+    </table>
   );
 }
 
@@ -275,11 +319,9 @@ function Forces(props: { b: Battle; E: EngineContext; result: BattleResult; tabK
   };
   return (
     <div className="stack">
-      <div className="grid two">
-        {SIDES.map((s) => (
-          <SideSummary key={s} b={b} side={s} r={result.sides[s]} />
-        ))}
-      </div>
+      <Card tight>
+        <SideCompare b={b} result={result} />
+      </Card>
       <div className="row" style={{ justifyContent: 'flex-end', marginBottom: -8 }}>
         <Check value={details} onChange={setDetails} title="Подавление, усталость, боезапас, техника, обнаружение">
           <span className="muted small">подробные столбцы</span>
@@ -416,8 +458,27 @@ const EDITABLE: { key: keyof ElementState; label: string; feature?: keyof Battle
   { key: 'vehicleCondition', label: 'Техсостояние', feature: 'vehicleCondition' },
 ];
 
+/** Чем больше, тем хуже: полоска окрашивается наоборот. */
+const HIGH_IS_BAD = new Set<keyof ElementState>(['suppression', 'fatigue']);
+
+function StateRow({ label, value, inverse }: { label: string; value: number; inverse?: boolean }) {
+  const v = Math.max(0, Math.min(100, value));
+  const good = inverse ? 100 - v : v;
+  const color = good < 30 ? 'var(--bad)' : good < 60 ? 'var(--warn)' : 'var(--good)';
+  return (
+    <div className="state-row">
+      <span className="muted">{label}</span>
+      <div className="meter">
+        <div style={{ width: `${v}%`, background: color }} />
+      </div>
+      <span className="num">{Math.round(value)}</span>
+    </div>
+  );
+}
+
 function ElementModal({ b, E, id, onClose, iv, onFocusLog }: { b: Battle; E: EngineContext; id: string; onClose: () => void; iv: Iv; onFocusLog: (id: string) => void }) {
   const el = b.elements.find((x) => x.id === id);
+  const [edit, setEdit] = useState(false);
   const [patch, setPatch] = useState<Record<string, number>>({});
   const [comps, setComps] = useState<Record<string, number>>({});
   if (!el) return null;
@@ -425,14 +486,31 @@ function ElementModal({ b, E, id, onClose, iv, onFocusLog }: { b: Battle; E: Eng
   const fs = E.formationOf(el);
   const st = statusOf(E, el);
   const canEdit = !b.finished && el.status === 'active';
-  const log = b.log.filter((x) => x.refs?.includes(el.id) && x.level <= 1).slice(-30);
+  const editing = edit && canEdit;
+  const selfRef = `[[e:${el.id}]]`;
+  // Только события самого элемента (первая ссылка в записи — на него), без его имени в тексте.
+  const firstRef = (t: string) => /\[\[e:([^\]]+)\]\]/.exec(t)?.[1];
+  const ownText = (t: string) => {
+    const x = t.startsWith(selfRef) ? t.slice(selfRef.length).replace(/^:\s*/, '') : t.replace(` ${selfRef}`, '');
+    return x.replace(/^[а-яёa-z]/, (c) => c.toUpperCase());
+  };
+  const events = b.log
+    .filter((x) => x.level <= 1 && x.phase !== 'turn' && x.refs?.includes(el.id) && firstRef(x.text) === el.id)
+    .slice(-6)
+    .reverse()
+    .map((x) => ({ turn: x.turn, text: ownText(x.text) }));
   const dirty = Object.keys(patch).length + Object.keys(comps).length > 0;
+  const stateKeys = EDITABLE.filter((x) => !x.feature || rs.features[x.feature]);
+  const cancel = () => {
+    setPatch({});
+    setComps({});
+    setEdit(false);
+  };
   const apply = () => {
     const p: Record<string, unknown> = { ...patch };
     if (Object.keys(comps).length) p.comps = Object.entries(comps).map(([typeId, current]) => ({ typeId, current }));
     iv('editElement', { elementId: el.id, patch: p });
-    setPatch({});
-    setComps({});
+    cancel();
   };
   return (
     <Modal
@@ -445,84 +523,100 @@ function ElementModal({ b, E, id, onClose, iv, onFocusLog }: { b: Battle; E: Eng
       }
       onClose={onClose}
       footer={
-        <>
-          <Btn kind="ghost" onClick={() => onFocusLog(el.id)}>
-            Показать в журнале только его
-          </Btn>
-          <div className="grow" />
-          {canEdit && (
-            <Btn kind="primary" disabled={!dirty} onClick={apply} title="Изменение записывается в журнал как вмешательство ГМ">
+        editing ? (
+          <>
+            <span className="muted small grow">Изменение запишется в журнал как вмешательство ГМ.</span>
+            <Btn onClick={cancel}>Отмена</Btn>
+            <Btn kind="primary" disabled={!dirty} onClick={apply}>
               Применить
             </Btn>
-          )}
-          <Btn onClick={onClose}>Закрыть</Btn>
-        </>
+          </>
+        ) : (
+          <>
+            <Btn kind="ghost" onClick={() => onFocusLog(el.id)}>
+              Все события в журнале
+            </Btn>
+            <div className="grow" />
+            {canEdit && (
+              <Btn onClick={() => setEdit(true)} title="Пополнить или списать состав, поправить мораль, боезапас и т. п.">
+                Изменить…
+              </Btn>
+            )}
+            <Btn onClick={onClose}>Закрыть</Btn>
+          </>
+        )
       }
     >
-      <div className="meta" style={{ marginBottom: 12 }}>
+      <div className="meta" style={{ marginBottom: 14 }}>
         <span>{fs.name}</span>
         <span>опыт: {rs.experienceLevels[el.experience - 1]?.name}</span>
         <span>
-          людей {fmt0(E.personnel(el))} из {fmt0(el.startPersonnel)}
+          {fmt0(E.personnel(el))} из {fmt0(el.startPersonnel)} чел.
         </span>
       </div>
-      <div className="grid two">
+      <div className="grid two align-start">
         <div className="stack">
           {canEdit && (
-            <div className="row">
+            <div className="row" style={{ alignItems: 'flex-end' }}>
               <Field label="Приказ">
                 <Sel value={el.orderId} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={rs.orders.map((o) => ({ value: o.id, label: o.name }))} />
               </Field>
-              <Field label="Эшелон">
-                <Sel
-                  value={el.echelon}
-                  onChange={(v) => iv('editElement', { elementId: el.id, patch: { echelon: v } })}
-                  options={[
-                    { value: 'front', label: 'Первый' },
-                    { value: 'support', label: 'Второй' },
-                    { value: 'rear', label: 'Тыл' },
-                  ]}
-                />
-              </Field>
-              <Field label=" ">
-                <Check value={el.holdFast} onChange={(v) => iv('editElement', { elementId: el.id, patch: { holdFast: v } })} title="Не отходит добровольно; шанс паники вдвое ниже">
-                  стоять насмерть
-                </Check>
-              </Field>
+              {editing && (
+                <>
+                  <Field label="Эшелон">
+                    <Sel
+                      value={el.echelon}
+                      onChange={(v) => iv('editElement', { elementId: el.id, patch: { echelon: v } })}
+                      options={[
+                        { value: 'front', label: 'Первый' },
+                        { value: 'support', label: 'Второй' },
+                        { value: 'rear', label: 'Тыл' },
+                      ]}
+                    />
+                  </Field>
+                  <Check value={el.holdFast} onChange={(v) => iv('editElement', { elementId: el.id, patch: { holdFast: v } })} title="Не отходит добровольно; шанс паники вдвое ниже">
+                    стоять насмерть
+                  </Check>
+                </>
+              )}
             </div>
           )}
           <table className="tbl compact">
             <thead>
               <tr>
                 <th>Состав</th>
-                <th className="num">Было</th>
-                <th className="num">Сейчас</th>
-                <th className="num" data-tip={'Люди: убито / ранено / пропало.\nТехника: уничтожено / повреждено / брошено.'}>
-                  Потери
-                </th>
+                <th className="num">В строю</th>
+                <th className="num">Потери</th>
               </tr>
             </thead>
             <tbody>
               {el.comps.map((c) => {
                 const t = E.type(c.typeId);
+                const pers = t.kind === 'personnel';
+                const lost = c.start - c.current;
                 return (
                   <tr key={c.typeId}>
                     <td>{t.name}</td>
-                    <td className="num">{c.start}</td>
-                    <td className="num">
-                      {canEdit ? (
-                        <Num value={comps[c.typeId] ?? c.current} onChange={(v) => setComps({ ...comps, [c.typeId]: v })} min={0} integer width={70} title="Пополнение или списание (ГМ)" />
+                    <td className="num nowrap">
+                      {editing ? (
+                        <Num value={comps[c.typeId] ?? c.current} onChange={(v) => setComps({ ...comps, [c.typeId]: v })} min={0} integer width={64} title="Пополнение или списание" />
                       ) : (
-                        c.current
-                      )}
+                        <b>{c.current}</b>
+                      )}{' '}
+                      <span className="faint">из {c.start}</span>
                     </td>
-                    <td className="num small nowrap">{t.kind === 'personnel' ? `${c.kia} / ${c.wia} / ${c.mia}` : `${c.destroyed} / ${c.damaged} / ${c.abandoned}`}</td>
+                    <td
+                      className="num"
+                      data-tip={pers ? `убито ${c.kia}, ранено ${c.wia}, пропало ${c.mia}` : `уничтожено ${c.destroyed}, повреждено ${c.damaged}, брошено ${c.abandoned}`}
+                    >
+                      {lost > 0 ? <span className="bad">−{lost}</span> : <span className="faint">—</span>}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          {canEdit && (rs.features.ammo || rs.features.fuel) && (
+          {editing && (rs.features.ammo || rs.features.fuel) && (
             <div className="row">
               <span className="muted small">Подвезти:</span>
               {rs.features.ammo && (
@@ -539,28 +633,40 @@ function ElementModal({ b, E, id, onClose, iv, onFocusLog }: { b: Battle; E: Eng
           )}
         </div>
         <div className="stack">
-          <div className="fields" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
-            {EDITABLE.filter((x) => !x.feature || rs.features[x.feature]).map((x) => (
-              <Field key={x.key} label={x.label}>
-                {canEdit ? (
-                  <Num value={patch[x.key] ?? Math.round((el[x.key] as number) * 10) / 10} onChange={(v) => setPatch({ ...patch, [x.key]: v })} min={0} max={100} width="100%" />
+          {editing ? (
+            <div className="fields" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
+              {stateKeys.map((x) => (
+                <Field key={x.key} label={x.label}>
+                  <Num value={patch[x.key] ?? Math.round(el[x.key] as number)} onChange={(v) => setPatch({ ...patch, [x.key]: v })} min={0} max={100} width="100%" />
+                </Field>
+              ))}
+            </div>
+          ) : (
+            <div className="state-list">
+              {stateKeys.map((x) => (
+                <StateRow key={x.key} label={x.label} value={el[x.key] as number} inverse={HIGH_IS_BAD.has(x.key)} />
+              ))}
+            </div>
+          )}
+          {!editing && (
+            <div>
+              <div className="small muted" style={{ marginBottom: 4 }}>
+                Последние события
+              </div>
+              <div className="stack small" style={{ gap: 4 }}>
+                {events.length ? (
+                  events.map((x, i) => (
+                    <div key={i}>
+                      <span className="faint">ход {x.turn} · </span>
+                      <RichText text={x.text} b={b} />
+                    </div>
+                  ))
                 ) : (
-                  <span className="num">{Math.round(el[x.key] as number)}</span>
+                  <span className="faint">Событий пока нет.</span>
                 )}
-              </Field>
-            ))}
-          </div>
-          <div className="stack small" style={{ gap: 3, maxHeight: 200, overflow: 'auto' }}>
-            {log.length ? (
-              log.map((x, i) => (
-                <div key={i}>
-                  <span className="faint">[{x.turn}]</span> <RichText text={x.text} b={b} />
-                </div>
-              ))
-            ) : (
-              <span className="faint">Событий пока нет.</span>
-            )}
-          </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </Modal>
@@ -704,62 +810,6 @@ function Charts({ b }: { b: Battle }) {
 
 // ------------------------------------------------------------------ итоги
 
-function UnitTable({ u }: { u: UnitSummary }) {
-  const p = u.personnel;
-  return (
-    <table className="tbl compact">
-      <tbody>
-        <tr>
-          <td>Личный состав</td>
-          <td className="num">
-            <b>{fmt0(p.current)}</b> из {fmt0(p.start)}
-          </td>
-        </tr>
-        <tr>
-          <td>Потери</td>
-          <td className="num" data-tip={`убито ${fmt0(p.kia)}, ранено ${fmt0(p.wia)}, пропало без вести ${fmt0(p.mia)}`}>
-            <b className={p.lossPct > 25 ? 'bad' : ''}>
-              {fmt0(p.losses)} ({pct(p.lossPct)})
-            </b>{' '}
-            <span className="faint">
-              {fmt0(p.kia)} / {fmt0(p.wia)} / {fmt0(p.mia)}
-            </span>
-          </td>
-        </tr>
-        {u.equipment.map((q) => (
-          <tr key={q.typeId}>
-            <td>{q.name}</td>
-            <td className="num" data-tip={q.losses ? `уничтожено ${q.destroyed}, повреждено ${q.damaged}, брошено ${q.abandoned}` : undefined}>
-              <b>{q.current}</b> из {q.start}
-              {q.losses > 0 && <span className="bad"> −{q.losses}</span>}
-            </td>
-          </tr>
-        ))}
-        <tr>
-          <td>Боеспособность</td>
-          <td className="num">
-            <b>{pct(u.combatEffectiveness)}</b>
-          </td>
-        </tr>
-        <tr>
-          <td>Организация</td>
-          <td className="num">{pct(u.organization)}</td>
-        </tr>
-        <tr>
-          <td>Мораль</td>
-          <td className="num">{Math.round(u.morale)}</td>
-        </tr>
-        <tr>
-          <td>Снабжение</td>
-          <td className="num" data-tip={`боезапас ${pct(u.supply.ammo)}, топливо ${pct(u.supply.fuel)}, снаряжение ${pct(u.supply.equipment)}`}>
-            БК {pct(u.supply.ammo)}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  );
-}
-
 function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onElement: (id: string) => void }) {
   const lib = useApp((s) => s.formations);
   const linked = b.scenario.sides.some((s) => s.formations.some((f) => f.templateId && lib[f.templateId]));
@@ -775,20 +825,24 @@ function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onE
           {b.finished ? `${result.endReason}. ` : ''}Ходов: {result.turns}.
         </div>
       </div>
+      <Card tight>
+        <SideCompare b={b} result={result} full />
+      </Card>
       <div className="grid two">
         {SIDES.map((s) => {
           const r = result.sides[s];
+          if (!r.objectives.length) return <div key={s} />;
           return (
-            <Card key={s} title={<span style={{ color: b.sides[s].color }}>{r.name}</span>} actions={<span className="muted small">задачи {pct(r.score * 100)}</span>}>
-              <UnitTable u={r} />
-              <div style={{ marginTop: 10 }}>
-                {r.objectives.map((o) => (
-                  <div key={o.objective.id} data-tip={o.explanation} style={{ marginBottom: 2 }}>
-                    <b className={o.score >= 0.999 ? 'good' : o.score < 0.4 ? 'bad' : 'warn'}>{pct(o.score * 100)}</b> {o.label}
-                  </div>
-                ))}
+            <div key={s} className="objectives">
+              <div className="small" style={{ color: b.sides[s].color, fontWeight: 600, marginBottom: 4 }}>
+                Задачи: {r.name}
               </div>
-            </Card>
+              {r.objectives.map((o) => (
+                <div key={o.objective.id} data-tip={o.explanation}>
+                  <b className={o.score >= 0.999 ? 'good' : o.score < 0.4 ? 'bad' : 'warn'}>{pct(o.score * 100)}</b> {o.label}
+                </div>
+              ))}
+            </div>
           );
         })}
       </div>

@@ -60,6 +60,26 @@ export function RichText({ text, b, onElement }: { text: string; b: Battle; onEl
   );
 }
 
+/** Потери сторон за ход — справа в заголовке хода. */
+function TurnLosses({ b, turn }: { b: Battle; turn: number }) {
+  const cur = b.history.find((h) => h.turn === turn);
+  const prev = b.history.find((h) => h.turn === turn - 1);
+  if (!cur || !prev) return null;
+  const sides = (['A', 'B'] as const).map((s) => ({ s, p: Math.max(0, prev.sides[s].personnel - cur.sides[s].personnel), v: Math.max(0, prev.sides[s].vehicles - cur.sides[s].vehicles) }));
+  if (sides.every((x) => !x.p && !x.v)) return null;
+  const tip = `Потери за ход:\n${sides.map((x) => `${b.sides[x.s].name}: ${x.p} чел.${x.v ? `, техника ${x.v}` : ''}`).join('\n')}`;
+  return (
+    <span className="turn-loss" data-tip={tip}>
+      {sides.map((x) => (
+        <span key={x.s} style={{ color: b.sides[x.s].color, opacity: x.p || x.v ? 1 : 0.45 }}>
+          {x.p ? `−${x.p}` : '0'}
+          {x.v ? <small> / {x.v} ед.</small> : null}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function Factors({ e }: { e: LogEntry }) {
   return (
     <div className="factors">
@@ -208,12 +228,13 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
         {shown.map(({ e, i }) =>
           e.phase === 'turn' ? (
             <div key={i} className="log-turn">
-              {e.text}
+              <span className="grow">{e.text}</span>
+              <TurnLosses b={b} turn={e.turn} />
             </div>
           ) : (
             <div
               key={i}
-              className={`log-entry ${e.severity} lvl${e.level}${e.factors ? ' has-f' : ''}`}
+              className={`log-entry sev-${e.severity} lvl${e.level} ph-${e.phase}${e.factors ? ' has-f' : ''}`}
               onClick={() => {
                 if (!e.factors) return;
                 const n = new Set(open);
@@ -226,7 +247,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
               <span className="ph">{ICON[e.phase] ?? '·'}</span>
               <span>
                 <RichText text={e.text} b={b} onElement={props.onElement} />
-                {e.factors && !open.has(i) && <span className="faint"> ⓘ</span>}
+                {e.factors && !open.has(i) && <span className="fx-hint"> ⓘ</span>}
               </span>
               {open.has(i) && e.factors && <Factors e={e} />}
             </div>

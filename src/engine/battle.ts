@@ -263,7 +263,7 @@ export function stepTurn(b: Battle): void {
     el.turnPersonnelLost = 0;
   }
   const t0 = (b.turn - 1) * b.ruleset.turnMinutes;
-  E.log({ phase: 'turn', level: 0, text: `Ход ${b.turn} (${fmtTime(t0)}–${fmtTime(t0 + b.ruleset.turnMinutes)}). Дистанция: ${E.band?.name ?? '—'}.` });
+  E.log({ phase: 'turn', level: 0, text: `Ход ${b.turn} · ${fmtTime(t0)} · ${E.band?.name ?? '—'}` });
 
   phaseDetection(E);
   const ini = phaseInitiative(E);
@@ -421,9 +421,12 @@ function phaseInitiative(E: EngineContext): Initiative {
   b.sides.A.initiative = Math.round(scores.A);
   b.sides.B.initiative = Math.round(scores.B);
   const sequential = k.initiativeSequential >= 0.5;
+  // В обычном журнале инициатива видна, только когда переходит к другой стороне (или из-за засады).
+  let prev: SideId | undefined;
+  for (let i = b.log.length - 1; i >= 0 && !prev; i--) if (b.log[i].phase === 'initiative') prev = b.log[i].side;
   E.log({
     phase: 'initiative',
-    level: 1,
+    level: !prev || prev !== first || reason ? 1 : 2,
     side: first,
     severity: 'info',
     text: `Инициатива: ${s(first)}${reason} (${Math.round(scores[first])} против ${Math.round(scores[E.enemyOf(first)])}). ${
