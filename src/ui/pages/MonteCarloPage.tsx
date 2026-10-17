@@ -2,10 +2,10 @@
 
 import { Fragment, useMemo, useState } from 'react';
 import { create } from 'zustand';
-import { createBattle, newId, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
+import { createBattle, newId, randomSeed, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
 import { Histogram, StackBar } from '../components/Charts';
-import { Link } from '../components/Link';
-import { Btn, Card, Field, Info, Menu, Num, Section, Txt, fmt1 } from '../components/ui';
+import { Crumbs } from '../components/Crumbs';
+import { Btn, Card, Field, Info, Menu, Num, Section, fmt1 } from '../components/ui';
 import { useTabState } from '../hooks';
 import { exportText, openTab, putBattle, toast, useApp, type Tab } from '../store';
 
@@ -23,7 +23,6 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
   const sc = st.scenarios[tab.ref!];
   const run = useMC((s) => s.runs[tab.ref!]);
   const [n, setN] = useTabState(`${tab.key}:n`, st.settings.mcRuns);
-  const [seed, setSeed] = useTabState(`${tab.key}:seed`, sc?.seed ?? 'mc');
   const [metric, setMetric] = useTabState<string>(`${tab.key}:metric`, 'personnelLossPct');
   if (!sc) return <div className="empty">Сценарий не найден.</div>;
   const rs = st.rulesets[sc.rulesetId];
@@ -38,7 +37,7 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
         sc,
         rs,
         n,
-        seed,
+        randomSeed(),
         (done) => setRun(sc.id, { done }),
         () => !!useMC.getState().runs[sc.id]?.cancel,
       );
@@ -52,21 +51,14 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
   const colors = { A: sc.sides[0].color, B: sc.sides[1].color };
   return (
     <div className="page">
+      <Crumbs items={[{ label: 'Сценарии', section: 'scenarios' }, { label: sc.name, open: ['scenario', sc.id] }]} />
       <div className="page-head">
-        <h1 className="grow">
-          Прогоны:{' '}
-          <Link kind="scenario" refId={sc.id}>
-            {sc.name}
-          </Link>
-        </h1>
+        <h1 className="grow">Прогоны</h1>
       </div>
       <Card>
         <div className="row" style={{ alignItems: 'flex-end', gap: 14 }}>
           <Field label="Число прогонов">
             <Num value={n} onChange={setN} min={1} max={20000} integer width={110} />
-          </Field>
-          <Field label="Базовый сид" hint="Прогон №k использует сид «база#k» — любой прогон можно повторить и открыть как бой.">
-            <Txt value={seed} onChange={setSeed} width={200} />
           </Field>
           {run?.running ? (
             <>
@@ -288,7 +280,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
     const st = useApp.getState();
     const sc = st.scenarios[scId];
     const rs = st.rulesets[sc.rulesetId];
-    const b = createBattle(sc, rs, { seed: x.seed, id: newId('bt'), name: `${sc.name} · прогон ${x.index + 1} (${x.seed})` });
+    const b = createBattle(sc, rs, { seed: x.seed, id: newId('bt'), name: `${sc.name} · прогон ${x.index + 1}` });
     if (toEnd) runToEnd(b);
     putBattle(b);
     openTab('battle', b.id);
@@ -299,7 +291,6 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
         <thead>
           <tr>
             {th('index', '№')}
-            <th>Сид</th>
             <th>Исход</th>
             {th('turns', 'Ходов')}
             {th('A.personnelLoss', `Потери ${r.sideNames.A}`, colors.A)}
@@ -313,7 +304,6 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
           {rows.slice(page * per, page * per + per).map((x) => (
             <tr key={x.index}>
               <td className="num">{x.index + 1}</td>
-              <td className="mono small">{x.seed}</td>
               <td className="small" style={{ color: x.winner ? colors[x.winner] : undefined }}>
                 {x.headline}
               </td>
@@ -330,7 +320,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
                 <Btn sm kind="ghost" onClick={() => openRun(x, true)} title="Открыть этот бой целиком, с журналом">
                   Открыть
                 </Btn>{' '}
-                <Btn sm kind="ghost" onClick={() => openRun(x, false)} title="Пройти этот бой пошагово (тот же сид)">
+                <Btn sm kind="ghost" onClick={() => openRun(x, false)} title="Пройти этот же бой пошагово, принимая решения">
                   Пошагово
                 </Btn>
               </td>
@@ -357,7 +347,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
 
 function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): string {
   const typeIds = [...new Set(r.runs.flatMap((x) => SIDES.flatMap((s) => Object.keys(x.sides[s].equipmentLoss))))];
-  const head = ['run', 'seed', 'outcome', 'winner', 'turns', 'end'];
+  const head = ['run', 'outcome', 'winner', 'turns', 'end'];
   for (const s of SIDES) {
     head.push(`${s}_personnel_loss`, `${s}_personnel_loss_pct`, `${s}_kia`, `${s}_wia`, `${s}_mia`, `${s}_value_loss_pct`, `${s}_ce`, `${s}_org`, `${s}_morale`, `${s}_ammo`, `${s}_score`);
     for (const id of typeIds) head.push(`${s}_loss_${types.find((t) => t.id === id)?.name ?? id}`);
@@ -365,7 +355,7 @@ function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): stri
   const q = (v: string | number) => (typeof v === 'number' ? String(Math.round(v * 100) / 100) : `"${v.replace(/"/g, '""')}"`);
   const lines = [head.map((h) => q(h)).join(';')];
   for (const x of r.runs) {
-    const row: (string | number)[] = [x.index + 1, x.seed, x.outcomeName, x.winner ? r.sideNames[x.winner] : '', x.turns, x.endReason];
+    const row: (string | number)[] = [x.index + 1, x.outcomeName, x.winner ? r.sideNames[x.winner] : '', x.turns, x.endReason];
     for (const s of SIDES) {
       const d = x.sides[s];
       row.push(d.personnelLoss, d.personnelLossPct, d.kia, d.wia, d.mia, d.valueLossPct, d.ce, d.organization, d.morale, d.ammo, d.score);
@@ -377,7 +367,7 @@ function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): stri
 }
 
 function summaryText(r: MonteCarloResult, name: string): string {
-  const lines = [`Сценарий «${name}»: ${r.n} прогонов (базовый сид ${r.baseSeed}).`, `Победа ${r.sideNames.A}: ${fmt1(r.winA)}% · ничья: ${fmt1(r.draw)}% · победа ${r.sideNames.B}: ${fmt1(r.winB)}%.`];
+  const lines = [`Сценарий «${name}»: ${r.n} прогонов.`, `Победа ${r.sideNames.A}: ${fmt1(r.winA)}% · ничья: ${fmt1(r.draw)}% · победа ${r.sideNames.B}: ${fmt1(r.winB)}%.`];
   for (const o of r.outcomes) lines.push(`  ${o.label}: ${fmt1(o.pct)}%`);
   for (const m of r.metrics) {
     const side = m.side ? `${r.sideNames[m.side]} — ` : '';

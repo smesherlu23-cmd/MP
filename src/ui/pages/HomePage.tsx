@@ -39,7 +39,7 @@ export function HomePage() {
                   <Btn sm kind="ghost" onClick={() => openTab('montecarlo', x.id)} title="Массовые прогоны">
                     ∑
                   </Btn>
-                  <Btn sm kind="ghost" disabled={!rs} onClick={() => rs && startBattle(x, rs, x.seed)} title="Начать бой">
+                  <Btn sm kind="ghost" disabled={!rs} onClick={() => rs && startBattle(x, rs)} title="Начать бой">
                     ▶
                   </Btn>
                 </div>
@@ -74,7 +74,7 @@ export function HomePage() {
         <a href="#" onClick={(e) => (e.preventDefault(), openPalette())}>
           Ctrl+K
         </a>{' '}
-        — найти любое подразделение, сценарий или команду · Ctrl+Z / Ctrl+Y — отменить / повторить · Ctrl+B — навигатор · Ctrl+W — закрыть вкладку
+        — найти любое подразделение, сценарий или команду · Alt+← / Alt+→ — назад / вперёд · Ctrl+Z / Ctrl+Y — отменить / повторить · Ctrl+B — навигатор
       </p>
     </div>
   );

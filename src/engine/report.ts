@@ -68,7 +68,7 @@ export function formatReport(b: Battle, opts: { includeLog?: boolean; logLevel?:
   const lines: string[] = [];
   lines.push(`# ${b.name}`);
   const cond = b.ruleset.conditions.map((c) => `${c.name}: ${c.options.find((o) => o.id === b.conditions[c.id])?.name ?? '—'}`).join(' · ');
-  lines.push(`${cond}. Сид: ${b.seed}. Ходов: ${b.turn} (≈${Math.round((b.turn * b.ruleset.turnMinutes) / 6) / 10} ч).`);
+  lines.push(`${cond}. Ходов: ${b.turn} (≈${Math.round((b.turn * b.ruleset.turnMinutes) / 6) / 10} ч).`);
   if (r) {
     lines.push('', `ИТОГ: ${r.headline}. ${r.endReason}.`, `Оценка выполнения задач: ${b.sides.A.name} ${p0(r.sides.A.score * 100)} / ${b.sides.B.name} ${p0(r.sides.B.score * 100)}.`);
     for (const side of ['A', 'B'] as const) lines.push('', ...sideBlock(r.sides[side]));

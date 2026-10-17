@@ -1,0 +1,145 @@
+// Навигатор слева: разделы программы сверху, список выбранного раздела ниже, справка и настройки внизу.
+// Раздел открытой вкладки подсвечен — всегда видно, где находишься.
+
+import { useState } from 'react';
+import { SECTIONS, sectionOf } from '../nav';
+import { DND_LIB } from '../pages/FormationPage';
+import { createFormation, createRuleset, createScenario, openTab, updateSettings, useApp, type NavSection, type TabKind } from '../store';
+
+function NavItem(props: { icon: string; label: string; count?: number; selected?: boolean; here?: boolean; onClick: () => void; title?: string }) {
+  return (
+    <button className={`nav-item${props.selected ? ' selected' : ''}${props.here ? ' here' : ''}`} onClick={props.onClick} title={props.title}>
+      <span className="nav-icon">{props.icon}</span>
+      <span className="grow">{props.label}</span>
+      {props.count !== undefined && <span className="nav-count">{props.count}</span>}
+    </button>
+  );
+}
+
+export function Navigator() {
+  const s = useApp();
+  const sec = s.settings.navSection ?? 'scenarios';
+  const activeTab = s.tabs.find((t) => t.key === s.active);
+  const here = sectionOf(activeTab);
+  const [filters, setFilters] = useState<Partial<Record<NavSection, string>>>({});
+  const q = (filters[sec] ?? '').trim().toLowerCase();
+  const match = (name: string) => !q || name.toLowerCase().includes(q);
+  const counts: Record<NavSection, number> = {
+    scenarios: Object.keys(s.scenarios).length,
+    units: Object.keys(s.formations).length,
+    battles: Object.keys(s.battleIndex).length,
+    rulesets: Object.keys(s.rulesets).length,
+  };
+  const meta = SECTIONS.find((x) => x.id === sec)!;
+  const create = () => (sec === 'scenarios' ? createScenario() : sec === 'units' ? createFormation() : sec === 'rulesets' ? createRuleset() : undefined);
+  const isOpen = (kind: TabKind, ref: string) =>
+    activeTab?.ref === ref && activeTab.kind === kind;
+
+  const row = (key: string, name: string, onOpen: (bg: boolean) => void, opts: { sub?: string; active?: boolean; dragLib?: string } = {}) => (
+    <div
+      key={key}
+      className={`side-item${opts.active ? ' active' : ''}`}
+      title={opts.dragLib ? `${name}\nМожно перетащить в структуру подразделения или на сторону сценария` : name}
+      draggable={!!opts.dragLib}
+      onDragStart={(e) => {
+        if (!opts.dragLib) return;
+        e.dataTransfer.setData(DND_LIB, opts.dragLib);
+        e.dataTransfer.effectAllowed = 'copy';
+      }}
+      onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}
+      onAuxClick={(e) => e.button === 1 && onOpen(true)}
+    >
+      <span>{name}</span>
+      {opts.sub && <span className="sub">{opts.sub}</span>}
+    </div>
+  );
+  const group = (title: string, items: React.ReactNode[]) =>
+    items.length ? (
+      <div key={`g:${title}`} className="nav-group">
+        <div className="nav-group-title">{title}</div>
+        {items}
+      </div>
+    ) : null;
+
+  let list: React.ReactNode;
+  let empty = '';
+  if (sec === 'scenarios') {
+    const battlesBy = new Map<string, number>();
+    for (const b of Object.values(s.battleIndex)) battlesBy.set(b.scenarioId, (battlesBy.get(b.scenarioId) ?? 0) + 1);
+    const items = Object.values(s.scenarios)
+      .filter((x) => match(x.name))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+      .map((x) =>
+        row(x.id, x.name, (bg) => openTab('scenario', x.id, { background: bg }), {
+          sub: battlesBy.get(x.id) ? `боёв: ${battlesBy.get(x.id)}` : undefined,
+          active: (activeTab?.kind === 'scenario' || activeTab?.kind === 'montecarlo') && activeTab.ref === x.id ? true : !!activeTab?.ref?.startsWith(`sc:${x.id}:`),
+        }),
+      );
+    list = items;
+    empty = q ? 'Ничего не найдено' : 'Сценариев пока нет. Сценарий — это обстановка и две стороны с их подразделениями.';
+  } else if (sec === 'units') {
+    const units = Object.values(s.formations)
+      .filter((x) => match(x.name))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    const rsIds = [...new Set(units.map((u) => u.rulesetId ?? ''))];
+    const item = (x: (typeof units)[number]) => row(x.id, x.name, (bg) => openTab('formation', `lib:${x.id}`, { background: bg }), { sub: x.level, active: isOpen('formation', `lib:${x.id}`), dragLib: x.id });
+    // Подразделения разных наборов правил — отдельными группами: видно, к какому набору относится каждое.
+    list = rsIds.length > 1 ? rsIds.map((id) => group(s.rulesets[id]?.name ?? 'Без набора правил', units.filter((u) => (u.rulesetId ?? '') === id).map(item))) : units.map(item);
+    empty = q ? 'Ничего не найдено' : 'Библиотека пуста. Здесь хранятся подразделения-шаблоны: из них собираются более крупные и стороны сценариев.';
+  } else if (sec === 'battles') {
+    const battles = Object.values(s.battleIndex)
+      .filter((x) => match(x.name))
+      .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+    const byScenario = new Map<string, typeof battles>();
+    for (const b of battles) byScenario.set(b.scenarioId, [...(byScenario.get(b.scenarioId) ?? []), b]);
+    list = [...byScenario.entries()].map(([scId, items]) => {
+      const scName = s.scenarios[scId]?.name ?? items[0].name.split(' · ')[0];
+      return group(
+        scName,
+        items.map((b) =>
+          row(b.id, b.name.startsWith(`${scName} · `) ? b.name.slice(scName.length + 3) : b.name, (bg) => openTab('battle', b.id, { background: bg }), {
+            sub: b.finished ? (b.headline ?? 'итог') : `ход ${b.turn}`,
+            active: isOpen('battle', b.id),
+          }),
+        ),
+      );
+    });
+    empty = q ? 'Ничего не найдено' : 'Боёв пока нет. Бой начинается со страницы сценария — кнопка «▶ Начать бой».';
+  } else {
+    list = Object.values(s.rulesets)
+      .filter((x) => match(x.name))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+      .map((x) => row(x.id, x.name, (bg) => openTab('ruleset', x.id, { background: bg }), { active: isOpen('ruleset', x.id) }));
+    empty = q ? 'Ничего не найдено' : 'Наборов правил нет.';
+  }
+  const hasItems = Array.isArray(list) ? list.some(Boolean) : !!list;
+
+  return (
+    <aside className={`sidebar nav${s.settings.sidebar ? '' : ' hidden'}`}>
+      <nav className="nav-sections">
+        <NavItem icon="⌂" label="Главная" here={activeTab?.kind === 'home'} onClick={() => openTab('home')} />
+        {SECTIONS.map((x) => (
+          <NavItem key={x.id} icon={x.icon} label={x.label} count={counts[x.id]} selected={sec === x.id} here={here === x.id} onClick={() => updateSettings({ navSection: x.id })} />
+        ))}
+      </nav>
+      <div className="nav-panel">
+        <div className="nav-panel-head">{meta.label}</div>
+        {meta.create && (
+          <button className="nav-create" onClick={create}>
+            + {meta.create}
+          </button>
+        )}
+        {counts[sec] > 6 && (
+          <div className="nav-filter">
+            <input type="search" placeholder="Фильтр…" value={filters[sec] ?? ''} onChange={(e) => setFilters({ ...filters, [sec]: e.target.value })} />
+          </div>
+        )}
+        <div className="nav-list">{hasItems ? list : <div className="nav-empty">{empty}</div>}</div>
+      </div>
+      <nav className="nav-bottom">
+        <NavItem icon="?" label="Справка" here={activeTab?.kind === 'help'} onClick={() => openTab('help')} />
+        <NavItem icon="⚙" label="Настройки" here={activeTab?.kind === 'settings'} onClick={() => openTab('settings')} />
+      </nav>
+    </aside>
+  );
+}

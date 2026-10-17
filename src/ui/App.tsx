@@ -2,25 +2,25 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { BattlePage } from './pages/BattlePage';
-import { DND_LIB, FormationPage } from './pages/FormationPage';
+import { FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
 import { HomePage } from './pages/HomePage';
 import { MonteCarloPage } from './pages/MonteCarloPage';
 import { RulesetPage } from './pages/RulesetPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { Navigator } from './components/Navigator';
 import { Palette, openPalette } from './components/Palette';
+import { goBack, goForward, useNav } from './nav';
 import { Btn, Menu } from './components/ui';
+import { desktop } from './storage';
 import {
   activateTab,
+  alertDialog,
   closeTab,
-  createFormation,
-  createRuleset,
-  createScenario,
   dismissToast,
   importFile,
   moveTab,
-  openTab,
   redo,
   resolveFormation,
   undo,
@@ -69,7 +69,11 @@ function useTabTitle(t: Tab): string {
     case 'battle': {
       const b = battles[t.ref!];
       const m = s.battleIndex[t.ref!];
-      return `${b?.name ?? m?.name ?? 'Бой'}${b ? ` · ход ${b.turn}` : ''}`;
+      const name = b?.name ?? m?.name ?? 'Бой';
+      const turn = b ? ` · ход ${b.turn}` : '';
+      // Отличающаяся часть — вперёд: вкладки боёв одного сценария иначе выглядят одинаково.
+      const i = name.lastIndexOf(' · ');
+      return i > 0 ? `${name.slice(i + 3)}${turn} — ${name.slice(0, i)}` : `${name}${turn}`;
     }
   }
 }
@@ -111,101 +115,11 @@ function TabItem({ t, active }: { t: Tab; active: boolean }) {
   );
 }
 
-function SideSection(props: { id: string; title: string; count: number; onAdd?: () => void; addTitle?: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(() => localStorage.getItem(`warsim-side-${props.id}`) !== '0');
-  return (
-    <div className="side-section">
-      <div
-        className="side-head"
-        onClick={() => {
-          setOpen(!open);
-          localStorage.setItem(`warsim-side-${props.id}`, open ? '0' : '1');
-        }}
-      >
-        <span>{open ? '▾' : '▸'}</span>
-        <span className="grow">
-          {props.title} <span className="count">{props.count}</span>
-        </span>
-        {props.onAdd && (
-          <Btn
-            kind="ghost"
-            sm
-            icon
-            title={props.addTitle}
-            onClick={(e) => {
-              e.stopPropagation();
-              props.onAdd!();
-            }}
-          >
-            +
-          </Btn>
-        )}
-      </div>
-      {open && <div className="side-items">{props.children}</div>}
-    </div>
-  );
-}
-
-function Sidebar() {
-  const s = useApp();
-  const [q, setQ] = useState('');
-  const [allBattles, setAllBattles] = useState(false);
-  const match = (name: string) => !q || name.toLowerCase().includes(q.toLowerCase());
-  const activeTab = s.tabs.find((t) => t.key === s.active);
-  const isActive = (kind: TabKind, ref?: string) => activeTab?.kind === kind && activeTab.ref === ref;
-  const item = (kind: TabKind, ref: string, name: string, sub?: string, dragLib?: string) => (
-    <div
-      key={ref}
-      className={`side-item${isActive(kind, ref) ? ' active' : ''}`}
-      title={dragLib ? `${name}\nМожно перетащить в структуру подразделения или на сторону сценария` : name}
-      draggable={!!dragLib}
-      onDragStart={(e) => {
-        if (!dragLib) return;
-        e.dataTransfer.setData(DND_LIB, dragLib);
-        e.dataTransfer.effectAllowed = 'copy';
-      }}
-      onClick={(e) => openTab(kind, ref, { background: e.ctrlKey || e.metaKey })}
-      onAuxClick={(e) => e.button === 1 && openTab(kind, ref, { background: true })}
-    >
-      <span>{name}</span>
-      {sub && <span className="sub">{sub}</span>}
-    </div>
-  );
-  const scenarios = Object.values(s.scenarios).filter((x) => match(x.name)).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  const formations = Object.values(s.formations).filter((x) => match(x.name)).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  const rulesets = Object.values(s.rulesets).filter((x) => match(x.name)).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-  const battles = Object.values(s.battleIndex)
-    .filter((x) => match(x.name))
-    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
-  return (
-    <aside className={`sidebar${s.settings.sidebar ? '' : ' hidden'}`}>
-      <div className="sidebar-search">
-        <input type="search" placeholder="Поиск…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: '100%' }} />
-      </div>
-      <SideSection id="sc" title="Сценарии" count={scenarios.length} onAdd={() => createScenario()} addTitle="Новый сценарий">
-        {scenarios.length ? scenarios.map((x) => item('scenario', x.id, x.name)) : <div className="side-empty">Нет сценариев</div>}
-      </SideSection>
-      <SideSection id="fm" title="Подразделения" count={formations.length} onAdd={() => createFormation()} addTitle="Новое подразделение">
-        {formations.length ? formations.map((x) => item('formation', `lib:${x.id}`, x.name, x.level, x.id)) : <div className="side-empty">Библиотека пуста</div>}
-      </SideSection>
-      <SideSection id="bt" title="Бои" count={battles.length}>
-        {battles.length ? (
-          battles.slice(0, allBattles || q ? 200 : 8).map((x) => item('battle', x.id, x.name, x.finished ? 'итог' : `ход ${x.turn}`))
-        ) : (
-          <div className="side-empty">Боёв пока нет</div>
-        )}
-        {!q && !allBattles && battles.length > 8 && (
-          <div className="side-empty">
-            <a href="#" onClick={(e) => (e.preventDefault(), setAllBattles(true))}>
-              показать все ({battles.length})
-            </a>
-          </div>
-        )}
-      </SideSection>
-      <SideSection id="rs" title="Наборы правил" count={rulesets.length} onAdd={() => createRuleset()} addTitle="Новый набор правил">
-        {rulesets.map((x) => item('ruleset', x.id, x.name))}
-      </SideSection>
-    </aside>
+async function showAbout() {
+  const info = await desktop?.appInfo?.();
+  await alertDialog(
+    'WarSim — симулятор боя',
+    `Модульный симулятор боя для ГМ варгейма и ролевых войн.${info ? `\nВерсия ${info.version}.\nПапка данных: ${info.dataDir}` : '\nВерсия для браузера: данные хранятся в браузере.'}`,
   );
 }
 
@@ -249,7 +163,7 @@ function DialogHost() {
           )}
         </div>
         <div className="modal-foot">
-          <Btn onClick={() => d.resolve(null)}>Отмена</Btn>
+          {!d.alert && <Btn onClick={() => d.resolve(null)}>Отмена</Btn>}
           <Btn kind={d.danger ? 'danger' : 'primary'} onClick={ok}>
             {d.okText ?? 'ОК'}
           </Btn>
@@ -309,11 +223,13 @@ function Page({ t }: { t: Tab }) {
 export function App() {
   const s = useApp();
   const hist = useHistory();
+  const nav = useNav();
   const active = useMemo(() => s.tabs.find((t) => t.key === s.active) ?? s.tabs[0], [s.tabs, s.active]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = s.settings.theme;
     document.documentElement.dataset.density = s.settings.density;
+    desktop?.setWindowTheme?.(s.settings.theme);
   }, [s.settings.theme, s.settings.density]);
 
   useEffect(() => {
@@ -333,6 +249,12 @@ export function App() {
           e.preventDefault();
           activateTab(t.key);
         }
+      } else if (e.altKey && !e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const t = e.target as HTMLElement;
+        if (t.closest('input, textarea, select')) return;
+        e.preventDefault();
+        if (e.key === 'ArrowLeft') goBack();
+        else goForward();
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.code === 'KeyK' || e.code === 'KeyP')) {
         e.preventDefault();
         openPalette();
@@ -349,8 +271,19 @@ export function App() {
         else undo();
       }
     };
+    // Боковые кнопки мыши — назад и вперёд, как в браузере.
+    const onMouse = (e: MouseEvent) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      if (e.button === 3) goBack();
+      else goForward();
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('mouseup', onMouse);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mouseup', onMouse);
+    };
   }, []);
 
   return (
@@ -358,6 +291,14 @@ export function App() {
       <header className="topbar">
         <div className="brand" title="Показать/скрыть навигатор (Ctrl+B)" onClick={() => updateSettings({ sidebar: !s.settings.sidebar })}>
           ☰ WARSIM
+        </div>
+        <div className="nav-arrows">
+          <button disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
+            ‹
+          </button>
+          <button disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
+            ›
+          </button>
         </div>
         <nav className="tabs">
           {s.tabs.map((t) => (
@@ -380,13 +321,12 @@ export function App() {
               { label: s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', onClick: () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }) },
               { label: s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор', kbd: 'Ctrl+B', onClick: () => updateSettings({ sidebar: !s.settings.sidebar }) },
               'sep',
-              { label: 'Справка', onClick: () => openTab('help') },
-              { label: 'Настройки', onClick: () => openTab('settings') },
+              { label: 'О программе', onClick: () => void showAbout() },
             ]}
           />
         </div>
       </header>
-      <Sidebar />
+      <Navigator />
       <main className="content">{active && <Page key={active.key} t={active} />}</main>
       <DialogHost />
       <Palette />

@@ -63,6 +63,10 @@ function battleMeta(b: any) {
 }
 
 function registerIpc() {
+  ipcMain.on('window:theme', (_e, theme: 'dark' | 'light') => {
+    if (process.platform !== 'darwin' && win) win.setTitleBarOverlay(OVERLAY[theme === 'light' ? 'light' : 'dark']);
+  });
+  ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataDir }));
   ipcMain.handle('storage:list', async (_e, col: string) => {
     const dir = colDir(col);
     await fs.mkdir(dir, { recursive: true });
@@ -121,59 +125,35 @@ function registerIpc() {
   });
 }
 
+// Своей шапки и меню у окна нет: вкладки и меню программы нарисованы в самом окне.
+// Меню остаётся скрытым — только ради сочетаний клавиш (масштаб, полный экран, буфер обмена).
+// Отмены и повтора в нём нет: Ctrl+Z / Ctrl+Y обрабатывает сама программа.
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: 'Файл',
-      submenu: [
-        { label: 'Открыть папку данных', click: () => shell.openPath(dataDir) },
-        { type: 'separator' },
-        { label: 'Выход', role: 'quit' },
-      ],
-    },
-    {
       label: 'Правка',
-      submenu: [
-        { label: 'Отменить', role: 'undo' },
-        { label: 'Повторить', role: 'redo' },
-        { type: 'separator' },
-        { label: 'Вырезать', role: 'cut' },
-        { label: 'Копировать', role: 'copy' },
-        { label: 'Вставить', role: 'paste' },
-        { label: 'Выделить всё', role: 'selectAll' },
-      ],
+      submenu: [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }],
     },
     {
       label: 'Вид',
       submenu: [
-        { label: 'Перезагрузить', role: 'reload' },
-        { label: 'Полноэкранный режим', role: 'togglefullscreen' },
-        { type: 'separator' },
-        { label: 'Крупнее', role: 'zoomIn' },
-        { label: 'Мельче', role: 'zoomOut' },
-        { label: 'Обычный масштаб', role: 'resetZoom' },
-        { type: 'separator' },
-        { label: 'Инструменты разработчика', role: 'toggleDevTools' },
-      ],
-    },
-    {
-      label: 'Справка',
-      submenu: [
-        {
-          label: 'О программе',
-          click: () =>
-            dialog.showMessageBox(win!, {
-              type: 'info',
-              title: 'WarSim',
-              message: `WarSim ${app.getVersion()}`,
-              detail: `Модульный симулятор боя для варгейма.\nПапка данных: ${dataDir}`,
-            }),
-        },
+        { role: 'reload' },
+        { role: 'togglefullscreen' },
+        { role: 'zoomIn' },
+        { role: 'zoomIn', accelerator: 'CommandOrControl+=', visible: false },
+        { role: 'zoomOut' },
+        { role: 'resetZoom' },
+        { role: 'toggleDevTools' },
       ],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+const OVERLAY = {
+  dark: { color: '#12181e', symbolColor: '#dbe3ea', height: 38 },
+  light: { color: '#e6eaee', symbolColor: '#1c252e', height: 38 },
+};
 
 async function createWindow() {
   win = new BrowserWindow({
@@ -183,6 +163,10 @@ async function createWindow() {
     minHeight: 620,
     backgroundColor: '#0d1115',
     title: 'WarSim — симулятор боя',
+    // Без системной шапки: кнопки «свернуть / развернуть / закрыть» рисуются поверх верхней полосы программы.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: process.platform === 'darwin' ? true : OVERLAY.dark,
+    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -192,6 +176,7 @@ async function createWindow() {
       spellcheck: false,
     },
   });
+  win.setMenuBarVisibility(false);
   win.once('ready-to-show', () => win?.show());
   // Ссылки наружу — в системный браузер, переходы внутри окна запрещены.
   win.webContents.setWindowOpenHandler(({ url }) => {

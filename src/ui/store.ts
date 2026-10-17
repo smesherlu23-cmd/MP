@@ -23,6 +23,7 @@ import {
   newId,
   newScenario,
   normalizeRuleset,
+  randomSeed,
   type Battle,
   type UnitNode,
   type Id,
@@ -46,6 +47,8 @@ export interface Settings {
   mcRuns: number;
   sidebar: boolean;
   density: 'compact' | 'normal';
+  /** Раздел, список которого показан в навигаторе. */
+  navSection: NavSection;
 }
 
 export interface Toast {
@@ -62,6 +65,8 @@ export interface Dialog {
   options?: { value: string; label: string }[];
   okText?: string;
   danger?: boolean;
+  /** Только сообщение — одна кнопка. */
+  alert?: boolean;
   resolve: (v: string | boolean | null) => void;
 }
 
@@ -79,7 +84,9 @@ interface AppState {
   saving: number;
 }
 
-const DEFAULT_SETTINGS: Settings = { theme: 'dark', logLevel: 1, mcRuns: 200, sidebar: true, density: 'normal' };
+export type NavSection = 'scenarios' | 'units' | 'battles' | 'rulesets';
+
+const DEFAULT_SETTINGS: Settings = { theme: 'dark', logLevel: 1, mcRuns: 200, sidebar: true, density: 'normal', navSection: 'scenarios' };
 
 function loadLocal<T>(key: string, def: T): T {
   try {
@@ -126,6 +133,10 @@ function openDialog(d: Omit<Dialog, 'resolve'>): Promise<string | boolean | null
 
 export async function confirmDialog(title: string, text?: string, okText = 'Да', danger = false): Promise<boolean> {
   return (await openDialog({ title, text, okText, danger })) === true;
+}
+
+export async function alertDialog(title: string, text?: string): Promise<void> {
+  await openDialog({ title, text, okText: 'Закрыть', alert: true });
 }
 
 export async function promptDialog(title: string, value = '', text?: string): Promise<string | null> {
@@ -567,9 +578,29 @@ export function addFormation(f: UnitNode, open = true): Id {
   return f.id;
 }
 
+/**
+ * Набор правил для нового подразделения или сценария: тот, с которым сейчас работают
+ * (открытая вкладка), иначе — самый используемый, иначе — последний изменённый.
+ */
+export function defaultRulesetId(): Id | undefined {
+  const s = get();
+  const t = s.tabs.find((x) => x.key === s.active);
+  let ctx: Id | undefined;
+  if (t?.kind === 'ruleset') ctx = t.ref;
+  else if (t?.kind === 'scenario' || t?.kind === 'montecarlo') ctx = s.scenarios[t.ref!]?.rulesetId;
+  else if (t?.kind === 'formation') ctx = resolveFormation(t.ref!)?.rulesetId;
+  else if (t?.kind === 'battle') ctx = useBattles.getState().battles[t.ref!]?.ruleset.id;
+  if (ctx && s.rulesets[ctx]) return ctx;
+  const used = new Map<Id, number>();
+  for (const f of Object.values(s.formations)) if (f.rulesetId) used.set(f.rulesetId, (used.get(f.rulesetId) ?? 0) + 1);
+  for (const sc of Object.values(s.scenarios)) used.set(sc.rulesetId, (used.get(sc.rulesetId) ?? 0) + 1);
+  return Object.values(s.rulesets).sort(
+    (a, b) => (used.get(b.id) ?? 0) - (used.get(a.id) ?? 0) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.name.localeCompare(b.name, 'ru'),
+  )[0]?.id;
+}
+
 export function createFormation(rulesetId?: Id): Id {
-  const rs = rulesetId ?? Object.keys(get().rulesets)[0];
-  return addFormation(newRootUnit('Новое подразделение', { rulesetId: rs }));
+  return addFormation(newRootUnit('Новое подразделение', { rulesetId: rulesetId ?? defaultRulesetId(), level: '' }));
 }
 
 export function duplicateFormation(id: Id): Id | undefined {
@@ -619,9 +650,8 @@ export function addScenario(sc: Scenario, open = true): Id {
 
 export function createScenario(rulesetId?: Id): Id {
   const s = get();
-  const rs = s.rulesets[rulesetId ?? ''] ?? Object.values(s.rulesets)[0];
-  const seed = `${new Date().toISOString().slice(0, 10)}-${Math.floor(Math.random() * 9000 + 1000)}`;
-  return addScenario(newScenario(rs, 'Новый сценарий', seed));
+  const rs = s.rulesets[rulesetId ?? defaultRulesetId() ?? ''] ?? Object.values(s.rulesets)[0];
+  return addScenario(newScenario(rs, 'Новый сценарий', randomSeed()));
 }
 
 export function duplicateScenario(id: Id): Id | undefined {

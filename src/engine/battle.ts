@@ -151,7 +151,7 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
   const condText = rs.conditions
     .map((cat) => `${cat.name.toLowerCase()}: ${cat.options.find((o) => o.id === b.conditions[cat.id])?.name ?? '—'}`)
     .join(', ');
-  E.log({ phase: 'setup', level: 0, text: `Бой «${b.name}». Сид: ${seed}. Условия — ${condText}. Начальная дистанция: ${E.band?.name ?? '—'}.` });
+  E.log({ phase: 'setup', level: 0, text: `Бой «${b.name}». Условия — ${condText}. Начальная дистанция: ${E.band?.name ?? '—'}.` });
   for (const side of SIDES) {
     const els = E.sideElements(side);
     const pers = els.reduce((a, x) => a + x.startPersonnel, 0);

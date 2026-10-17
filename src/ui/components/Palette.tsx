@@ -58,7 +58,7 @@ function buildItems(): Item[] {
   for (const sc of Object.values(s.scenarios).sort(byName)) {
     items.push({ id: `sc:${sc.id}`, group: 'Сценарии', title: sc.name, top: true, run: (bg) => openTab('scenario', sc.id, { background: bg }) });
     const rs = s.rulesets[sc.rulesetId];
-    if (rs) items.push({ id: `bt:${sc.id}`, group: 'Сценарии', title: `Начать бой: ${sc.name}`, sub: `сид ${sc.seed}`, run: () => void startBattle(sc, rs, sc.seed) });
+    if (rs) items.push({ id: `bt:${sc.id}`, group: 'Сценарии', title: `Начать бой: ${sc.name}`, run: () => void startBattle(sc, rs) });
     items.push({ id: `mc:${sc.id}`, group: 'Сценарии', title: `Прогоны: ${sc.name}`, run: (bg) => openTab('montecarlo', sc.id, { background: bg }) });
   }
 

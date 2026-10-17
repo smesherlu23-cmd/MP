@@ -12,4 +12,7 @@ contextBridge.exposeInMainWorld('warsim', {
   getDataDir: () => ipcRenderer.invoke('data:dir'),
   chooseDataDir: () => ipcRenderer.invoke('data:choose'),
   openDataDir: () => ipcRenderer.invoke('data:open'),
+  platform: process.platform,
+  setWindowTheme: (theme: 'dark' | 'light') => ipcRenderer.send('window:theme', theme),
+  appInfo: () => ipcRenderer.invoke('app:info'),
 });

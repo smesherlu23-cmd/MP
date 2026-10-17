@@ -28,9 +28,16 @@ export interface Bridge {
   openDataDir(): Promise<void>;
 }
 
+/** Окно настольной программы: платформа, цвет кнопок окна, сведения о программе. */
+export interface WindowBridge {
+  platform: string;
+  setWindowTheme(theme: 'dark' | 'light'): void;
+  appInfo(): Promise<{ version: string; dataDir: string }>;
+}
+
 declare global {
   interface Window {
-    warsim?: Bridge;
+    warsim?: Bridge & Partial<WindowBridge>;
   }
 }
 
@@ -108,3 +115,10 @@ const browserBridge: Bridge = {
 
 export const storage: Bridge = window.warsim ?? browserBridge;
 export const storageKind: 'electron' | 'browser' = window.warsim ? 'electron' : 'browser';
+export const desktop: Partial<WindowBridge> | null = window.warsim ?? null;
+
+// Окно без системной шапки: верхняя полоса программы служит заголовком окна.
+if (desktop?.platform) {
+  document.documentElement.classList.add('desktop');
+  document.documentElement.dataset.platform = desktop.platform;
+}

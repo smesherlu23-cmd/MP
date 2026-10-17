@@ -19,17 +19,29 @@ import {
   type UnitNode,
 } from '../../engine';
 import { effectsText } from '../components/EffectsEditor';
+import { Crumbs } from '../components/Crumbs';
 import { Link } from '../components/Link';
-import { Area, Btn, Card, Field, Info, Menu, Num, Section, Sel, Txt, fmt0, fmt1 } from '../components/ui';
+import { Area, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1 } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import { confirmDialog, deleteScenario, duplicateScenario, exportJson, historyStep, instantiateLibrary, openTab, putBattle, toast, toastUndoable, updateScenario, useApp, type Tab } from '../store';
 import { DND_LIB, DND_NODE, computeStats, statsLine, statsTip } from './FormationPage';
 
-export async function startBattle(sc: Scenario, rs: Ruleset, seed: string) {
+/** Название нового боя: «Сценарий · бой N» (N — следующий номер для этого сценария). */
+export function nextBattleName(sc: Scenario): string {
+  let n = 0;
+  for (const m of Object.values(useApp.getState().battleIndex)) {
+    const k = m.scenarioId === sc.id ? / · бой (\d+)/.exec(m.name) : null;
+    if (k) n = Math.max(n, Number(k[1]));
+  }
+  return `${sc.name} · бой ${n + 1}`;
+}
+
+/** Новый бой по сценарию — каждый раз со своей случайностью. */
+export async function startBattle(sc: Scenario, rs: Ruleset) {
   const issues = validateScenario(sc, rs);
   const errors = issues.filter((x) => x.level === 'error');
   if (errors.length && !(await confirmDialog('В сценарии есть ошибки', `${errors.map((x) => `• ${x.text}`).join('\n')}\n\nВсё равно начать бой?`, 'Начать'))) return;
-  const b = createBattle(sc, rs, { seed, id: newId('bt'), name: `${sc.name} · ${seed}` });
+  const b = createBattle(sc, rs, { seed: randomSeed(), id: newId('bt'), name: nextBattleName(sc) });
   putBattle(b);
   openTab('battle', b.id);
 }
@@ -46,7 +58,6 @@ const DEFAULT_OBJECTIVE_VALUE: Record<ObjectiveType, (maxTurns: number) => numbe
 export function ScenarioPage({ tab }: { tab: Tab }) {
   const st = useApp();
   const sc = st.scenarios[tab.ref!];
-  const [randomSeedMode, setRandomSeedMode] = useTabState(`${tab.key}:randomSeed`, false);
   if (!sc) return <div className="empty">Сценарий не найден.</div>;
   const rs = st.rulesets[sc.rulesetId];
   const upd = (fn: (s: Scenario) => void) => updateScenario(sc.id, fn);
@@ -54,15 +65,7 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
   const errors = issues.filter((x) => x.level === 'error');
   const warnings = issues.filter((x) => x.level === 'warning');
 
-  const start = () => {
-    if (!rs) return;
-    let seed = sc.seed;
-    if (randomSeedMode) {
-      seed = randomSeed();
-      upd((d) => void (d.seed = seed));
-    }
-    startBattle(sc, rs, seed);
-  };
+  const start = () => rs && startBattle(sc, rs);
 
   const changeRuleset = async (v: string) => {
     if (!(await confirmDialog('Сменить набор правил?', 'Типы, приказы и условия должны существовать в новом наборе — проверьте замечания после смены.'))) return;
@@ -81,6 +84,7 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
 
   return (
     <div className="page">
+      <Crumbs items={[{ label: 'Сценарии', section: 'scenarios' }]} />
       <div className="page-head">
         <input className="title-input" value={sc.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
         <Btn kind="primary" onClick={start} disabled={!rs}>
@@ -91,12 +95,6 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
         </Btn>
         <Menu
           items={[
-            {
-              label: `${randomSeedMode ? '✓ ' : ''}Новый сид при каждом старте`,
-              onClick: () => setRandomSeedMode(!randomSeedMode),
-              tip: 'Иначе каждый бой начинается с сида сценария и повторяется',
-            },
-            'sep',
             { label: 'Дублировать', onClick: () => duplicateScenario(sc.id) },
             { label: 'Сохранить в файл…', onClick: () => exportJson('scenario', sc.name, sc) },
             'sep',
@@ -134,14 +132,6 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
             </Field>
             <Field label="Лимит ходов" hint={rs ? `≈ ${fmt1((sc.maxTurns * rs.turnMinutes) / 60)} ч боя` : undefined}>
               <Num value={sc.maxTurns} onChange={(v) => upd((d) => void (d.maxTurns = v))} min={1} max={500} integer width="100%" />
-            </Field>
-            <Field label="Сид" hint="Один и тот же сид даёт тот же бой.">
-              <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
-                <Txt value={sc.seed} onChange={(v) => upd((d) => void (d.seed = v))} />
-                <Btn icon kind="ghost" title="Случайный сид" onClick={() => upd((d) => void (d.seed = randomSeed()))}>
-                  🎲
-                </Btn>
-              </div>
             </Field>
             <Field label="Набор правил">
               <Sel value={sc.rulesetId} onChange={changeRuleset} options={Object.values(st.rulesets).map((r) => ({ value: r.id, label: r.name }))} />
@@ -365,7 +355,7 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
             <Btn
               kind="ghost"
               onClick={() => {
-                const f = newRootUnit('Новое подразделение', { order: i === 0 ? 'attack' : 'defend' });
+                const f = newRootUnit('Новое подразделение', { order: i === 0 ? 'attack' : 'defend', level: '' });
                 upd((d) => void d.formations.push(f));
                 openTab('formation', `sc:${sc.id}:${f.id}`);
               }}

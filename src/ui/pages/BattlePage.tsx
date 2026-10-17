@@ -20,9 +20,11 @@ import {
   type SideResult,
 } from '../../engine';
 import { LineChart } from '../components/Charts';
+import { Crumbs } from '../components/Crumbs';
 import { LogView, RichText } from '../components/LogView';
 import { Btn, Card, Check, Field, Menu, Meter, Modal, Num, Section, Sel, fmt0, pct } from '../components/ui';
 import { useTabState } from '../hooks';
+import { nextBattleName } from './ScenarioPage';
 import { saveResultsAsNew, updateLibraryFromBattle, updateScenarioFromBattle } from '../postBattle';
 import { deleteBattle, exportJson, exportText, loadBattle, openTab, putBattle, renameBattle, toast, touchBattle, useApp, useBattles, type Tab } from '../store';
 
@@ -78,9 +80,11 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
     touchBattle(b.id);
     setView('result');
   };
-  const restart = (seed: string, withInterventions = false) => {
-    const nb = replayBattle(b, { seed, withInterventions });
-    nb.name = `${b.scenario.name} · ${seed}${withInterventions ? ' (повтор с решениями ГМ)' : seed === b.seed ? ' (заново)' : ''}`;
+  /** again — та же случайность (тот же бой заново), иначе — новый случайный бой. */
+  const restart = (again: boolean, withInterventions = false) => {
+    const nb = replayBattle(b, { seed: again ? b.seed : randomSeed(), withInterventions });
+    const base = b.name.replace(/ \(повтор[^)]*\)$/, '');
+    nb.name = again ? `${base} (повтор${withInterventions ? ' с решениями ГМ' : ''})` : nextBattleName({ ...b.scenario, id: b.scenarioId });
     putBattle(nb);
     openTab('battle', nb.id);
   };
@@ -95,17 +99,21 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
     .filter(Boolean)
     .join(', ');
   const winnerColor = result.winner ? b.sides[result.winner].color : undefined;
+  const scenarioExists = !!useApp.getState().scenarios[b.scenarioId];
 
   return (
     <div className="page fill">
       <div className="battle-head">
+        <div style={{ width: '100%', marginBottom: -6 }}>
+          <Crumbs items={[{ label: 'Бои', section: 'battles' }, scenarioExists ? { label: b.scenario.name, open: ['scenario', b.scenarioId] } : { label: b.scenario.name }]} />
+        </div>
         <input className="title-input" value={b.name} onChange={(e) => renameBattle(b.id, e.target.value)} />
         {b.finished ? (
           <>
             <Btn kind="primary" onClick={() => copyText(formatReport(b))} title="Текстовый отчёт для игроков">
               Скопировать отчёт
             </Btn>
-            <Btn onClick={() => restart(randomSeed())} title="Новый бой по тому же сценарию с другим сидом">
+            <Btn onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
               Переиграть
             </Btn>
           </>
@@ -129,9 +137,9 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             'sep',
             { label: 'Открыть сценарий', onClick: () => openTab('scenario', b.scenarioId) },
             'sep',
-            { label: `Переиграть с тем же сидом (${b.seed})`, onClick: () => restart(b.seed), tip: 'Тот же сид и те же решения дают тот же бой' },
-            { label: 'Переиграть с новым сидом', onClick: () => restart(randomSeed()) },
-            b.interventions.length > 0 && { label: 'Повторить с решениями ГМ', onClick: () => restart(b.seed, true), tip: 'Воспроизвести бой вместе с вашими вмешательствами до текущего хода' },
+            { label: 'Переиграть (новый бой)', onClick: () => restart(false), tip: 'Тот же сценарий, другие случайности' },
+            { label: 'Повторить этот же бой', onClick: () => restart(true), tip: 'Те же броски кубиков: без ваших решений бой пойдёт точно так же, как этот' },
+            b.interventions.length > 0 && { label: 'Повторить с решениями ГМ', onClick: () => restart(true, true), tip: 'Воспроизвести этот бой вместе с вашими вмешательствами до текущего хода' },
             'sep',
             !b.finished && { label: 'Скопировать отчёт', onClick: () => copyText(formatReport(b)) },
             { label: 'Сохранить отчёт с журналом…', onClick: () => exportText(`${b.name} — отчёт`, formatReport(b, { includeLog: true, logLevel: settings.logLevel }), 'txt') },

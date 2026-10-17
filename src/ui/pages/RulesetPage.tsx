@@ -28,6 +28,7 @@ import {
 } from '../../engine';
 import { EffectsEditor } from '../components/EffectsEditor';
 import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Sel, Seg, Tags, Txt } from '../components/ui';
+import { Crumbs } from '../components/Crumbs';
 import { useTabState } from '../hooks';
 import { confirmDialog, createRuleset, deleteRuleset, exportJson, replaceRuleset, setTabSub, toast, updateRuleset, useApp, type Tab } from '../store';
 
@@ -55,6 +56,7 @@ export function RulesetPage({ tab }: { tab: Tab }) {
   const upd: Upd = (fn) => updateRuleset(r.id, fn);
   return (
     <div className="page">
+      <Crumbs items={[{ label: 'Наборы правил', section: 'rulesets' }]} />
       <div className="page-head">
         <input className="title-input" value={r.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
         <Menu

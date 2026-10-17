@@ -21,6 +21,7 @@ import {
   resolveTree,
   summarizeUnits,
   validateUnit,
+  walkUnits,
   type ComponentKind,
   type DropPos,
   type Echelon,
@@ -31,12 +32,14 @@ import {
   type StateKey,
   type UnitNode,
 } from '../../engine';
+import { Crumbs } from '../components/Crumbs';
 import { Link } from '../components/Link';
 import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, Seg, Tags, Txt, fmt0, fmt1, type MenuItem } from '../components/ui';
 import { useTabState } from '../hooks';
 import {
   addFormation,
   containsTemplate,
+  defaultRulesetId,
   deleteFormation,
   duplicateFormation,
   exportJson,
@@ -395,7 +398,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   const root = res?.f;
-  const rs = st.rulesets[res?.rulesetId ?? ''] ?? Object.values(st.rulesets)[0];
+  const rs = st.rulesets[res?.rulesetId ?? ''] ?? st.rulesets[defaultRulesetId() ?? ''] ?? Object.values(st.rulesets)[0];
   const resolved = useMemo(() => (root ? resolveTree(root) : new Map<Id, Resolved>()), [root]);
   const stats = useMemo(() => (root && rs ? computeStats(root, rs) : new Map<Id, NodeStats>()), [root, rs]);
   if (!res || !root) return <div className="empty">Подразделение не найдено.</div>;
@@ -455,6 +458,16 @@ export function FormationPage({ tab }: { tab: Tab }) {
     },
   };
   ctxRef.current = ctx;
+  const changeRuleset = (id: Id) => {
+    const nr = st.rulesets[id];
+    if (!nr || id === rs.id) return;
+    const known = new Set(nr.componentTypes.map((t) => t.id));
+    const missing = new Set<string>();
+    walkUnits(root, (n) => n.composition.forEach((c) => !known.has(c.typeId) && missing.add(rs.componentTypes.find((t) => t.id === c.typeId)?.name ?? c.typeId)));
+    ctx.upd((d) => void (d.rulesetId = id));
+    if (missing.size) toast(`В наборе «${nr.name}» нет типов: ${[...missing].join(', ')} — замените их в составе (Ctrl+Z — вернуть как было).`, 'bad');
+    else toast(`Подразделение считается по набору «${nr.name}».`, 'good');
+  };
   const sel = findUnit(root, ctx.sel) ?? root;
   const issues = validateUnit(root, rs);
   const tpl = root.templateId ? st.formations[root.templateId] : undefined;
@@ -463,15 +476,13 @@ export function FormationPage({ tab }: { tab: Tab }) {
 
   return (
     <div className="page">
-      {!isLib && (
-        <div className="crumbs">
-          В сценарии{' '}
-          <Link kind="scenario" refId={res.scenario!.id}>
-            «{res.scenario!.name}»
-          </Link>{' '}
-          · {res.scenario!.sides[res.sideIndex!].name}
-        </div>
-      )}
+      <Crumbs
+        items={
+          isLib
+            ? [{ label: 'Подразделения', section: 'units' }]
+            : [{ label: 'Сценарии', section: 'scenarios' }, { label: res.scenario!.name, open: ['scenario', res.scenario!.id] }, { label: res.scenario!.sides[res.sideIndex!].name }]
+        }
+      />
       <div className="page-head">
         <input className="title-input" value={root.name} onChange={(e) => ctx.upd((d) => void (d.name = e.target.value))} />
         <Seg
@@ -502,6 +513,25 @@ export function FormationPage({ tab }: { tab: Tab }) {
       </div>
 
       <div className="meta" style={{ marginTop: -8, marginBottom: 14 }}>
+        {isLib ? (
+          <span>
+            набор правил:{' '}
+            <select className="inline-select" value={rs.id} onChange={(e) => changeRuleset(e.target.value)} title="По какому набору правил считается это подразделение: каталог типов, приказы, уровни">
+              {Object.values(st.rulesets).map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </span>
+        ) : (
+          <span>
+            набор правил сценария:{' '}
+            <Link kind="ruleset" refId={rs.id}>
+              {rs.name}
+            </Link>
+          </span>
+        )}
         {!isLib && tpl && (
           <span>
             из библиотеки:{' '}
@@ -544,6 +574,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
         </span>
       </div>
 
+      {!root.children.length && !root.composition.length && <EmptyStart ctx={ctx} />}
       {view === 'chart' ? (
         <div className="stack">
           <Card tight className="org-card">
@@ -566,6 +597,39 @@ export function FormationPage({ tab }: { tab: Tab }) {
         </div>
       )}
       {insert && <InsertDialog ctx={ctx} targetId={insert.id} attach={insert.attach} onClose={() => setInsert(null)} />}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ пустое подразделение
+
+function EmptyStart({ ctx }: { ctx: Ctx }) {
+  const hasLib = Object.values(ctx.lib).some((u) => (!u.rulesetId || u.rulesetId === ctx.rs.id) && canInsertTemplate(ctx, u.id));
+  const focusComposition = () => {
+    ctx.setSel(ctx.root.id);
+    requestAnimationFrame(() => {
+      const el = document.querySelector('.comp-add') as HTMLSelectElement | null;
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el?.focus();
+    });
+  };
+  return (
+    <div className="empty-start">
+      <div className="empty-start-title">Подразделение пока пустое. С чего начать?</div>
+      <div className="empty-start-actions">
+        <button onClick={() => addChild(ctx, ctx.root)}>
+          <b>+ Подчинённое</b>
+          <span>взводы, отделения, расчёты — любая глубина</span>
+        </button>
+        <button onClick={() => ctx.openInsert(ctx.root.id, false)} disabled={!hasLib}>
+          <b>Вставить из библиотеки</b>
+          <span>{hasLib ? 'готовые взводы, роты, батареи как шаблоны' : 'в библиотеке пока нет подходящих подразделений'}</span>
+        </button>
+        <button onClick={focusComposition}>
+          <b>Свой состав</b>
+          <span>люди, оружие и техника самого подразделения — для небольшого отряда этого достаточно</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -1108,6 +1172,7 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
         <div style={{ padding: '6px 14px 4px' }}>
           {types.size ? (
             <select
+              className="comp-add"
               value=""
               onChange={(ev) => {
                 const id = ev.target.value;
