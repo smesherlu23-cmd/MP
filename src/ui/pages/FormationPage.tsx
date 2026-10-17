@@ -378,7 +378,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
   const res = resolveFormation(ref);
   const [selId, setSel] = useTabState<string>(`${tab.key}:sel`, res?.f.id ?? '');
   const [view, setView] = useTabState<'chart' | 'list'>('unit-view', 'chart');
-  const [collapsedArr, setCollapsed] = useTabState<string[]>(`${tab.key}:collapsed`, []);
+  const [collapsedArr, setCollapsed] = useTabState<string[]>(`${tab.key}:collapsed`, res ? initialCollapsed(res.f) : []);
   const [insert, setInsert] = useState<{ id: Id; attach: boolean } | null>(null);
   const [drop, setDrop] = useState<{ id: Id; pos: DropPos } | null>(null);
   const ctxRef = useRef<Ctx | null>(null);
@@ -634,11 +634,23 @@ function EmptyStart({ ctx }: { ctx: Ctx }) {
   );
 }
 
+/** Большая структура открывается свёрнутой с третьего уровня: сначала видно главное. */
+function initialCollapsed(root: UnitNode): string[] {
+  let n = 0;
+  walkUnits(root, () => void n++);
+  if (n <= 40) return [];
+  const out: string[] = [];
+  walkUnits(root, (u, _p, depth) => depth >= 2 && u.children.length > 0 && void out.push(u.id));
+  return out;
+}
+
 // ------------------------------------------------------------------ значки узла
 
-function NodeBadges({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
-  const tpl = node.templateId ? ctx.lib[node.templateId] : undefined;
-  const outdated = isOutdated(node, tpl);
+/** compact — для списка: значок «шаблон» только если шаблон изменился (иначе он лишь занимает место). */
+function NodeBadges({ ctx, node, compact }: { ctx: Ctx; node: UnitNode; compact?: boolean }) {
+  const tpl0 = node.templateId ? ctx.lib[node.templateId] : undefined;
+  const outdated = isOutdated(node, tpl0);
+  const tpl = compact && !outdated ? undefined : tpl0;
   const isLibRoot = ctx.isLib && node.id === ctx.root.id;
   return (
     <>
@@ -825,11 +837,11 @@ function TreeRow({ ctx, node, depth }: { ctx: Ctx; node: UnitNode; depth: number
           {node.children.length ? (folded ? '▸' : '▾') : ''}
         </span>
         {risk && <span className={`status-dot ${risk.cls}`} data-tip={`Риск паники и отхода: ${risk.label}`} />}
-        <span className="unit-name">
-          {node.level && <span className="faint">{node.level} · </span>}
+        <span className="unit-name" title={node.level ? `${node.level} · ${node.name}` : node.name}>
           {node.name}
         </span>
-        <NodeBadges ctx={ctx} node={node} />
+        {node.level && <span className="unit-level">{node.level}</span>}
+        <NodeBadges ctx={ctx} node={node} compact />
         <span className="grow" />
         <span className="faint small nowrap" data-tip={statsTip(st)}>
           {statsLine(st)}
@@ -1060,12 +1072,17 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
             <Txt value={node.commanderName} onChange={(v) => un((n) => void (n.commanderName = v))} placeholder="звание, фамилия" />
           </Field>
           {ft.command && (
-            <Field label="Уровень командира" hint="Командир влияет на подразделение и всех подчинённых; влияние старших командиров ослабевает с каждым уровнем.">
-              <Sel
-                value={node.commandLevel ?? 0}
-                onChange={(v) => un((n) => void (n.commandLevel = v || null))}
-                options={[{ value: 0, label: '— нет своего —' }, ...rs.commandLevels.map((l, i) => ({ value: i + 1, label: `${i + 1}. ${l.name}` }))]}
-              />
+            <Field
+              label="Командование"
+              hint={
+                'Есть ли у подразделения свой командир. Его компетентность задаётся не здесь, а в бою: в начале боя она обычная, ' +
+                'а ГМ меняет её по обстановке — удачное решение или ошибка командира в конкретный момент. ' +
+                'Командир влияет на подразделение и всех подчинённых; влияние старших ослабевает с каждым уровнем.'
+              }
+            >
+              <Check value={!!node.commandLevel} onChange={(v) => un((n) => void (n.commandLevel = v ? 1 : null))}>
+                свой командир
+              </Check>
             </Field>
           )}
         </div>

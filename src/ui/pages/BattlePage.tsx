@@ -7,6 +7,7 @@ import {
   applyIntervention,
   combatEffectiveness,
   computeResult,
+  defaultCommandLevel,
   formatReport,
   randomSeed,
   replayBattle,
@@ -319,13 +320,87 @@ function SideCompare({ b, result, full }: { b: Battle; result: BattleResult; ful
   );
 }
 
+/** Итоги ветки (формирование со всеми подчинёнными): люди, средняя мораль, боеспособность. */
+interface Agg {
+  pers: number;
+  start: number;
+  moraleW: number;
+  w: number;
+  ce: number;
+  ceStart: number;
+}
+
+function aggregate(b: Battle, E: EngineContext): Map<string, Agg> {
+  const out = new Map<string, Agg>();
+  const parent = new Map(b.formations.map((f) => [f.id, f.parentId]));
+  for (const el of b.elements) {
+    const pers = E.personnel(el);
+    const ce = combatEffectiveness(E, el);
+    for (let fid: string | null | undefined = el.formationId; fid; fid = parent.get(fid)) {
+      const a = out.get(fid) ?? { pers: 0, start: 0, moraleW: 0, w: 0, ce: 0, ceStart: 0 };
+      a.pers += pers;
+      a.start += el.startPersonnel;
+      if (el.status === 'active') {
+        a.moraleW += el.morale * Math.max(1, pers);
+        a.w += Math.max(1, pers);
+      }
+      a.ce += ce;
+      a.ceStart += el.startValue;
+      out.set(fid, a);
+    }
+  }
+  return out;
+}
+
+/** У большого боя сразу свёрнуты формирования с третьего уровня — видно главное. */
+function initialFold(b: Battle): string[] {
+  if (b.elements.length <= 40) return [];
+  const parent = new Map(b.formations.map((f) => [f.id, f.parentId]));
+  const depth = (id: string) => {
+    let d = 0;
+    for (let p = parent.get(id); p; p = parent.get(p)) d++;
+    return d;
+  };
+  return b.formations.filter((f) => depth(f.id) >= 2).map((f) => f.id);
+}
+
+/** Компетентность командира прямо в бою: ГМ меняет её по обстановке. */
+function CommanderSelect(props: { b: Battle; value: number; onChange: (v: number) => void; disabled?: boolean }) {
+  const levels = props.b.ruleset.commandLevels;
+  const def = defaultCommandLevel(props.b.ruleset);
+  const cls = !props.value ? 'none' : props.value < def ? 'worse' : props.value > def ? 'better' : '';
+  return (
+    <select
+      className={`cmd-select ${cls}`}
+      value={props.value}
+      disabled={props.disabled}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => props.onChange(Number(e.target.value))}
+      data-tip={'Командир сейчас. Меняйте по обстановке: удачное решение — выше, ошибка или растерянность — ниже.\nДействует со следующего хода и записывается в журнал.'}
+    >
+      <option value={0}>без командира</option>
+      {levels.map((l, i) => (
+        <option key={i} value={i + 1}>
+          {l.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function Forces(props: { b: Battle; E: EngineContext; result: BattleResult; tabKey: string; onElement: (id: string) => void; onFormation: (id: string) => void; iv: Iv }) {
-  const { b, result } = props;
+  const { b, E, result } = props;
   const [details, setDetails] = useTabState(`${props.tabKey}:details`, false);
+  const [folded, setFolded] = useTabState<string[]>(`${props.tabKey}:folded`, initialFold(b));
+  const fold = new Set(folded);
+  const agg = useMemo(() => aggregate(b, E), [E]);
+  const toggle = (id: string) => setFolded(fold.has(id) ? folded.filter((x) => x !== id) : [...folded, id]);
+  const withChildren = b.formations.filter((f) => b.formations.some((x) => x.parentId === f.id) || b.elements.some((x) => x.formationId === f.id));
   const rowsFor = (side: SideId) => {
     const rows: { f: FormationState; depth: number }[] = [];
     const walk = (fs: FormationState, depth: number) => {
       rows.push({ f: fs, depth });
+      if (fold.has(fs.id)) return;
       for (const ch of b.formations.filter((x) => x.parentId === fs.id)) walk(ch, depth + 1);
     };
     for (const fs of b.formations.filter((x) => x.side === side && !x.parentId)) walk(fs, 0);
@@ -336,7 +411,18 @@ function Forces(props: { b: Battle; E: EngineContext; result: BattleResult; tabK
       <Card tight>
         <SideCompare b={b} result={result} />
       </Card>
-      <div className="row" style={{ justifyContent: 'flex-end', marginBottom: -8 }}>
+      <div className="row" style={{ justifyContent: 'flex-end', marginBottom: -8, gap: 14 }}>
+        {withChildren.length > 2 && (
+          <span className="small">
+            <a href="#" onClick={(e) => (e.preventDefault(), setFolded([]))}>
+              развернуть всё
+            </a>
+            {' · '}
+            <a href="#" onClick={(e) => (e.preventDefault(), setFolded(b.formations.filter((f) => f.parentId).map((f) => f.id)))}>
+              свернуть до верхних
+            </a>
+          </span>
+        )}
         <Check value={details} onChange={setDetails} title="Подавление, усталость, боезапас, техника, обнаружение">
           <span className="muted small">подробные столбцы</span>
         </Check>
@@ -344,7 +430,7 @@ function Forces(props: { b: Battle; E: EngineContext; result: BattleResult; tabK
       {SIDES.map((side) => (
         <Card key={side} title={<span style={{ color: b.sides[side].color }}>{b.sides[side].name}</span>} tight>
           <div style={{ overflowX: 'auto' }}>
-            <table className="tbl compact">
+            <table className="tbl compact forces">
               <thead>
                 <tr>
                   <th>Элемент</th>
@@ -359,7 +445,7 @@ function Forces(props: { b: Battle; E: EngineContext; result: BattleResult; tabK
               </thead>
               <tbody>
                 {rowsFor(side).map(({ f: fs, depth }) => (
-                  <FormationRows key={fs.id} {...props} fs={fs} depth={depth} details={details} />
+                  <FormationRows key={fs.id} {...props} fs={fs} depth={depth} details={details} folded={fold.has(fs.id)} onToggle={() => toggle(fs.id)} agg={agg.get(fs.id)} />
                 ))}
               </tbody>
             </table>
@@ -383,31 +469,59 @@ function DetailHeaders({ b }: { b: Battle }) {
   );
 }
 
-function FormationRows(props: { b: Battle; E: EngineContext; fs: FormationState; depth: number; details: boolean; onElement: (id: string) => void; onFormation: (id: string) => void; iv: Iv }) {
-  const { b, E, fs, depth, details, iv } = props;
+function FormationRows(props: {
+  b: Battle;
+  E: EngineContext;
+  fs: FormationState;
+  depth: number;
+  details: boolean;
+  folded: boolean;
+  onToggle: () => void;
+  agg?: Agg;
+  onElement: (id: string) => void;
+  onFormation: (id: string) => void;
+  iv: Iv;
+}) {
+  const { b, E, fs, depth, details, iv, agg } = props;
   const f = b.ruleset.features;
-  const els = b.elements.filter((x) => x.formationId === fs.id);
-  const cols = 4 + (f.morale ? 1 : 0) + (details ? 1 + [f.suppression, f.fatigue, f.ammo, f.detection].filter(Boolean).length : 0);
+  const els = props.folded ? [] : b.elements.filter((x) => x.formationId === fs.id);
+  const detailCols = details ? 1 + [f.suppression, f.fatigue, f.ammo, f.detection].filter(Boolean).length : 0;
   const orderOptions = b.ruleset.orders.map((o) => ({ value: o.id, label: o.name }));
+  const morale = agg && agg.w > 0 ? agg.moraleW / agg.w : 0;
   return (
     <>
-      <tr className="group">
-        <td colSpan={cols} style={{ paddingLeft: 8 + depth * 14 }}>
-          <div className="row" style={{ gap: 8 }}>
+      <tr className={`group${props.folded ? ' folded' : ''}`}>
+        <td colSpan={2} style={{ paddingLeft: 4 + depth * 14 }}>
+          <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+            <button className="fold-btn" onClick={props.onToggle} title={props.folded ? 'Развернуть' : 'Свернуть'}>
+              {props.folded ? '▸' : '▾'}
+            </button>
             <a
               href="#"
+              className="nowrap"
               onClick={(e) => (e.preventDefault(), props.onFormation(fs.id))}
-              data-tip={`${fs.level}${fs.commanderName ? ` · ${fs.commanderName}` : ''}\nПриказ всему формированию, командир, связь, снабжение`}
+              data-tip={`${fs.level}${fs.commanderName ? ` · ${fs.commanderName}` : ''}${f.comms ? `\nсвязь ${Math.round(fs.comms)}%` : ''}\nснабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
             >
               {fs.name}
             </a>
-            <span className="faint small">
-              {f.comms ? `связь ${Math.round(fs.comms)}% · ` : ''}снабжение {Math.round(fs.supply)}%
-            </span>
+            {f.command && (
+              <CommanderSelect b={b} value={fs.commandLevel} disabled={b.finished} onChange={(v) => iv('setFormation', { formationId: fs.id, commandLevel: v })} />
+            )}
             {fs.hqLost && <span className="badge bad">штаб потерян</span>}
             {fs.broken && <span className="badge bad">сломлено</span>}
           </div>
         </td>
+        <td className="num nowrap">
+          {agg ? (
+            <>
+              {fmt0(agg.pers)}
+              <span className="faint">/{fmt0(agg.start)}</span>
+            </>
+          ) : null}
+        </td>
+        {f.morale && <td style={{ minWidth: 90 }}>{agg && agg.w > 0 ? <Meter value={morale} /> : null}</td>}
+        <td className="num">{agg && agg.ceStart > 0 ? pct((agg.ce / agg.ceStart) * 100) : ''}</td>
+        {detailCols > 0 && <td colSpan={detailCols} />}
       </tr>
       {els.map((el) => {
         const st = statusOf(E, el);
@@ -418,7 +532,7 @@ function FormationRows(props: { b: Battle; E: EngineContext; fs: FormationState;
         const vehStart = veh.reduce((a, c) => a + c.start, 0);
         return (
           <tr key={el.id} className={el.status !== 'active' ? 'dim' : ''}>
-            <td style={{ paddingLeft: 18 + depth * 14 }}>
+            <td style={{ paddingLeft: 24 + depth * 14 }}>
               <span className={`status-dot ${st.cls}`} data-tip={st.label} />
               <a href="#" onClick={(e) => (e.preventDefault(), props.onElement(el.id))}>
                 {el.name}
@@ -575,6 +689,11 @@ function ElementModal({ b, E, id, onClose, iv, onFocusLog }: { b: Battle; E: Eng
               <Field label="Приказ">
                 <Sel value={el.orderId} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={rs.orders.map((o) => ({ value: o.id, label: o.name }))} />
               </Field>
+              {rs.features.command && ((el.ownCommandLevel ?? 0) > 0 || editing) && (
+                <Field label={el.ownCommanderName ? `Командир (${el.ownCommanderName})` : 'Свой командир'}>
+                  <CommanderSelect b={b} value={el.ownCommandLevel ?? 0} onChange={(v) => iv('editElement', { elementId: el.id, patch: { ownCommandLevel: v } })} />
+                </Field>
+              )}
               {editing && (
                 <>
                   <Field label="Эшелон">
@@ -734,7 +853,7 @@ function FormationModal({ b, id, onClose, iv }: { b: Battle; id: string; onClose
   const [order, setOrder] = useState('');
   const [comms, setComms] = useState(fs?.comms ?? 100);
   const [supply, setSupply] = useState(fs?.supply ?? 100);
-  const [cmd, setCmd] = useState(fs?.commandLevel ?? 1);
+  const [cmd, setCmd] = useState(fs?.commandLevel ?? 0);
   if (!fs) return null;
   return (
     <Modal
@@ -767,7 +886,7 @@ function FormationModal({ b, id, onClose, iv }: { b: Battle; id: string; onClose
         </Field>
         {rs.features.command && (
           <Field label={`Командир${fs.commanderName ? ` (${fs.commanderName})` : ''}`}>
-            <Sel value={cmd} onChange={setCmd} options={rs.commandLevels.map((l, i) => ({ value: i + 1, label: `${i + 1}. ${l.name}` }))} />
+            <Sel value={cmd} onChange={setCmd} options={[{ value: 0, label: 'без командира' }, ...rs.commandLevels.map((l, i) => ({ value: i + 1, label: `${i + 1}. ${l.name}` }))]} />
           </Field>
         )}
         {rs.features.comms && (

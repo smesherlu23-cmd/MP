@@ -1,7 +1,7 @@
 // Пошаговый расчёт боя. Каждая фаза хода — отдельная функция; все числа берутся из набора правил.
 
 import { EngineContext, clamp, e, fm, lerp, round1, s } from './context';
-import { clone, normalizeRuleset, SCHEMA_VERSION } from './defaults';
+import { clone, defaultCommandLevel, normalizeRuleset, SCHEMA_VERSION } from './defaults';
 import { plural } from './labels';
 import { computeResult, defaultObjectives } from './outcome';
 import { Rng } from './rng';
@@ -83,8 +83,10 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       lostHoldTurn: 0,
       initiative: 0,
     };
-    const maxCmd = Math.max(1, rs.commandLevels.length);
-    const cmd = (v: number | null | undefined) => (v ? clamp(Math.round(v), 1, maxCmd) : 0);
+    // В шаблоне — только то, есть ли у подразделения свой командир. Компетентность в начале боя
+    // обычная; ГМ меняет её по ходу боя (setFormation / editElement), по обстановке.
+    const startCmd = defaultCommandLevel(rs);
+    const cmd = (v: number | null | undefined) => (v ? startCmd : 0);
     /**
      * Узел с подчинёнными (и любой корень) становится формированием — звеном управления.
      * Узел с собственным составом становится элементом — тем, что стреляет и несёт потери.
@@ -744,6 +746,9 @@ function applyShots(E: EngineContext, shots: Shot[]) {
           ? `${e(t)}: потери — ${parts.join('; ')}.`
           : `${e(t)} под огнём, потерь нет${E.f.suppression ? ` (подавление ${Math.round(t.suppression)}%)` : ''}.`,
         factors,
+        data: parts.length
+          ? { pers: loss.pers, kia: loss.kia, wia: loss.wia, mia: loss.mia, equip: Object.fromEntries([...loss.equip].map(([id, q]) => [id, q.destroyed + q.damaged + q.abandoned])) }
+          : undefined,
       });
     }
   }
@@ -971,6 +976,7 @@ function phaseMorale(E: EngineContext) {
           refs: [el.id],
           text: `Мораль ${e(el)}: ${Math.round(before)} → ${Math.round(el.morale)} (${delta > 0 ? '+' : ''}${delta.toFixed(1)}).`,
           factors,
+          data: { morale: [Math.round(before), Math.round(el.morale)] },
         });
       }
     }

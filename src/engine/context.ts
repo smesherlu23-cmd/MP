@@ -395,6 +395,7 @@ export class EngineContext {
     refs?: Id[];
     factors?: Factor[];
     level?: LogEntry['level'];
+    data?: LogEntry['data'];
   }) {
     if (this.b.silent) return;
     this.b.log.push({
@@ -406,6 +407,7 @@ export class EngineContext {
       text: entry.text,
       factors: entry.factors && entry.factors.length ? entry.factors : undefined,
       level: entry.level ?? 1,
+      ...(entry.data ? { data: entry.data } : {}),
     });
   }
 

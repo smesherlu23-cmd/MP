@@ -20,6 +20,8 @@ export interface ElementPatch {
   defenseMod?: number;
   echelon?: ElementState['echelon'];
   holdFast?: boolean;
+  /** Компетентность своего командира (0 — нет своего). */
+  ownCommandLevel?: number;
   comps?: { typeId: string; current: number }[];
 }
 
@@ -104,7 +106,11 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       for (const [key, val] of Object.entries(patch)) {
         if (key === 'comps' || val === undefined) continue;
         if (key === 'echelon' || key === 'holdFast') (el as any)[key] = val;
-        else if (key === 'experience') el.experience = clamp(Math.round(Number(val)), 1, Math.max(1, b.ruleset.experienceLevels.length));
+        else if (key === 'ownCommandLevel') {
+          el.ownCommandLevel = clamp(Math.round(Number(val)), 0, Math.max(1, b.ruleset.commandLevels.length));
+          changes.push(`командир: ${el.ownCommandLevel ? (b.ruleset.commandLevels[el.ownCommandLevel - 1]?.name ?? el.ownCommandLevel) : 'нет'}`);
+          continue;
+        } else if (key === 'experience') el.experience = clamp(Math.round(Number(val)), 1, Math.max(1, b.ruleset.experienceLevels.length));
         else if (key === 'attackMod' || key === 'defenseMod') (el as any)[key] = Math.max(key === 'defenseMod' ? 1 : 0, Number(val));
         else (el as any)[key] = clamp(Number(val), 0, 100);
         changes.push(`${PATCH_LABELS[key] ?? key}: ${typeof val === 'boolean' ? (val ? 'да' : 'нет') : val}`);

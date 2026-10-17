@@ -4,6 +4,8 @@ import {
   clone,
   canMove,
   createBattle,
+  defaultCommandLevel,
+  displayNames,
   formatReport,
   makeDemoScenario,
   makeLinearRuleset,
@@ -149,6 +151,44 @@ describe('бой', () => {
     other.log[other.log.length - 1].text += ' (изменено)';
     expect(restoreBattleLog(other)).toBe(false);
     expect(other.logTrimmed).toBe(true);
+  });
+
+  it('повторяющиеся имена различаются по старшим формированиям', () => {
+    const company = (name: string) => newUnit(name, { children: ['1-й взвод', '2-й взвод'].map((p) => newUnit(p, { composition: rifles(20) })) });
+    const bn = (name: string) => newUnit(name, { children: [company('1-я рота'), company('2-я рота')] });
+    const a = newRootUnit('Полк', { order: 'attack', children: [bn('1-й батальон'), bn('2-й батальон')] });
+    const b = createBattle(duel(rs, a, infantry('Противник', 40)), rs, { seed: 'NAMES' });
+    const names = displayNames(b);
+    const labels = b.elements.filter((x) => x.side === 'A').map((x) => names.el.get(x.id));
+    expect(new Set(labels).size).toBe(8);
+    expect(labels).toContain('1-й взвод · 2-я рота · 1-й батальон');
+    expect(names.el.get(b.elements.find((x) => x.side === 'B')!.id)).toBe('Противник — группа');
+    expect(formatReport(b, { includeLog: true, logLevel: 2 })).not.toContain('[[');
+  });
+
+  it('компетентность командира — в бою: в начале обычная, ГМ меняет её по обстановке', () => {
+    const a = infantry('Синие', 60, 'attack', { commandLevel: 5 });
+    const b0 = createBattle(duel(rs, a, infantry('Красные', 60, 'defend')), rs, { seed: 'CMD' });
+    const f = b0.formations.find((x) => x.side === 'A' && !x.parentId)!;
+    expect(f.commandLevel).toBe(defaultCommandLevel(rs));
+    expect(rs.commandLevels[f.commandLevel - 1].name).toBe('Обычный');
+    // без своего командира в шаблоне — без командира в бою
+    const noCmd = createBattle(duel(rs, infantry('Синие', 60, 'attack', { commandLevel: null }), infantry('Красные', 60)), rs, { seed: 'CMD' });
+    expect(noCmd.formations.find((x) => x.side === 'A' && !x.parentId)!.commandLevel).toBe(0);
+    // ГМ: удачное решение на одном ходу, ошибка — на другом; всё воспроизводится повтором
+    stepTurn(b0);
+    applyIntervention(b0, { type: 'setFormation', payload: { formationId: f.id, commandLevel: 5 } });
+    stepTurn(b0);
+    applyIntervention(b0, { type: 'setFormation', payload: { formationId: f.id, commandLevel: 1 } });
+    stepTurn(b0);
+    expect(b0.log.some((e) => e.phase === 'gm' && e.text.includes('Выдающийся'))).toBe(true);
+    expect(b0.log.some((e) => e.phase === 'gm' && e.text.includes('Некомпетентный'))).toBe(true);
+    const el = b0.elements.find((x) => x.side === 'A')!;
+    applyIntervention(b0, { type: 'editElement', payload: { elementId: el.id, patch: { ownCommandLevel: 4 } } });
+    expect(el.ownCommandLevel).toBe(4);
+    stepTurn(b0);
+    const r = replayBattle(b0, { withInterventions: true });
+    expect(strip(r)).toEqual(strip(b0));
   });
 
   it('вмешательства ГМ воспроизводятся при повторе', () => {

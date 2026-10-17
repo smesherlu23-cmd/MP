@@ -1,7 +1,7 @@
 // Журнал боя: фильтры, группировка по ходам, раскрываемые факторы («почему так вышло»).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { formatFactor, type Battle, type LogEntry, type Phase } from '../../engine';
+import { displayNames, formatFactor, type Battle, type LogEntry, type Phase } from '../../engine';
 import { useTabState } from '../hooks';
 import { ensureFullLog } from '../store';
 import { Seg } from './ui';
@@ -25,6 +25,7 @@ ICON.supply = '⛽';
 
 export function RichText({ text, b, onElement }: { text: string; b: Battle; onElement?: (id: string) => void }) {
   const parts = text.split(/(\[\[[efs]:[^\]]+\]\])/g);
+  const names = displayNames(b);
   return (
     <>
       {parts.map((p, i) => {
@@ -45,11 +46,11 @@ export function RichText({ text, b, onElement }: { text: string; b: Battle; onEl
                 onElement?.(id);
               }}
             >
-              {el.name}
+              {names.el.get(id) ?? el.name}
             </a>
           );
         }
-        if (kind === 'f') return <b key={i}>{b.formations.find((x) => x.id === id)?.name ?? id}</b>;
+        if (kind === 'f') return <b key={i}>{names.f.get(id) ?? id}</b>;
         const side = b.sides[id as 'A' | 'B'];
         return (
           <b key={i} style={{ color: side?.color }}>
@@ -57,6 +58,137 @@ export function RichText({ text, b, onElement }: { text: string; b: Battle; onEl
           </b>
         );
       })}
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ сводка по формированиям
+
+/** Сколько записей о потерях и морали за ход ещё читаются по одной; больше — сводка по формированиям. */
+const SUMMARY_FROM = 12;
+
+interface Summary {
+  key: string;
+  fid: string;
+  side?: 'A' | 'B';
+  entries: { e: LogEntry; i: number }[];
+  pers: number;
+  kia: number;
+  wia: number;
+  mia: number;
+  equip: Map<string, number>;
+  down: number;
+  up: number;
+  minMorale: number;
+}
+
+type Item = { kind: 'entry'; e: LogEntry; i: number } | { kind: 'sum'; s: Summary };
+
+/**
+ * Формирование, по которому сводятся записи элемента: самый глубокий уровень, на котором у каждой
+ * стороны не больше 10 формирований (для дивизии — батальоны или полки).
+ */
+function groupOf(b: Battle): Map<string, string> {
+  const parent = new Map(b.formations.map((f) => [f.id, f.parentId]));
+  const chain = (fid: string) => {
+    const out: string[] = [];
+    for (let f: string | null | undefined = fid; f; f = parent.get(f)) out.unshift(f);
+    return out; // от корня к элементу
+  };
+  const chains = new Map(b.elements.map((el) => [el.id, chain(el.formationId)]));
+  let depth = 0;
+  for (let d = 0; d < 8; d++) {
+    const per = { A: new Set<string>(), B: new Set<string>() };
+    for (const el of b.elements) per[el.side].add(chains.get(el.id)![Math.min(d, chains.get(el.id)!.length - 1)]);
+    if (per.A.size > 10 || per.B.size > 10) break;
+    depth = d;
+  }
+  return new Map(b.elements.map((el) => [el.id, chains.get(el.id)![Math.min(depth, chains.get(el.id)!.length - 1)]]));
+}
+
+/** Записи одного хода: потери и мораль — сводкой по формированиям, остальное — как есть. */
+function summarize(items: { e: LogEntry; i: number }[], groups: Map<string, string>): Item[] {
+  const out: Item[] = [];
+  let turn: { e: LogEntry; i: number }[] = [];
+  const flush = () => {
+    const pooled = turn.filter(({ e }) => e.level >= 1 && e.data && (e.phase === 'losses' || e.phase === 'morale'));
+    if (pooled.length <= SUMMARY_FROM) {
+      for (const x of turn) out.push({ kind: 'entry', ...x });
+    } else {
+      const sums = new Map<string, Summary>();
+      let placed = false;
+      for (const x of turn) {
+        if (!pooled.includes(x)) {
+          out.push({ kind: 'entry', ...x });
+          continue;
+        }
+        const fid = groups.get(x.e.refs?.[0] ?? '') ?? '?';
+        let s = sums.get(fid);
+        if (!s) {
+          s = { key: `${x.e.turn}:${fid}`, fid, side: x.e.side, entries: [], pers: 0, kia: 0, wia: 0, mia: 0, equip: new Map(), down: 0, up: 0, minMorale: 100 };
+          sums.set(fid, s);
+        }
+        s.entries.push(x);
+        const d = x.e.data!;
+        if (x.e.phase === 'losses') {
+          s.pers += d.pers ?? 0;
+          s.kia += d.kia ?? 0;
+          s.wia += d.wia ?? 0;
+          s.mia += d.mia ?? 0;
+          for (const [id, n] of Object.entries(d.equip ?? {})) s.equip.set(id, (s.equip.get(id) ?? 0) + n);
+        } else if (d.morale) {
+          if (d.morale[1] < d.morale[0]) s.down++;
+          else s.up++;
+          s.minMorale = Math.min(s.minMorale, d.morale[1]);
+        }
+        if (!placed) {
+          placed = true;
+          out.push({ kind: 'sum', s }); // место первой такой записи; остальные сводки — следом
+        }
+      }
+      // Все сводки хода — подряд, на месте первой: сначала одна сторона, потом другая.
+      const first = out.findIndex((x) => x.kind === 'sum' && x.s === [...sums.values()][0]);
+      const all = [...sums.values()].sort((a, b) => (a.side ?? '').localeCompare(b.side ?? ''));
+      out.splice(first, 1, ...all.map((s) => ({ kind: 'sum' as const, s })));
+    }
+    turn = [];
+  };
+  for (const x of items) {
+    if (x.e.phase === 'turn') {
+      flush();
+      out.push({ kind: 'entry', ...x });
+    } else turn.push(x);
+  }
+  flush();
+  return out;
+}
+
+function SummaryRow({ s, b, open, onToggle, onElement }: { s: Summary; b: Battle; open: boolean; onToggle: () => void; onElement?: (id: string) => void }) {
+  const names = displayNames(b);
+  const typeName = (id: string) => b.ruleset.componentTypes.find((t) => t.id === id)?.name ?? id;
+  const kinds = [s.kia && `убито ${s.kia}`, s.wia && `ранено ${s.wia}`, s.mia && `пропало ${s.mia}`].filter(Boolean).join(', ');
+  const parts: string[] = [];
+  if (s.pers) parts.push(`потери ${s.pers} чел.${kinds ? ` (${kinds})` : ''}`);
+  if (s.equip.size) parts.push(`техника: ${[...s.equip].map(([id, n]) => `${typeName(id)} −${n}`).join(', ')}`);
+  if (s.down || s.up) parts.push(`мораль ${s.down ? `↓ у ${s.down}` : ''}${s.down && s.up ? ', ' : ''}${s.up ? `↑ у ${s.up}` : ''}${s.down ? ` (ниже всего ${s.minMorale})` : ''}`);
+  const color = s.side ? b.sides[s.side].color : undefined;
+  return (
+    <>
+      <div className={`log-entry log-sum sev-${s.pers || s.equip.size || s.down ? 'bad' : 'info'}`} onClick={onToggle} title={open ? 'Свернуть' : 'Показать записи по отдельности'}>
+        <span className="ph">{open ? '▾' : '▸'}</span>
+        <span>
+          <b style={{ color }}>{names.f.get(s.fid) ?? s.fid}</b>: {parts.join(' · ')} <span className="faint small">— записей: {s.entries.length}</span>
+        </span>
+      </div>
+      {open &&
+        s.entries.map(({ e, i }) => (
+          <div key={i} className={`log-entry log-sub sev-${e.severity} lvl${e.level}`}>
+            <span className="ph">{ICON[e.phase] ?? '·'}</span>
+            <span>
+              <RichText text={e.text} b={b} onElement={onElement} />
+            </span>
+          </div>
+        ))}
     </>
   );
 }
@@ -111,8 +243,9 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
 
   const nameOf = useMemo(() => {
     const m = new Map<string, string>();
-    for (const el of b.elements) m.set(`e:${el.id}`, el.name);
-    for (const f of b.formations) m.set(`f:${f.id}`, f.name);
+    const names = displayNames(b);
+    for (const el of b.elements) m.set(`e:${el.id}`, names.el.get(el.id) ?? el.name);
+    for (const f of b.formations) m.set(`f:${f.id}`, names.f.get(f.id) ?? f.name);
     m.set('s:A', b.sides.A.name);
     m.set('s:B', b.sides.B.name);
     return m;
@@ -138,6 +271,11 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
   }, [b, b.log.length, level, side, phases, q, props.focus, nameOf, props.rev]);
 
   const shown = filtered.length > limit ? filtered.slice(filtered.length - limit) : filtered;
+  // В обычном режиме большого боя потери и мораль за ход сводятся по формированиям.
+  const groups = useMemo(() => groupOf(b), [b, b.elements.length]);
+  const summarizing = level === 1 && !q.trim() && !phases.length && !props.focus;
+  const items: Item[] = useMemo(() => (summarizing ? summarize(shown, groups) : shown.map((x) => ({ kind: 'entry' as const, ...x }))), [shown, summarizing, groups]);
+  const [openSums, setOpenSums] = useState<Set<string>>(new Set());
 
   // Сохранённый бой хранится без подробностей: при запросе «Всё» они восстанавливаются повтором боя.
   const [restoring, setRestoring] = useState(false);
@@ -256,8 +394,25 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
             </button>
           </div>
         )}
-        {shown.map(({ e, i }) =>
-          e.phase === 'turn' ? (
+        {items.map((it) => {
+          if (it.kind === 'sum')
+            return (
+              <SummaryRow
+                key={`s:${it.s.key}`}
+                s={it.s}
+                b={b}
+                open={openSums.has(it.s.key)}
+                onElement={props.onElement}
+                onToggle={() => {
+                  const n = new Set(openSums);
+                  if (n.has(it.s.key)) n.delete(it.s.key);
+                  else n.add(it.s.key);
+                  setOpenSums(n);
+                }}
+              />
+            );
+          const { e, i } = it;
+          return e.phase === 'turn' ? (
             <div key={i} className="log-turn">
               <span className="grow">{e.text}</span>
               <TurnLosses b={b} turn={e.turn} />
@@ -276,8 +431,8 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
               </span>
               {open.has(i) && e.factors && <Factors e={e} />}
             </div>
-          ),
-        )}
+          );
+        })}
         {restoring && <div className="empty">Восстанавливаю подробный журнал…</div>}
         {!shown.length && !restoring && <div className="empty">Записей нет. Сделайте ход или ослабьте фильтры.</div>}
       </div>

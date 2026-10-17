@@ -417,6 +417,8 @@ export interface LogEntry {
   factors?: Factor[];
   /** Разбор был, но не сохранён на диск (восстанавливается повтором боя). */
   hadFactors?: boolean;
+  /** Числа записи — для сводок по формированиям: потери людей (убито/ранено/пропало), техники по типам, мораль до и после. */
+  data?: { pers?: number; kia?: number; wia?: number; mia?: number; equip?: Record<Id, number>; morale?: [number, number] };
   /** 0 — ключевое, 1 — обычное, 2 — подробное. */
   level: 0 | 1 | 2;
 }

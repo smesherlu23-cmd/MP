@@ -1,13 +1,15 @@
 // Человекочитаемый отчёт о бое — для копирования в чат игры, на форум или в документ.
 
 import { STATUS_LABELS } from './labels';
+import { displayNames } from './names';
 import type { Battle, EquipmentStats, LogEntry, SideResult, UnitSummary } from './types';
 
 /** Заменяет [[e:ID]], [[f:ID]], [[s:A]] на названия. */
 export function resolveRefs(text: string, b: Battle): string {
+  const names = displayNames(b);
   return text.replace(/\[\[(e|f|s):([^\]]+)\]\]/g, (_, kind: string, id: string) => {
-    if (kind === 'e') return b.elements.find((x) => x.id === id)?.name ?? id;
-    if (kind === 'f') return b.formations.find((x) => x.id === id)?.name ?? id;
+    if (kind === 'e') return names.el.get(id) ?? id;
+    if (kind === 'f') return names.f.get(id) ?? id;
     const side = b.sides[id as 'A' | 'B'];
     return side ? `«${side.name}»` : id;
   });

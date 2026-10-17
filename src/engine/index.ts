@@ -15,3 +15,4 @@ export { formatReport, formatLog, formatFactor, resolveRefs } from './report';
 export * from './montecarlo';
 export * from './validate';
 export * from './units';
+export * from './names';

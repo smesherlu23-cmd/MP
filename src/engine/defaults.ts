@@ -335,6 +335,14 @@ export function makeBlankRuleset(name = 'Новый набор правил'): R
   };
 }
 
+/** Уровень командира в начале боя: первый «нейтральный» (без влияния), иначе средний. */
+export function defaultCommandLevel(rs: Pick<Ruleset, 'commandLevels'>): number {
+  const n = rs.commandLevels.length;
+  if (!n) return 0;
+  const i = rs.commandLevels.findIndex((l) => Object.values(l.effects ?? {}).every((v) => v === undefined || v === 1));
+  return i >= 0 ? i + 1 : Math.ceil(n / 2);
+}
+
 /** Заполняет поля, которых нет в старых файлах, значениями по умолчанию. */
 export function normalizeRuleset(r: Ruleset): Ruleset {
   const base = makeUniversalRuleset();
