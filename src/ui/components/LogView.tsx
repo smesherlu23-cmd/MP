@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { formatFactor, type Battle, type LogEntry, type Phase } from '../../engine';
 import { useTabState } from '../hooks';
+import { ensureFullLog } from '../store';
 import { Seg } from './ui';
 
 const PHASES: { id: Phase; label: string; icon: string }[] = [
@@ -138,6 +139,36 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
 
   const shown = filtered.length > limit ? filtered.slice(filtered.length - limit) : filtered;
 
+  // Сохранённый бой хранится без подробностей: при запросе «Всё» они восстанавливаются повтором боя.
+  const [restoring, setRestoring] = useState(false);
+  useEffect(() => {
+    if (level < 2 || !b.logTrimmed || restoring) return;
+    setRestoring(true);
+    const t = setTimeout(() => {
+      if (!ensureFullLog(b)) setLevel(1);
+      setRestoring(false);
+    }, 30);
+    return () => clearTimeout(t);
+  }, [level, b, b.logTrimmed]);
+  const openEntry = (e: LogEntry, i: number) => {
+    if (!e.factors && !e.hadFactors) return;
+    const n = new Set(open);
+    if (n.has(i)) {
+      n.delete(i);
+      return setOpen(n);
+    }
+    if (!e.factors) {
+      // Разбор не сохранён на диск — восстановить журнал и раскрыть ту же запись.
+      const key = `${e.turn}|${e.phase}|${e.text}`;
+      if (!ensureFullLog(b)) return;
+      const j = b.log.findIndex((x) => x.level <= 1 && `${x.turn}|${x.phase}|${x.text}` === key);
+      if (j >= 0) setOpen(new Set([...n, j]));
+      return;
+    }
+    n.add(i);
+    setOpen(n);
+  };
+
   useEffect(() => {
     const el = listRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
@@ -234,26 +265,21 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
           ) : (
             <div
               key={i}
-              className={`log-entry sev-${e.severity} lvl${e.level} ph-${e.phase}${e.factors ? ' has-f' : ''}`}
-              onClick={() => {
-                if (!e.factors) return;
-                const n = new Set(open);
-                if (n.has(i)) n.delete(i);
-                else n.add(i);
-                setOpen(n);
-              }}
-              title={e.factors ? 'Нажмите, чтобы увидеть расчёт' : undefined}
+              className={`log-entry sev-${e.severity} lvl${e.level} ph-${e.phase}${e.factors || e.hadFactors ? ' has-f' : ''}`}
+              onClick={() => openEntry(e, i)}
+              title={e.factors || e.hadFactors ? 'Нажмите, чтобы увидеть расчёт' : undefined}
             >
               <span className="ph">{ICON[e.phase] ?? '·'}</span>
               <span>
                 <RichText text={e.text} b={b} onElement={props.onElement} />
-                {e.factors && !open.has(i) && <span className="fx-hint"> ⓘ</span>}
+                {(e.factors || e.hadFactors) && !open.has(i) && <span className="fx-hint"> ⓘ</span>}
               </span>
               {open.has(i) && e.factors && <Factors e={e} />}
             </div>
           ),
         )}
-        {!shown.length && <div className="empty">Записей нет. Сделайте ход или ослабьте фильтры.</div>}
+        {restoring && <div className="empty">Восстанавливаю подробный журнал…</div>}
+        {!shown.length && !restoring && <div className="empty">Записей нет. Сделайте ход или ослабьте фильтры.</div>}
       </div>
     </>
   );

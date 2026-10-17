@@ -196,3 +196,36 @@ export function replayBattle(src: Battle, opts: { seed?: string; withInterventio
   }
   return b;
 }
+
+// ------------------------------------------------------------------ хранение журнала
+
+/**
+ * Копия боя для записи на диск: журнал без подробного уровня и без разборов множителей —
+ * в 5–10 раз меньше. Всё убранное восстанавливает restoreBattleLog: бой детерминирован.
+ */
+export function trimBattleForStorage(b: Battle): Battle {
+  // Обрезается всегда: у продолжённого после загрузки боя новые записи — полные.
+  const log = b.log.filter((e) => e.level <= 1).map(({ factors, ...e }) => (factors?.length ? { ...e, hadFactors: true } : e));
+  return { ...b, log, logTrimmed: true };
+}
+
+/** Отпечаток журнала без подробностей — чтобы убедиться, что повтор совпал с сохранённым боем. */
+function logPrint(b: Battle): string {
+  return b.log
+    .filter((e) => e.level <= 1 && e.phase !== 'setup')
+    .map((e) => `${e.turn}|${e.phase}|${e.text}`)
+    .join('\n');
+}
+
+/**
+ * Вернуть полный журнал повтором боя (те же броски и решения ГМ). Если повтор разошёлся с
+ * сохранённым (бой сохранён другой версией программы), журнал не трогается — возвращает false.
+ */
+export function restoreBattleLog(b: Battle): boolean {
+  if (!b.logTrimmed) return true;
+  const r = replayBattle(b, { withInterventions: true });
+  if (r.turn !== b.turn || logPrint(r) !== logPrint(b)) return false;
+  b.log = r.log;
+  b.logTrimmed = false;
+  return true;
+}

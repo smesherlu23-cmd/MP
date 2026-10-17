@@ -26,7 +26,7 @@ import { Btn, Card, Check, Field, Menu, Meter, Modal, Num, Section, Sel, fmt0, p
 import { useTabState } from '../hooks';
 import { nextBattleName } from './ScenarioPage';
 import { saveResultsAsNew, updateLibraryFromBattle, updateScenarioFromBattle } from '../postBattle';
-import { deleteBattle, exportJson, exportText, loadBattle, openTab, putBattle, renameBattle, toast, touchBattle, useApp, useBattles, type Tab } from '../store';
+import { deleteBattle, ensureFullLog, exportJson, exportText, loadBattle, openTab, putBattle, renameBattle, toast, touchBattle, useApp, useBattles, type Tab } from '../store';
 
 const SIDES: SideId[] = ['A', 'B'];
 
@@ -142,7 +142,13 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             b.interventions.length > 0 && { label: 'Повторить с решениями ГМ', onClick: () => restart(true, true), tip: 'Воспроизвести этот бой вместе с вашими вмешательствами до текущего хода' },
             'sep',
             !b.finished && { label: 'Скопировать отчёт', onClick: () => copyText(formatReport(b)) },
-            { label: 'Сохранить отчёт с журналом…', onClick: () => exportText(`${b.name} — отчёт`, formatReport(b, { includeLog: true, logLevel: settings.logLevel }), 'txt') },
+            {
+              label: 'Сохранить отчёт с журналом…',
+              onClick: () => {
+                if (settings.logLevel === 2) ensureFullLog(b);
+                exportText(`${b.name} — отчёт`, formatReport(b, { includeLog: true, logLevel: settings.logLevel }), 'txt');
+              },
+            },
             { label: 'Сохранить бой в файл…', onClick: () => exportJson('battle', b.name, b), tip: 'JSON — можно передать другому ГМ и импортировать' },
             'sep',
             { label: 'Удалить бой', danger: true, onClick: () => deleteBattle(b.id) },

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Btn, Card, Field, Num, Seg } from '../components/ui';
 import { storage, storageKind } from '../storage';
-import { confirmDialog, installExamples, toast, updateSettings, useApp } from '../store';
+import { confirmDialog, deleteBattles, installExamples, toast, updateSettings, useApp } from '../store';
 
 export function SettingsPage() {
   const s = useApp((x) => x.settings);
+  const battles = Object.values(useApp((x) => x.battleIndex));
+  const finished = battles.filter((b) => b.finished);
   const [dir, setDir] = useState('');
   useEffect(() => {
     storage.getDataDir().then(setDir);
@@ -40,6 +42,19 @@ export function SettingsPage() {
             </Field>
             <Field label="Прогонов по умолчанию">
               <Num value={s.mcRuns} onChange={(v) => updateSettings({ mcRuns: v })} min={10} max={20000} integer width={120} />
+            </Field>
+            <Field label="Сохранённые бои" hint="Бои хранятся без подробного журнала — подробности и разборы восстанавливаются повтором боя, когда их открывают.">
+              <div className="row">
+                <span className="muted">
+                  всего {battles.length}, завершённых {finished.length}
+                </span>
+                <Btn sm disabled={!finished.length} onClick={() => deleteBattles(finished.map((b) => b.id), 'Удалить завершённые бои?')}>
+                  Удалить завершённые
+                </Btn>
+                <Btn sm kind="danger" disabled={!battles.length} onClick={() => deleteBattles(battles.map((b) => b.id), 'Удалить все бои?')}>
+                  Удалить все
+                </Btn>
+              </div>
             </Field>
           </div>
         </Card>

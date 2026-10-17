@@ -9,9 +9,9 @@ import { SECTIONS } from '../pages/RulesetPage';
 import { startBattle } from '../pages/ScenarioPage';
 import {
   createFormation,
-  createRuleset,
   createScenario,
   importFile,
+  newRulesetDialog,
   openTab,
   redo,
   tabKey,
@@ -44,7 +44,7 @@ function buildItems(): Item[] {
   const cmd = (title: string, run: () => void, sub?: string) => items.push({ id: `cmd:${title}`, group: 'Команды', title, sub, top: true, run: () => run() });
   cmd('Новый сценарий', () => createScenario());
   cmd('Новое подразделение', () => createFormation());
-  cmd('Новый набор правил', () => createRuleset());
+  cmd('Новый набор правил', () => void newRulesetDialog());
   cmd('Импорт из файла…', () => importFile());
   cmd('Отменить', undo, 'Ctrl+Z');
   cmd('Повторить', redo, 'Ctrl+Y');

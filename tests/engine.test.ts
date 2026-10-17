@@ -20,10 +20,12 @@ import {
   updateFromTemplate,
   newScenario,
   replayBattle,
+  restoreBattleLog,
   Rng,
   runMany,
   runToEnd,
   stepTurn,
+  trimBattleForStorage,
   validateScenario,
   type Battle,
   type UnitNode,
@@ -119,6 +121,34 @@ describe('бой', () => {
     runToEnd(a);
     runToEnd(saved);
     expect(strip(saved)).toEqual(strip(a));
+  });
+
+  it('бой хранится без подробного журнала и восстанавливает его повтором', () => {
+    const a = createBattle(sc, rs, { seed: 'TRIM' });
+    stepTurn(a);
+    stepTurn(a);
+    applyIntervention(a, { type: 'setOrder', payload: { elementIds: a.elements.filter((x) => x.side === 'B').map((x) => x.id), orderId: 'attack' } });
+    stepTurn(a);
+    const full = JSON.stringify(a.log);
+    const stored: Battle = JSON.parse(JSON.stringify(trimBattleForStorage(a)));
+    expect(JSON.stringify(stored).length).toBeLessThan(JSON.stringify(a).length / 2);
+    expect(stored.log.some((e) => e.level === 2 || e.factors)).toBe(false);
+    expect(stored.log.some((e) => e.hadFactors)).toBe(true);
+    // Продолжение сохранённого боя идёт так же, как непрерывного, и журнал восстанавливается целиком.
+    stepTurn(a);
+    stepTurn(stored);
+    expect(strip(stored)).toEqual(strip(a));
+    // повторное сохранение продолженного боя снова убирает подробности
+    expect(trimBattleForStorage(stored).log.some((e) => e.level === 2 || e.factors)).toBe(false);
+    expect(restoreBattleLog(stored)).toBe(true);
+    expect(stored.logTrimmed).toBe(false);
+    expect(JSON.stringify(stored.log.slice(1))).toEqual(JSON.stringify(a.log.slice(1)));
+    expect(full.length).toBeGreaterThan(0);
+    // Если сохранённый журнал не совпадает с повтором (другая версия программы), он не подменяется.
+    const other: Battle = JSON.parse(JSON.stringify(trimBattleForStorage(a)));
+    other.log[other.log.length - 1].text += ' (изменено)';
+    expect(restoreBattleLog(other)).toBe(false);
+    expect(other.logTrimmed).toBe(true);
   });
 
   it('вмешательства ГМ воспроизводятся при повторе', () => {

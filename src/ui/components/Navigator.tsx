@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { SECTIONS, sectionOf } from '../nav';
 import { DND_LIB } from '../pages/FormationPage';
-import { createFormation, createRuleset, createScenario, openTab, updateSettings, useApp, type NavSection, type TabKind } from '../store';
+import { createFormation, createScenario, deleteBattles, newRulesetDialog, openTab, updateSettings, useApp, type NavSection, type TabKind } from '../store';
 
 function NavItem(props: { icon: string; label: string; count?: number; selected?: boolean; here?: boolean; onClick: () => void; title?: string }) {
   return (
@@ -31,7 +31,7 @@ export function Navigator() {
     rulesets: Object.keys(s.rulesets).length,
   };
   const meta = SECTIONS.find((x) => x.id === sec)!;
-  const create = () => (sec === 'scenarios' ? createScenario() : sec === 'units' ? createFormation() : sec === 'rulesets' ? createRuleset() : undefined);
+  const create = () => (sec === 'scenarios' ? createScenario() : sec === 'units' ? createFormation() : sec === 'rulesets' ? void newRulesetDialog() : undefined);
   const isOpen = (kind: TabKind, ref: string) =>
     activeTab?.ref === ref && activeTab.kind === kind;
 
@@ -53,10 +53,17 @@ export function Navigator() {
       {opts.sub && <span className="sub">{opts.sub}</span>}
     </div>
   );
-  const group = (title: string, items: React.ReactNode[]) =>
+  const group = (title: string, items: React.ReactNode[], onDelete?: () => void, deleteTitle?: string) =>
     items.length ? (
       <div key={`g:${title}`} className="nav-group">
-        <div className="nav-group-title">{title}</div>
+        <div className="nav-group-title">
+          <span className="grow">{title}</span>
+          {onDelete && (
+            <button className="nav-group-del" onClick={onDelete} title={deleteTitle}>
+              ×
+            </button>
+          )}
+        </div>
         {items}
       </div>
     ) : null;
@@ -102,6 +109,8 @@ export function Navigator() {
             active: isOpen('battle', b.id),
           }),
         ),
+        () => deleteBattles(items.map((b) => b.id), `Удалить все бои сценария «${scName}»?`),
+        `Удалить все бои этого сценария (${items.length})`,
       );
     });
     empty = q ? 'Ничего не найдено' : 'Боёв пока нет. Бой начинается со страницы сценария — кнопка «▶ Начать бой».';

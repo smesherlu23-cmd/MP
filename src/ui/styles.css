@@ -2533,3 +2533,28 @@ html.desktop .topbar a {
 .breadcrumbs .sep {
   color: var(--faint);
 }
+.nav-group-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-group-del {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font: inherit;
+  line-height: 1;
+  color: var(--faint);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+}
+.nav-group:hover .nav-group-del {
+  opacity: 1;
+}
+.nav-group-del:hover {
+  color: var(--bad);
+  background: var(--panel2);
+}

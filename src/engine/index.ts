@@ -9,7 +9,7 @@ export * from './defaults';
 export { EngineContext } from './context';
 export { createBattle, stepTurn, runToEnd, combatEffectiveness, shooterMult } from './battle';
 export { computeResult, defaultObjectives } from './outcome';
-export { applyIntervention, replayBattle } from './interventions';
+export { applyIntervention, replayBattle, restoreBattleLog, trimBattleForStorage } from './interventions';
 export type { ElementPatch } from './interventions';
 export { formatReport, formatLog, formatFactor, resolveRefs } from './report';
 export * from './montecarlo';

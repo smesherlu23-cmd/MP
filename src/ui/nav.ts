@@ -43,9 +43,11 @@ const sync = () => useNav.setState({ back: back.length > 0, fwd: fwd.length > 0 
 
 useApp.subscribe((s, prev) => {
   if (s.active === prev.active || !prev.loaded) return;
-  // Навигатор следует за открытой вкладкой: видно, в каком разделе находишься.
+  // Навигатор следует за переходами: видно, в каком разделе находишься. Когда вкладка просто
+  // закрылась (в том числе при удалении объекта), раздел не меняется — список остаётся перед глазами.
+  const closed = !s.tabs.some((t) => t.key === prev.active);
   const sec = sectionOf(s.tabs.find((t) => t.key === s.active));
-  if (sec && sec !== s.settings.navSection) updateSettings({ navSection: sec });
+  if (!closed && sec && sec !== s.settings.navSection) updateSettings({ navSection: sec });
   if (jumping || !prev.active) return;
   back.push(prev.active);
   if (back.length > 100) back.shift();

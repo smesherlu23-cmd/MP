@@ -415,6 +415,8 @@ export interface LogEntry {
   /** Текст; ссылки на элементы — [[e:ID]], на формирования — [[f:ID]], на стороны — [[s:A]]. */
   text: string;
   factors?: Factor[];
+  /** Разбор был, но не сохранён на диск (восстанавливается повтором боя). */
+  hadFactors?: boolean;
   /** 0 — ключевое, 1 — обычное, 2 — подробное. */
   level: 0 | 1 | 2;
 }
@@ -461,6 +463,10 @@ export interface Battle {
   formations: FormationState[];
   elements: ElementState[];
   log: LogEntry[];
+  /** Журнал сохранён без подробностей и разборов — их восстанавливает restoreBattleLog. */
+  logTrimmed?: boolean;
+  /** Сторона, у которой была инициатива в прошлом ходу. */
+  lastInitiative?: SideId;
   history: TurnSnapshot[];
   interventions: Intervention[];
   quietTurns: number;

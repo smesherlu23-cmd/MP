@@ -24,6 +24,8 @@ import {
   newScenario,
   normalizeRuleset,
   randomSeed,
+  restoreBattleLog,
+  trimBattleForStorage,
   type Battle,
   type UnitNode,
   type Id,
@@ -500,10 +502,27 @@ export function replaceRuleset(r: Ruleset) {
 
 export function createRuleset(from?: Id): Id {
   const src = from ? get().rulesets[from] : undefined;
-  const r = src ? { ...clone(src), id: newId('rs'), name: `${src.name} (копия)` } : makeBlankRuleset();
+  const r = src ? { ...clone(src), id: newId('rs'), name: `${src.name.replace(/ \(пример\)$/, '')} (копия)`, updatedAt: undefined } : makeBlankRuleset();
   replaceRuleset(r);
   openTab('ruleset', r.id);
   return r.id;
+}
+
+/** Новый набор правил: на основе существующего (по умолчанию — того, с которым работают) или пустой. */
+export async function newRulesetDialog(): Promise<Id | undefined> {
+  const s = get();
+  const def = defaultRulesetId();
+  const list = Object.values(s.rulesets).sort((a, b) => (a.id === def ? -1 : b.id === def ? 1 : a.name.localeCompare(b.name, 'ru')));
+  const v = await chooseDialog(
+    'Новый набор правил — на основе чего?',
+    [
+      ...list.map((r) => ({ value: r.id, label: `На основе «${r.name}»${r.era ? ` — ${r.era}` : ''}` })),
+      { value: '', label: 'Пустой: каталог типов с нуля, остальное — по умолчанию' },
+    ],
+    'Проще всего взять похожий набор и поменять в нём нужное: типы и их огневую мощь, приказы, условия, коэффициенты. Исходный набор не изменится.',
+  );
+  if (v === null) return;
+  return createRuleset(v || undefined);
 }
 
 export async function deleteRuleset(id: Id) {
@@ -689,7 +708,33 @@ export const useBattles = create<BattlesState>(() => ({ battles: {}, rev: {} }))
 export function putBattle(b: Battle, persist = true) {
   useBattles.setState((s) => ({ battles: { ...s.battles, [b.id]: b }, rev: { ...s.rev, [b.id]: (s.rev[b.id] ?? 0) + 1 } }));
   set((s) => ({ battleIndex: { ...s.battleIndex, [b.id]: battleMeta(b) } }));
-  if (persist) scheduleSave('battles', b.id, () => useBattles.getState().battles[b.id], 1200);
+  // На диск — без подробного журнала: в 5–10 раз меньше; подробности восстанавливаются повтором.
+  if (persist)
+    scheduleSave('battles', b.id, () => {
+      const x = useBattles.getState().battles[b.id];
+      return x && trimBattleForStorage(x);
+    }, 1200);
+}
+
+/**
+ * Вернуть бою подробный журнал и разборы (после загрузки с диска их нет). Для больших боёв это
+ * может занять секунду. false — бой сохранён другой версией программы и повтор с ним разошёлся.
+ */
+export function ensureFullLog(b: Battle): boolean {
+  if (!b.logTrimmed) return true;
+  const ok = restoreBattleLog(b);
+  if (ok) touchBattle(b.id);
+  else toast('Подробности этого боя недоступны: он сохранён другой версией программы. Главное и обычное в журнале остались.', 'bad');
+  return ok;
+}
+
+/** Удалить несколько боёв одним подтверждением. */
+export async function deleteBattles(ids: Id[], title: string): Promise<boolean> {
+  if (!ids.length) return false;
+  if (!(await confirmDialog(title, `Будет удалено боёв: ${ids.length}. Сценарии и подразделения не затрагиваются.`, 'Удалить', true))) return false;
+  for (const id of ids) await deleteBattle(id, false);
+  toast(`Удалено боёв: ${ids.length}.`, 'good');
+  return true;
 }
 
 /** Вызвать после изменения боя движком (ход, вмешательство). */

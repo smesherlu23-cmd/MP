@@ -24,9 +24,32 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  e2e:
+    name: Проверки интерфейса (браузер)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   windows:
     name: Сборка для Windows (.exe)
-    needs: test
+    needs: [test, e2e]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

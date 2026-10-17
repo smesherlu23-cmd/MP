@@ -422,8 +422,8 @@ function phaseInitiative(E: EngineContext): Initiative {
   b.sides.B.initiative = Math.round(scores.B);
   const sequential = k.initiativeSequential >= 0.5;
   // В обычном журнале инициатива видна, только когда переходит к другой стороне (или из-за засады).
-  let prev: SideId | undefined;
-  for (let i = b.log.length - 1; i >= 0 && !prev; i--) if (b.log[i].phase === 'initiative') prev = b.log[i].side;
+  const prev = b.lastInitiative;
+  b.lastInitiative = first;
   E.log({
     phase: 'initiative',
     level: !prev || prev !== first || reason ? 1 : 2,
