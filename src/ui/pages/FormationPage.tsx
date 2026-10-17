@@ -34,7 +34,7 @@ import {
 } from '../../engine';
 import { Crumbs } from '../components/Crumbs';
 import { Link } from '../components/Link';
-import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, Seg, Tags, Txt, fmt0, fmt1, type MenuItem } from '../components/ui';
+import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, Seg, Tags, Txt, fmt0, fmt1, pressable, type MenuItem } from '../components/ui';
 import { useTabState } from '../hooks';
 import {
   addFormation,
@@ -1075,8 +1075,8 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
             <Field
               label="Командование"
               hint={
-                'Есть ли у подразделения свой командир. Его компетентность задаётся не здесь, а в бою: в начале боя она обычная, ' +
-                'а ГМ меняет её по обстановке — удачное решение или ошибка командира в конкретный момент. ' +
+                'Есть ли у подразделения свой командир. Его компетентность задаётся не здесь: в начале боя — в сценарии («Командиры в начале боя», ' +
+                'по умолчанию обычная), а по ходу боя её меняет ГМ по обстановке — удачное решение или ошибка командира в конкретный момент. ' +
                 'Командир влияет на подразделение и всех подчинённых; влияние старших ослабевает с каждым уровнем.'
               }
             >
@@ -1343,7 +1343,14 @@ function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; targetId: 
         {items.map((u) => {
           const s = summarizeUnits([u], ctx.rs);
           return (
-            <div key={u.id} className={`insert-item${pick === u.id ? ' sel' : ''}`} onClick={() => setPick(u.id)} onDoubleClick={() => doInsert(u.id)}>
+            <div
+              key={u.id}
+              className={`insert-item${pick === u.id ? ' sel' : ''}`}
+              onClick={() => setPick(u.id)}
+              onDoubleClick={() => doInsert(u.id)}
+              onFocus={() => setPick(u.id)}
+              {...pressable(() => doInsert(u.id))}
+            >
               <span className="grow">
                 {u.level && <span className="faint">{u.level} · </span>}
                 {u.name}

@@ -130,6 +130,17 @@ function DialogHost() {
     if (d?.input) setValue(d.input.value);
     else if (d?.options) setValue(d.options[0]?.value ?? '');
   }, [d]);
+  useEffect(() => {
+    if (!d) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      d.resolve(d.alert ? true : null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [d]);
   if (!d) return null;
   const ok = () => d.resolve(d.input || d.options ? value : true);
   return (
@@ -164,9 +175,9 @@ function DialogHost() {
         </div>
         <div className="modal-foot">
           {!d.alert && <Btn onClick={() => d.resolve(null)}>Отмена</Btn>}
-          <Btn kind={d.danger ? 'danger' : 'primary'} onClick={ok}>
+          <button type="button" className={`btn ${d.danger ? 'danger' : 'primary'}`} onClick={ok} autoFocus={!d.input && !d.options}>
             {d.okText ?? 'ОК'}
-          </Btn>
+          </button>
         </div>
       </div>
     </div>
@@ -341,8 +352,7 @@ function TooltipHost() {
   const [tip, setTip] = useState<{ text: string; left: number; top: number; above: boolean } | null>(null);
   useEffect(() => {
     let cur: Element | null = null;
-    const over = (e: MouseEvent) => {
-      const t = (e.target as Element)?.closest?.('[data-tip]') ?? null;
+    const show = (t: Element | null) => {
       if (t === cur) return;
       cur = t;
       const text = t?.getAttribute('data-tip');
@@ -351,15 +361,28 @@ function TooltipHost() {
       const above = r.bottom + 90 > window.innerHeight;
       setTip({ text, left: Math.min(Math.max(8, r.left + r.width / 2 - 170), window.innerWidth - 348), top: above ? r.top - 6 : r.bottom + 6, above });
     };
+    const over = (e: MouseEvent) => show((e.target as Element)?.closest?.('[data-tip]') ?? null);
+    // С клавиатуры подсказка показывается, когда на элемент переходят клавишей Tab (не по щелчку).
+    const focus = (e: FocusEvent) => {
+      const t = e.target as Element;
+      if (t?.matches?.(':focus-visible')) show(t.closest('[data-tip]'));
+    };
     const hide = () => {
       cur = null;
       setTip(null);
     };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && hide();
     document.addEventListener('mouseover', over);
+    document.addEventListener('focusin', focus);
+    document.addEventListener('focusout', hide);
+    document.addEventListener('keydown', onKey);
     document.addEventListener('scroll', hide, true);
     document.addEventListener('mousedown', hide);
     return () => {
       document.removeEventListener('mouseover', over);
+      document.removeEventListener('focusin', focus);
+      document.removeEventListener('focusout', hide);
+      document.removeEventListener('keydown', onKey);
       document.removeEventListener('scroll', hide, true);
       document.removeEventListener('mousedown', hide);
     };

@@ -1,12 +1,14 @@
 // Главный процесс Electron: окно программы и работа с файлами данных.
-// Данные — JSON-файлы в папке: rulesets/, formations/, scenarios/, battles/.
+// Данные — JSON-файлы в папке: rulesets/, formations/, scenarios/, battles/; резервные копии,
+// корзина и повреждённые файлы — в backups/, trash/, damaged/ (см. protect.ts).
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { DataStore, type BackupKind } from './protect';
 
-const COLLECTIONS = new Set(['rulesets', 'formations', 'scenarios', 'battles']);
 let dataDir = '';
+let store = new DataStore('');
 let win: BrowserWindow | null = null;
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
@@ -31,24 +33,6 @@ function defaultDataDir(): string {
   return path.join(app.getPath('documents'), 'WarSim');
 }
 
-function colDir(col: string): string {
-  if (!COLLECTIONS.has(col)) throw new Error(`Неизвестная коллекция: ${col}`);
-  return path.join(dataDir, col);
-}
-
-function filePath(col: string, id: string): string {
-  const safe = String(id).replace(/[^\w.\-а-яА-ЯёЁ]+/g, '_');
-  if (!safe || safe.startsWith('.')) throw new Error('Некорректный идентификатор');
-  return path.join(colDir(col), `${safe}.json`);
-}
-
-async function writeAtomic(file: string, content: string) {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  await fs.writeFile(tmp, content, 'utf8');
-  await fs.rename(tmp, file);
-}
-
 function battleMeta(b: any) {
   return {
     id: b.id,
@@ -67,34 +51,17 @@ function registerIpc() {
     if (process.platform !== 'darwin' && win) win.setTitleBarOverlay(OVERLAY[theme === 'light' ? 'light' : 'dark']);
   });
   ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataDir }));
-  ipcMain.handle('storage:list', async (_e, col: string) => {
-    const dir = colDir(col);
-    await fs.mkdir(dir, { recursive: true });
-    const out: unknown[] = [];
-    for (const name of await fs.readdir(dir)) {
-      if (!name.endsWith('.json')) continue;
-      try {
-        const data = JSON.parse(await fs.readFile(path.join(dir, name), 'utf8'));
-        out.push(col === 'battles' ? battleMeta(data) : data);
-      } catch {
-        /* повреждённый файл пропускаем */
-      }
-    }
-    return out;
-  });
-  ipcMain.handle('storage:load', async (_e, col: string, id: string) => {
-    try {
-      return JSON.parse(await fs.readFile(filePath(col, id), 'utf8'));
-    } catch {
-      return null;
-    }
-  });
-  ipcMain.handle('storage:save', async (_e, col: string, id: string, data: unknown) => {
-    await writeAtomic(filePath(col, id), JSON.stringify(data, null, col === 'battles' ? 0 : 2));
-  });
-  ipcMain.handle('storage:remove', async (_e, col: string, id: string) => {
-    await fs.rm(filePath(col, id), { force: true });
-  });
+  ipcMain.handle('storage:list', (_e, col: string) => store.list(col, col === 'battles' ? battleMeta : undefined));
+  ipcMain.handle('storage:load', (_e, col: string, id: string) => store.load(col, id));
+  ipcMain.handle('storage:save', (_e, col: string, id: string, data: unknown) => store.save(col, id, data));
+  ipcMain.handle('storage:remove', (_e, col: string, id: string) => store.remove(col, id));
+  ipcMain.handle('storage:problems', () => store.takeProblems());
+  ipcMain.handle('trash:list', () => store.trash());
+  ipcMain.handle('trash:restore', (_e, col: string, key: string) => store.restoreTrash(col, key));
+  ipcMain.handle('trash:purge', (_e, items?: { col: string; key: string }[]) => store.purgeTrash(items));
+  ipcMain.handle('backup:list', () => store.backups());
+  ipcMain.handle('backup:make', (_e, kind: BackupKind) => store.backup(kind));
+  ipcMain.handle('backup:restore', (_e, id: string) => store.restoreBackup(id));
   ipcMain.handle('file:export', async (_e, name: string, content: string) => {
     const ext = path.extname(name).slice(1) || 'txt';
     const res = await dialog.showSaveDialog(win!, {
@@ -115,13 +82,15 @@ function registerIpc() {
     const res = await dialog.showOpenDialog(win!, { title: 'Папка данных WarSim', properties: ['openDirectory', 'createDirectory'], defaultPath: dataDir });
     if (res.canceled || !res.filePaths[0]) return null;
     dataDir = res.filePaths[0];
+    store = new DataStore(dataDir);
     await fs.mkdir(dataDir, { recursive: true });
     await writeSettings({ ...(await readSettings()), dataDir });
     return dataDir;
   });
-  ipcMain.handle('data:open', async () => {
-    await fs.mkdir(dataDir, { recursive: true });
-    await shell.openPath(dataDir);
+  ipcMain.handle('data:open', async (_e, sub?: string) => {
+    const dir = sub && ['backups', 'trash', 'damaged'].includes(sub) ? path.join(dataDir, sub) : dataDir;
+    await fs.mkdir(dir, { recursive: true });
+    await shell.openPath(dir);
   });
 }
 
@@ -203,7 +172,9 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     const s = await readSettings();
     dataDir = s.dataDir || defaultDataDir();
+    store = new DataStore(dataDir);
     await fs.mkdir(dataDir, { recursive: true });
+    await store.purgeOldTrash().catch(() => undefined);
     registerIpc();
     buildMenu();
     await createWindow();

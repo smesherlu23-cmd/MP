@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { displayNames, formatFactor, type Battle, type LogEntry, type Phase } from '../../engine';
 import { useTabState } from '../hooks';
 import { ensureFullLog } from '../store';
-import { Seg } from './ui';
+import { pressable, Seg } from './ui';
 
 const PHASES: { id: Phase; label: string; icon: string }[] = [
   { id: 'detection', label: 'Обнаружение', icon: '◉' },
@@ -174,7 +174,13 @@ function SummaryRow({ s, b, open, onToggle, onElement }: { s: Summary; b: Battle
   const color = s.side ? b.sides[s.side].color : undefined;
   return (
     <>
-      <div className={`log-entry log-sum sev-${s.pers || s.equip.size || s.down ? 'bad' : 'info'}`} onClick={onToggle} title={open ? 'Свернуть' : 'Показать записи по отдельности'}>
+      <div
+        className={`log-entry log-sum sev-${s.pers || s.equip.size || s.down ? 'bad' : 'info'}`}
+        onClick={onToggle}
+        title={open ? 'Свернуть' : 'Показать записи по отдельности'}
+        {...pressable(onToggle)}
+        aria-expanded={open}
+      >
         <span className="ph">{open ? '▾' : '▸'}</span>
         <span>
           <b style={{ color }}>{names.f.get(s.fid) ?? s.fid}</b>: {parts.join(' · ')} <span className="faint small">— записей: {s.entries.length}</span>
@@ -423,6 +429,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
               className={`log-entry sev-${e.severity} lvl${e.level} ph-${e.phase}${e.factors || e.hadFactors ? ' has-f' : ''}`}
               onClick={() => openEntry(e, i)}
               title={e.factors || e.hadFactors ? 'Нажмите, чтобы увидеть расчёт' : undefined}
+              {...(e.factors || e.hadFactors ? { ...pressable(() => openEntry(e, i)), 'aria-expanded': open.has(i) } : {})}
             >
               <span className="ph">{ICON[e.phase] ?? '·'}</span>
               <span>

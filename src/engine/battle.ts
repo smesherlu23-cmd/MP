@@ -84,9 +84,14 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       initiative: 0,
     };
     // В шаблоне — только то, есть ли у подразделения свой командир. Компетентность в начале боя
-    // обычная; ГМ меняет её по ходу боя (setFormation / editElement), по обстановке.
+    // задаётся в сценарии (иначе обычная); по ходу боя её меняет ГМ (setFormation / editElement).
     const startCmd = defaultCommandLevel(rs);
-    const cmd = (v: number | null | undefined) => (v ? startCmd : 0);
+    const maxCmd = Math.max(1, rs.commandLevels.length);
+    const cmd = (node: UnitNode) => {
+      if (!node.commandLevel) return 0;
+      const set = sd.commanders?.[node.id];
+      return set ? clamp(Math.round(set), 1, maxCmd) : startCmd;
+    };
     /**
      * Узел с подчинёнными (и любой корень) становится формированием — звеном управления.
      * Узел с собственным составом становится элементом — тем, что стреляет и несёт потери.
@@ -105,7 +110,7 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
           side: sd.id,
           parentId: parentF?.id ?? null,
           commanderName: node.commanderName,
-          commandLevel: cmd(node.commandLevel),
+          commandLevel: cmd(node),
           comms: clamp(res.comms, 0, 100),
           supply: clamp(res.supply, 0, 100),
           orderId: order,
@@ -119,7 +124,7 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
         const el = makeElement(node, own ? `${node.name} (${node.isHQ ? 'управление' : 'свой состав'})` : node.name, f, `e${++eCount}`, rs, typeIds, res, order, warnings);
         if (!own) {
           // Свой командир, связь и снабжение у подразделения без подчинённых.
-          el.ownCommandLevel = cmd(node.commandLevel);
+          el.ownCommandLevel = cmd(node);
           el.ownCommanderName = node.commanderName;
           el.comms = node.comms;
           el.supply = node.supply;

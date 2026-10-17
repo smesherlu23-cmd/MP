@@ -5,7 +5,7 @@ import { create } from 'zustand';
 import { createBattle, newId, randomSeed, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
 import { Histogram, StackBar } from '../components/Charts';
 import { Crumbs } from '../components/Crumbs';
-import { Btn, Card, Field, Info, Menu, Num, Section, fmt1 } from '../components/ui';
+import { Btn, Card, Field, Info, Menu, Num, Section, fmt1, pressable } from '../components/ui';
 import { useTabState } from '../hooks';
 import { exportText, openTab, putBattle, toast, useApp, type Tab } from '../store';
 
@@ -233,7 +233,7 @@ function MetricsTable({ r, colors, metric, setMetric, tabKey }: { r: MonteCarloR
               const b = r.metrics.find((x) => x.key === `B.${key}`);
               const m = a ?? b!;
               return (
-                <tr key={key} className={key === metric ? 'sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setMetric(key)} title="Показать гистограмму">
+                <tr key={key} className={key === metric ? 'sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setMetric(key)} title="Показать гистограмму" {...pressable(() => setMetric(key))}>
                   <td>
                     {m.label}
                     {m.unit ? <span className="faint">, {m.unit}</span> : null}

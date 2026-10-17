@@ -317,7 +317,8 @@ export function makeLinearRuleset(): Ruleset {
       },
     ],
     features: { ...DEFAULT_FEATURES, fuel: false, breakdowns: false, vehicleCondition: false, comms: false },
-    coefficients: { ...COEFFICIENT_DEFAULTS, casualtyScale: 1, killedShare: 0.3, woundedShare: 0.55, missingShare: 0.15 },
+    // Потери от залпов и штыков выше, чем у «универсального» набора, а исход решает мораль.
+    coefficients: { ...COEFFICIENT_DEFAULTS, casualtyScale: 3, moralePerLossPct: 2, killedShare: 0.3, woundedShare: 0.55, missingShare: 0.15 },
   };
 }
 
@@ -498,6 +499,100 @@ export function makeDemoDefenders(): UnitNode {
       withoutType(fromTemplate('demo-tpl-msv', 'Резервный взвод', { id: 'demo-def-res', order: 'reserve', echelon: 'rear' }, { rifleman: 26 }), 'at'),
     ],
   });
+}
+
+// ---------------------------------------------------------------- пример для «Линейной тактики»
+
+/** Шаблоны эпохи линейной тактики: из них собраны бригада и оборона переправы (кирасиры — без шаблона). */
+export function makeLinearTemplates(): UnitNode[] {
+  const rs = 'rs-linear';
+  const company = (name: string, typeId: string, n: number) => newUnit(name, { level: 'рота', composition: [comp(typeId, n)] });
+  return [
+    newRootUnit('Линейный пехотный батальон', {
+      id: 'demo-lin-tpl-bn',
+      level: 'батальон',
+      rulesetId: rs,
+      children: [
+        company('Гренадерская рота', 'grenadier', 110),
+        company('1-я мушкетёрская рота', 'musketeer', 120),
+        company('2-я мушкетёрская рота', 'musketeer', 120),
+        company('3-я мушкетёрская рота', 'musketeer', 120),
+        newUnit('Застрельщики', { level: 'взвод', order: 'recon', echelon: 'support', composition: [comp('jaeger', 50)] }),
+      ],
+    }),
+    newRootUnit('Пешая батарея', { id: 'demo-lin-tpl-bat', level: 'батарея', rulesetId: rs, commandLevel: null, echelon: 'support', composition: [comp('fieldgun', 8)] }),
+    newRootUnit('Гусарский эскадрон', { id: 'demo-lin-tpl-hus', level: 'эскадрон', rulesetId: rs, commandLevel: null, composition: [comp('hussar', 120)] }),
+  ];
+}
+
+const linTpl = (id: string) => makeLinearTemplates().find((t) => t.id === id)!;
+
+function linCopy(id: string, name: string, patch: Partial<UnitNode> = {}): UnitNode {
+  const c = instantiate(linTpl(id), { name });
+  c.state = { ...(patch.state ?? {}) };
+  c.order = null;
+  Object.assign(c, { ...patch, state: c.state });
+  return c;
+}
+
+export function makeLinearBrigade(): UnitNode {
+  return newRootUnit('Пехотная бригада (пример)', {
+    id: 'demo-lin-brig',
+    level: 'бригада',
+    rulesetId: 'rs-linear',
+    commanderName: 'генерал-майор Раевский',
+    order: 'attack',
+    supply: 85,
+    children: [
+      linCopy('demo-lin-tpl-bn', '1-й батальон'),
+      linCopy('demo-lin-tpl-bn', '2-й батальон'),
+      linCopy('demo-lin-tpl-bat', 'Батарея'),
+      linCopy('demo-lin-tpl-hus', '1-й гусарский эскадрон', { echelon: 'support' }),
+      linCopy('demo-lin-tpl-hus', '2-й гусарский эскадрон', { order: 'reserve', echelon: 'rear', notes: 'Резерв бригады: введите в бой сменой приказа, когда пехота расстроит оборону.' }),
+    ],
+  });
+}
+
+export function makeLinearDefenders(): UnitNode {
+  return newRootUnit('Оборона переправы (пример)', {
+    id: 'demo-lin-def',
+    level: 'полк',
+    rulesetId: 'rs-linear',
+    commanderName: 'полковник Дюбуа',
+    order: 'defend',
+    supply: 70,
+    children: [
+      linCopy('demo-lin-tpl-bn', 'Батальон у переправы', { state: { experience: 3 } }),
+      linCopy('demo-lin-tpl-bat', 'Батарея на холме'),
+      newUnit('Кирасиры', {
+        level: 'эскадрон',
+        order: 'reserve',
+        echelon: 'rear',
+        state: { experience: 3 },
+        composition: [comp('cuirassier', 110)],
+        notes: 'Контратака по усмотрению ГМ.',
+      }),
+    ],
+  });
+}
+
+export function makeLinearScenario(): Scenario {
+  const rs = makeLinearRuleset();
+  const sc = newScenario(rs, 'Пример: бой у переправы (линейная тактика)', 'LIN-0001');
+  sc.id = 'sc-demo-linear';
+  sc.description =
+    'Пехотная бригада с батареей и гусарами штурмует переправу, которую держит батальон за полевыми укреплениями при батарее; кирасиры обороны — в резерве. ' +
+    'Ход — 20 минут, бой открывается артиллерийской дистанцией. Гусар второго эскадрона и кирасир ГМ вводит сменой приказа.';
+  sc.conditions = { terrain: 'hills', time: 'day', weather: 'clear' };
+  sc.maxTurns = 16;
+  sc.sides[0].name = 'Синие';
+  sc.sides[0].formations = [instantiate(makeLinearBrigade())];
+  sc.sides[0].objectives = [newObjective('take', 0, 2), newObjective('preserve', 30, 1)];
+  sc.sides[1].name = 'Красные';
+  sc.sides[1].formations = [instantiate(makeLinearDefenders())];
+  sc.sides[1].fortification = 'earthworks';
+  sc.sides[1].objectives = [newObjective('hold', 12, 2), newObjective('inflict', 20, 1)];
+  return sc;
 }
 
 export function makeDemoScenario(): Scenario {

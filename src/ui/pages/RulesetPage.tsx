@@ -27,7 +27,7 @@ import {
   type Ruleset,
 } from '../../engine';
 import { EffectsEditor } from '../components/EffectsEditor';
-import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Sel, Seg, Tags, Txt } from '../components/ui';
+import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Sel, Seg, Tags, Txt, pressable } from '../components/ui';
 import { Crumbs } from '../components/Crumbs';
 import { useTabState } from '../hooks';
 import { confirmDialog, createRuleset, deleteRuleset, exportJson, replaceRuleset, setTabSub, toast, updateRuleset, useApp, type Tab } from '../store';
@@ -278,7 +278,7 @@ function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: string
                   {r.componentTypes
                     .filter((x) => x.kind === k)
                     .map((x) => (
-                      <div key={x.id} className={`tree-node${x.id === t?.id ? ' sel' : ''}`} onClick={() => setSel(x.id)}>
+                      <div key={x.id} className={`tree-node${x.id === t?.id ? ' sel' : ''}`} onClick={() => setSel(x.id)} {...pressable(() => setSel(x.id))}>
                         <span className="tn-name">{x.name}</span>
                         <span className="tn-meta">{r.targetClasses.find((c) => c.id === x.targetClass)?.name ?? '?'}</span>
                       </div>

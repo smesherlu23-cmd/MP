@@ -15,7 +15,11 @@ import {
   makeDemoScenario,
   makeDemoTemplates,
   migrateUnit,
+  makeLinearBrigade,
+  makeLinearDefenders,
   makeLinearRuleset,
+  makeLinearScenario,
+  makeLinearTemplates,
   makeUniversalRuleset,
   newRootUnit,
   updateFromTemplate,
@@ -32,7 +36,7 @@ import {
   type Ruleset,
   type Scenario,
 } from '../engine';
-import { battleMeta, storage, type BattleMeta, type Collection } from './storage';
+import { battleMeta, storage, type BattleMeta, type Collection, type TrashItem } from './storage';
 
 export type TabKind = 'home' | 'ruleset' | 'formation' | 'scenario' | 'battle' | 'montecarlo' | 'settings' | 'help' | 'library';
 
@@ -176,6 +180,11 @@ function scheduleSave(col: Collection, id: Id, getData: () => unknown, delay = 4
   };
   pendingSaves.set(key, run);
   timers.set(key, setTimeout(run, delay));
+}
+
+/** Дописать отложенное сохранение объекта сейчас — например, перед переносом в корзину. */
+async function flushSave(col: Collection, id: Id) {
+  await pendingSaves.get(`${col}:${id}`)?.();
 }
 
 /** Немедленно выполнить отложенные сохранения (перед закрытием окна). */
@@ -343,22 +352,33 @@ export async function initApp() {
     storage.list('scenarios'),
     storage.list('battles'),
   ]);
-  const rulesets: Record<Id, Ruleset> = {};
-  for (const r of rs as Ruleset[]) if (r?.id) rulesets[r.id] = normalizeRuleset(r);
+  // Копия — до любых изменений при загрузке; повреждённые файлы хранилище уже отложило в сторону.
+  await storage.backup('auto').catch(() => null);
+  const problems = (await storage.problems()).map((p) => `${COL_LABEL[p.col] ?? p.col}: ${p.file} — ${p.error}`);
+  const take = <T extends { id?: Id; name?: string }, R>(col: Collection, list: unknown[], fix: (x: T) => R): Record<Id, R> => {
+    const out: Record<Id, R> = {};
+    for (const x of list as T[]) {
+      try {
+        if (!x?.id) throw new Error();
+        out[x.id] = fix(x);
+      } catch {
+        problems.push(`${COL_LABEL[col]}: «${x?.name ?? x?.id ?? '?'}» — не распознано`);
+      }
+    }
+    return out;
+  };
+  const rulesets = take('rulesets', rs, (r: Ruleset) => normalizeRuleset(r));
   // Старые файлы («формирование + элементы») переводятся в дерево подразделений при загрузке.
-  const formations: Record<Id, UnitNode> = {};
-  for (const f of fs as UnitNode[]) if (f?.id) formations[f.id] = migrateUnit(f);
-  const scenarios: Record<Id, Scenario> = {};
-  for (const x of sc as Scenario[]) if (x?.id) scenarios[x.id] = migrateScenario(x);
-  const battleIndex: Record<Id, BattleMeta> = {};
-  for (const b of bt as BattleMeta[]) if (b?.id) battleIndex[b.id] = b;
+  const formations = take('formations', fs, (f: UnitNode) => migrateUnit(f));
+  const scenarios = take('scenarios', sc, (x: Scenario) => migrateScenario(x));
+  const battleIndex = take('battles', bt, (b: BattleMeta) => b);
 
   const firstRun = !Object.keys(rulesets).length && !localStorage.getItem('warsim-initialized');
   set({ rulesets, formations, scenarios, battleIndex });
   if (firstRun) {
     await installExamples();
     localStorage.setItem('warsim-initialized', '1');
-  }
+  } else await addLinearExample();
   if (!Object.keys(get().rulesets).length) {
     // Без набора правил программа бесполезна — создаём пустой.
     const r = makeBlankRuleset('Мой набор правил');
@@ -372,26 +392,108 @@ export async function initApp() {
     tabs: valid.length ? valid : [{ key: 'home', kind: 'home' }],
     active: valid.some((t) => t.key === saved.active) ? saved.active : (valid[0]?.key ?? 'home'),
   });
+  if (problems.length) void reportProblems(problems);
+  // Пока программа открыта, копия делается раз в час (если что-то изменилось).
+  setInterval(() => void flushSaves().then(() => storage.backup('auto')).catch(() => null), 3600e3);
+}
+
+const COL_LABEL: Record<string, string> = { rulesets: 'Наборы правил', formations: 'Подразделения', scenarios: 'Сценарии', battles: 'Бои' };
+
+async function reportProblems(list: string[]) {
+  const last = (await storage.backups().catch(() => []))[0];
+  const shown = list.slice(0, 8).join('\n') + (list.length > 8 ? `\n… и ещё ${list.length - 8}` : '');
+  await alertDialog(
+    'Часть данных не удалось прочитать',
+    `${shown}\n\nОстальное загружено. Нечитаемые файлы не удалены — они отложены в папку «damaged» внутри папки данных.` +
+      (last ? `\nПоследняя резервная копия — ${fmtDate(last.createdAt)}; вернуть из неё можно в Настройках → «Данные».` : ''),
+  );
+}
+
+export const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+
+// ------------------------------------------------------------------ корзина и резервные копии
+
+/** Вернуть объекты из корзины в библиотеку. */
+export async function restoreFromTrash(items: Pick<TrashItem, 'col' | 'key'>[]): Promise<number> {
+  let n = 0;
+  for (const it of items) {
+    const data = (await storage.restoreTrash(it.col, it.key)) as { id?: Id } | null;
+    if (!data?.id) continue;
+    try {
+      if (it.col === 'battles') set((s) => ({ battleIndex: { ...s.battleIndex, [data.id!]: battleMeta(data as Battle) } }));
+      else {
+        const col = it.col as Col;
+        const fix = col === 'rulesets' ? normalizeRuleset : col === 'formations' ? migrateUnit : migrateScenario;
+        set((s) => ({ [col]: { ...s[col], [data.id!]: fix(data as never) } }) as Partial<AppState>);
+      }
+      n++;
+    } catch {
+      toast(`Не удалось вернуть «${it.key}»: объект не распознан.`, 'bad');
+    }
+  }
+  if (!n && items.length) toast('В корзине этого уже нет.', 'bad');
+  return n;
+}
+
+/** Вернуть наборы правил, подразделения и сценарии из резервной копии (с перезапуском окна). */
+export async function restoreBackup(id: string, label: string) {
+  const ok = await confirmDialog(
+    `Восстановить данные из копии от ${label}?`,
+    'Наборы правил, подразделения и сценарии из копии заменят текущие версии; созданное позже копии останется. Бои не затрагиваются.\nТекущее состояние перед этим само сохранится в отдельную копию — восстановление можно отменить, вернувшись к ней.',
+    'Восстановить',
+  );
+  if (!ok) return;
+  await flushSaves();
+  try {
+    const n = await storage.restoreBackup(id);
+    toast(`Восстановлено объектов: ${n}. Перезапуск…`, 'good');
+    setTimeout(() => location.reload(), 700);
+  } catch (e) {
+    toast(`Не удалось восстановить: ${(e as Error).message}`, 'bad');
+  }
 }
 
 export function migrateScenario(sc: Scenario): Scenario {
   return { ...sc, sides: sc.sides.map((sd) => ({ ...sd, formations: (sd.formations ?? []).map((f) => migrateUnit(f)) })) as Scenario['sides'] };
 }
 
+const linearUnits = () => [...makeLinearTemplates(), makeLinearBrigade(), makeLinearDefenders()];
+
 export async function installExamples() {
   const universal = makeUniversalRuleset();
   const linear = makeLinearRuleset();
   const units = [...makeDemoTemplates(), makeDemoBattalion(), makeDemoDefenders()].map((u) => ({ ...u, rulesetId: universal.id }));
-  const sc = makeDemoScenario();
-  const formations = Object.fromEntries(units.map((u) => [u.id, u]));
+  await putExamples([universal, linear], [...units, ...linearUnits()], [makeDemoScenario(), makeLinearScenario()]);
+  localStorage.setItem('warsim-examples-linear', '1');
+}
+
+async function putExamples(rs: Ruleset[], units: UnitNode[], scs: Scenario[]) {
   set((s) => ({
-    rulesets: { ...s.rulesets, [universal.id]: universal, [linear.id]: linear },
-    formations: { ...s.formations, ...formations },
-    scenarios: { ...s.scenarios, [sc.id]: sc },
+    rulesets: { ...s.rulesets, ...Object.fromEntries(rs.map((r) => [r.id, r])) },
+    formations: { ...s.formations, ...Object.fromEntries(units.map((u) => [u.id, u])) },
+    scenarios: { ...s.scenarios, ...Object.fromEntries(scs.map((x) => [x.id, x])) },
   }));
-  for (const r of [universal, linear]) await storage.save('rulesets', r.id, r);
+  for (const r of rs) await storage.save('rulesets', r.id, r);
   for (const f of units) await storage.save('formations', f.id, f);
-  await storage.save('scenarios', sc.id, sc);
+  for (const x of scs) await storage.save('scenarios', x.id, x);
+}
+
+/** Пример боя для «Линейной тактики» появился позже остальных — добавляется один раз тем, у кого этот набор уже есть. */
+async function addLinearExample() {
+  if (localStorage.getItem('warsim-examples-linear')) return;
+  localStorage.setItem('warsim-examples-linear', '1');
+  const s = get();
+  const rs = s.rulesets['rs-linear'];
+  if (!rs || s.scenarios['sc-demo-linear']) return;
+  // Прежние значения примера давали слишком вялый бой; свои настройки ГМ не трогаем.
+  const k = rs.coefficients;
+  const upd = k.casualtyScale === 1 && k.moralePerLossPct === 1.2 ? [{ ...rs, coefficients: { ...k, ...pickCoefficients(makeLinearRuleset(), ['casualtyScale', 'moralePerLossPct']) } }] : [];
+  const units = linearUnits().filter((u) => !s.formations[u.id]);
+  await putExamples(upd, units, [makeLinearScenario()]);
+}
+
+function pickCoefficients(r: Ruleset, keys: string[]) {
+  return Object.fromEntries(keys.map((x) => [x, r.coefficients[x as keyof Ruleset['coefficients']]]));
 }
 
 useApp.subscribe((s, prev) => {
@@ -536,12 +638,13 @@ export async function deleteRuleset(id: Id) {
   const users = Object.values(s.scenarios).filter((x) => x.rulesetId === id).length;
   const ok = await confirmDialog(`Удалить набор правил «${r.name}»?`, users ? `Его используют сценарии: ${users}. Их придётся перевести на другой набор.` : undefined, 'Удалить', true);
   if (!ok) return;
+  await flushSave('rulesets', id);
   record('rulesets', id, 'delete');
   set((st) => {
     const { [id]: _, ...rest } = st.rulesets;
     return { rulesets: rest };
   });
-  toastUndoable(`Набор правил «${r.name}» удалён.`);
+  toastUndoable(`Набор правил «${r.name}» удалён (он в корзине).`);
   await storage.remove('rulesets', id);
   closeTabsWhere((t) => t.kind === 'ruleset' && t.ref === id);
 }
@@ -613,8 +716,11 @@ export function defaultRulesetId(): Id | undefined {
   const used = new Map<Id, number>();
   for (const f of Object.values(s.formations)) if (f.rulesetId) used.set(f.rulesetId, (used.get(f.rulesetId) ?? 0) + 1);
   for (const sc of Object.values(s.scenarios)) used.set(sc.rulesetId, (used.get(sc.rulesetId) ?? 0) + 1);
+  // При равенстве (например, сразу после установки примеров) — основной пример, «Универсальный».
+  const main = (r: Ruleset) => (r.id === 'rs-universal' ? 0 : 1);
   return Object.values(s.rulesets).sort(
-    (a, b) => (used.get(b.id) ?? 0) - (used.get(a.id) ?? 0) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.name.localeCompare(b.name, 'ru'),
+    (a, b) =>
+      (used.get(b.id) ?? 0) - (used.get(a.id) ?? 0) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || main(a) - main(b) || a.name.localeCompare(b.name, 'ru'),
   )[0]?.id;
 }
 
@@ -634,12 +740,13 @@ export async function deleteFormation(id: Id) {
   const f = get().formations[id];
   if (!f) return;
   if (!(await confirmDialog(`Удалить подразделение «${f.name}» из библиотеки?`, 'Копии в сценариях останутся.', 'Удалить', true))) return;
+  await flushSave('formations', id);
   record('formations', id, 'delete');
   set((s) => {
     const { [id]: _, ...rest } = s.formations;
     return { formations: rest };
   });
-  toastUndoable(`Подразделение «${f.name}» удалено из библиотеки.`);
+  toastUndoable(`Подразделение «${f.name}» удалено (оно в корзине).`);
   await storage.remove('formations', id);
   closeTabsWhere((t) => t.kind === 'formation' && t.ref === `lib:${id}`);
 }
@@ -686,12 +793,13 @@ export async function deleteScenario(id: Id) {
   const sc = get().scenarios[id];
   if (!sc) return;
   if (!(await confirmDialog(`Удалить сценарий «${sc.name}»?`, 'Сохранённые бои по нему останутся.', 'Удалить', true))) return;
+  await flushSave('scenarios', id);
   record('scenarios', id, 'delete');
   set((s) => {
     const { [id]: _, ...rest } = s.scenarios;
     return { scenarios: rest };
   });
-  toastUndoable(`Сценарий «${sc.name}» удалён.`);
+  toastUndoable(`Сценарий «${sc.name}» удалён (он в корзине).`);
   await storage.remove('scenarios', id);
   closeTabsWhere((t) => ((t.kind === 'scenario' || t.kind === 'montecarlo') && t.ref === id) || (t.kind === 'formation' && !!t.ref?.startsWith(`sc:${id}:`)));
 }
@@ -732,8 +840,8 @@ export function ensureFullLog(b: Battle): boolean {
 export async function deleteBattles(ids: Id[], title: string): Promise<boolean> {
   if (!ids.length) return false;
   if (!(await confirmDialog(title, `Будет удалено боёв: ${ids.length}. Сценарии и подразделения не затрагиваются.`, 'Удалить', true))) return false;
-  for (const id of ids) await deleteBattle(id, false);
-  toast(`Удалено боёв: ${ids.length}.`, 'good');
+  for (const id of ids) await deleteBattle(id, false, true);
+  toast(`Удалено боёв: ${ids.length} (они в корзине).`, 'good', { label: 'Вернуть', run: () => void restoreFromTrash(ids.map((key) => ({ col: 'battles', key }))) });
   return true;
 }
 
@@ -751,9 +859,10 @@ export async function loadBattle(id: Id): Promise<Battle | null> {
   return b;
 }
 
-export async function deleteBattle(id: Id, ask = true) {
+export async function deleteBattle(id: Id, ask = true, quiet = false) {
   const meta = get().battleIndex[id];
-  if (ask && !(await confirmDialog(`Удалить бой «${meta?.name ?? id}»?`, undefined, 'Удалить', true))) return;
+  if (ask && !(await confirmDialog(`Удалить бой «${meta?.name ?? id}»?`, 'Бой попадёт в корзину и хранится там 30 дней.', 'Удалить', true))) return;
+  await flushSave('battles', id);
   useBattles.setState((s) => {
     const { [id]: _, ...rest } = s.battles;
     return { battles: rest };
@@ -764,6 +873,7 @@ export async function deleteBattle(id: Id, ask = true) {
   });
   await storage.remove('battles', id);
   closeTabsWhere((t) => t.kind === 'battle' && t.ref === id);
+  if (!quiet) toast(`Бой «${meta?.name ?? id}» удалён (он в корзине).`, 'info', { label: 'Вернуть', run: () => void restoreFromTrash([{ col: 'battles', key: id }]) });
 }
 
 export function renameBattle(id: Id, name: string) {

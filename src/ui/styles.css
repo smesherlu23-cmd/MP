@@ -2638,6 +2638,102 @@ html.desktop .topbar a {
   color: var(--muted);
 }
 /* «без командира» не шумит в каждой строке — видно при наведении на строку */
-.tbl.forces tr.group:not(:hover) .cmd-select.none:not(:focus) {
+.tbl.forces tr.group:not(:hover):not(:focus-within) .cmd-select.none {
   opacity: 0;
+}
+
+/* командиры в начале боя (сценарий) */
+.sec-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sec-toggle .chev {
+  color: var(--muted);
+  font-size: 11px;
+}
+.cmd-list {
+  margin-top: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  display: grid;
+  gap: 2px;
+}
+.cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.cmd-row:hover {
+  background: var(--panel2);
+}
+
+/* Резервные копии и корзина */
+.data-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 52vh;
+  overflow: auto;
+}
+.data-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+}
+.data-row + .data-row {
+  border-top: 1px solid var(--border);
+}
+.data-row .grow {
+  flex: 1;
+  min-width: 0;
+}
+.data-group + .data-group {
+  margin-top: 12px;
+}
+.data-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+/* Работа с клавиатуры: заметная рамка фокуса (только при переходе клавишами, не по щелчку) */
+:where(button, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.side-item:focus-visible,
+.log-entry:focus-visible,
+.tree-node:focus-visible,
+.side-node:focus-visible,
+.insert-item:focus-visible,
+tr[tabindex]:focus-visible {
+  outline-offset: -2px;
+}
+/* То, что появляется при наведении, появляется и при фокусе внутри строки */
+.nav-group:focus-within .nav-group-del,
+.nav-group-del:focus-visible,
+.log-entry:focus-visible .fx-hint {
+  opacity: 1;
+}
+.eff-row:focus-within .eff-del,
+.org-box:focus-within .org-menu,
+.unit-row:focus-within .unit-menu {
+  visibility: visible;
+}
+.tree-node:focus-within .tn-actions {
+  display: flex;
 }

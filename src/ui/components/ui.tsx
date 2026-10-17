@@ -22,6 +22,35 @@ export function Btn(props: {
   );
 }
 
+/**
+ * Для кликабельных элементов, которые не кнопки (строки списков, записи журнала): попадают в порядок
+ * Tab и срабатывают по Enter или пробелу — так же, как по щелчку.
+ */
+export function pressable(onPress: (e: React.KeyboardEvent) => void, label?: string) {
+  return {
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': label,
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      onPress(e);
+    },
+  };
+}
+
+/** Стрелки ↑/↓ (и Home/End) переводят фокус между элементами списка внутри контейнера. */
+export function arrowNav(e: React.KeyboardEvent | KeyboardEvent, root: Element | null, selector: string): boolean {
+  if (!root || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return false;
+  const items = [...root.querySelectorAll<HTMLElement>(selector)].filter((x) => !(x as HTMLButtonElement).disabled);
+  if (!items.length) return false;
+  const i = items.indexOf(document.activeElement as HTMLElement);
+  const j = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : i < 0 ? 0 : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+  e.preventDefault();
+  items[j].focus();
+  return true;
+}
+
 /** Числовое поле: значение применяется сразу, если введено корректное число. */
 export function Num(props: {
   value: number | null | undefined;
@@ -183,10 +212,10 @@ export function Field(props: { label: ReactNode; hint?: string; children: ReactN
   );
 }
 
-/** Значок «?» с подсказкой. */
+/** Значок «?» с подсказкой (видна при наведении и при переходе на значок клавишей Tab). */
 export function Info({ text }: { text: string }) {
   return (
-    <span className="hint-icon" data-tip={text}>
+    <span className="hint-icon" data-tip={text} tabIndex={0} role="note" aria-label={text}>
       ?
     </span>
   );
@@ -202,28 +231,48 @@ export interface MenuItem {
   kbd?: string;
 }
 
-/** Кнопка «⋯» с выпадающим списком второстепенных действий. */
+/**
+ * Кнопка «⋯» с выпадающим списком второстепенных действий. С клавиатуры: Enter/пробел или ↓ открывают,
+ * ↑/↓ выбирают пункт, Enter выполняет, Esc или Tab закрывают и возвращают фокус на кнопку.
+ */
 export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefined)[]; label?: ReactNode; title?: string; sm?: boolean }) {
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const close = (refocus: boolean) => {
+    setPos(null);
+    if (refocus) btn.current?.focus();
+  };
   useEffect(() => {
     if (!pos) return;
+    // Фокус — на первый доступный пункт: дальше работают стрелки.
+    pop.current?.querySelector<HTMLButtonElement>('.menu-item:not(:disabled)')?.focus();
     const onDown = (e: MouseEvent) => {
       const t = e.target as Element;
       if (!t.closest?.('.menu-pop') && !btn.current?.contains(t)) setPos(null);
     };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPos(null);
-    const close = () => setPos(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Tab') {
+        e.preventDefault();
+        e.stopPropagation();
+        close(true);
+      } else arrowNav(e, pop.current, '.menu-item');
+    };
+    const onResize = () => setPos(null);
     window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', onResize);
     };
   }, [pos]);
   const items = props.items.filter(Boolean) as (MenuItem | 'sep')[];
+  const open = () => {
+    const r = btn.current!.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
+  };
   return (
     <>
       <button
@@ -231,29 +280,34 @@ export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefine
         type="button"
         className={`btn ${props.label ? '' : 'icon'} ${props.sm ? 'sm' : ''} ${pos ? 'active' : ''}`}
         title={props.title ?? 'Ещё'}
-        onClick={() => {
-          if (pos) return setPos(null);
-          const r = btn.current!.getBoundingClientRect();
-          setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
+        aria-haspopup="menu"
+        aria-expanded={!!pos}
+        onClick={() => (pos ? setPos(null) : open())}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown' && !pos) {
+            e.preventDefault();
+            open();
+          }
         }}
       >
         {props.label ?? '⋯'}
       </button>
       {pos &&
         createPortal(
-          <div className="menu-pop" style={{ top: pos.top, right: pos.right }}>
+          <div ref={pop} className="menu-pop" role="menu" style={{ top: pos.top, right: pos.right }}>
             {items.map((it, i) =>
               it === 'sep' ? (
-                i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? <div key={i} className="menu-sep" /> : null
+                i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? <div key={i} className="menu-sep" role="separator" /> : null
               ) : (
                 <button
                   key={i}
                   type="button"
+                  role="menuitem"
                   className={`menu-item${it.danger ? ' danger' : ''}`}
                   disabled={it.disabled}
                   data-tip={it.tip}
                   onClick={() => {
-                    setPos(null);
+                    close(true);
                     it.onClick();
                   }}
                 >
@@ -304,7 +358,11 @@ export function Section(props: {
     <div className={`card section${isOpen ? ' open' : ''}`}>
       <div className="card-head" onClick={toggle}>
         <span className="chev">{isOpen ? '▾' : '▸'}</span>
-        <h3>{props.title}</h3>
+        <h3>
+          <span {...pressable(toggle)} aria-expanded={isOpen}>
+            {props.title}
+          </span>
+        </h3>
         {props.summary !== undefined && <span className="sec-summary">{props.summary}</span>}
         <span className="grow" />
         {props.actions && <span onClick={(e) => e.stopPropagation()}>{props.actions}</span>}

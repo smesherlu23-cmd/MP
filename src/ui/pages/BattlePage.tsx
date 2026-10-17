@@ -7,7 +7,6 @@ import {
   applyIntervention,
   combatEffectiveness,
   computeResult,
-  defaultCommandLevel,
   formatReport,
   randomSeed,
   replayBattle,
@@ -21,9 +20,10 @@ import {
   type SideResult,
 } from '../../engine';
 import { LineChart } from '../components/Charts';
+import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
 import { LogView, RichText } from '../components/LogView';
-import { Btn, Card, Check, Field, Menu, Meter, Modal, Num, Section, Sel, fmt0, pct } from '../components/ui';
+import { Btn, Card, Check, Field, Menu, Meter, Modal, Num, Section, Sel, fmt0, pct, pressable } from '../components/ui';
 import { useTabState } from '../hooks';
 import { nextBattleName } from './ScenarioPage';
 import { saveResultsAsNew, updateLibraryFromBattle, updateScenarioFromBattle } from '../postBattle';
@@ -166,7 +166,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
           {b.finished ? (
             <span>{conditions}</span>
           ) : (
-            <span className="cond-link" data-tip="Изменить условия (вмешательство ГМ)" onClick={() => setCondModal(true)}>
+            <span className="cond-link" data-tip="Изменить условия (вмешательство ГМ)" onClick={() => setCondModal(true)} {...pressable(() => setCondModal(true))}>
               {conditions}
             </span>
           )}
@@ -364,29 +364,7 @@ function initialFold(b: Battle): string[] {
   return b.formations.filter((f) => depth(f.id) >= 2).map((f) => f.id);
 }
 
-/** Компетентность командира прямо в бою: ГМ меняет её по обстановке. */
-function CommanderSelect(props: { b: Battle; value: number; onChange: (v: number) => void; disabled?: boolean }) {
-  const levels = props.b.ruleset.commandLevels;
-  const def = defaultCommandLevel(props.b.ruleset);
-  const cls = !props.value ? 'none' : props.value < def ? 'worse' : props.value > def ? 'better' : '';
-  return (
-    <select
-      className={`cmd-select ${cls}`}
-      value={props.value}
-      disabled={props.disabled}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => props.onChange(Number(e.target.value))}
-      data-tip={'Командир сейчас. Меняйте по обстановке: удачное решение — выше, ошибка или растерянность — ниже.\nДействует со следующего хода и записывается в журнал.'}
-    >
-      <option value={0}>без командира</option>
-      {levels.map((l, i) => (
-        <option key={i} value={i + 1}>
-          {l.name}
-        </option>
-      ))}
-    </select>
-  );
-}
+const CMD_TIP = 'Командир сейчас. Меняйте по обстановке: удачное решение — выше, ошибка или растерянность — ниже.\nДействует со следующего хода и записывается в журнал.';
 
 function Forces(props: { b: Battle; E: EngineContext; result: BattleResult; tabKey: string; onElement: (id: string) => void; onFormation: (id: string) => void; iv: Iv }) {
   const { b, E, result } = props;
@@ -505,7 +483,7 @@ function FormationRows(props: {
               {fs.name}
             </a>
             {f.command && (
-              <CommanderSelect b={b} value={fs.commandLevel} disabled={b.finished} onChange={(v) => iv('setFormation', { formationId: fs.id, commandLevel: v })} />
+              <CommanderSelect levels={b.ruleset.commandLevels} allowNone tip={CMD_TIP} value={fs.commandLevel} disabled={b.finished} onChange={(v) => iv('setFormation', { formationId: fs.id, commandLevel: v })} />
             )}
             {fs.hqLost && <span className="badge bad">штаб потерян</span>}
             {fs.broken && <span className="badge bad">сломлено</span>}
@@ -691,7 +669,7 @@ function ElementModal({ b, E, id, onClose, iv, onFocusLog }: { b: Battle; E: Eng
               </Field>
               {rs.features.command && ((el.ownCommandLevel ?? 0) > 0 || editing) && (
                 <Field label={el.ownCommanderName ? `Командир (${el.ownCommanderName})` : 'Свой командир'}>
-                  <CommanderSelect b={b} value={el.ownCommandLevel ?? 0} onChange={(v) => iv('editElement', { elementId: el.id, patch: { ownCommandLevel: v } })} />
+                  <CommanderSelect levels={rs.commandLevels} allowNone tip={CMD_TIP} value={el.ownCommandLevel ?? 0} onChange={(v) => iv('editElement', { elementId: el.id, patch: { ownCommandLevel: v } })} />
                 </Field>
               )}
               {editing && (

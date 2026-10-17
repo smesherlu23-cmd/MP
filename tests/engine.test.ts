@@ -9,6 +9,7 @@ import {
   formatReport,
   makeDemoScenario,
   makeLinearRuleset,
+  makeLinearScenario,
   makeUniversalRuleset,
   instantiate,
   isOutdated,
@@ -189,6 +190,16 @@ describe('бой', () => {
     stepTurn(b0);
     const r = replayBattle(b0, { withInterventions: true });
     expect(strip(r)).toEqual(strip(b0));
+
+    // стартовая компетентность — из сценария (для боя и прогонов), не из шаблона
+    const sc2 = duel(rs, infantry('Синие', 60, 'attack'), infantry('Красные', 60, 'defend'));
+    sc2.sides[0].commanders = { [sc2.sides[0].formations[0].id]: 5 };
+    const b2 = createBattle(sc2, rs, { seed: 'CMD2' });
+    expect(b2.formations.find((x) => x.side === 'A' && !x.parentId)!.commandLevel).toBe(5);
+    expect(b2.formations.find((x) => x.side === 'B' && !x.parentId)!.commandLevel).toBe(defaultCommandLevel(rs));
+    const plain = runMany(duel(rs, infantry('Синие', 60, 'attack'), infantry('Красные', 60, 'defend')), rs, 40, 'CMDMC');
+    const brilliant = runMany(sc2, rs, 40, 'CMDMC');
+    expect(brilliant.winA).toBeGreaterThanOrEqual(plain.winA);
   });
 
   it('вмешательства ГМ воспроизводятся при повторе', () => {
@@ -338,6 +349,15 @@ describe('бой', () => {
     runToEnd(b);
     expect(b.finished).toBe(true);
     expect(b.result!.sides.A.personnel.losses + b.result!.sides.B.personnel.losses).toBeGreaterThan(0);
+  });
+
+  it('пример боя у переправы: без замечаний, исход не предрешён', () => {
+    const lr = makeLinearRuleset();
+    const sc = makeLinearScenario();
+    expect(validateScenario(sc, lr)).toHaveLength(0);
+    const r = runMany(sc, lr, 60, 'lin');
+    expect(r.winA).toBeGreaterThan(15);
+    expect(r.winB).toBeGreaterThan(15);
   });
 
   it('проверка сценария находит неизвестные типы, а бой их пропускает с предупреждением', () => {

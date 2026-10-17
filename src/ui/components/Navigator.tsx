@@ -1,7 +1,8 @@
 // Навигатор слева: разделы программы сверху, список выбранного раздела ниже, справка и настройки внизу.
 // Раздел открытой вкладки подсвечен — всегда видно, где находишься.
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { arrowNav, pressable } from './ui';
 import { SECTIONS, sectionOf } from '../nav';
 import { DND_LIB } from '../pages/FormationPage';
 import { createFormation, createScenario, deleteBattles, newRulesetDialog, openTab, updateSettings, useApp, type NavSection, type TabKind } from '../store';
@@ -22,6 +23,7 @@ export function Navigator() {
   const activeTab = s.tabs.find((t) => t.key === s.active);
   const here = sectionOf(activeTab);
   const [filters, setFilters] = useState<Partial<Record<NavSection, string>>>({});
+  const listRef = useRef<HTMLDivElement>(null);
   const q = (filters[sec] ?? '').trim().toLowerCase();
   const match = (name: string) => !q || name.toLowerCase().includes(q);
   const counts: Record<NavSection, number> = {
@@ -48,6 +50,7 @@ export function Navigator() {
       }}
       onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}
       onAuxClick={(e) => e.button === 1 && onOpen(true)}
+      {...pressable((e) => onOpen(e.ctrlKey || e.metaKey))}
     >
       <span>{name}</span>
       {opts.sub && <span className="sub">{opts.sub}</span>}
@@ -143,7 +146,9 @@ export function Navigator() {
             <input type="search" placeholder="Фильтр…" value={filters[sec] ?? ''} onChange={(e) => setFilters({ ...filters, [sec]: e.target.value })} />
           </div>
         )}
-        <div className="nav-list">{hasItems ? list : <div className="nav-empty">{empty}</div>}</div>
+        <div className="nav-list" ref={listRef} onKeyDown={(e) => arrowNav(e, listRef.current, '.side-item')}>
+          {hasItems ? list : <div className="nav-empty">{empty}</div>}
+        </div>
       </div>
       <nav className="nav-bottom">
         <NavItem icon="?" label="Справка" here={activeTab?.kind === 'help'} onClick={() => openTab('help')} />

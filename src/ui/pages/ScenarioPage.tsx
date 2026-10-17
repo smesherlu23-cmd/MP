@@ -11,6 +11,7 @@ import {
   newObjective,
   randomSeed,
   summarizeUnits,
+  defaultCommandLevel,
   validateScenario,
   walkUnits,
   type ObjectiveType,
@@ -19,9 +20,10 @@ import {
   type UnitNode,
 } from '../../engine';
 import { effectsText } from '../components/EffectsEditor';
+import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
 import { Link } from '../components/Link';
-import { Area, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1 } from '../components/ui';
+import { Area, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import { confirmDialog, deleteScenario, duplicateScenario, exportJson, historyStep, instantiateLibrary, openTab, putBattle, toast, toastUndoable, updateScenario, useApp, type Tab } from '../store';
 import { DND_LIB, DND_NODE, computeStats, statsLine, statsTip } from './FormationPage';
@@ -168,7 +170,14 @@ function SideTree({ root, refId, rs }: { root: UnitNode; refId: string; rs: Rule
   return (
     <div className="side-tree">
       {rows.slice(0, LIMIT).map(({ n, depth }) => (
-        <div key={n.id} className="side-node" style={{ paddingLeft: 4 + (depth - 1) * 16 }} onClick={(e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey)} title="Открыть в конструкторе">
+        <div
+          key={n.id}
+          className="side-node"
+          style={{ paddingLeft: 4 + (depth - 1) * 16 }}
+          onClick={(e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey)}
+          title="Открыть в конструкторе"
+          {...pressable((e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey))}
+        >
           {n.level && <span className="faint">{n.level}</span>}
           <span className="side-node-name">{n.name}</span>
           {n.attachedFrom !== undefined && <span className="badge info">придано</span>}
@@ -411,7 +420,68 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
             + задача
           </Btn>
         </div>
+
+        {rs.features.command && <SideCommanders sc={sc} i={i} rs={rs} />}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Командиры стороны в начале боя. В шаблоне подразделения отмечено только, есть ли командир;
+ * насколько он хорош в этом сражении — решается здесь (для боя и прогонов), а по ходу боя — ГМ.
+ */
+function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
+  const side = sc.sides[i];
+  const [open, setOpen] = useTabState(`sc-cmd:${sc.id}:${i}`, false);
+  const list: { id: string; name: string; parent?: string; commander: string }[] = [];
+  for (const f of side.formations) walkUnits(f, (n, p) => void (n.commandLevel && list.push({ id: n.id, name: n.name, parent: p?.name, commander: n.commanderName })));
+  if (!list.length) return null;
+  const counts = new Map<string, number>();
+  for (const c of list) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
+  const def = defaultCommandLevel(rs);
+  const set = side.commanders ?? {};
+  const changed = list.filter((c) => set[c.id] && set[c.id] !== def);
+  const summary = changed.length
+    ? changed.map((c) => `${c.name}: ${rs.commandLevels[set[c.id] - 1]?.name ?? ''}`.toLowerCase()).join(', ')
+    : `${list.length === 1 ? 'командир' : `все ${list.length}`} — ${rs.commandLevels[def - 1]?.name.toLowerCase() ?? 'обычные'}`;
+  const upd = (fn: (d: Scenario['sides'][number]) => void) => updateScenario(sc.id, (d) => fn(d.sides[i]));
+  return (
+    <div>
+      <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+        <button className="sec-toggle" onClick={() => setOpen(!open)}>
+          <span className="chev">{open ? '▾' : '▸'}</span>
+          <h4>Командиры в начале боя</h4>
+        </button>
+        <Info text="В подразделении отмечено только, есть ли у него свой командир. Насколько он хорош в этом сражении — задаётся здесь (это учитывают и бой, и прогоны). По ходу боя ГМ меняет компетентность в таблице сил — по обстановке." />
+        <span className="faint small grow nowrap" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={summary}>
+          {summary}
+        </span>
+      </div>
+      {open && (
+        <div className="cmd-list">
+          {list.map((c) => (
+            <div key={c.id} className="cmd-row">
+              <span className="grow" style={{ minWidth: 0 }}>
+                {c.name}
+                {(counts.get(c.name) ?? 0) > 1 && c.parent ? <span className="faint"> · {c.parent}</span> : null}
+                {c.commander && <span className="faint small"> — {c.commander}</span>}
+              </span>
+              <CommanderSelect
+                levels={rs.commandLevels}
+                value={set[c.id] ?? def}
+                onChange={(v) =>
+                  upd((d) => {
+                    d.commanders = { ...(d.commanders ?? {}) };
+                    if (v === def) delete d.commanders[c.id];
+                    else d.commanders[c.id] = v;
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
