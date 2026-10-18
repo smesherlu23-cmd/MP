@@ -49,6 +49,18 @@ import {
   stepTurn,
   trimBattleForStorage,
   validateScenario,
+  EngineContext,
+  DEFAULT_PAUSE,
+  forecast,
+  stepUntilEvent,
+  restForce,
+  replenishForce,
+  recoverableOf,
+  sweepVariants,
+  transferFromRuleset,
+  suggestTypeMap,
+  remapTypes,
+  makeBlankRuleset,
   type Battle,
   type UnitNode,
   type Ruleset,
@@ -753,5 +765,179 @@ describe('шаблоны и силы', () => {
     expect(f.faction).toBe('Синие');
     expect(f.rulesetId).toBe(rs.id);
     expect(f.id).not.toBe(tpl.id);
+  });
+});
+
+describe('участки, удары, эффекты, условия плана', () => {
+  const rs = makeUniversalRuleset();
+  const twoSectors = () => {
+    const a = infantry('Синие', 100, 'attack', { children: [newUnit('Левая рота', { composition: rifles(50) }), newUnit('Правая рота', { composition: rifles(50) })] });
+    const b = infantry('Красные', 100, 'defend', { children: [newUnit('Левый взвод', { composition: rifles(50) }), newUnit('Правый взвод', { composition: rifles(50) })] });
+    const sc = duel(rs, a, b);
+    sc.sectors = [
+      { id: 'L', name: 'Левый' },
+      { id: 'R', name: 'Правый', startBand: 'long' },
+    ];
+    sc.sides[0].sectorOf = { [a.children[1].id]: 'R' };
+    sc.sides[1].sectorOf = { [b.children[1].id]: 'R' };
+    return { sc, a, b };
+  };
+
+  it('без новых механик бой тот же, что и раньше: участки и поддержка не создаются', () => {
+    const b = createBattle(makeDemoScenario(), rs, { seed: 'S0' });
+    expect(b.sectors).toBeUndefined();
+    expect(b.support).toBeUndefined();
+    expect(b.elements.every((x) => x.sector === undefined)).toBe(true);
+  });
+
+  it('участки: своя дистанция, прямой огонь — только по своему участку', () => {
+    const { sc } = twoSectors();
+    const b = createBattle(sc, rs, { seed: 'S1' });
+    expect(b.sectors!.map((x) => b.ruleset.rangeBands[x.bandIndex].id)).toEqual(['medium', 'long']);
+    const left = b.elements.filter((x) => x.sector === 'L').map((x) => x.id);
+    const right = b.elements.filter((x) => x.sector === 'R').map((x) => x.id);
+    expect(left).toHaveLength(2);
+    expect(right).toHaveLength(2);
+    for (let i = 0; i < 3; i++) stepTurn(b);
+    // Огонь в журнале: стрелок и цели — на одном участке.
+    for (const e of b.log.filter((x) => x.phase === 'losses' && x.refs?.length)) {
+      const [target, ...shooters] = e.refs!;
+      const side = left.includes(target) ? left : right;
+      for (const sh of shooters) expect(side).toContain(sh);
+    }
+    applyIntervention(b, { type: 'setBand', payload: { sector: 'R', bandIndex: 2 } });
+    expect(b.sectors!.map((x) => x.bandIndex)).toEqual([b.sectors![0].bandIndex, 2]);
+  });
+
+  it('огневая поддержка: удар по вызову — в начале следующего хода, вызовы считаются, отмена возвращает', () => {
+    const { sc, b: red } = twoSectors();
+    sc.sides[0].support = [{ id: 'art', name: 'Батарея', typeId: 'gun', count: 6, missions: 2 }];
+    const b = createBattle(sc, rs, { seed: 'S2' });
+    stepTurn(b);
+    const target = b.formations.find((f) => f.side === 'B' && f.defId === red.id)!;
+    applyIntervention(b, { type: 'strike', payload: { side: 'A', assetId: 'art', formationId: target.id } });
+    expect(b.support![0].left).toBe(1);
+    applyIntervention(b, { type: 'strike', payload: { side: 'A', assetId: 'art' } });
+    applyIntervention(b, { type: 'strike', payload: { side: 'A', assetId: 'art' } });
+    expect(b.support![0].left).toBe(0);
+    expect(b.strikes).toHaveLength(2);
+    applyIntervention(b, { type: 'cancelStrike', payload: { strikeId: b.strikes![1].id } });
+    expect(b.support![0].left).toBe(1);
+    stepTurn(b);
+    expect(b.strikes![0].done).toBe(true);
+    const hit = b.log.filter((e) => e.turn === 2 && e.phase === 'losses' && e.factors?.some((f) => f.label.includes('огневая поддержка')));
+    expect(hit.length).toBeGreaterThan(0);
+    // Повтор с решениями ГМ — тот же бой.
+    const r = replayBattle(b, { withInterventions: true });
+    expect(strip(r)).toEqual(strip(b));
+  });
+
+  it('временный эффект действует только в свои ходы и на свою сторону', () => {
+    const { sc } = twoSectors();
+    const b = createBattle(sc, rs, { seed: 'S3' });
+    const el = b.elements.find((x) => x.side === 'B')!;
+    const enemy = b.elements.find((x) => x.side === 'A')!;
+    const base = new EngineContext(b).mult(el, 'concealment');
+    applyIntervention(b, { type: 'addEffect', payload: { side: 'B', name: 'Дым', effects: { concealment: 2 }, turns: 2 } });
+    expect(b.effects![0]).toMatchObject({ from: 1, until: 2 });
+    b.turn = 1;
+    expect(new EngineContext(b).mult(el, 'concealment')).toBeCloseTo(base * 2);
+    expect(new EngineContext(b).mult(enemy, 'concealment')).toBeCloseTo(new EngineContext({ ...b, effects: [] }).mult(enemy, 'concealment'));
+    b.turn = 3;
+    expect(new EngineContext(b).mult(el, 'concealment')).toBeCloseTo(base);
+  });
+
+  it('событие по условию наступает, когда условие выполнено (с задержкой); без условия — не наступает', () => {
+    const { sc, b: red } = twoSectors();
+    sc.events = [{ id: 'ev', kind: 'order', turn: 1, side: 'B', nodeId: red.id, orderId: 'retreat', trigger: { metric: 'losses', side: 'B', value: 2 }, delay: 1 }];
+    const b = createBattle(sc, rs, { seed: 'S4' });
+    let fired = 0;
+    while (!b.finished && !fired) {
+      stepTurn(b);
+      fired = b.log.filter((e) => e.phase === 'plan' && e.text.includes('Отступление')).length;
+    }
+    expect(fired).toBe(1);
+    const at = b.eventTurns!.ev;
+    expect(b.log.some((e) => e.phase === 'plan' && e.turn === at - 1 && e.text.includes('через 1 ход'))).toBe(true);
+    // Условие недостижимо — событие не наступает.
+    sc.events[0].trigger = { metric: 'losses', side: 'B', value: 100 };
+    const c = createBattle(sc, rs, { seed: 'S4' });
+    runToEnd(c);
+    expect(c.log.some((e) => e.phase === 'plan')).toBe(false);
+  });
+
+  it('правило по состоянию: «мораль ≤ 40 → огонь ×0» действует сразу, как мораль упала', () => {
+    const r = clone(rs);
+    r.modifiers.push({ id: 'low', name: 'Сломлены', enabled: true, when: [{ field: 'morale', op: 'lte', value: 40 }], effects: { fire: 0 } });
+    const b = createBattle(duel(r, infantry('А', 50), infantry('Б', 50, 'defend')), r, { seed: 'S5' });
+    const E = new EngineContext(b);
+    const el = b.elements[0];
+    expect(E.mult(el, 'fire')).toBeGreaterThan(0);
+    el.morale = 30;
+    expect(E.mult(el, 'fire')).toBe(0);
+  });
+
+  it('ход до события останавливается на важном; прогноз не меняет бой и воспроизводим', () => {
+    const b = createBattle(makeDemoScenario(), rs, { seed: 'S6' });
+    const { steps, reasons } = stepUntilEvent(b, DEFAULT_PAUSE);
+    expect(steps).toBeGreaterThan(0);
+    expect(reasons.length > 0 || b.finished).toBe(true);
+    const before = JSON.stringify(b);
+    const f1 = forecast(b, 20, 'P');
+    const f2 = forecast(b, 20, 'P');
+    expect(JSON.stringify(b)).toBe(before);
+    expect(f1.runs.map((x) => x.outcomeId + x.turns)).toEqual(f2.runs.map((x) => x.outcomeId + x.turns));
+    expect(f1.winA + f1.winB + f1.draw).toBeCloseTo(100);
+    expect(f1.runs.every((x) => x.turns >= b.turn)).toBe(true);
+  });
+});
+
+describe('силы между боями, варианты прогонов, перенос между наборами', () => {
+  const rs = makeUniversalRuleset();
+
+  it('итоги боя — в боевой путь; отдых возвращает раненых, пополнение — до штата', () => {
+    const { scenario, forces } = extractForces(makeDemoScenario(), new Set(), () => newId('u'));
+    const map = Object.fromEntries(forces.map((f) => [f.id, f])) as Record<string, UnitNode>;
+    const b = createBattle(resolveScenario(scenario, map), rs, { seed: 'R1' });
+    runToEnd(b);
+    const { updated } = applyBattleToForces(b, map);
+    const f = updated[0];
+    expect(f.history?.[0]).toMatchObject({ kind: 'battle', battleId: b.id });
+    const rec = recoverableOf(f, rs);
+    expect(rec.personnel).toBeGreaterThan(0);
+    const r = restForce(f, 10, rs);
+    expect(r.personnel).toBeGreaterThan(0);
+    expect(recoverableOf(r.force, rs).personnel).toBeLessThan(rec.personnel);
+    expect(r.force.history!.at(-1)!.kind).toBe('rest');
+    const full = replenishForce(r.force, rs, { personnel: true, equipment: true });
+    walkUnits(full.force, (n) => n.composition.forEach((c) => expect(c.current).toBe(c.authorized)));
+  });
+
+  it('перебор параметра: по варианту на значение', () => {
+    const sc = makeDemoScenario();
+    expect(sweepVariants(sc, rs, { kind: 'intel', side: 'A' })).toHaveLength(rs.intelLevels.length);
+    const v = sweepVariants(sc, rs, { kind: 'commander', side: 'A', nodeId: sc.sides[0].formations[0].id });
+    expect(v).toHaveLength(rs.commandLevels.length + 1);
+    expect(v[0].scenario.sides[0].commanders![sc.sides[0].formations[0].id]).toBe(0);
+    expect(sc.sides[0].commanders?.[sc.sides[0].formations[0].id]).toBeUndefined();
+  });
+
+  it('перенос типов в набор другой эпохи: классы целей добавляются, дистанции — по порядку; типы сопоставляются', () => {
+    const lin = makeLinearRuleset();
+    const res = transferFromRuleset(lin, rs, { componentTypes: ['tank'], tempEffects: ['flares'] });
+    const tank = res.ruleset.componentTypes.find((t) => t.id === 'tank')!;
+    expect(res.ruleset.targetClasses.some((c) => c.id === 'armor')).toBe(true);
+    expect(Object.keys(tank.firepower.armor)).toEqual(lin.rangeBands.map((b) => b.id));
+    expect(tank.firepower.armor.melee).toBe(rs.componentTypes.find((t) => t.id === 'tank')!.firepower.armor.close);
+    expect(res.notes.length).toBeGreaterThan(0);
+    expect(res.ruleset.tempEffects.some((x) => x.id === 'flares')).toBe(true);
+
+    const blank = makeBlankRuleset();
+    blank.componentTypes.push({ ...rs.componentTypes[0], id: 'my-rifle' });
+    const unit = newRootUnit('Рота', { composition: [...rifles(10), { typeId: 'mg', authorized: 2, current: 2 }] });
+    const m = suggestTypeMap(['rifleman', 'mg'], rs, blank);
+    expect(m).toEqual({ rifleman: 'my-rifle', mg: null });
+    remapTypes(unit, m);
+    expect(unit.composition).toEqual([{ typeId: 'my-rifle', authorized: 10, current: 10 }]);
   });
 });

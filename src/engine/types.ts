@@ -106,7 +106,8 @@ export type ConditionOp = 'eq' | 'neq' | 'in' | 'nin' | 'has' | 'not_has' | 'gte
 
 export interface ModifierCondition {
   /** Поле контекста: cond.<категория>, range, turn, order, behavior, tag, kind, experience, side,
-   *  echelon, fortification, intel, targetClass, enemy.tag, enemy.kind, enemy.order, enemy.behavior, enemy.echelon */
+   *  echelon, fortification, intel, sector, targetClass; состояние — morale, cohesion, suppression, fatigue, ammo,
+   *  losses (потери элемента, %), sideLosses (потери стороны, %); enemy.<поле> — то же у противника. */
   field: string;
   op: ConditionOp;
   value: string | number | string[];
@@ -117,6 +118,13 @@ export interface CustomModifier extends Named {
   enabled: boolean;
   when: ModifierCondition[];
   effects: Effects;
+}
+
+/** Временный эффект (заготовка в наборе правил): дымовая завеса, внезапность, растерянность… */
+export interface EffectDef extends Named {
+  effects: Effects;
+  /** Сколько ходов действует по умолчанию. */
+  turns: number;
 }
 
 export interface OutcomeLevel {
@@ -171,6 +179,8 @@ export interface Ruleset {
   fortifications: OptionDef[];
   intelLevels: OptionDef[];
   modifiers: CustomModifier[];
+  /** Заготовки временных эффектов для боя и плана боя. */
+  tempEffects: EffectDef[];
   outcomeLevels: OutcomeLevel[];
   coefficients: Coefficients;
   updatedAt?: string;
@@ -238,7 +248,23 @@ export interface UnitNode {
   rulesetId?: Id;
   /** Принадлежность сил (армия, сторона, фракция) — только у сил, для порядка в списках. */
   faction?: string;
+  /** Боевой путь сил: бои, отдых, пополнения (только у корня сил). */
+  history?: ForceRecord[];
   updatedAt?: string;
+}
+
+/** Запись боевого пути сил. */
+export interface ForceRecord {
+  at: string;
+  kind: 'battle' | 'rest' | 'replenish';
+  title: string;
+  battleId?: Id;
+  /** Итог боя для стороны этих сил: «Победа (решительная)», «Поражение»… */
+  outcome?: string;
+  /** Изменение численности: люди и техника/вооружение (− потери, + вернулось/пришло). */
+  personnel?: number;
+  equipment?: number;
+  note?: string;
 }
 
 // ---------------------------------------------------------------- сценарий
@@ -288,6 +314,34 @@ export interface SideDef {
   commanders?: Record<Id, number>;
   /** Части подразделений стороны, которые в этом бою не участвуют (id узлов; вместе с подчинёнными). */
   excluded?: Id[];
+  /** Участок боя: id узла → участок (наследуется подчинёнными). Не задано — первый участок. */
+  sectorOf?: Record<Id, Id>;
+  /** Огневая поддержка вне поля боя: артиллерия, авиация, корабли. */
+  support?: SupportAsset[];
+}
+
+/** Средство огневой поддержки стороны: не на поле боя, его нельзя поразить; бьёт по вызову. */
+export interface SupportAsset {
+  id: Id;
+  name: string;
+  /** Тип из каталога набора правил: его огневая мощь (лучшая по дистанциям) — мощь одной единицы. */
+  typeId: Id;
+  /** Сколько единиц участвует в одном ударе (орудий, самолётов). */
+  count: number;
+  /** Сколько ударов доступно за бой. */
+  missions: number;
+}
+
+/** Участок боя: своя дистанция, при желании — своя местность и укрепления. Переброски между участками нет. */
+export interface SectorDef {
+  id: Id;
+  name: string;
+  /** Начальная дистанция; не задано — как в сценарии. */
+  startBand?: Id;
+  /** Условия, отличные от сценария (категория → вариант), например местность. */
+  conditions?: Record<Id, Id>;
+  /** Укрепления сторон на участке; не задано — как у стороны. */
+  fortification?: Partial<Record<SideId, Id>>;
 }
 
 export interface Scenario {
@@ -303,14 +357,32 @@ export interface Scenario {
   sides: [SideDef, SideDef];
   /** План боя: события по ходам — работают и в бою, и в массовых прогонах. */
   events?: ScenarioEvent[];
+  /** Участки боя; пусто — один общий участок. */
+  sectors?: SectorDef[];
   updatedAt?: string;
 }
 
 /**
  * Событие плана боя. arrive — подход подкреплений (до этого подразделение вне боя), order — смена
- * приказа подразделению, conditions — смена условий (ночь, дождь…).
+ * приказа подразделению, conditions — смена условий (ночь, дождь…), strike — удар огневой поддержки,
+ * effect — временный эффект (дымовая завеса, внезапность…).
  */
-export type ScenarioEventKind = 'arrive' | 'order' | 'conditions';
+export type ScenarioEventKind = 'arrive' | 'order' | 'conditions' | 'strike' | 'effect';
+
+/**
+ * Условие события: оно наступает в первый ход (не раньше turn), когда условие выполнено.
+ * losses — потери личного состава, % (не меньше value); out — выбыло (уничтожено, бежит, отходит), % боевой
+ * ценности (не меньше value); morale — средняя мораль (не больше value); band — дистанция value (id) или ближе.
+ */
+export type TriggerMetric = 'losses' | 'out' | 'morale' | 'band';
+export interface EventTrigger {
+  metric: TriggerMetric;
+  /** Чьё состояние проверяется (для band — не важно). */
+  side: SideId;
+  /** Подразделение (узел) стороны; не задано — вся сторона. */
+  nodeId?: Id;
+  value: number | string;
+}
 
 export interface ScenarioEvent {
   id: Id;
@@ -322,10 +394,20 @@ export interface ScenarioEvent {
   /** Вероятность, % (по умолчанию 100): подкрепление может и не подойти. */
   chance?: number;
   side?: SideId;
-  /** Узел стороны (формирование или подразделение) — для arrive и order. */
+  /** Узел стороны (формирование или подразделение) — для arrive, order и effect. */
   nodeId?: Id;
   orderId?: Id;
   conditions?: Record<Id, Id>;
+  /** strike: средство поддержки стороны side и цель — узел противника (не задано — по всей стороне). */
+  assetId?: Id;
+  targetNodeId?: Id;
+  /** effect: заготовка эффекта из набора правил и срок, ходов (не задано — как в заготовке). */
+  effectId?: Id;
+  turns?: number;
+  /** Условие наступления; turn тогда — «не раньше хода». */
+  trigger?: EventTrigger;
+  /** Задержка после выполнения условия, ходов. */
+  delay?: number;
   note?: string;
 }
 
@@ -396,6 +478,8 @@ export interface ElementState {
   turnPersonnelLost: number;
   /** Морально-боевые показатели в начале боя (для отчёта). */
   startMorale: number;
+  /** Участок боя (если участков несколько). */
+  sector?: Id;
   /** Свой командир элемента (0 — нет), его связь и снабжение (null — как у формирования). */
   ownCommandLevel?: number;
   ownCommanderName?: string;
@@ -487,10 +571,69 @@ export interface SideSnapshot {
 export interface TurnSnapshot {
   turn: number;
   band: number;
+  /** Дистанции по участкам (если участков несколько). */
+  bands?: Record<Id, number>;
   sides: Record<SideId, SideSnapshot>;
 }
 
-export type InterventionType = 'setOrder' | 'editElement' | 'resupply' | 'setConditions' | 'setBand' | 'endBattle' | 'setFormation' | 'arrive';
+export type InterventionType =
+  | 'setOrder'
+  | 'editElement'
+  | 'resupply'
+  | 'setConditions'
+  | 'setBand'
+  | 'endBattle'
+  | 'setFormation'
+  | 'arrive'
+  | 'addEffect'
+  | 'removeEffect'
+  | 'strike'
+  | 'cancelStrike';
+
+/** Участок в бою: своя дистанция и сближение. */
+export interface SectorState {
+  id: Id;
+  name: string;
+  bandIndex: number;
+  closingProgress: number;
+  /** Условия участка поверх общих (категория → вариант). */
+  conditions: Record<Id, Id>;
+  fortification: Partial<Record<SideId, Id>>;
+}
+
+/** Действующий (или отработавший) временный эффект. */
+export interface ActiveEffect {
+  id: Id;
+  name: string;
+  effects: Effects;
+  /** Ходы действия включительно. */
+  from: number;
+  until: number;
+  side: SideId;
+  /** Формирование (со всеми подчинёнными) или элементы; не задано — вся сторона. */
+  formationId?: Id;
+  elementIds?: Id[];
+  source: 'gm' | 'plan';
+}
+
+/** Средство огневой поддержки в бою: сколько ударов осталось. */
+export interface SupportState extends SupportAsset {
+  side: SideId;
+  left: number;
+}
+
+/** Удар огневой поддержки: заказан на ход turn (или уже нанесён). */
+export interface StrikeOrder {
+  id: Id;
+  side: SideId;
+  assetId: Id;
+  /** Цель: формирование противника, его элементы; не задано — вся сторона противника. */
+  formationId?: Id;
+  elementIds?: Id[];
+  turn: number;
+  done?: boolean;
+  source: 'gm' | 'plan';
+}
 
 export interface Intervention {
   /** Ход, ПЕРЕД которым было сделано вмешательство (0 — до первого хода). */
@@ -525,6 +668,13 @@ export interface Battle {
   interventions: Intervention[];
   /** Ход, на который выпало событие плана с разбросом (id события → ход). */
   eventTurns?: Record<Id, number>;
+  /** Участки боя (если их несколько; иначе дистанция — bandIndex). */
+  sectors?: SectorState[];
+  effects?: ActiveEffect[];
+  support?: SupportState[];
+  strikes?: StrikeOrder[];
+  /** Ветка другого боя: с какого боя и хода. */
+  branchOf?: { battleId: Id; name: string; turn: number };
   quietTurns: number;
   finished: boolean;
   endReason?: string;

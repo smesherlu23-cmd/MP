@@ -3,6 +3,7 @@
 import { Rng } from './rng';
 import { STAT_KEYS } from './types';
 import type {
+  ActiveEffect,
   Battle,
   Behavior,
   ComponentKind,
@@ -17,7 +18,9 @@ import type {
   ModifierCondition,
   OptionDef,
   OrderDef,
+  RangeBand,
   Ruleset,
+  SectorState,
   Severity,
   SideId,
   StatKey,
@@ -28,6 +31,10 @@ export interface StatCx {
   enemy?: ElementState;
   targetClass?: Id;
 }
+
+/** Поля условий, зависящие от состояния элемента: такие правила не кэшируются. */
+const STATE_FIELDS = new Set(['morale', 'cohesion', 'suppression', 'fatigue', 'ammo', 'losses', 'sideLosses']);
+const fieldBase = (f: string) => (f.startsWith('enemy.') ? f.slice(6) : f);
 
 export class EngineContext {
   readonly rs: Ruleset;
@@ -45,9 +52,15 @@ export class EngineContext {
   /** Модификаторы, зависящие от противника или класса цели (их нельзя кэшировать по элементу). */
   private contextualMods: Set<Id>;
   private contextualList: CustomModifier[];
+  /** Правила с условиями на состояние (мораль, потери…): считаются при каждом обращении. */
+  private dynamicList: CustomModifier[];
   private plainMods: CustomModifier[];
   private selectedConditions: { label: string; opt: OptionDef }[] = [];
+  /** Условия по участкам (если у участка свои — местность и т.п.). */
+  private sectorConditions = new Map<Id, { label: string; opt: OptionDef }[]>();
+  readonly sectors = new Map<Id, SectorState>();
   private bySide: Record<SideId, ElementState[]>;
+  private sideLossCache: Partial<Record<SideId, number>> = {};
 
   constructor(readonly b: Battle) {
     this.rs = b.ruleset;
@@ -62,18 +75,70 @@ export class EngineContext {
       this.rs.modifiers.filter((m) => m.when.some((w) => w.field.startsWith('enemy.') || w.field === 'targetClass')).map((m) => m.id),
     );
     this.contextualList = this.rs.modifiers.filter((m) => m.enabled && this.contextualMods.has(m.id));
-    this.plainMods = this.rs.modifiers.filter((m) => m.enabled && !this.contextualMods.has(m.id));
+    const dynamic = (m: CustomModifier) => m.when.some((w) => STATE_FIELDS.has(fieldBase(w.field)));
+    this.dynamicList = this.rs.modifiers.filter((m) => m.enabled && !this.contextualMods.has(m.id) && dynamic(m));
+    this.plainMods = this.rs.modifiers.filter((m) => m.enabled && !this.contextualMods.has(m.id) && !dynamic(m));
+    for (const sec of b.sectors ?? []) this.sectors.set(sec.id, sec);
     this.refreshConditions();
     this.bySide = { A: b.elements.filter((x) => x.side === 'A'), B: b.elements.filter((x) => x.side === 'B') };
   }
 
   /** Пересчитать выбранные условия (после вмешательства ГМ). */
   refreshConditions() {
-    this.selectedConditions = [];
-    for (const cat of this.rs.conditions) {
-      const opt = cat.options.find((o) => o.id === this.b.conditions[cat.id]);
-      if (opt) this.selectedConditions.push({ label: `${cat.name}: ${opt.name}`, opt });
+    const pick = (over?: Record<Id, Id>) => {
+      const out: { label: string; opt: OptionDef }[] = [];
+      for (const cat of this.rs.conditions) {
+        const opt = cat.options.find((o) => o.id === (over?.[cat.id] || this.b.conditions[cat.id]));
+        if (opt) out.push({ label: `${cat.name}: ${opt.name}`, opt });
+      }
+      return out;
+    };
+    this.selectedConditions = pick();
+    this.sectorConditions.clear();
+    for (const sec of this.b.sectors ?? []) if (Object.values(sec.conditions ?? {}).some(Boolean)) this.sectorConditions.set(sec.id, pick(sec.conditions));
+  }
+
+  /** Условия, действующие на элемент: общие или своего участка. */
+  conditionsOf(el: ElementState) {
+    return (el.sector && this.sectorConditions.get(el.sector)) || this.selectedConditions;
+  }
+
+  /** Вариант условия категории для элемента (с учётом участка). */
+  conditionOf(el: ElementState | undefined, cat: Id): Id | undefined {
+    const sec = el && this.sectorOf(el);
+    return sec?.conditions?.[cat] || this.b.conditions[cat];
+  }
+
+  /** Участок элемента; null — участков нет. */
+  sectorOf(el: ElementState): SectorState | null {
+    if (!this.b.sectors?.length) return null;
+    return (el.sector && this.sectors.get(el.sector)) || this.b.sectors[0];
+  }
+
+  /** Дистанция, на которой ведёт бой элемент (на его участке). */
+  bandOf(el: ElementState): RangeBand {
+    const sec = this.sectorOf(el);
+    return sec ? this.rs.rangeBands[sec.bandIndex] : this.band;
+  }
+
+  /** Укрепления стороны элемента на его участке. */
+  fortificationOf(el: ElementState): Id {
+    return this.sectorOf(el)?.fortification?.[el.side] || this.b.sides[el.side].fortification;
+  }
+
+  /** Временные эффекты, действующие на элемент в текущем ходу. */
+  effectsOf(el: ElementState): ActiveEffect[] {
+    const list = this.b.effects;
+    if (!list?.length) return [];
+    const turn = this.b.turn;
+    const out: ActiveEffect[] = [];
+    for (const ef of list) {
+      if (ef.side !== el.side || turn < ef.from || turn > ef.until) continue;
+      if (ef.elementIds && !ef.elementIds.includes(el.id)) continue;
+      if (ef.formationId && !this.chain(el).some((f) => f.id === ef.formationId)) continue;
+      out.push(ef);
     }
+    return out;
   }
 
   get f() {
@@ -94,11 +159,30 @@ export class EngineContext {
       this.baseCache.clear();
       this.tagCache.clear();
       this.kindCache.clear();
+      this.sideLossCache = {};
       return;
     }
     this.baseCache.delete(el.id);
     this.tagCache.delete(el.id);
     this.kindCache.delete(el.id);
+    this.sideLossCache = {};
+  }
+
+  /** Потери личного состава стороны, % от начальной численности (без не подошедших подкреплений). */
+  sideLossPct(side: SideId): number {
+    let v = this.sideLossCache[side];
+    if (v === undefined) {
+      let start = 0;
+      let now = 0;
+      for (const el of this.bySide[side]) {
+        if (el.status === 'pending') continue;
+        start += el.startPersonnel;
+        now += this.personnel(el);
+      }
+      v = start > 0 ? (1 - now / start) * 100 : 0;
+      this.sideLossCache[side] = v;
+    }
+    return v;
   }
 
   // ------------------------------------------------------------ справочные функции
@@ -234,8 +318,8 @@ export class EngineContext {
   // ------------------------------------------------------------ модификаторы
 
   private fieldValue(field: string, el: ElementState | undefined, cx: StatCx): string | number | string[] | undefined {
-    if (field.startsWith('cond.')) return this.b.conditions[field.slice(5)];
-    if (field === 'range') return this.band?.id;
+    if (field.startsWith('cond.')) return this.conditionOf(el, field.slice(5));
+    if (field === 'range') return (el ? this.bandOf(el) : this.band)?.id;
     if (field === 'turn') return this.b.turn;
     if (field === 'targetClass') return cx.targetClass;
     if (field.startsWith('enemy.')) return this.fieldValue(field.slice(6), cx.enemy, {});
@@ -256,9 +340,21 @@ export class EngineContext {
       case 'echelon':
         return el.echelon;
       case 'fortification':
-        return this.b.sides[el.side].fortification;
+        return this.fortificationOf(el);
       case 'intel':
         return this.b.sides[el.side].intel;
+      case 'sector':
+        return this.sectorOf(el)?.id;
+      case 'morale':
+      case 'cohesion':
+      case 'suppression':
+      case 'fatigue':
+      case 'ammo':
+        return el[field];
+      case 'losses':
+        return el.startValue > 0 ? (1 - this.value(el) / el.startValue) * 100 : 0;
+      case 'sideLosses':
+        return this.sideLossPct(el.side);
     }
     return undefined;
   }
@@ -305,7 +401,11 @@ export class EngineContext {
       arr = this.computeAll(el);
       this.baseCache.set(el.id, arr);
     }
-    const base = arr[STAT_INDEX[stat]];
+    let base = arr[STAT_INDEX[stat]];
+    for (const mod of this.dynamicList) {
+      const v = mod.effects[stat];
+      if (v !== undefined && Number.isFinite(v) && this.matches(mod.when, el, {})) base *= v;
+    }
     if (!this.contextualList.length || (!cx.enemy && !cx.targetClass)) return base;
     return base * this.contextual(el, stat, cx);
   }
@@ -325,15 +425,17 @@ export class EngineContext {
     const exp = this.rs.experienceLevels[el.experience - 1];
     if (exp) apply(exp.effects);
     for (const c of this.commandLevels(el)) apply(c.level.effects, c.weight);
-    for (const c of this.selectedConditions) apply(c.opt.effects);
+    for (const c of this.conditionsOf(el)) apply(c.opt.effects);
     const side = this.b.sides[el.side];
     const bh = order.behavior;
     if (bh === 'defend' || bh === 'ambush' || bh === 'consolidate' || bh === 'reserve') {
-      const fort = this.rs.fortifications.find((x) => x.id === side.fortification);
+      const fortId = this.fortificationOf(el);
+      const fort = this.rs.fortifications.find((x) => x.id === fortId);
       if (fort) apply(fort.effects);
     }
     const intel = this.rs.intelLevels.find((x) => x.id === side.intel);
     if (intel) apply(intel.effects);
+    for (const ef of this.effectsOf(el)) apply(ef.effects);
     for (const mod of this.plainMods) if (this.matches(mod.when, el, {})) apply(mod.effects);
     return arr;
   }
@@ -365,15 +467,17 @@ export class EngineContext {
         const v = c.level.effects[stat];
         if (v !== undefined) add(`Командир (${c.name}): ${c.level.name}`, 1 + (v - 1) * c.weight);
       }
-      for (const c of this.selectedConditions) add(c.label, c.opt.effects[stat]);
+      for (const c of this.conditionsOf(el)) add(c.label, c.opt.effects[stat]);
       const side = this.b.sides[el.side];
       const bh = this.behavior(el);
       if (bh === 'defend' || bh === 'ambush' || bh === 'consolidate' || bh === 'reserve') {
-        const fort = this.rs.fortifications.find((x) => x.id === side.fortification);
+        const fortId = this.fortificationOf(el);
+        const fort = this.rs.fortifications.find((x) => x.id === fortId);
         if (fort) add(`Укрепления: ${fort.name}`, fort.effects[stat]);
       }
       const intel = this.rs.intelLevels.find((x) => x.id === side.intel);
       if (intel) add(`Разведданные: ${intel.name}`, intel.effects[stat]);
+      for (const ef of this.effectsOf(el)) add(`Эффект «${ef.name}» (до ${ef.until}-го хода)`, ef.effects[stat]);
     }
     for (const mod of this.rs.modifiers) {
       if (!mod.enabled || mod.effects[stat] === undefined) continue;

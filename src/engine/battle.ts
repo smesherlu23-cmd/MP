@@ -10,14 +10,17 @@ import type {
   Behavior,
   CompState,
   ElementState,
+  EventTrigger,
   Factor,
   FormationState,
   Id,
   Ruleset,
   Scenario,
+  ScenarioEvent,
   SideId,
   SideSnapshot,
   SideState,
+  StrikeOrder,
   UnitNode,
 } from './types';
 import { migrateUnit, resolveChild, ROOT_RESOLVED, withoutExcluded, type Resolved } from './units';
@@ -65,6 +68,26 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
     silent: !!opts.silent,
   };
 
+  // Участки: у каждого своя дистанция; без участков — одна общая (bandIndex боя).
+  const bandIdx = (id: Id | undefined) => {
+    const i = rs.rangeBands.findIndex((x) => x.id === id);
+    return i >= 0 ? i : b.bandIndex;
+  };
+  if (sc.sectors?.length) {
+    b.sectors = sc.sectors.map((sec) => ({
+      id: sec.id,
+      name: sec.name,
+      bandIndex: bandIdx(sec.startBand),
+      closingProgress: 0,
+      conditions: { ...(sec.conditions ?? {}) },
+      fortification: { ...(sec.fortification ?? {}) },
+    }));
+  }
+  const sectorIds = new Set((b.sectors ?? []).map((x) => x.id));
+  // Огневая поддержка сторон (вне поля боя).
+  for (const sd of sc.sides)
+    for (const a of sd.support ?? []) if (a.count > 0 && a.missions > 0) (b.support ??= []).push({ ...a, side: sd.id, left: Math.floor(a.missions) });
+
   const warnings: string[] = [];
   const typeIds = new Set(rs.componentTypes.map((t) => t.id));
   const orderIds = new Set(rs.orders.map((o) => o.id));
@@ -97,8 +120,10 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
      * Узел с подчинёнными (и любой корень) становится формированием — звеном управления.
      * Узел с собственным составом становится элементом — тем, что стреляет и несёт потери.
      */
-    const addNode = (node: UnitNode, parentF: FormationState | null, parentRes: Resolved) => {
+    const addNode = (node: UnitNode, parentF: FormationState | null, parentRes: Resolved, parentSector: Id | undefined) => {
       const res = resolveChild(node, parentRes);
+      const own = sd.sectorOf?.[node.id];
+      const sector = own && sectorIds.has(own) ? own : parentSector;
       const order = res.order && orderIds.has(res.order) ? res.order : (parentF?.orderId ?? defaultOrder);
       const isGroup = node.children.length > 0 || !parentF;
       let f = parentF!;
@@ -121,9 +146,10 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
         b.formations.push(f);
       }
       if (node.composition.length) {
-        const own = isGroup && node.children.length > 0;
-        const el = makeElement(node, own ? `${node.name} (${node.isHQ ? 'управление' : 'свой состав'})` : node.name, f, `e${++eCount}`, rs, typeIds, res, order, warnings);
-        if (!own) {
+          const withKids = isGroup && node.children.length > 0;
+        const el = makeElement(node, withKids ? `${node.name} (${node.isHQ ? 'управление' : 'свой состав'})` : node.name, f, `e${++eCount}`, rs, typeIds, res, order, warnings);
+        if (b.sectors) el.sector = sector ?? b.sectors[0].id;
+        if (!withKids) {
           // Связь и снабжение у подразделения без подчинённых (своего командира у него нет — им командует формирование).
           el.comms = node.comms;
           el.supply = node.supply;
@@ -132,12 +158,12 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       } else if (!node.children.length) {
         warnings.push(`подразделение «${node.name}» без состава и подчинённых — в бою не участвует.`);
       }
-      for (const ch of node.children) addNode(ch, f, res);
+      for (const ch of node.children) addNode(ch, f, res, sector);
     };
     // Части, исключённые из этого боя (в сценарии), не создаются вовсе.
     for (const f of sd.formations) {
       const u = withoutExcluded(migrateUnit(f), sd.excluded);
-      if (u) addNode(u, null, ROOT_RESOLVED);
+      if (u) addNode(u, null, ROOT_RESOLVED, undefined);
     }
   }
 
@@ -159,7 +185,8 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
   // План боя: подкрепления до подхода вне боя; ход события с разбросом выпадает сразу.
   for (const ev of sc.events ?? []) {
     if (ev.kind === 'arrive' && ev.side && ev.nodeId) for (const el of elementsOfNode(b, ev.side, ev.nodeId)) el.status = 'pending';
-    if (ev.spread && ev.spread > 0) {
+    // У события с условием ход наступления определяется по ходу боя.
+    if (ev.spread && ev.spread > 0 && !ev.trigger) {
       const off = Math.floor(E.rng.next() * (2 * ev.spread + 1)) - ev.spread;
       (b.eventTurns ??= {})[ev.id] = Math.max(1, ev.turn + off);
     }
@@ -170,6 +197,22 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
     .map((cat) => `${cat.name.toLowerCase()}: ${cat.options.find((o) => o.id === b.conditions[cat.id])?.name ?? '—'}`)
     .join(', ');
   E.log({ phase: 'setup', level: 0, text: `Бой «${b.name}». Условия — ${condText}. Начальная дистанция: ${E.band?.name ?? '—'}.` });
+  if (b.sectors) {
+    const text = b.sectors
+      .map((sec) => {
+        const own = rs.conditions.filter((cat) => sec.conditions[cat.id]).map((cat) => cat.options.find((o) => o.id === sec.conditions[cat.id])?.name.toLowerCase());
+        const n = b.elements.filter((x) => x.sector === sec.id).length;
+        return `${sec.name} — ${rs.rangeBands[sec.bandIndex]?.name.toLowerCase() ?? '—'}${own.length ? `, ${own.join(', ')}` : ''} (${n} ${plural(n, 'элемент', 'элемента', 'элементов')})`;
+      })
+      .join('; ');
+    E.log({ phase: 'setup', level: 0, text: `Участки боя: ${text}.` });
+  }
+  if (b.support?.length)
+    E.log({
+      phase: 'setup',
+      level: 0,
+      text: `Огневая поддержка: ${b.support.map((a) => `${b.sides[a.side].name} — «${a.name}» (${a.count} × ${rs.componentTypes.find((t) => t.id === a.typeId)?.name ?? a.typeId}, ударов: ${a.left})`).join('; ')}.`,
+    });
   for (const side of SIDES) {
     const els = E.sideElements(side);
     const pers = els.reduce((a, x) => a + x.startPersonnel, 0);
@@ -285,10 +328,12 @@ export function stepTurn(b: Battle): void {
     el.turnPersonnelLost = 0;
   }
   const t0 = (b.turn - 1) * b.ruleset.turnMinutes;
-  E.log({ phase: 'turn', level: 0, text: `Ход ${b.turn} · ${fmtTime(t0)} · ${E.band?.name ?? '—'}` });
+  const bandText = b.sectors ? b.sectors.map((sec) => `${sec.name}: ${b.ruleset.rangeBands[sec.bandIndex]?.name.toLowerCase() ?? '—'}`).join(', ') : (E.band?.name ?? '—');
+  E.log({ phase: 'turn', level: 0, text: `Ход ${b.turn} · ${fmtTime(t0)} · ${bandText}` });
 
   phaseEvents(E);
   phaseDetection(E);
+  phaseStrikes(E);
   const ini = phaseInitiative(E);
   phaseFire(E, ini);
   phaseMovement(E);
@@ -323,9 +368,52 @@ export function arrivalTurn(b: Battle, el: ElementState): number | null {
 }
 
 /** План боя: события сценария, выпавшие на этот ход (до обнаружения и огня). */
+/** Выполнено ли условие события плана (по состоянию на начало хода). */
+export function triggerMet(E: EngineContext, tr: EventTrigger): boolean {
+  const { b } = E;
+  if (tr.metric === 'band') {
+    const i = b.ruleset.rangeBands.findIndex((x) => x.id === tr.value);
+    if (i < 0) return false;
+    if (!b.sectors) return b.bandIndex >= i;
+    const els = tr.nodeId ? elementsOfNode(b, tr.side, tr.nodeId) : [];
+    const secs = els.length ? [...new Set(els.map((x) => E.sectorOf(x)!))] : b.sectors;
+    return secs.some((sec) => sec.bandIndex >= i);
+  }
+  const els = (tr.nodeId ? elementsOfNode(b, tr.side, tr.nodeId) : E.sideElements(tr.side)).filter((x) => x.status !== 'pending');
+  if (!els.length) return false;
+  const v = Number(tr.value) || 0;
+  if (tr.metric === 'losses') {
+    const start = els.reduce((a, x) => a + x.startPersonnel, 0);
+    const now = els.reduce((a, x) => a + E.personnel(x), 0);
+    return start > 0 && (1 - now / start) * 100 >= v;
+  }
+  if (tr.metric === 'out') {
+    const start = els.reduce((a, x) => a + x.startValue, 0);
+    const gone = els.filter((x) => !E.fighting(x)).reduce((a, x) => a + x.startValue, 0);
+    return start > 0 && (gone / start) * 100 >= v;
+  }
+  // morale: средняя мораль оставшихся в бою (по боевой ценности); если в бою никого — условие выполнено.
+  const act = els.filter((x) => E.fighting(x));
+  const w = act.reduce((a, x) => a + E.value(x), 0);
+  if (w <= 0) return true;
+  return act.reduce((a, x) => a + x.morale * E.value(x), 0) / w <= v;
+}
+
+/** Ход, на который назначено событие плана; undefined — событие с условием, которое ещё не выполнилось. */
+export function eventTurn(b: Battle, ev: ScenarioEvent): number | undefined {
+  return b.eventTurns?.[ev.id] ?? (ev.trigger ? undefined : ev.turn);
+}
+
 function phaseEvents(E: EngineContext) {
   const { b, rng } = E;
   for (const ev of b.scenario.events ?? []) {
+    if (ev.trigger && b.eventTurns?.[ev.id] === undefined) {
+      if (b.turn < ev.turn || !triggerMet(E, ev.trigger)) continue;
+      const delay = Math.max(0, Math.round(ev.delay ?? 0));
+      (b.eventTurns ??= {})[ev.id] = b.turn + delay;
+      if (delay > 0)
+        E.log({ phase: 'plan', level: 1, side: ev.side, text: `Условие плана выполнено (${triggerText(b, ev.trigger)}): «${eventTitle(b, ev)}» — через ${delay} ${plural(delay, 'ход', 'хода', 'ходов')}.` });
+    }
     if ((b.eventTurns?.[ev.id] ?? ev.turn) !== b.turn) continue;
     const chance = ev.chance ?? 100;
     const happens = chance >= 100 || rng.chance(Math.max(0, chance) / 100);
@@ -378,8 +466,161 @@ function phaseEvents(E: EngineContext) {
       E.refreshConditions();
       E.invalidate();
       E.log({ phase: 'plan', level: 0, text: `Обстановка меняется — ${changes.join(', ')}${note}.` });
+    } else if (ev.kind === 'strike') {
+      const asset = b.support?.find((a) => a.side === side && a.id === ev.assetId);
+      if (!asset || !side) continue;
+      if (!happens) {
+        E.log({ phase: 'plan', level: 1, side, text: `По плану ожидался удар «${asset.name}», но его не было${note}.` });
+        continue;
+      }
+      if (asset.left <= 0) {
+        E.log({ phase: 'plan', level: 1, side, severity: 'bad', text: `«${asset.name}»: ударов не осталось — удар по плану не нанесён${note}.` });
+        continue;
+      }
+      asset.left--;
+      const enemy = E.enemyOf(side);
+      const f = ev.targetNodeId ? b.formations.find((x) => x.side === enemy && x.defId === ev.targetNodeId) : undefined;
+      const els = ev.targetNodeId && !f ? elementsOfNode(b, enemy, ev.targetNodeId) : [];
+      (b.strikes ??= []).push({
+        id: `st${b.strikes.length + 1}`,
+        side,
+        assetId: asset.id,
+        ...(f ? { formationId: f.id } : els.length ? { elementIds: els.map((x) => x.id) } : {}),
+        turn: b.turn,
+        source: 'plan',
+      });
+    } else if (ev.kind === 'effect') {
+      const def = b.ruleset.tempEffects?.find((x) => x.id === ev.effectId);
+      if (!def || !side) continue;
+      if (!happens) {
+        E.log({ phase: 'plan', level: 1, side, text: `По плану ожидалось «${def.name}», но этого не произошло${note}.` });
+        continue;
+      }
+      const f = ev.nodeId ? b.formations.find((x) => x.side === side && x.defId === ev.nodeId) : undefined;
+      if (ev.nodeId && !f && !els.length) continue;
+      const turns = Math.max(1, Math.round(ev.turns ?? def.turns ?? 1));
+      (b.effects ??= []).push({
+        id: `fx${b.effects.length + 1}`,
+        name: def.name,
+        effects: { ...def.effects },
+        from: b.turn,
+        until: b.turn + turns - 1,
+        side,
+        ...(f ? { formationId: f.id } : els.length ? { elementIds: els.map((x) => x.id) } : {}),
+        source: 'plan',
+      });
+      E.invalidate();
+      E.log({ phase: 'plan', level: 0, side, refs: els.map((x) => x.id), text: `По плану: «${def.name}» — ${ev.nodeId ? who() : s(side)}, ${turns} ${plural(turns, 'ход', 'хода', 'ходов')}${note}.` });
     }
   }
+}
+
+/** Название события плана для журнала. */
+function eventTitle(b: Battle, ev: ScenarioEvent): string {
+  if (ev.kind === 'strike') return `удар «${b.support?.find((a) => a.id === ev.assetId)?.name ?? '?'}»`;
+  if (ev.kind === 'effect') return b.ruleset.tempEffects?.find((x) => x.id === ev.effectId)?.name ?? 'эффект';
+  if (ev.kind === 'order') return `приказ «${b.ruleset.orders.find((o) => o.id === ev.orderId)?.name ?? '?'}»`;
+  if (ev.kind === 'arrive') return 'подход подкреплений';
+  return 'смена условий';
+}
+
+/** Условие события человеческим языком: «потери Синих ≥ 30%». */
+export function triggerText(b: Pick<Battle, 'ruleset' | 'sides'> & { scenario?: Scenario }, tr: EventTrigger, nodeName?: string): string {
+  const who = nodeName ?? b.sides[tr.side]?.name ?? tr.side;
+  switch (tr.metric) {
+    case 'losses':
+      return `потери ${nodeName ? `«${who}»` : who} ≥ ${tr.value}%`;
+    case 'out':
+      return `${nodeName ? `у «${who}»` : `у стороны ${who}`} выбыло ≥ ${tr.value}%`;
+    case 'morale':
+      return `мораль ${nodeName ? `«${who}»` : who} ≤ ${tr.value}`;
+    case 'band':
+      return `дистанция «${b.ruleset.rangeBands.find((x) => x.id === tr.value)?.name ?? tr.value}» или ближе`;
+  }
+}
+
+// ------------------------------------------------------------------ огневая поддержка
+
+/** Удары огневой поддержки, назначенные на этот ход: средство вне поля боя бьёт по цели. */
+function phaseStrikes(E: EngineContext) {
+  const { b } = E;
+  for (const st of b.strikes ?? []) {
+    if (st.done || st.turn !== b.turn) continue;
+    st.done = true;
+    resolveStrike(E, st);
+  }
+}
+
+function resolveStrike(E: EngineContext, st: StrikeOrder) {
+  const { b, k } = E;
+  const asset = b.support?.find((a) => a.side === st.side && a.id === st.assetId);
+  const t = asset && E.types.get(asset.typeId);
+  if (!asset || !t) return;
+  const enemy = E.enemyOf(st.side);
+  let pool = E.sideElements(enemy);
+  let target = `всей стороне ${s(enemy)}`;
+  if (st.formationId) {
+    const ids = subtreeIds(E, st.formationId);
+    pool = pool.filter((x) => ids.has(x.formationId));
+    target = fm(st.formationId);
+  } else if (st.elementIds) {
+    const ids = new Set(st.elementIds);
+    pool = pool.filter((x) => ids.has(x.id));
+    target = pool.length === 1 ? e(pool[0]) : `${pool.length} ${plural(pool.length, 'элемент', 'элемента', 'элементов')}`;
+  }
+  const targets = pool.filter((x) => x.status === 'active' && E.size(x) > 0 && exposureOf(E, x, t.indirect) > 0);
+  if (!targets.length) {
+    asset.left++;
+    E.log({ phase: 'fire', level: 1, side: st.side, text: `«${asset.name}»: цель ${target} вне досягаемости — удар не нанесён, вызов не израсходован.` });
+    return;
+  }
+  // Огневая мощь единицы — лучшая по дистанциям (средство бьёт издалека).
+  const raw = new Map<Id, number>();
+  for (const cls of E.rs.targetClasses) {
+    let m = 0;
+    for (const band of E.rs.rangeBands) m = Math.max(m, t.firepower[cls.id]?.[band.id] ?? 0);
+    if (m > 0) raw.set(cls.id, m * asset.count * k.strikeScale);
+  }
+  const rnd = Math.max(0, 1 + k.strikeSpread * (E.rng.next() + E.rng.next() - 1));
+  const cands: { t: ElementState; cls: Id; w: number; vis: number }[] = [];
+  for (const x of targets) {
+    const ex = exposureOf(E, x, t.indirect);
+    const vis = !E.f.detection || x.spotted ? 1 : k.strikeUnspotted;
+    const pres = new Map<Id, number>();
+    for (const c of x.comps) if (c.current > 0) {
+      const tt = E.type(c.typeId);
+      pres.set(tt.targetClass, (pres.get(tt.targetClass) ?? 0) + c.current * Math.max(0.1, tt.value));
+    }
+    for (const [cls, p] of pres) {
+      const r = raw.get(cls);
+      if (r) cands.push({ t: x, cls, w: r * Math.sqrt(p) * ex * vis, vis });
+    }
+  }
+  const W = cands.reduce((a, c) => a + c.w, 0);
+  const shots: Shot[] = [];
+  if (W > 0)
+    for (const c of cands) {
+      const fire = raw.get(c.cls)! * (c.w / W) * c.vis * rnd;
+      if (fire <= 0) continue;
+      const cls = E.classes.get(c.cls);
+      shots.push({ source: asset.name, target: c.t, cls: c.cls, fire, lethality: (cls?.lethality ?? 1) * k.casualtyScale, suppressive: t.suppressive });
+    }
+  const unseen = targets.filter((x) => E.f.detection && !x.spotted).length;
+  E.log({
+    phase: 'fire',
+    level: 0,
+    side: st.side,
+    severity: 'info',
+    refs: targets.map((x) => x.id),
+    text: `${s(st.side)}: удар «${asset.name}» (${asset.count} × ${t.name}) по ${target}${unseen === targets.length ? ' — цель не обнаружена, огонь по площади' : ''}.`,
+    factors: [
+      { label: `${asset.count} × ${t.name}`, value: asset.count, kind: 'base' },
+      { label: 'Сила ударов (коэффициент)', value: k.strikeScale, kind: 'mult' },
+      { label: 'Случайность', value: rnd, kind: 'mult' },
+      ...(unseen ? [{ label: `Необнаруженные цели (${unseen})`, value: k.strikeUnspotted, kind: 'mult' as const }] : []),
+    ],
+  });
+  applyShots(E, shots);
 }
 
 export function runToEnd(b: Battle, maxSteps = 1000): void {
@@ -410,14 +651,17 @@ function phaseDetection(E: EngineContext) {
     }
     return;
   }
-  const base = E.band?.detection ?? 0.5;
   for (const side of SIDES) {
-    const observers = E.sideElements(side).filter((o) => o.status === 'active' && E.behavior(o) !== 'reserve' && E.behavior(o) !== 'rout');
+    const allObservers = E.sideElements(side).filter((o) => o.status === 'active' && E.behavior(o) !== 'reserve' && E.behavior(o) !== 'rout');
     for (const t of E.sideElements(E.enemyOf(side))) {
       if (t.status !== 'active') {
         t.spotted = false;
         continue;
       }
+      // Наблюдать можно только на своём участке.
+      const observers = b.sectors ? allObservers.filter((o) => o.sector === t.sector) : allObservers;
+      const band = E.bandOf(t);
+      const base = band?.detection ?? 0.5;
       const conceal = Math.max(0.05, E.mult(t, 'concealment') * echelonConceal(E, t) / (t.firedLastTurn ? k.firingReveal : 1));
       const scores: { p: number; w: number; o: ElementState }[] = [];
       for (const o of observers) {
@@ -435,7 +679,7 @@ function phaseDetection(E: EngineContext) {
       if (t.spotted) t.everSpotted = true;
       if (E.logging) {
         const best = scores[0];
-        const factors: Factor[] = [{ label: `Дистанция «${E.band?.name}»`, value: base, kind: 'base' }];
+        const factors: Factor[] = [{ label: `Дистанция «${band?.name}»`, value: base, kind: 'base' }];
         if (best) {
           const f: Factor[] = [];
           E.mult(best.o, 'detection', { enemy: t }, f);
@@ -543,7 +787,9 @@ function phaseInitiative(E: EngineContext): Initiative {
 // ------------------------------------------------------------------ огонь
 
 interface Shot {
-  shooter: ElementState;
+  /** Стрелок на поле боя; у ударов огневой поддержки его нет — есть название средства. */
+  shooter?: ElementState;
+  source?: string;
   target: ElementState;
   cls: Id;
   fire: number;
@@ -594,10 +840,12 @@ function exposureOf(E: EngineContext, t: ElementState, indirect: boolean): numbe
 }
 
 function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
-  const { k } = E;
-  const band = E.band?.id;
-  if (!band) return [];
+  const { k, b } = E;
+  if (!E.band?.id) return [];
   const shots: Shot[] = [];
+  // Участки: прямой огонь — только по своему участку, навесной — и по соседним (с весом sectorIndirectShare).
+  const sectored = !!b.sectors;
+  const bandIdOf = (el: ElementState) => E.bandOf(el).id;
   const targets = E.sideElements(E.enemyOf(side)).filter((t) => t.status === 'active' && E.order(t).exposure > 0 && E.size(t) > 0);
   if (!targets.length) return shots;
   const shooters = E.sideElements(side).filter((x) => E.engaged(x));
@@ -612,12 +860,21 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
     }
     presenceOf.set(t.id, presence);
   }
-  const maxFpOf = new Map<Id, number>();
-  for (const t of E.rs.componentTypes) {
-    let m = 0;
-    for (const cls of E.rs.targetClasses) m = Math.max(m, t.firepower[cls.id]?.[band] ?? 0);
-    maxFpOf.set(t.id, m);
-  }
+  // Наибольшая огневая мощь типа на дистанции (для расхода боезапаса) — по дистанциям участков.
+  const maxFpCache = new Map<Id, Map<Id, number>>();
+  const maxFpOf = (band: Id) => {
+    let m = maxFpCache.get(band);
+    if (!m) {
+      m = new Map();
+      for (const t of E.rs.componentTypes) {
+        let v = 0;
+        for (const cls of E.rs.targetClasses) v = Math.max(v, t.firepower[cls.id]?.[band] ?? 0);
+        m.set(t.id, v);
+      }
+      maxFpCache.set(band, m);
+    }
+    return m;
+  };
 
   for (const sh of shooters) {
     const factors: Factor[] | undefined = E.logging ? [] : undefined;
@@ -638,41 +895,60 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
     let firedAny = false;
     let ammoNum = 0;
     let ammoDen = 0;
+    const ownBand = bandIdOf(sh);
     for (const indirect of [false, true]) {
       const comps = sh.comps.filter((c) => c.current > 0 && E.type(c.typeId).indirect === indirect);
       if (!comps.length) continue;
-      // Огневая мощь пула по классам целей
-      const raw = new Map<Id, number>();
-      const supp = new Map<Id, number>();
-      for (const c of comps) {
-        const t = E.type(c.typeId);
-        let cf = 1;
-        if (t.kind === 'vehicle' && E.f.vehicleCondition) cf *= lerp(k.vehicleConditionFireMin, 1, sh.vehicleCondition / 100);
-        if (!indirect) cf *= sh.echelon === 'support' ? k.fireSupport : sh.echelon === 'rear' ? k.fireRear : 1;
-        for (const cls of E.rs.targetClasses) {
-          const v = (t.firepower[cls.id]?.[band] ?? 0) * c.current * cf;
-          if (v > 0) {
-            raw.set(cls.id, (raw.get(cls.id) ?? 0) + v);
-            supp.set(cls.id, (supp.get(cls.id) ?? 0) + v * t.suppressive);
+      // Огневая мощь пула по классам целей — на дистанции участка цели (без участков она одна).
+      const pools = new Map<Id, { raw: Map<Id, number>; supp: Map<Id, number> }>();
+      const poolAt = (band: Id) => {
+        let pl = pools.get(band);
+        if (pl) return pl;
+        pl = { raw: new Map(), supp: new Map() };
+        for (const c of comps) {
+          const t = E.type(c.typeId);
+          let cf = 1;
+          if (t.kind === 'vehicle' && E.f.vehicleCondition) cf *= lerp(k.vehicleConditionFireMin, 1, sh.vehicleCondition / 100);
+          if (!indirect) cf *= sh.echelon === 'support' ? k.fireSupport : sh.echelon === 'rear' ? k.fireRear : 1;
+          for (const cls of E.rs.targetClasses) {
+            const v = (t.firepower[cls.id]?.[band] ?? 0) * c.current * cf;
+            if (v > 0) {
+              pl.raw.set(cls.id, (pl.raw.get(cls.id) ?? 0) + v);
+              pl.supp.set(cls.id, (pl.supp.get(cls.id) ?? 0) + v * t.suppressive);
+            }
           }
         }
-        const maxFp = maxFpOf.get(t.id) ?? 0;
+        pools.set(band, pl);
+        return pl;
+      };
+      const ownPool = poolAt(ownBand);
+      const mf = maxFpOf(ownBand);
+      for (const c of comps) {
+        const t = E.type(c.typeId);
+        const maxFp = mf.get(t.id) ?? 0;
         ammoNum += c.current * maxFp * t.ammoUse;
         ammoDen += c.current * maxFp;
       }
-      if (!raw.size) continue;
+      if (!ownPool.raw.size && !(sectored && indirect && k.sectorIndirectShare > 0)) continue;
       // Распределение огня по целям
-      const cands: { t: ElementState; cls: Id; w: number; vis: number; pursuit: number }[] = [];
+      const cands: { t: ElementState; cls: Id; w: number; vis: number; pursuit: number; raw: Map<Id, number>; supp: Map<Id, number> }[] = [];
       for (const t of targets) {
-        const ex = exposureOf(E, t, indirect);
+        let pool = ownPool;
+        let across = 1;
+        if (sectored && t.sector !== sh.sector) {
+          if (!indirect || k.sectorIndirectShare <= 0) continue;
+          across = k.sectorIndirectShare;
+          pool = poolAt(bandIdOf(t));
+        }
+        const ex = exposureOf(E, t, indirect) * across;
         if (ex <= 0) continue;
         const vis = !E.f.detection || t.spotted ? 1 : indirect ? k.indirectUnspottedMult : k.unspottedFireMult;
         const bh = E.behavior(t);
         const pursuit = bh === 'retreat' ? k.pursuitMult : bh === 'rout' ? k.routPursuitMult : 1;
         for (const [cls, pres] of presenceOf.get(t.id)!) {
-          const r = raw.get(cls);
+          const r = pool.raw.get(cls);
           if (!r) continue;
-          cands.push({ t, cls, w: r * Math.sqrt(pres) * ex * vis * pursuit, vis, pursuit });
+          cands.push({ t, cls, w: r * Math.sqrt(pres) * ex * vis * pursuit, vis, pursuit, raw: pool.raw, supp: pool.supp });
         }
       }
       const W = cands.reduce((a, c) => a + c.w, 0);
@@ -680,13 +956,13 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
       firedAny = true;
       for (const c of cands) {
         const share = c.w / W;
-        const r = raw.get(c.cls)!;
+        const r = c.raw.get(c.cls)!;
         const ctxFire = E.contextual(sh, 'fire', { enemy: c.t, targetClass: c.cls });
         const fire = r * share * c.vis * c.pursuit * sm * ctxFire;
         if (fire <= 0) continue;
         const cls = E.classes.get(c.cls);
         const leth = (cls?.lethality ?? 1) * E.mult(sh, 'lethality', { enemy: c.t, targetClass: c.cls }) * k.casualtyScale;
-        shots.push({ shooter: sh, target: c.t, cls: c.cls, fire, lethality: leth, suppressive: (supp.get(c.cls) ?? r) / r });
+        shots.push({ shooter: sh, target: c.t, cls: c.cls, fire, lethality: leth, suppressive: (c.supp.get(c.cls) ?? r) / r });
         allocation.set(c.t.id, (allocation.get(c.t.id) ?? 0) + fire);
       }
     }
@@ -742,13 +1018,15 @@ function applyShots(E: EngineContext, shots: Shot[]) {
     const routing = E.behavior(t) === 'rout';
     const perClass = new Map<Id, { hits: number; supp: number }>();
     const shooters = new Set<Id>();
+    const sources = new Set<string>();
     for (const sh of list) {
       const eff = sh.fire / protectionMult(E, t, sh.cls, sh.shooter);
       const pc = perClass.get(sh.cls) ?? { hits: 0, supp: 0 };
       pc.hits += eff * sh.lethality;
       pc.supp += eff * sh.suppressive;
       perClass.set(sh.cls, pc);
-      shooters.add(sh.shooter.id);
+      if (sh.shooter) shooters.add(sh.shooter.id);
+      else if (sh.source) sources.add(sh.source);
     }
     t.underFireThisTurn = true;
     const sizeBefore = E.size(t);
@@ -835,8 +1113,8 @@ function applyShots(E: EngineContext, shots: Shot[]) {
         for (const x of pf) factors.push({ ...x, label: `Защищённость — ${x.label}` });
       }
       if (E.f.suppression && suppGain > 0) factors.push({ label: `Подавление ${Math.round(before)} → ${Math.round(t.suppression)}%`, value: round1(suppGain), kind: 'add' });
-      const who = [...shooters].map((id) => E.elements.get(id)?.name ?? id).join(', ');
-      factors.unshift({ label: `Огонь вели: ${who}`, value: shooters.size, kind: 'base' });
+      const who = [...[...shooters].map((id) => E.elements.get(id)?.name ?? id), ...[...sources].map((x) => `«${x}» (огневая поддержка)`)].join(', ');
+      factors.unshift({ label: `Огонь вели: ${who}`, value: shooters.size + sources.size, kind: 'base' });
       E.log({
         phase: 'losses',
         level: parts.length ? 1 : 2,
@@ -881,65 +1159,71 @@ function splitCasualties(E: EngineContext, n: number, routing: boolean): [number
 
 function phaseMovement(E: EngineContext) {
   const { b, k, f } = E;
-  const pressure: Record<SideId, number> = { A: 0, B: 0 };
   const moved = new Set<Id>();
-  for (const side of SIDES) {
-    const els = E.sideElements(side).filter((x) => E.engaged(x) && E.behavior(x) !== 'retreat' && E.behavior(x) !== 'rout');
-    const total = els.reduce((a, x) => a + E.value(x), 0);
-    if (total <= 0) continue;
-    let push = 0;
-    for (const el of els) {
-      if (E.behavior(el) !== 'attack') continue;
-      moved.add(el.id);
-      let m = E.mult(el, 'movement');
-      if (f.suppression) m *= 1 - (el.suppression / 100) * k.suppressionMovementPenalty;
-      if (f.fuel && el.fuel <= 0) {
-        const vv = el.comps.filter((c) => E.type(c.typeId).kind === 'vehicle').reduce((a, c) => a + c.current * E.type(c.typeId).value, 0);
-        const share = vv / Math.max(1e-9, E.value(el));
-        m *= 1 - share * (1 - k.noFuelMovement);
+  // Сближение — на каждом участке своё; без участков — одно на весь бой (дистанция боя).
+  const groups: { st: { bandIndex: number; closingProgress: number }; name: string | null; els: (side: SideId) => ElementState[] }[] = b.sectors
+    ? b.sectors.map((sec) => ({ st: sec, name: sec.name, els: (side: SideId) => E.sideElements(side).filter((x) => x.sector === sec.id) }))
+    : [{ st: b, name: null, els: (side: SideId) => E.sideElements(side) }];
+  const last = b.ruleset.rangeBands.length - 1;
+  for (const g of groups) {
+    const pressure: Record<SideId, number> = { A: 0, B: 0 };
+    for (const side of SIDES) {
+      const els = g.els(side).filter((x) => E.engaged(x) && E.behavior(x) !== 'retreat' && E.behavior(x) !== 'rout');
+      const total = els.reduce((a, x) => a + E.value(x), 0);
+      if (total <= 0) continue;
+      let push = 0;
+      for (const el of els) {
+        if (E.behavior(el) !== 'attack') continue;
+        moved.add(el.id);
+        let m = E.mult(el, 'movement');
+        if (f.suppression) m *= 1 - (el.suppression / 100) * k.suppressionMovementPenalty;
+        if (f.fuel && el.fuel <= 0) {
+          const vv = el.comps.filter((c) => E.type(c.typeId).kind === 'vehicle').reduce((a, c) => a + c.current * E.type(c.typeId).value, 0);
+          const share = vv / Math.max(1e-9, E.value(el));
+          m *= 1 - share * (1 - k.noFuelMovement);
+        }
+        push += E.value(el) * m;
       }
-      push += E.value(el) * m;
+      pressure[side] = push / total;
     }
-    pressure[side] = push / total;
+    const lead: SideId = pressure.A >= pressure.B ? 'A' : 'B';
+    const p = pressure[lead];
+    const where = g.name ? `${g.name}: ` : '';
+    if (p >= k.attackPressureMin && g.st.bandIndex < last) {
+      const band = b.ruleset.rangeBands[g.st.bandIndex];
+      g.st.closingProgress += p / Math.max(0.25, band.turnsToClose);
+      if (g.st.closingProgress >= 1) {
+        g.st.bandIndex++;
+        g.st.closingProgress = 0;
+        E.invalidate();
+        E.log({
+          phase: 'movement',
+          level: 0,
+          side: lead,
+          severity: 'info',
+          text: `${where}${s(lead)}: продвижение — дистанция сократилась до «${b.ruleset.rangeBands[g.st.bandIndex].name}».`,
+          factors: [{ label: 'Натиск атакующих (доля сил с учётом подвижности и подавления)', value: round1(p * 100) / 100, kind: 'base' }],
+        });
+      } else {
+        E.log({
+          phase: 'movement',
+          level: 2,
+          side: lead,
+          text: `${where}${s(lead)}: продвижение (сближение ${Math.round(g.st.closingProgress * 100)}% до следующей дистанции).`,
+          factors: [{ label: 'Натиск', value: round1(p * 100) / 100, kind: 'base' }],
+        });
+      }
+    } else if (g.st.bandIndex < last && (pressure.A > 0 || pressure.B > 0)) {
+      E.log({
+        phase: 'movement',
+        level: 1,
+        side: lead,
+        severity: 'bad',
+        text: `${where}${s(lead)}: натиска недостаточно для сближения (${Math.round(p * 100)}% при пороге ${Math.round(k.attackPressureMin * 100)}%).`,
+      });
+    }
   }
   for (const el of b.elements) if (el.status === 'active' && (E.behavior(el) === 'retreat' || E.behavior(el) === 'rout')) moved.add(el.id);
-
-  const lead: SideId = pressure.A >= pressure.B ? 'A' : 'B';
-  const p = pressure[lead];
-  const last = b.ruleset.rangeBands.length - 1;
-  if (p >= k.attackPressureMin && b.bandIndex < last) {
-    const band = E.band;
-    b.closingProgress += p / Math.max(0.25, band.turnsToClose);
-    if (b.closingProgress >= 1) {
-      b.bandIndex++;
-      b.closingProgress = 0;
-      E.invalidate();
-      E.log({
-        phase: 'movement',
-        level: 0,
-        side: lead,
-        severity: 'info',
-        text: `${s(lead)}: продвижение — дистанция сократилась до «${E.band.name}».`,
-        factors: [{ label: 'Натиск атакующих (доля сил с учётом подвижности и подавления)', value: round1(p * 100) / 100, kind: 'base' }],
-      });
-    } else {
-      E.log({
-        phase: 'movement',
-        level: 2,
-        side: lead,
-        text: `${s(lead)}: продвижение (сближение ${Math.round(b.closingProgress * 100)}% до следующей дистанции).`,
-        factors: [{ label: 'Натиск', value: round1(p * 100) / 100, kind: 'base' }],
-      });
-    }
-  } else if (b.bandIndex < last && (pressure.A > 0 || pressure.B > 0)) {
-    E.log({
-      phase: 'movement',
-      level: 1,
-      side: lead,
-      severity: 'bad',
-      text: `${s(lead)}: натиска недостаточно для сближения (${Math.round(p * 100)}% при пороге ${Math.round(k.attackPressureMin * 100)}%).`,
-    });
-  }
 
   // Топливо и поломки
   for (const el of b.elements) {
@@ -1376,14 +1660,17 @@ function snapshot(E: EngineContext) {
       active: active.length,
     };
   }
-  E.b.history.push({ turn: E.b.turn, band: E.b.bandIndex, sides });
+  const secs = E.b.sectors;
+  E.b.history.push({ turn: E.b.turn, band: secs ? secs[0].bandIndex : E.b.bandIndex, ...(secs ? { bands: Object.fromEntries(secs.map((x) => [x.id, x.bandIndex])) } : {}), sides });
 }
 
 /** Сторона ждёт подкреплений по плану (их ход ещё не наступил). */
 function awaitingReinforcements(b: Battle, side: SideId): boolean {
-  return (b.scenario.events ?? []).some(
-    (ev) => ev.kind === 'arrive' && ev.side === side && ev.nodeId && (b.eventTurns?.[ev.id] ?? ev.turn) > b.turn && elementsOfNode(b, side, ev.nodeId).some((x) => x.status === 'pending'),
-  );
+  return (b.scenario.events ?? []).some((ev) => {
+    if (ev.kind !== 'arrive' || ev.side !== side || !ev.nodeId) return false;
+    const t = eventTurn(b, ev);
+    return t !== undefined && t > b.turn && elementsOfNode(b, side, ev.nodeId).some((x) => x.status === 'pending');
+  });
 }
 
 function checkEnd(E: EngineContext) {

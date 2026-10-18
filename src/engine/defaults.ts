@@ -5,6 +5,7 @@ import { COEFFICIENT_DEFAULTS, DEFAULT_FEATURES } from './coefficients';
 import { instantiate, newRootUnit, newUnit, walkUnits } from './units';
 import type {
   ComponentType,
+  EffectDef,
   Id,
   LevelDef,
   Objective,
@@ -111,6 +112,15 @@ const STANDARD_INTEL = [
   { id: 'good', name: 'Полные', effects: { detection: 1.3, initiative: 1.15 } },
 ];
 
+/** Заготовки временных эффектов: ГМ накладывает их в бою или по плану боя. */
+const STANDARD_EFFECTS: EffectDef[] = [
+  { id: 'smoke', name: 'Дымовая завеса', turns: 2, effects: { concealment: 2.5, detection: 0.5, fire: 0.8 }, description: 'Скрывает своих от наблюдения, но и мешает вести огонь.' },
+  { id: 'surprise', name: 'Внезапность', turns: 1, effects: { fire: 1.3, initiative: 1.5, protection: 1.1 }, description: 'Удар, которого противник не ждал.' },
+  { id: 'flares', name: 'Осветительные ракеты', turns: 2, effects: { detection: 1.6 }, description: 'Подсветка поля боя ночью и в сумерках.' },
+  { id: 'confusion', name: 'Растерянность', turns: 2, effects: { initiative: 0.6, moraleLoss: 1.4, fire: 0.85 }, description: 'Потеря управления, неразбериха, ложные слухи.' },
+  { id: 'inspired', name: 'Воодушевление', turns: 3, effects: { moraleLoss: 0.7, panic: 0.6, recovery: 1.3 }, description: 'Пример командира, удачный момент, подход своих.' },
+];
+
 type FP3 = [number, number, number];
 function fp(bands: Id[], table: Record<Id, FP3>): Record<Id, Record<Id, number>> {
   const out: Record<Id, Record<Id, number>> = {};
@@ -187,6 +197,7 @@ export function makeUniversalRuleset(): Ruleset {
     conditions: [STANDARD_TERRAIN, STANDARD_TIME, STANDARD_WEATHER],
     fortifications: STANDARD_FORTIFICATIONS,
     intelLevels: STANDARD_INTEL,
+    tempEffects: STANDARD_EFFECTS,
     modifiers: [
       {
         id: 'mod-nv',
@@ -316,6 +327,12 @@ export function makeLinearRuleset(): Ruleset {
         effects: { fire: 1.5 },
       },
     ],
+    tempEffects: [
+      { id: 'smoke', name: 'Пороховой дым', turns: 2, effects: { concealment: 1.8, detection: 0.6, fire: 0.85 }, description: 'Поле затянуто дымом залпов.' },
+      { id: 'surprise', name: 'Внезапная атака', turns: 1, effects: { fire: 1.3, initiative: 1.5 }, description: 'Удар с неожиданного направления.' },
+      { id: 'confusion', name: 'Замешательство', turns: 2, effects: { initiative: 0.6, moraleLoss: 1.4, fire: 0.85 }, description: 'Сбитый строй, потеря управления.' },
+      { id: 'inspired', name: 'Воодушевление', turns: 3, effects: { moraleLoss: 0.7, panic: 0.6, recovery: 1.3 }, description: 'Знамя впереди, командир в строю.' },
+    ],
     features: { ...DEFAULT_FEATURES, fuel: false, breakdowns: false, vehicleCondition: false, comms: false },
     // Потери от залпов и штыков выше, чем у «универсального» набора, а исход решает мораль.
     coefficients: { ...COEFFICIENT_DEFAULTS, casualtyScale: 3, moralePerLossPct: 2, killedShare: 0.3, woundedShare: 0.55, missingShare: 0.15 },
@@ -361,6 +378,8 @@ export function normalizeRuleset(r: Ruleset): Ruleset {
   out.fortifications = r.fortifications?.length ? r.fortifications : base.fortifications;
   out.intelLevels = r.intelLevels?.length ? r.intelLevels : base.intelLevels;
   out.modifiers = r.modifiers ?? [];
+  // Наборы правил прежних версий: заготовки эффектов — стандартные.
+  out.tempEffects = Array.isArray(r.tempEffects) ? r.tempEffects : base.tempEffects;
   out.unitLevels = Array.isArray(r.unitLevels) ? r.unitLevels : base.unitLevels;
   out.outcomeLevels = r.outcomeLevels?.length ? r.outcomeLevels : base.outcomeLevels;
   return out;

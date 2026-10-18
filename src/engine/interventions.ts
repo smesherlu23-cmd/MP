@@ -2,7 +2,8 @@
 // с тем же сидом и теми же решениями ГМ. Вмешательства не тратят случайные числа.
 
 import { createBattle, finish, stepTurn } from './battle';
-import { EngineContext, clamp, e, fm } from './context';
+import { EngineContext, clamp, e, fm, s as sd } from './context';
+import { plural } from './labels';
 import type { Battle, ElementState, Intervention, InterventionType } from './types';
 
 export interface ElementPatch {
@@ -99,6 +100,26 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       break;
     }
     case 'editElement': {
+      // Несколько элементов сразу (групповое решение): только состояние, без состава.
+      if (Array.isArray(p.elementIds)) {
+        const els = (p.elementIds as string[]).map((id) => E.elements.get(id)).filter((x): x is ElementState => !!x && x.status !== 'destroyed');
+        if (!els.length) return;
+        const patch = { ...((p.patch ?? {}) as ElementPatch), comps: undefined };
+        const changes: string[] = [];
+        for (const [key, val] of Object.entries(patch)) {
+          if (val === undefined) continue;
+          for (const el of els) {
+            if (key === 'echelon' || key === 'holdFast') (el as any)[key] = val;
+            else if (key === 'experience') el.experience = clamp(Math.round(Number(val)), 1, Math.max(1, b.ruleset.experienceLevels.length));
+            else if (key === 'ownCommandLevel') el.ownCommandLevel = clamp(Math.round(Number(val)), 0, Math.max(1, b.ruleset.commandLevels.length));
+            else if (key === 'attackMod' || key === 'defenseMod') (el as any)[key] = Math.max(key === 'defenseMod' ? 1 : 0, Number(val));
+            else (el as any)[key] = clamp(Number(val), 0, 100);
+          }
+          changes.push(`${PATCH_LABELS[key] ?? key}: ${typeof val === 'boolean' ? (val ? 'да' : 'нет') : val}`);
+        }
+        E.log({ phase: 'gm', level: 0, refs: els.map((x) => x.id), text: `ГМ изменил ${els.length > 3 ? `${els.length} элементов` : els.map((x) => e(x)).join(', ')}: ${changes.join(', ') || 'без изменений'}${note}.` });
+        break;
+      }
       const el = E.elements.get(p.elementId);
       if (!el) return;
       const patch = (p.patch ?? {}) as ElementPatch;
@@ -154,25 +175,107 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
     }
     case 'setConditions': {
       const cond = (p.conditions ?? {}) as Record<string, string>;
+      // Условия одного участка (например, местность) — поверх общих; пустое значение — как в бою.
+      const sec = typeof p.sector === 'string' ? b.sectors?.find((x) => x.id === p.sector) : undefined;
       const changes: string[] = [];
       for (const [cat, opt] of Object.entries(cond)) {
         const c = b.ruleset.conditions.find((x) => x.id === cat);
-        const o = c?.options.find((x) => x.id === opt);
-        if (!c || !o || b.conditions[cat] === opt) continue;
+        if (!c) continue;
+        if (sec) {
+          if ((sec.conditions[cat] ?? '') === (opt ?? '')) continue;
+          const o = c.options.find((x) => x.id === opt);
+          if (opt && !o) continue;
+          if (opt) sec.conditions[cat] = opt;
+          else delete sec.conditions[cat];
+          changes.push(`${c.name.toLowerCase()}: ${o?.name ?? 'как на всём поле'}`);
+          continue;
+        }
+        const o = c.options.find((x) => x.id === opt);
+        if (!o || b.conditions[cat] === opt) continue;
         b.conditions[cat] = opt;
         changes.push(`${c.name.toLowerCase()}: ${o.name}`);
       }
       if (changes.length) {
         E.refreshConditions();
-        E.log({ phase: 'gm', level: 0, text: `ГМ: условия изменились — ${changes.join(', ')}${note}.` });
+        E.log({ phase: 'gm', level: 0, text: `ГМ: условия изменились${sec ? ` на участке «${sec.name}»` : ''} — ${changes.join(', ')}${note}.` });
       }
       break;
     }
     case 'setBand': {
       const i = clamp(Math.round(Number(p.bandIndex)), 0, b.ruleset.rangeBands.length - 1);
+      if (b.sectors) {
+        const secs = typeof p.sector === 'string' ? b.sectors.filter((x) => x.id === p.sector) : b.sectors;
+        if (!secs.length) return;
+        for (const x of secs) {
+          x.bandIndex = i;
+          x.closingProgress = 0;
+        }
+        E.log({ phase: 'gm', level: 0, text: `ГМ: дистанция${secs.length === 1 ? ` на участке «${secs[0].name}»` : ' на всех участках'} — «${b.ruleset.rangeBands[i].name}»${note}.` });
+        break;
+      }
       b.bandIndex = i;
       b.closingProgress = 0;
       E.log({ phase: 'gm', level: 0, text: `ГМ: дистанция установлена — «${b.ruleset.rangeBands[i].name}»${note}.` });
+      break;
+    }
+    case 'addEffect': {
+      // Временный эффект на N ходов, начиная со следующего.
+      const side = p.side as 'A' | 'B';
+      if (side !== 'A' && side !== 'B') return;
+      const turns = Math.max(1, Math.round(Number(p.turns) || 1));
+      const effects = (p.effects ?? {}) as Record<string, number>;
+      if (!Object.keys(effects).length) return;
+      const formationId = typeof p.formationId === 'string' && E.formations.has(p.formationId) ? p.formationId : undefined;
+      const elementIds = !formationId && Array.isArray(p.elementIds) ? (p.elementIds as string[]).filter((id) => E.elements.get(id)?.side === side) : undefined;
+      const name = String(p.name || 'Эффект');
+      (b.effects ??= []).push({
+        id: `fx${b.effects.length + 1}`,
+        name,
+        effects: { ...effects },
+        from: b.turn + 1,
+        until: b.turn + turns,
+        side,
+        ...(formationId ? { formationId } : elementIds?.length ? { elementIds } : {}),
+        source: 'gm',
+      });
+      const who = formationId ? fm(formationId) : elementIds?.length ? (elementIds.length > 3 ? `${elementIds.length} элементов` : elementIds.map((id) => e(id)).join(', ')) : sd(side);
+      E.log({ phase: 'gm', level: 0, side, refs: elementIds, text: `ГМ: «${name}» — ${who}, ${turns} ${plural(turns, 'ход', 'хода', 'ходов')} (до ${b.turn + turns}-го)${note}.` });
+      break;
+    }
+    case 'removeEffect': {
+      const ef = b.effects?.find((x) => x.id === p.effectId);
+      if (!ef || ef.until <= b.turn) return;
+      ef.until = b.turn;
+      E.log({ phase: 'gm', level: 0, side: ef.side, text: `ГМ: эффект «${ef.name}» снят${note}.` });
+      break;
+    }
+    case 'strike': {
+      // Вызов удара огневой поддержки: он наносится в начале следующего хода.
+      const a = b.support?.find((x) => x.id === p.assetId && x.side === p.side);
+      if (!a || a.left <= 0) return;
+      a.left--;
+      const enemy = a.side === 'A' ? 'B' : 'A';
+      const formationId = typeof p.formationId === 'string' && E.formations.get(p.formationId)?.side === enemy ? p.formationId : undefined;
+      const elementIds = !formationId && Array.isArray(p.elementIds) ? (p.elementIds as string[]).filter((id) => E.elements.get(id)?.side === enemy) : undefined;
+      (b.strikes ??= []).push({
+        id: `st${b.strikes.length + 1}`,
+        side: a.side,
+        assetId: a.id,
+        ...(formationId ? { formationId } : elementIds?.length ? { elementIds } : {}),
+        turn: b.turn + 1,
+        source: 'gm',
+      });
+      const who = formationId ? fm(formationId) : elementIds?.length ? (elementIds.length > 3 ? `${elementIds.length} элементов` : elementIds.map((id) => e(id)).join(', ')) : `всей стороне ${sd(enemy)}`;
+      E.log({ phase: 'gm', level: 0, side: a.side, refs: elementIds, text: `ГМ: вызван удар «${a.name}» по ${who} — в начале ${b.turn + 1}-го хода (осталось ударов: ${a.left})${note}.` });
+      break;
+    }
+    case 'cancelStrike': {
+      const st = b.strikes?.find((x) => x.id === p.strikeId);
+      if (!st || st.done || st.turn <= b.turn) return;
+      b.strikes = b.strikes!.filter((x) => x !== st);
+      const a = b.support?.find((x) => x.id === st.assetId && x.side === st.side);
+      if (a) a.left++;
+      E.log({ phase: 'gm', level: 0, side: st.side, text: `ГМ: удар «${a?.name ?? '?'}» отменён${note}.` });
       break;
     }
     case 'arrive': {
@@ -224,6 +327,10 @@ export const INTERVENTION_LABELS: Record<InterventionType, string> = {
   setBand: 'смена дистанции',
   endBattle: 'завершение боя',
   arrive: 'ввод подкрепления',
+  addEffect: 'временный эффект',
+  removeEffect: 'снятие эффекта',
+  strike: 'вызов удара',
+  cancelStrike: 'отмена удара',
 };
 
 /** Что отменит «Отменить» в бою: вмешательство ГМ, сделанное после последнего хода, или сам последний ход. */

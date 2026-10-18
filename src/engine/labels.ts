@@ -1,6 +1,6 @@
 // Человекочитаемые названия для журнала, отчётов и интерфейса.
 
-import type { Behavior, ComponentKind, ConditionOp, Echelon, ElementStatus, ObjectiveType, ScenarioEventKind, StatKey } from './types';
+import type { Behavior, ComponentKind, ConditionOp, Echelon, ElementStatus, ObjectiveType, ScenarioEventKind, StatKey, TriggerMetric } from './types';
 
 export const STAT_LABELS: Record<StatKey, string> = {
   fire: 'Огонь',
@@ -116,12 +116,22 @@ export const MODIFIER_FIELDS: { field: string; label: string; kind: 'order' | 'b
   { field: 'echelon', label: 'Эшелон (свой)', kind: 'echelon' },
   { field: 'fortification', label: 'Укрепления (своей стороны)', kind: 'fort' },
   { field: 'intel', label: 'Разведданные (своей стороны)', kind: 'intel' },
+  { field: 'morale', label: 'Мораль (своя)', kind: 'number' },
+  { field: 'cohesion', label: 'Слаженность (своя)', kind: 'number' },
+  { field: 'suppression', label: 'Подавление (своё), %', kind: 'number' },
+  { field: 'fatigue', label: 'Усталость (своя), %', kind: 'number' },
+  { field: 'ammo', label: 'Боезапас (свой), %', kind: 'number' },
+  { field: 'losses', label: 'Потери элемента, %', kind: 'number' },
+  { field: 'sideLosses', label: 'Потери своей стороны, %', kind: 'number' },
   { field: 'targetClass', label: 'Класс цели', kind: 'class' },
   { field: 'enemy.tag', label: 'Тег противника', kind: 'tag' },
   { field: 'enemy.kind', label: 'Состав противника', kind: 'kind' },
   { field: 'enemy.order', label: 'Приказ противника', kind: 'order' },
   { field: 'enemy.behavior', label: 'Поведение противника', kind: 'behavior' },
   { field: 'enemy.echelon', label: 'Эшелон противника', kind: 'echelon' },
+  { field: 'enemy.morale', label: 'Мораль противника', kind: 'number' },
+  { field: 'enemy.suppression', label: 'Подавление противника, %', kind: 'number' },
+  { field: 'enemy.losses', label: 'Потери противника (элемента), %', kind: 'number' },
 ];
 
 export const SIDE_IDS = ['A', 'B'] as const;
@@ -147,4 +157,13 @@ export const EVENT_KIND_LABELS: Record<ScenarioEventKind, string> = {
   arrive: 'Подход подкреплений',
   order: 'Смена приказа',
   conditions: 'Смена условий',
+  strike: 'Удар огневой поддержки',
+  effect: 'Временный эффект',
+};
+
+export const TRIGGER_LABELS: Record<TriggerMetric, string> = {
+  losses: 'потери, % ≥',
+  out: 'выбыло, % ≥',
+  morale: 'мораль ≤',
+  band: 'дистанция',
 };

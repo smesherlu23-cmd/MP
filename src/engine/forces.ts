@@ -3,8 +3,10 @@
 // (целиком или на часть), приказы задаёт сам; деревья для боя собираются из сил (resolveScenario),
 // итоги боя записываются обратно в силы (applyBattleToForces) — шаблонов это не касается.
 
+import { COEFFICIENT_DEFAULTS } from './coefficients';
+import { plural } from './labels';
 import { STATE_KEYS } from './types';
-import type { Battle, ComponentType, ElementState, Id, Scenario, SideDef, SideUnitRef, UnitNode } from './types';
+import type { Battle, ComponentType, ElementState, ForceRecord, Id, Ruleset, Scenario, SideDef, SideUnitRef, UnitNode } from './types';
 import { cloneDeep, instantiate, pathTo, resolveChild, ROOT_COMMS, ROOT_RESOLVED, ROOT_STATE, ROOT_SUPPLY, unitHash, walkUnits } from './units';
 import type { Issue } from './validate';
 
@@ -18,6 +20,7 @@ function stripInPlace(root: UnitNode) {
     n.composition = n.composition.map((c) => ({ typeId: c.typeId, authorized: c.authorized, current: c.authorized }));
   });
   delete root.faction;
+  delete root.history;
 }
 
 /** Шаблон из подразделения: копия только с устройством и штатом (идентификаторы те же). */
@@ -199,13 +202,18 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
   const byNode = new Map<Id, ElementState>(b.elements.map((e) => [e.defId, e]));
   const updated: UnitNode[] = [];
   const changes: ForceChange[] = [];
+  const at = new Date().toISOString();
+  const maxExp = Math.max(1, b.ruleset.experienceLevels.length);
+  const every = Math.max(0, Math.round(coef(b.ruleset, 'expGainBattles')));
   for (const id of battleForceIds(b, forces)) {
     const f = cloneDeep(forces[id]);
     let personnel = 0;
     let equipment = 0;
+    let side: ElementState['side'] | undefined;
     walkUnits(f, (n) => {
       const el = byNode.get(n.id);
       if (!el || el.status === 'pending') return;
+      side ??= el.side;
       for (const c of n.composition) {
         const s = el.comps.find((x) => x.typeId === c.typeId);
         if (!s) continue;
@@ -221,11 +229,121 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
       }
       for (const k of STATE_KEYS) n.state[k] = Math.round(el[k]);
     });
-    f.updatedAt = new Date().toISOString();
+    const r = b.result;
+    const outcome = r ? (!r.winner || r.winner === side ? r.outcomeName : `${r.outcomeName} противника`) : undefined;
+    addRecord(f, { at, kind: 'battle', title: b.name, battleId: b.id, outcome, personnel: -personnel, equipment: -equipment });
+    // Опыт растёт после каждых N боёв (если включено в наборе правил).
+    if (every > 0) {
+      const battles = (f.history ?? []).filter((x) => x.kind === 'battle').length;
+      if (battles % every === 0) {
+        let raised = false;
+        walkUnits(f, (n) => {
+          const v = n === f ? (n.state.experience ?? ROOT_STATE.experience) : n.state.experience;
+          if (v === undefined || v >= maxExp) return;
+          n.state.experience = v + 1;
+          raised = true;
+        });
+        if (raised) addRecord(f, { at, kind: 'battle', title: 'Опыт повышен', note: `после ${battles} ${plural(battles, 'боя', 'боёв', 'боёв')}` });
+      }
+    }
+    f.updatedAt = at;
     updated.push(f);
     changes.push({ forceId: id, name: f.name, personnel, equipment });
   }
   return { updated, changes };
+}
+
+const coef = (rs: Ruleset | undefined, key: string) => rs?.coefficients?.[key] ?? COEFFICIENT_DEFAULTS[key] ?? 0;
+
+/** Запись в боевой путь сил (последние 300). */
+export function addRecord(f: UnitNode, r: ForceRecord) {
+  f.history = [...(f.history ?? []), r].slice(-300);
+}
+
+/** Сколько раненых и повреждённой техники ждут возвращения в строй. */
+export function recoverableOf(f: UnitNode, rs: Ruleset | undefined): { personnel: number; equipment: number } {
+  const kinds = new Map((rs?.componentTypes ?? []).map((t) => [t.id, t.kind]));
+  let personnel = 0;
+  let equipment = 0;
+  walkUnits(f, (n) => {
+    for (const c of n.composition) {
+      const v = c.recoverable ?? 0;
+      if (kinds.get(c.typeId) === 'personnel') personnel += v;
+      else equipment += v;
+    }
+  });
+  return { personnel, equipment };
+}
+
+/**
+ * Отдых сил N дней: раненые возвращаются в строй, повреждённая техника ремонтируется (не сверх штата),
+ * мораль, слаженность, готовность, усталость, боезапас, топливо, снаряжение приближаются к норме.
+ * Темпы — в наборе правил («Между боями»). Возвращает изменённую копию.
+ */
+export function restForce(src: UnitNode, days: number, rs: Ruleset | undefined): { force: UnitNode; personnel: number; equipment: number } {
+  const f = cloneDeep(src);
+  const kinds = new Map((rs?.componentTypes ?? []).map((t) => [t.id, t.kind]));
+  const d = Math.max(0, days);
+  const share = (key: string) => Math.min(1, (d * coef(rs, key)) / 100);
+  const wounded = share('restWoundedPerDay');
+  const repair = share('restRepairPerDay');
+  const recover = share('restRecoverPerDay');
+  let personnel = 0;
+  let equipment = 0;
+  walkUnits(f, (n) => {
+    for (const c of n.composition) {
+      const rec = c.recoverable ?? 0;
+      if (rec <= 0) continue;
+      const isPers = kinds.get(c.typeId) === 'personnel';
+      const back = Math.min(Math.round(rec * (isPers ? wounded : repair)), Math.max(0, c.authorized - c.current));
+      if (back <= 0) continue;
+      c.current += back;
+      c.recoverable = rec - back;
+      if (!c.recoverable) delete c.recoverable;
+      if (isPers) personnel += back;
+      else equipment += back;
+    }
+    // Состояние: заданные значения приближаются к норме; наследуемые и опыт не трогаются.
+    for (const k of STATE_KEYS) {
+      if (k === 'experience') continue;
+      const v = n.state[k];
+      if (typeof v !== 'number') continue;
+      const norm = ROOT_STATE[k];
+      n.state[k] = Math.round(v + (norm - v) * recover);
+    }
+  });
+  f.updatedAt = new Date().toISOString();
+  addRecord(f, {
+    at: f.updatedAt,
+    kind: 'rest',
+    title: `Отдых ${d} ${plural(d, 'день', 'дня', 'дней')}`,
+    personnel,
+    equipment,
+    note: personnel || equipment ? undefined : 'в строй никто не вернулся',
+  });
+  return { force: f, personnel, equipment };
+}
+
+/** Пополнение до штата: людей и/или техники и вооружения. Возвращает изменённую копию и сколько пришло. */
+export function replenishForce(src: UnitNode, rs: Ruleset | undefined, what: { personnel: boolean; equipment: boolean }, note?: string) {
+  const f = cloneDeep(src);
+  const kinds = new Map((rs?.componentTypes ?? []).map((t) => [t.id, t.kind]));
+  let personnel = 0;
+  let equipment = 0;
+  walkUnits(f, (n) => {
+    for (const c of n.composition) {
+      const isPers = kinds.get(c.typeId) === 'personnel';
+      if (isPers ? !what.personnel : !what.equipment) continue;
+      const add = Math.max(0, c.authorized - c.current);
+      if (!add) continue;
+      c.current = c.authorized;
+      if (isPers) personnel += add;
+      else equipment += add;
+    }
+  });
+  f.updatedAt = new Date().toISOString();
+  addRecord(f, { at: f.updatedAt, kind: 'replenish', title: 'Пополнение до штата', personnel, equipment, note });
+  return { force: f, personnel, equipment };
 }
 
 /** Новый отпечаток копий после очистки шаблонов: актуальные копии остаются актуальными. */
