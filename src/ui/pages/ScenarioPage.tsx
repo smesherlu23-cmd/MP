@@ -53,7 +53,7 @@ import {
   useApp,
   type Tab,
 } from '../store';
-import { DND_FORCE, DND_LIB, DND_NODE, computeStats, statsLine, statsTip } from './FormationPage';
+import { DND_FORCE, DND_LIB, DND_NODE, computeStats, statsLine, statsTip } from './unit/model';
 
 /** Название нового боя: «Сценарий · бой N» (N — следующий номер для этого сценария). */
 export function nextBattleName(sc: Scenario): string {

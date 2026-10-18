@@ -4,7 +4,7 @@
 import { useRef, useState } from 'react';
 import { arrowNav, pressable } from './ui';
 import { SECTIONS, sectionOf } from '../nav';
-import { DND_FORCE, DND_LIB } from '../pages/FormationPage';
+import { DND_FORCE, DND_LIB } from '../pages/unit/model';
 import {
   createFormation,
   createScenario,
