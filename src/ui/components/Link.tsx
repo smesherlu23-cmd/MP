@@ -10,13 +10,7 @@ export function Link(props: { kind: TabKind; refId?: string; sub?: string; child
     openTab(props.kind, props.refId, { background: e.ctrlKey || e.metaKey || e.button === 1, sub: props.sub });
   };
   return (
-    <a
-      href="#"
-      className={props.className}
-      title={props.title ?? 'Открыть (Ctrl+клик — в фоне)'}
-      onClick={go}
-      onAuxClick={(e) => e.button === 1 && go(e)}
-    >
+    <a href="#" className={props.className} title={props.title ?? 'Открыть (Ctrl+клик — в фоне)'} onClick={go} onAuxClick={(e) => e.button === 1 && go(e)}>
       {props.children}
     </a>
   );

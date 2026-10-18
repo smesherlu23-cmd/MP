@@ -32,7 +32,8 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
   const issues: Issue[] = [];
   if (!rs.rangeBands.length) issues.push({ level: 'error', text: 'В наборе правил нет ни одной дистанции.' });
   if (!rs.targetClasses.length) issues.push({ level: 'error', text: 'В наборе правил нет ни одного класса целей.' });
-  if (!rs.rangeBands.some((b) => b.id === sc.startBand)) issues.push({ level: 'warning', text: 'Начальная дистанция не найдена — бой начнётся с самой дальней.' });
+  if (!rs.rangeBands.some((b) => b.id === sc.startBand))
+    issues.push({ level: 'warning', text: 'Начальная дистанция не найдена — бой начнётся с самой дальней.' });
   for (const cat of rs.conditions) {
     if (!cat.options.some((o) => o.id === sc.conditions[cat.id])) issues.push({ level: 'warning', text: `Не выбрано условие «${cat.name}».` });
   }
@@ -45,9 +46,13 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
   const sectors = sc.sectors ?? [];
   if (sectors.length) {
     const ids = new Set(sectors.map((x) => x.id));
-    for (const sec of sectors) if (sec.startBand && !rs.rangeBands.some((b) => b.id === sec.startBand)) issues.push({ level: 'warning', text: `Участок «${sec.name}»: начальная дистанция не найдена — как в сценарии.` });
+    for (const sec of sectors)
+      if (sec.startBand && !rs.rangeBands.some((b) => b.id === sec.startBand))
+        issues.push({ level: 'warning', text: `Участок «${sec.name}»: начальная дистанция не найдена — как в сценарии.` });
     for (const sd of sc.sides) {
-      for (const [, sid] of Object.entries(sd.sectorOf ?? {})) if (!ids.has(sid)) issues.push({ level: 'warning', text: `У стороны «${sd.name}» подразделение назначено на удалённый участок — оно будет на первом.` });
+      for (const [, sid] of Object.entries(sd.sectorOf ?? {}))
+        if (!ids.has(sid))
+          issues.push({ level: 'warning', text: `У стороны «${sd.name}» подразделение назначено на удалённый участок — оно будет на первом.` });
       const used = new Set(nodeSectors(sd, sectors[0].id).values());
       for (const sec of sectors) if (!used.has(sec.id)) issues.push({ level: 'warning', text: `На участке «${sec.name}» нет сил стороны «${sd.name}».` });
     }
@@ -57,8 +62,10 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
     for (const a of sd.support ?? []) {
       const t = rs.componentTypes.find((x) => x.id === a.typeId);
       if (!t) issues.push({ level: 'error', text: `Огневая поддержка «${a.name}» (${sd.name}): тип не найден в наборе правил.` });
-      else if (!Object.values(t.firepower).some((row) => Object.values(row).some((v) => v > 0))) issues.push({ level: 'warning', text: `Огневая поддержка «${a.name}» (${sd.name}): у типа «${t.name}» нет огневой мощи.` });
-      if (!(a.count > 0) || !(a.missions > 0)) issues.push({ level: 'warning', text: `Огневая поддержка «${a.name}» (${sd.name}): нужно хотя бы одно средство и один удар.` });
+      else if (!Object.values(t.firepower).some((row) => Object.values(row).some((v) => v > 0)))
+        issues.push({ level: 'warning', text: `Огневая поддержка «${a.name}» (${sd.name}): у типа «${t.name}» нет огневой мощи.` });
+      if (!(a.count > 0) || !(a.missions > 0))
+        issues.push({ level: 'warning', text: `Огневая поддержка «${a.name}» (${sd.name}): нужно хотя бы одно средство и один удар.` });
     }
   // План боя: события должны ссылаться на существующие подразделения, приказы и условия.
   const nodes = new Map<string, Set<string>>(sc.sides.map((sd) => [sd.id, new Set<string>()]));
@@ -70,23 +77,33 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
     if (ev.turn > sc.maxTurns) issues.push({ level: 'warning', text: `${at} — позже лимита ходов (${sc.maxTurns}), не наступит.` });
     if (ev.trigger) {
       const tr = ev.trigger;
-      if (tr.nodeId && !nodes.get(tr.side)?.has(tr.nodeId)) issues.push({ level: 'warning', text: `${at} — подразделение в условии удалено из сценария или не участвует в бою.` });
-      if (tr.metric === 'band' && !rs.rangeBands.some((b) => b.id === tr.value)) issues.push({ level: 'warning', text: `${at} — дистанция в условии не выбрана.` });
+      if (tr.nodeId && !nodes.get(tr.side)?.has(tr.nodeId))
+        issues.push({ level: 'warning', text: `${at} — подразделение в условии удалено из сценария или не участвует в бою.` });
+      if (tr.metric === 'band' && !rs.rangeBands.some((b) => b.id === tr.value))
+        issues.push({ level: 'warning', text: `${at} — дистанция в условии не выбрана.` });
     }
     if (ev.kind === 'strike') {
       const sd = sc.sides.find((x) => x.id === ev.side);
       if (!sd?.support?.some((a) => a.id === ev.assetId)) issues.push({ level: 'warning', text: `${at} — не выбрано средство огневой поддержки стороны.` });
-      if (ev.targetNodeId && !nodes.get(enemyOf(ev.side))?.has(ev.targetNodeId)) issues.push({ level: 'warning', text: `${at} — цель удалена из сценария или не участвует в бою.` });
+      if (ev.targetNodeId && !nodes.get(enemyOf(ev.side))?.has(ev.targetNodeId))
+        issues.push({ level: 'warning', text: `${at} — цель удалена из сценария или не участвует в бою.` });
     }
     if (ev.kind === 'effect') {
-      if (!rs.tempEffects?.some((x) => x.id === ev.effectId)) issues.push({ level: 'warning', text: `${at} — эффект не выбран или отсутствует в наборе правил.` });
-      if (ev.nodeId && (!ev.side || !nodes.get(ev.side)?.has(ev.nodeId))) issues.push({ level: 'warning', text: `${at} — подразделение удалено из сценария или не участвует в бою.` });
+      if (!rs.tempEffects?.some((x) => x.id === ev.effectId))
+        issues.push({ level: 'warning', text: `${at} — эффект не выбран или отсутствует в наборе правил.` });
+      if (ev.nodeId && (!ev.side || !nodes.get(ev.side)?.has(ev.nodeId)))
+        issues.push({ level: 'warning', text: `${at} — подразделение удалено из сценария или не участвует в бою.` });
     }
     if (ev.kind === 'arrive' || ev.kind === 'order') {
-      if (!ev.side || !ev.nodeId || !nodes.get(ev.side)?.has(ev.nodeId)) issues.push({ level: 'warning', text: `${at} — подразделение не выбрано, удалено из сценария или не участвует в бою; событие не сработает.` });
+      if (!ev.side || !ev.nodeId || !nodes.get(ev.side)?.has(ev.nodeId))
+        issues.push({ level: 'warning', text: `${at} — подразделение не выбрано, удалено из сценария или не участвует в бою; событие не сработает.` });
     }
-    if (ev.kind === 'order' && !rs.orders.some((o) => o.id === ev.orderId)) issues.push({ level: 'warning', text: `${at} — приказ не выбран или отсутствует в наборе правил.` });
-    if (ev.kind === 'conditions' && !Object.entries(ev.conditions ?? {}).some(([c, o]) => rs.conditions.find((x) => x.id === c)?.options.some((x) => x.id === o)))
+    if (ev.kind === 'order' && !rs.orders.some((o) => o.id === ev.orderId))
+      issues.push({ level: 'warning', text: `${at} — приказ не выбран или отсутствует в наборе правил.` });
+    if (
+      ev.kind === 'conditions' &&
+      !Object.entries(ev.conditions ?? {}).some(([c, o]) => rs.conditions.find((x) => x.id === c)?.options.some((x) => x.id === o))
+    )
       issues.push({ level: 'warning', text: `${at} — не выбрано, какие условия меняются.` });
   }
   return issues;

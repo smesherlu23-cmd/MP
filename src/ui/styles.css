@@ -21,13 +21,13 @@
   --link: #7cc0ff;
   --radius: 6px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-  --font: 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --mono: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
+  --font: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
   --row: 30px;
   color-scheme: dark;
 }
 
-[data-theme='light'] {
+[data-theme="light"] {
   --bg: #eef1f4;
   --bg2: #e6eaee;
   --panel: #ffffff;
@@ -52,7 +52,7 @@
   color-scheme: light;
 }
 
-[data-density='compact'] {
+[data-density="compact"] {
   --row: 26px;
 }
 
@@ -70,7 +70,7 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.45 var(--font);
+  font: 13px / 1.45 var(--font);
   overflow: hidden;
 }
 
@@ -241,7 +241,7 @@ a:hover,
   color: var(--text);
 }
 .tab.active::after {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   right: 0;
@@ -447,21 +447,21 @@ select:focus,
 textarea:focus {
   border-color: var(--accent);
 }
-input[type='checkbox'],
-input[type='radio'] {
+input[type="checkbox"],
+input[type="radio"] {
   min-height: 0;
   accent-color: var(--accent);
   width: 15px;
   height: 15px;
   margin: 0;
 }
-input[type='color'] {
+input[type="color"] {
   padding: 1px;
   width: 36px;
   min-width: 36px;
   cursor: pointer;
 }
-input[type='range'] {
+input[type="range"] {
   accent-color: var(--accent);
   padding: 0;
   background: none;
@@ -621,7 +621,7 @@ input.invalid {
   gap: 8px;
   align-items: center;
 }
-.range-field input[type='number'] {
+.range-field input[type="number"] {
   width: 64px;
   text-align: right;
 }
@@ -1835,7 +1835,7 @@ select.eff-add:hover {
 /* линии: горизонтальная над братьями и вертикальная к каждому */
 .org li::before,
 .org li::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   right: 50%;
@@ -1856,7 +1856,7 @@ select.eff-add:hover {
   padding-top: 18px;
 }
 .org li:only-child > .org-box::before {
-  content: '';
+  content: "";
   position: absolute;
   top: -18px;
   left: 50%;
@@ -1875,7 +1875,7 @@ select.eff-add:hover {
   border-radius: 6px 0 0 0;
 }
 .org ul ul::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 50%;
@@ -2083,7 +2083,7 @@ select.eff-add:hover {
   border-radius: 5px;
   border: 1px dashed transparent;
 }
-.side-unit[draggable='true'] {
+.side-unit[draggable="true"] {
   cursor: grab;
 }
 .side-unit.drop-inside {
@@ -2098,7 +2098,7 @@ select.eff-add:hover {
 .side-drop.over {
   border-color: var(--info);
 }
-.side-item[draggable='true'] {
+.side-item[draggable="true"] {
   cursor: grab;
 }
 
@@ -2112,7 +2112,7 @@ select.eff-add:hover {
   margin-left: 26px;
 }
 .org-leaves::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 4px;
   top: -6px;
@@ -2123,7 +2123,7 @@ select.eff-add:hover {
   position: relative;
 }
 .org-leaf::before {
-  content: '';
+  content: "";
   position: absolute;
   left: -12px;
   top: 22px;
@@ -2308,7 +2308,7 @@ html.desktop .topbar {
   padding-left: env(titlebar-area-x, 0px);
   padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 140px)));
 }
-html.desktop[data-platform='darwin'] .topbar {
+html.desktop[data-platform="darwin"] .topbar {
   padding-left: env(titlebar-area-x, 78px);
   padding-right: 0;
 }
@@ -2425,7 +2425,7 @@ html.desktop .topbar a {
 }
 /* раздел открытой страницы — метка слева */
 .nav-item.here::before {
-  content: '';
+  content: "";
   position: absolute;
   left: -6px;
   top: 6px;
@@ -2836,7 +2836,7 @@ button.link-btn:hover {
     font-size: 0;
   }
   .find-btn span:first-child::before {
-    content: '⌕';
+    content: "⌕";
     font-size: 15px;
   }
 }
@@ -3026,7 +3026,9 @@ table.forecast td:first-child {
   text-align: center;
   color: var(--muted);
 }
-.best-row td:first-child { font-weight: 600; }
+.best-row td:first-child {
+  font-weight: 600;
+}
 select.sector-mini {
   max-width: 104px;
 }

@@ -66,14 +66,23 @@ function registerIpc() {
     const ext = path.extname(name).slice(1) || 'txt';
     const res = await dialog.showSaveDialog(win!, {
       defaultPath: path.join(app.getPath('documents'), name),
-      filters: [{ name: ext.toUpperCase(), extensions: [ext] }, { name: 'Все файлы', extensions: ['*'] }],
+      filters: [
+        { name: ext.toUpperCase(), extensions: [ext] },
+        { name: 'Все файлы', extensions: ['*'] },
+      ],
     });
     if (res.canceled || !res.filePath) return false;
     await fs.writeFile(res.filePath, content, 'utf8');
     return true;
   });
   ipcMain.handle('file:import', async () => {
-    const res = await dialog.showOpenDialog(win!, { properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }, { name: 'Все файлы', extensions: ['*'] }] });
+    const res = await dialog.showOpenDialog(win!, {
+      properties: ['openFile'],
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'Все файлы', extensions: ['*'] },
+      ],
+    });
     if (res.canceled || !res.filePaths[0]) return null;
     return { name: path.basename(res.filePaths[0]), content: await fs.readFile(res.filePaths[0], 'utf8') };
   });

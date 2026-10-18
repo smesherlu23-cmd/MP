@@ -75,7 +75,8 @@ export function scenarioIssues(sc: Scenario, rs: Ruleset | undefined) {
 export async function startBattle(sc: Scenario, rs: Ruleset) {
   const issues = scenarioIssues(sc, rs);
   const errors = issues.filter((x) => x.level === 'error');
-  if (errors.length && !(await confirmDialog('В сценарии есть ошибки', `${errors.map((x) => `• ${x.text}`).join('\n')}\n\nВсё равно начать бой?`, 'Начать'))) return;
+  if (errors.length && !(await confirmDialog('В сценарии есть ошибки', `${errors.map((x) => `• ${x.text}`).join('\n')}\n\nВсё равно начать бой?`, 'Начать')))
+    return;
   const b = createBattle(scenarioForBattle(sc), rs, { seed: randomSeed(), id: newId('bt'), name: nextBattleName(sc) });
   putBattle(b);
   openTab('battle', b.id);
@@ -105,7 +106,8 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
   const start = () => rs && startBattle(sc, rs);
 
   const changeRuleset = async (v: string) => {
-    if (!(await confirmDialog('Сменить набор правил?', 'Типы, приказы и условия должны существовать в новом наборе — проверьте замечания после смены.'))) return;
+    if (!(await confirmDialog('Сменить набор правил?', 'Типы, приказы и условия должны существовать в новом наборе — проверьте замечания после смены.')))
+      return;
     const nr = st.rulesets[v];
     upd((d) => {
       d.rulesetId = v;
@@ -168,12 +170,20 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
               const opt = cat.options.find((o) => o.id === sc.conditions[cat.id]);
               return (
                 <Field key={cat.id} label={cat.name} hint={opt ? effectsText(opt.effects) : undefined}>
-                  <Sel value={sc.conditions[cat.id] ?? ''} onChange={(v) => upd((d) => void (d.conditions[cat.id] = v))} options={cat.options.map((o) => ({ value: o.id, label: o.name }))} />
+                  <Sel
+                    value={sc.conditions[cat.id] ?? ''}
+                    onChange={(v) => upd((d) => void (d.conditions[cat.id] = v))}
+                    options={cat.options.map((o) => ({ value: o.id, label: o.name }))}
+                  />
                 </Field>
               );
             })}
             <Field label="Начальная дистанция">
-              <Sel value={sc.startBand} onChange={(v) => upd((d) => void (d.startBand = v))} options={(rs?.rangeBands ?? []).map((b) => ({ value: b.id, label: b.name }))} />
+              <Sel
+                value={sc.startBand}
+                onChange={(v) => upd((d) => void (d.startBand = v))}
+                options={(rs?.rangeBands ?? []).map((b) => ({ value: b.id, label: b.name }))}
+              />
             </Field>
             <Field label="Лимит ходов" hint={rs ? `≈ ${fmt1((sc.maxTurns * rs.turnMinutes) / 60)} ч боя` : undefined}>
               <Num value={sc.maxTurns} onChange={(v) => upd((d) => void (d.maxTurns = v))} min={1} max={500} integer width="100%" />
@@ -234,7 +244,11 @@ function SideTree(props: {
   walk(root, 0, false);
   return (
     <div className="side-tree">
-      {onToggle && <div className="faint small" style={{ padding: '2px 4px 4px' }}>Галочка — часть участвует в этом бою. Снимите, чтобы воевать без неё.</div>}
+      {onToggle && (
+        <div className="faint small" style={{ padding: '2px 4px 4px' }}>
+          Галочка — часть участвует в этом бою. Снимите, чтобы воевать без неё.
+        </div>
+      )}
       {rows.slice(0, LIMIT).map(({ n, depth, off, inherited }) => (
         <div
           key={n.id}
@@ -250,7 +264,13 @@ function SideTree(props: {
               className="part-check"
               checked={!off}
               disabled={inherited}
-              title={inherited ? 'Не участвует вместе со старшим подразделением' : off ? 'Не участвует в бою — отметьте, чтобы вернуть' : 'Участвует в бою — снимите, чтобы исключить'}
+              title={
+                inherited
+                  ? 'Не участвует вместе со старшим подразделением'
+                  : off
+                    ? 'Не участвует в бою — отметьте, чтобы вернуть'
+                    : 'Участвует в бою — снимите, чтобы исключить'
+              }
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
               onChange={(e) => onToggle(n.id, e.target.checked)}
@@ -288,7 +308,11 @@ function SideTree(props: {
           </span>
         </div>
       ))}
-      {rows.length > LIMIT && <div className="faint small" style={{ padding: '2px 4px' }}>… и ещё {rows.length - LIMIT} — откройте подразделение</div>}
+      {rows.length > LIMIT && (
+        <div className="faint small" style={{ padding: '2px 4px' }}>
+          … и ещё {rows.length - LIMIT} — откройте подразделение
+        </div>
+      )}
     </div>
   );
 }
@@ -414,7 +438,8 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
           onDrop={(e) => onRowDrop(e, root)}
           data-tip="Перетащите на другое подразделение стороны, чтобы придать его на этот бой; на другую сторону — чтобы перевести"
         >
-          <button type="button"
+          <button
+            type="button"
             className="side-fold"
             disabled={!node.children.length}
             onClick={() => setOpenIds(isOpen ? openIds.filter((y) => y !== `${ri}:${root}`) : [...openIds, `${ri}:${root}`])}
@@ -423,14 +448,22 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
             {node.children.length ? (isOpen ? '▾' : '▸') : ''}
           </button>
           <div className="grow" style={{ minWidth: 0 }}>
-            <a href="#" onClick={(e) => (e.preventDefault(), openUnit(`force:${r.forceId}`, root, e.ctrlKey || e.metaKey))} title="Открыть в «Силах»: состояние, потери, состав">
+            <a
+              href="#"
+              onClick={(e) => (e.preventDefault(), openUnit(`force:${r.forceId}`, root, e.ctrlKey || e.metaKey))}
+              title="Открыть в «Силах»: состояние, потери, состав"
+            >
               {node.name}
             </a>
             <span className="faint small" data-tip={s.equip.length ? s.equip.map((q) => `${q.name}: ${q.cur}`).join('\n') : undefined}>
               {' '}
               · {fmt0(s.persCur)} чел.
             </span>
-            {part && <span className="badge" data-tip="В бою только эта часть подразделения сил">часть</span>}
+            {part && (
+              <span className="badge" data-tip="В бою только эта часть подразделения сил">
+                часть
+              </span>
+            )}
             {attachedTo && (
               <span className="badge info" data-tip={`На этот бой придано «${attachedTo}»`}>
                 придано
@@ -503,7 +536,12 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
     <div className="card side-card" style={{ ['--side' as string]: side.color }}>
       <div className="card-head">
         <input type="color" value={side.color} onChange={(e) => upd((d) => void (d.color = e.target.value))} title="Цвет стороны" />
-        <input className="title-input" style={{ fontSize: 15, fontWeight: 600, minWidth: 100, flex: 1 }} value={side.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
+        <input
+          className="title-input"
+          style={{ fontSize: 15, fontWeight: 600, minWidth: 100, flex: 1 }}
+          value={side.name}
+          onChange={(e) => upd((d) => void (d.name = e.target.value))}
+        />
       </div>
       <div className="card-body stack" style={{ gap: 14 }}>
         <div
@@ -522,10 +560,15 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
               {rows.filter((y) => hostOf(y) === x).map((y) => unitRow(y, x.node?.name))}
             </Fragment>
           ))}
-          {!refs.length && <div className="muted" style={{ padding: '6px 4px' }}>Нет подразделений — добавьте ниже или перетащите из «Сил» (или шаблон) в навигаторе слева</div>}
+          {!refs.length && (
+            <div className="muted" style={{ padding: '6px 4px' }}>
+              Нет подразделений — добавьте ниже или перетащите из «Сил» (или шаблон) в навигаторе слева
+            </div>
+          )}
           {refs.length > 1 && (
             <div className="faint small" style={{ padding: '4px 4px 0' }}>
-              Всего на стороне: {refs.length} {plural(refs.length, 'подразделение', 'подразделения', 'подразделений')}, {fmt0(summarizeUnits(live, rs).persCur)} чел.
+              Всего на стороне: {refs.length} {plural(refs.length, 'подразделение', 'подразделения', 'подразделений')}, {fmt0(summarizeUnits(live, rs).persCur)}{' '}
+              чел.
             </div>
           )}
           <div className="row" style={{ marginTop: 6, gap: 6 }}>
@@ -537,7 +580,11 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
 
         <div className="fields two" style={{ gridTemplateColumns: '1fr 1fr' }}>
           <Field label="Укрепления" hint="Действуют на элементы в обороне, засаде, закреплении и резерве.">
-            <Sel value={side.fortification} onChange={(v) => upd((d) => void (d.fortification = v))} options={rs.fortifications.map((o) => ({ value: o.id, label: o.name }))} />
+            <Sel
+              value={side.fortification}
+              onChange={(v) => upd((d) => void (d.fortification = v))}
+              options={rs.fortifications.map((o) => ({ value: o.id, label: o.name }))}
+            />
           </Field>
           <Field label="Разведданные">
             <Sel value={side.intel} onChange={(v) => upd((d) => void (d.intel = v))} options={rs.intelLevels.map((o) => ({ value: o.id, label: o.name }))} />
@@ -566,7 +613,13 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
                 />
               </div>
               {OBJECTIVE_HAS_VALUE[o.type] && (
-                <Num value={o.value} onChange={(v) => upd((d) => void (d.objectives[oi].value = v))} min={0} width={78} suffix={o.type === 'hold' ? 'ход' : '%'} />
+                <Num
+                  value={o.value}
+                  onChange={(v) => upd((d) => void (d.objectives[oi].value = v))}
+                  min={0}
+                  width={78}
+                  suffix={o.type === 'hold' ? 'ход' : '%'}
+                />
               )}
               <span className="faint small" data-tip="Вес задачи в итоговой оценке">
                 вес

@@ -33,7 +33,11 @@ test('сохранённый бой хранится без подробност
 
   // дождаться записи на диск (в браузере — localStorage)
   await expect
-    .poll(() => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('warsim:battles:') && localStorage.getItem(k)!.includes('"logTrimmed":true')).length))
+    .poll(() =>
+      page.evaluate(
+        () => Object.keys(localStorage).filter((k) => k.startsWith('warsim:battles:') && localStorage.getItem(k)!.includes('"logTrimmed":true')).length,
+      ),
+    )
     .toBe(1);
   const stored = await page.evaluate(() => {
     const k = Object.keys(localStorage).find((x) => x.startsWith('warsim:battles:'))!;
@@ -45,7 +49,9 @@ test('сохранённый бой хранится без подробност
 
   // после перезапуска разбор и подробный журнал восстанавливаются повтором боя
   await page.reload();
-  await expect(page.getByText('Симулятор боя').first()).toBeVisible().catch(() => {});
+  await expect(page.getByText('Симулятор боя').first())
+    .toBeVisible()
+    .catch(() => {});
   await page.locator('.nav-item', { hasText: 'Бои' }).click();
   await page.locator('.nav-group .side-item').first().click();
   const entry = page.locator('.log-entry.has-f').first();

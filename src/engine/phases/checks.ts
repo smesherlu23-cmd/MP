@@ -13,7 +13,6 @@ function setOrderByBehavior(E: EngineContext, el: ElementState, behavior: Behavi
   E.invalidate(el);
 }
 
-
 function destroyElement(E: EngineContext, el: ElementState) {
   const left = E.personnel(el);
   el.status = 'destroyed';
@@ -103,7 +102,11 @@ export function phaseChecks(E: EngineContext) {
       const chance = clamp(k.panicChance * (1 - el.morale / Math.max(1, k.panicMorale)) * panicMult * (el.holdFast ? 0.5 : 1), 0, 1);
       const roll = rng.next();
       const factors: Factor[] = [
-        { label: `Мораль ${Math.round(el.morale)} ниже порога паники ${k.panicMorale}`, value: k.panicChance * (1 - el.morale / Math.max(1, k.panicMorale)), kind: 'chance' },
+        {
+          label: `Мораль ${Math.round(el.morale)} ниже порога паники ${k.panicMorale}`,
+          value: k.panicChance * (1 - el.morale / Math.max(1, k.panicMorale)),
+          kind: 'chance',
+        },
         { label: 'Склонность к панике (опыт, командир, условия)', value: panicMult, kind: 'mult' },
       ];
       if (el.holdFast) factors.push({ label: '«Стоять насмерть»', value: 0.5, kind: 'mult' });
@@ -114,7 +117,15 @@ export function phaseChecks(E: EngineContext) {
         E.log({ phase: 'checks', level: 0, side: el.side, severity: 'critical', refs: [el.id], text: `${e(el)}: паника — бегство с позиций!`, factors });
         continue;
       }
-      E.log({ phase: 'checks', level: 1, side: el.side, severity: 'info', refs: [el.id], text: `${e(el)} на грани паники, но держится (шанс паники ${Math.round(chance * 100)}%).`, factors });
+      E.log({
+        phase: 'checks',
+        level: 1,
+        side: el.side,
+        severity: 'info',
+        refs: [el.id],
+        text: `${e(el)} на грани паники, но держится (шанс паники ${Math.round(chance * 100)}%).`,
+        factors,
+      });
     }
     // Отступление
     if (f.retreat && !el.holdFast && bh !== 'reserve') {
@@ -150,9 +161,24 @@ export function phaseChecks(E: EngineContext) {
         reasons.push({ label: 'Склонность к отходу', value: panicMult, kind: 'mult' }, { label: 'Итоговый шанс', value: chance, kind: 'chance' });
         if (rng.next() < chance) {
           setOrderByBehavior(E, el, 'retreat');
-          E.log({ phase: 'checks', level: 0, side: el.side, severity: 'bad', refs: [el.id], text: `${e(el)} начинает отход${comms < 0.4 ? ' (без связи — приказ запоздал)' : ''}.`, factors: reasons });
+          E.log({
+            phase: 'checks',
+            level: 0,
+            side: el.side,
+            severity: 'bad',
+            refs: [el.id],
+            text: `${e(el)} начинает отход${comms < 0.4 ? ' (без связи — приказ запоздал)' : ''}.`,
+            factors: reasons,
+          });
         } else {
-          E.log({ phase: 'checks', level: 2, side: el.side, refs: [el.id], text: `${e(el)} держится, несмотря на тяжёлое положение (шанс отхода ${Math.round(chance * 100)}%).`, factors: reasons });
+          E.log({
+            phase: 'checks',
+            level: 2,
+            side: el.side,
+            refs: [el.id],
+            text: `${e(el)} держится, несмотря на тяжёлое положение (шанс отхода ${Math.round(chance * 100)}%).`,
+            factors: reasons,
+          });
         }
       }
     }
@@ -163,7 +189,14 @@ export function phaseChecks(E: EngineContext) {
     if (!sh.formation.hqLost) {
       sh.formation.hqLost = true;
       E.invalidate();
-      E.log({ phase: 'checks', level: 0, side: sh.formation.side, severity: 'critical', refs: [sh.el!.id], text: `${fm(sh.formation)}: штаб потерян — связь ×${k.hqLossComms}, влияние командира утрачено.` });
+      E.log({
+        phase: 'checks',
+        level: 0,
+        side: sh.formation.side,
+        severity: 'critical',
+        refs: [sh.el!.id],
+        text: `${fm(sh.formation)}: штаб потерян — связь ×${k.hqLossComms}, влияние командира утрачено.`,
+      });
     }
   }
   // Распад формирований
@@ -178,7 +211,13 @@ export function phaseChecks(E: EngineContext) {
     if (gone / total >= k.formationBreakShare) {
       f2.broken = true;
       shocks.push({ kind: 'break', formation: f2 });
-      E.log({ phase: 'checks', level: 0, side: f2.side, severity: 'critical', text: `${fm(f2)}: формирование сломлено — ${Math.round((gone / total) * 100)}% сил выбыло или отходит.` });
+      E.log({
+        phase: 'checks',
+        level: 0,
+        side: f2.side,
+        severity: 'critical',
+        text: `${fm(f2)}: формирование сломлено — ${Math.round((gone / total) * 100)}% сил выбыло или отходит.`,
+      });
     }
   }
   // Применение моральных потрясений (после всех проверок — чтобы порядок элементов не влиял)
@@ -219,7 +258,14 @@ export function phaseChecks(E: EngineContext) {
         const target = fo && fo.behavior !== 'reserve' ? fo.id : (E.rs.orders.find((o) => o.behavior === 'defend')?.id ?? el.orderId);
         el.orderId = target;
         E.invalidate(el);
-        E.log({ phase: 'checks', level: 0, side, severity: 'info', refs: [el.id], text: `Первая линия стороны ${s(side)} выбыла — ${e(el)} вводится в бой (приказ «${E.order(el).name}»).` });
+        E.log({
+          phase: 'checks',
+          level: 0,
+          side,
+          severity: 'info',
+          refs: [el.id],
+          text: `Первая линия стороны ${s(side)} выбыла — ${e(el)} вводится в бой (приказ «${E.order(el).name}»).`,
+        });
       }
     }
   }

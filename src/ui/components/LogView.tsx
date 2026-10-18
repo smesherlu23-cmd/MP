@@ -125,7 +125,20 @@ function summarize(items: { e: LogEntry; i: number }[], groups: Map<string, stri
         const fid = groups.get(x.e.refs?.[0] ?? '') ?? '?';
         let s = sums.get(fid);
         if (!s) {
-          s = { key: `${x.e.turn}:${fid}`, fid, side: x.e.side, entries: [], pers: 0, kia: 0, wia: 0, mia: 0, equip: new Map(), down: 0, up: 0, minMorale: 100 };
+          s = {
+            key: `${x.e.turn}:${fid}`,
+            fid,
+            side: x.e.side,
+            entries: [],
+            pers: 0,
+            kia: 0,
+            wia: 0,
+            mia: 0,
+            equip: new Map(),
+            down: 0,
+            up: 0,
+            minMorale: 100,
+          };
           sums.set(fid, s);
         }
         s.entries.push(x);
@@ -170,7 +183,10 @@ function SummaryRow({ s, b, open, onToggle, onElement }: { s: Summary; b: Battle
   const parts: string[] = [];
   if (s.pers) parts.push(`потери ${s.pers} чел.${kinds ? ` (${kinds})` : ''}`);
   if (s.equip.size) parts.push(`техника: ${[...s.equip].map(([id, n]) => `${typeName(id)} −${n}`).join(', ')}`);
-  if (s.down || s.up) parts.push(`мораль ${s.down ? `↓ у ${s.down}` : ''}${s.down && s.up ? ', ' : ''}${s.up ? `↑ у ${s.up}` : ''}${s.down ? ` (ниже всего ${s.minMorale})` : ''}`);
+  if (s.down || s.up)
+    parts.push(
+      `мораль ${s.down ? `↓ у ${s.down}` : ''}${s.down && s.up ? ', ' : ''}${s.up ? `↑ у ${s.up}` : ''}${s.down ? ` (ниже всего ${s.minMorale})` : ''}`,
+    );
   const color = s.side ? b.sides[s.side].color : undefined;
   return (
     <>
@@ -205,7 +221,11 @@ function TurnLosses({ b, turn }: { b: Battle; turn: number }) {
   const cur = b.history.find((h) => h.turn === turn);
   const prev = b.history.find((h) => h.turn === turn - 1);
   if (!cur || !prev) return null;
-  const sides = (['A', 'B'] as const).map((s) => ({ s, p: Math.max(0, prev.sides[s].personnel - cur.sides[s].personnel), v: Math.max(0, prev.sides[s].vehicles - cur.sides[s].vehicles) }));
+  const sides = (['A', 'B'] as const).map((s) => ({
+    s,
+    p: Math.max(0, prev.sides[s].personnel - cur.sides[s].personnel),
+    v: Math.max(0, prev.sides[s].vehicles - cur.sides[s].vehicles),
+  }));
   if (sides.every((x) => !x.p && !x.v)) return null;
   const tip = `Потери за ход:\n${sides.map((x) => `${b.sides[x.s].name}: ${x.p} чел.${x.v ? `, техника ${x.v}` : ''}`).join('\n')}`;
   return (
@@ -224,7 +244,20 @@ function Factors({ e }: { e: LogEntry }) {
   return (
     <div className="factors">
       {e.factors!.map((f, i) => {
-        const dir = f.kind === 'mult' ? (f.value > 1.0001 ? 'up' : f.value < 0.9999 ? 'down' : '') : f.kind === 'add' ? (f.value > 0 ? 'up' : f.value < 0 ? 'down' : '') : '';
+        const dir =
+          f.kind === 'mult'
+            ? f.value > 1.0001
+              ? 'up'
+              : f.value < 0.9999
+                ? 'down'
+                : ''
+            : f.kind === 'add'
+              ? f.value > 0
+                ? 'up'
+                : f.value < 0
+                  ? 'down'
+                  : ''
+              : '';
         return (
           <Fragment key={i}>
             <span>{f.label}</span>
@@ -236,7 +269,15 @@ function Factors({ e }: { e: LogEntry }) {
   );
 }
 
-export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 | 2; focus?: string | null; onElement?: (id: string) => void; onClearFocus?: () => void; rev?: number }) {
+export function LogView(props: {
+  b: Battle;
+  tabKey: string;
+  defaultLevel: 0 | 1 | 2;
+  focus?: string | null;
+  onElement?: (id: string) => void;
+  onClearFocus?: () => void;
+  rev?: number;
+}) {
   const { b } = props;
   const [level, setLevel] = useTabState<0 | 1 | 2>(`${props.tabKey}:logLevel`, props.defaultLevel);
   const [side, setSide] = useTabState<'all' | 'A' | 'B'>(`${props.tabKey}:logSide`, 'all');
@@ -282,7 +323,10 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
   // В обычном режиме большого боя потери и мораль за ход сводятся по формированиям.
   const groups = useMemo(() => groupOf(b), [b, b.elements.length]);
   const summarizing = level === 1 && !q.trim() && !phases.length && !props.focus;
-  const items: Item[] = useMemo(() => (summarizing ? summarize(shown, groups) : shown.map((x) => ({ kind: 'entry' as const, ...x }))), [shown, summarizing, groups]);
+  const items: Item[] = useMemo(
+    () => (summarizing ? summarize(shown, groups) : shown.map((x) => ({ kind: 'entry' as const, ...x }))),
+    [shown, summarizing, groups],
+  );
   const [openSums, setOpenSums] = useState<Set<string>>(new Set());
 
   // Сохранённый бой хранится без подробностей: при запросе «Всё» они восстанавливаются повтором боя.
@@ -336,7 +380,12 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
             { value: '2', label: 'Всё', title: 'Всё, включая огонь каждого элемента и обнаружение' },
           ]}
         />
-        <button type="button" className={`btn sm${showFilters || filtersActive ? ' active' : ''}`} onClick={() => setShowFilters(!showFilters)} title="Фильтры по стороне, фазе и тексту">
+        <button
+          type="button"
+          className={`btn sm${showFilters || filtersActive ? ' active' : ''}`}
+          onClick={() => setShowFilters(!showFilters)}
+          title="Фильтры по стороне, фазе и тексту"
+        >
           Фильтр{filtersActive ? ' •' : ''}
         </button>
       </div>
@@ -356,7 +405,8 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
               <input type="search" placeholder="Поиск…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 90 }} />
               <div className="row" style={{ gap: 3, width: '100%' }}>
                 {PHASES.map((p) => (
-                  <button type="button"
+                  <button
+                    type="button"
                     key={p.id}
                     className={`chip${phases.includes(p.id) ? ' accent' : ''}`}
                     style={{ cursor: 'pointer' }}

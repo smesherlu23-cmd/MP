@@ -50,7 +50,10 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
     seed,
     rng: rng.state,
     turn: 0,
-    bandIndex: Math.max(0, rs.rangeBands.findIndex((x) => x.id === sc.startBand)),
+    bandIndex: Math.max(
+      0,
+      rs.rangeBands.findIndex((x) => x.id === sc.startBand),
+    ),
     closingProgress: 0,
     conditions: { ...sc.conditions },
     sides: {} as Record<SideId, SideState>,
@@ -143,8 +146,18 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
         b.formations.push(f);
       }
       if (node.composition.length) {
-          const withKids = isGroup && node.children.length > 0;
-        const el = makeElement(node, withKids ? `${node.name} (${node.isHQ ? 'управление' : 'свой состав'})` : node.name, f, `e${++eCount}`, rs, typeIds, res, order, warnings);
+        const withKids = isGroup && node.children.length > 0;
+        const el = makeElement(
+          node,
+          withKids ? `${node.name} (${node.isHQ ? 'управление' : 'свой состав'})` : node.name,
+          f,
+          `e${++eCount}`,
+          rs,
+          typeIds,
+          res,
+          order,
+          warnings,
+        );
         if (b.sectors) el.sector = sector ?? b.sectors[0].id;
         if (!withKids) {
           // Связь и снабжение у подразделения без подчинённых (своего командира у него нет — им командует формирование).
@@ -190,14 +203,14 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
   }
 
   // Вводная запись журнала
-  const condText = rs.conditions
-    .map((cat) => `${cat.name.toLowerCase()}: ${cat.options.find((o) => o.id === b.conditions[cat.id])?.name ?? '—'}`)
-    .join(', ');
+  const condText = rs.conditions.map((cat) => `${cat.name.toLowerCase()}: ${cat.options.find((o) => o.id === b.conditions[cat.id])?.name ?? '—'}`).join(', ');
   E.log({ phase: 'setup', level: 0, text: `Бой «${b.name}». Условия — ${condText}. Начальная дистанция: ${E.band?.name ?? '—'}.` });
   if (b.sectors) {
     const text = b.sectors
       .map((sec) => {
-        const own = rs.conditions.filter((cat) => sec.conditions[cat.id]).map((cat) => cat.options.find((o) => o.id === sec.conditions[cat.id])?.name.toLowerCase());
+        const own = rs.conditions
+          .filter((cat) => sec.conditions[cat.id])
+          .map((cat) => cat.options.find((o) => o.id === sec.conditions[cat.id])?.name.toLowerCase());
         const n = b.elements.filter((x) => x.sector === sec.id).length;
         return `${sec.name} — ${rs.rangeBands[sec.bandIndex]?.name.toLowerCase() ?? '—'}${own.length ? `, ${own.join(', ')}` : ''} (${n} ${plural(n, 'элемент', 'элемента', 'элементов')})`;
       })
@@ -223,9 +236,15 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
     });
     const later = els.filter((x) => x.status === 'pending');
     if (later.length)
-      E.log({ phase: 'setup', level: 0, side, text: `${s(side)}: из них подойдут позже (подкрепления) — ${later.length} ${plural(later.length, 'элемент', 'элемента', 'элементов')}, ${later.reduce((a, x) => a + x.startPersonnel, 0)} чел.` });
+      E.log({
+        phase: 'setup',
+        level: 0,
+        side,
+        text: `${s(side)}: из них подойдут позже (подкрепления) — ${later.length} ${plural(later.length, 'элемент', 'элемента', 'элементов')}, ${later.reduce((a, x) => a + x.startPersonnel, 0)} чел.`,
+      });
   }
-  if (sc.events?.length) E.log({ phase: 'setup', level: 0, text: `План боя: ${sc.events.length} ${plural(sc.events.length, 'событие', 'события', 'событий')} по ходам.` });
+  if (sc.events?.length)
+    E.log({ phase: 'setup', level: 0, text: `План боя: ${sc.events.length} ${plural(sc.events.length, 'событие', 'события', 'событий')} по ходам.` });
   for (const w of warnings) E.log({ phase: 'setup', level: 0, severity: 'bad', text: `Внимание: ${w}` });
   if (!b.elements.some((x) => x.side === 'A') || !b.elements.some((x) => x.side === 'B')) {
     E.log({ phase: 'setup', level: 0, severity: 'critical', text: 'У одной из сторон нет сил — бой невозможен.' });
@@ -253,7 +272,18 @@ function makeElement(
       continue;
     }
     const cur = Math.max(0, Math.floor(c.current));
-    comps.push({ typeId: c.typeId, authorized: Math.max(cur, Math.floor(c.authorized)), start: cur, current: cur, destroyed: 0, damaged: 0, abandoned: 0, kia: 0, wia: 0, mia: 0 });
+    comps.push({
+      typeId: c.typeId,
+      authorized: Math.max(cur, Math.floor(c.authorized)),
+      start: cur,
+      current: cur,
+      destroyed: 0,
+      damaged: 0,
+      abandoned: 0,
+      kia: 0,
+      wia: 0,
+      mia: 0,
+    });
   }
   const maxExp = Math.max(1, rs.experienceLevels.length);
   const st = res.state;
@@ -325,7 +355,9 @@ export function stepTurn(b: Battle): void {
     el.turnPersonnelLost = 0;
   }
   const t0 = (b.turn - 1) * b.ruleset.turnMinutes;
-  const bandText = b.sectors ? b.sectors.map((sec) => `${sec.name}: ${b.ruleset.rangeBands[sec.bandIndex]?.name.toLowerCase() ?? '—'}`).join(', ') : (E.band?.name ?? '—');
+  const bandText = b.sectors
+    ? b.sectors.map((sec) => `${sec.name}: ${b.ruleset.rangeBands[sec.bandIndex]?.name.toLowerCase() ?? '—'}`).join(', ')
+    : (E.band?.name ?? '—');
   E.log({ phase: 'turn', level: 0, text: `Ход ${b.turn} · ${fmtTime(t0)} · ${bandText}` });
 
   phaseEvents(E);

@@ -6,7 +6,8 @@ import { TRANSFER_KINDS, TRANSFER_LABELS, transferFromRuleset, type Id, type Rul
 import { historyStep, replaceRuleset, toastUndoable, useApp } from '../store';
 import { Btn, Check, Modal, Sel } from './ui';
 
-const itemsOf = (r: Ruleset, k: TransferKind): { id: Id; name: string }[] => ((r as unknown as Record<string, { id: Id; name: string }[]>)[k] ?? []).map((x) => ({ id: x.id, name: x.name }));
+const itemsOf = (r: Ruleset, k: TransferKind): { id: Id; name: string }[] =>
+  ((r as unknown as Record<string, { id: Id; name: string }[]>)[k] ?? []).map((x) => ({ id: x.id, name: x.name }));
 
 export function TransferModal({ target, onClose }: { target: Ruleset; onClose: () => void }) {
   const rulesets = Object.values(useApp((s) => s.rulesets)).filter((r) => r.id !== target.id);
@@ -68,11 +69,13 @@ export function TransferModal({ target, onClose }: { target: Ruleset; onClose: (
                       <span className="chev">{open === k ? '▾' : '▸'}</span>
                       <h4>{TRANSFER_LABELS[k]}</h4>
                     </button>
-                    <span className="faint small">
-                      {picked.size ? `выбрано ${picked.size} из ${items.length}` : `${items.length}`}
-                    </span>
+                    <span className="faint small">{picked.size ? `выбрано ${picked.size} из ${items.length}` : `${items.length}`}</span>
                     <span className="grow" />
-                    <button type="button" className="link-btn small" onClick={() => setSel({ ...sel, [k]: picked.size === items.length ? [] : items.map((x) => x.id) })}>
+                    <button
+                      type="button"
+                      className="link-btn small"
+                      onClick={() => setSel({ ...sel, [k]: picked.size === items.length ? [] : items.map((x) => x.id) })}
+                    >
                       {picked.size === items.length ? 'снять все' : 'выбрать все'}
                     </button>
                   </div>
@@ -81,7 +84,11 @@ export function TransferModal({ target, onClose }: { target: Ruleset; onClose: (
                       {items.map((x) => (
                         <Check key={x.id} value={picked.has(x.id)} onChange={(v) => toggle(k, x.id, v)}>
                           {x.name}
-                          {exists.has(x.id) && <span className="badge warn" style={{ marginLeft: 6 }}>заменит</span>}
+                          {exists.has(x.id) && (
+                            <span className="badge warn" style={{ marginLeft: 6 }}>
+                              заменит
+                            </span>
+                          )}
                         </Check>
                       ))}
                     </div>
@@ -117,7 +124,10 @@ export function TypeMapModal({
     for (const id of ids) {
       if (to.componentTypes.some((t) => t.id === id)) out[id] = id;
       else {
-        const name = from.componentTypes.find((t) => t.id === id)?.name?.trim().toLowerCase();
+        const name = from.componentTypes
+          .find((t) => t.id === id)
+          ?.name?.trim()
+          .toLowerCase();
         out[id] = to.componentTypes.find((t) => t.name.trim().toLowerCase() === name)?.id ?? (from.componentTypes.some((t) => t.id === id) ? '+copy' : '');
       }
     }
@@ -174,7 +184,9 @@ export function TypeMapModal({
                   width={260}
                   options={[
                     ...to.componentTypes.map((t) => ({ value: t.id, label: t.name })),
-                    ...(from.componentTypes.some((t) => t.id === id) && !to.componentTypes.some((t) => t.id === id) ? [{ value: '+copy', label: `добавить «${nameOf(id)}» в набор` }] : []),
+                    ...(from.componentTypes.some((t) => t.id === id) && !to.componentTypes.some((t) => t.id === id)
+                      ? [{ value: '+copy', label: `добавить «${nameOf(id)}» в набор` }]
+                      : []),
                     { value: '', label: 'убрать из состава' },
                   ]}
                 />

@@ -13,7 +13,7 @@ export function elementsOfNode(b: Battle, side: SideId, nodeId: Id): ElementStat
   let grew = true;
   while (grew) {
     grew = false;
-    for (const x of b.formations) if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) (ids.add(x.id), (grew = true));
+    for (const x of b.formations) if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) ids.add(x.id), (grew = true);
   }
   return b.elements.filter((x) => ids.has(x.formationId));
 }
@@ -24,10 +24,11 @@ export function subtreeIds(E: EngineContext, fid: Id): Set<Id> {
   let grew = true;
   while (grew) {
     grew = false;
-    for (const f of E.b.formations) if (f.parentId && ids.has(f.parentId) && !ids.has(f.id)) {
-      ids.add(f.id);
-      grew = true;
-    }
+    for (const f of E.b.formations)
+      if (f.parentId && ids.has(f.parentId) && !ids.has(f.id)) {
+        ids.add(f.id);
+        grew = true;
+      }
   }
   return ids;
 }

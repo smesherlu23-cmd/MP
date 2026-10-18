@@ -88,7 +88,8 @@ export function phaseMorale(E: EngineContext) {
       if (bh === 'reserve' || bh === 'consolidate') d += k.cohesionRecovery * E.mult(el, 'recovery');
       const before = el.cohesion;
       el.cohesion = clamp(el.cohesion + d, 0, 100);
-      if (Math.abs(d) >= 1) E.log({ phase: 'morale', level: 2, side: el.side, refs: [el.id], text: `Слаженность ${e(el)}: ${Math.round(before)} → ${Math.round(el.cohesion)}%.` });
+      if (Math.abs(d) >= 1)
+        E.log({ phase: 'morale', level: 2, side: el.side, refs: [el.id], text: `Слаженность ${e(el)}: ${Math.round(before)} → ${Math.round(el.cohesion)}%.` });
     }
     if (f.suppression && el.suppression > 0) {
       el.suppression = Math.max(0, el.suppression - k.suppressionRecovery * E.mult(el, 'recovery'));

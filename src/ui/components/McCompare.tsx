@@ -28,7 +28,9 @@ interface CmpState {
 }
 const useCmp = create<CmpState>(() => ({ byScenario: {} }));
 const setCmp = (id: string, patch: Partial<CmpState['byScenario'][string]>) =>
-  useCmp.setState((s) => ({ byScenario: { ...s.byScenario, [id]: { ...(s.byScenario[id] ?? { running: false, done: 0, total: 0, rows: [], title: '' }), ...patch } } }));
+  useCmp.setState((s) => ({
+    byScenario: { ...s.byScenario, [id]: { ...(s.byScenario[id] ?? { running: false, done: 0, total: 0, rows: [], title: '' }), ...patch } },
+  }));
 
 const NEEDS_SIDE: SweepKind[] = ['commander', 'intel', 'fortification', 'order', 'supportCount'];
 const mean = (r: MonteCarloResult, key: string) => r.metrics.find((m) => m.key === key)?.stats.mean ?? 0;
@@ -54,7 +56,12 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   const variants = (): { label: string; scenario: Scenario }[] => {
     if (mode === 'scenario') {
       const o = scenarios[other];
-      return o ? [{ label: sc.name, scenario: rsc }, { label: o.name, scenario: scenarioForBattle(o) }] : [];
+      return o
+        ? [
+            { label: sc.name, scenario: rsc },
+            { label: o.name, scenario: scenarioForBattle(o) },
+          ]
+        : [];
     }
     return sweepVariants(rsc, rs, p);
   };
@@ -62,12 +69,22 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
     const list = variants();
     if (list.length < 2) return toast('Выберите, что сравнивать: нужно хотя бы два варианта.', 'bad');
     const seed = randomSeed();
-    const title = mode === 'scenario' ? `Сравнение со сценарием «${scenarios[other]?.name}»` : `${SWEEP_LABELS[p.kind]}${NEEDS_SIDE.includes(p.kind) ? ` — ${sd?.name}` : ''}`;
+    const title =
+      mode === 'scenario'
+        ? `Сравнение со сценарием «${scenarios[other]?.name}»`
+        : `${SWEEP_LABELS[p.kind]}${NEEDS_SIDE.includes(p.kind) ? ` — ${sd?.name}` : ''}`;
     setCmp(sc.id, { running: true, done: 0, total: list.length * n, rows: [], title, cancel: false });
     const rows: Row[] = [];
     for (let i = 0; i < list.length; i++) {
       if (useCmp.getState().byScenario[sc.id]?.cancel) break;
-      const r = await runManyAsync(list[i].scenario, rs, n, seed, (d) => setCmp(sc.id, { done: i * n + d }), () => !!useCmp.getState().byScenario[sc.id]?.cancel);
+      const r = await runManyAsync(
+        list[i].scenario,
+        rs,
+        n,
+        seed,
+        (d) => setCmp(sc.id, { done: i * n + d }),
+        () => !!useCmp.getState().byScenario[sc.id]?.cancel,
+      );
       rows.push({ label: list[i].label, r });
       setCmp(sc.id, { rows: [...rows] });
     }
@@ -77,7 +94,11 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   const rows = state?.rows ?? [];
   const best = rows.length ? Math.max(...rows.map((x) => x.r.winA)) : 0;
   return (
-    <Section id="mc-compare" title="Сравнение вариантов" summary={rows.length ? state!.title : 'как исход зависит от командира, разведки, укреплений, хода ввода резерва…'}>
+    <Section
+      id="mc-compare"
+      title="Сравнение вариантов"
+      summary={rows.length ? state!.title : 'как исход зависит от командира, разведки, укреплений, хода ввода резерва…'}
+    >
       <div className="row" style={{ alignItems: 'flex-end', gap: 10, marginBottom: 10 }}>
         <Seg
           value={mode}
@@ -95,24 +116,41 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
             <Field label="Параметр">
               <Sel
                 value={p.kind}
-                onChange={(v) => setP({ kind: v, side: p.side ?? 'A', category: rs.conditions[0]?.id, eventId: sc.events?.[0]?.id, from: 1, to: Math.min(sc.maxTurns, 12) })}
+                onChange={(v) =>
+                  setP({ kind: v, side: p.side ?? 'A', category: rs.conditions[0]?.id, eventId: sc.events?.[0]?.id, from: 1, to: Math.min(sc.maxTurns, 12) })
+                }
                 options={(Object.keys(SWEEP_LABELS) as SweepKind[]).map((k) => ({ value: k, label: SWEEP_LABELS[k] }))}
                 width={220}
               />
             </Field>
             {NEEDS_SIDE.includes(p.kind) && (
               <Field label="Сторона">
-                <Sel value={side} onChange={(v) => setP({ ...p, side: v, nodeId: undefined, assetId: undefined })} options={rsc.sides.map((x) => ({ value: x.id, label: x.name }))} width={130} />
+                <Sel
+                  value={side}
+                  onChange={(v) => setP({ ...p, side: v, nodeId: undefined, assetId: undefined })}
+                  options={rsc.sides.map((x) => ({ value: x.id, label: x.name }))}
+                  width={130}
+                />
               </Field>
             )}
             {(p.kind === 'commander' || p.kind === 'order') && (
               <Field label={p.kind === 'commander' ? 'Формирование' : 'Подразделение'}>
-                <Sel value={p.nodeId ?? ''} onChange={(v) => setP({ ...p, nodeId: v || undefined })} options={[{ value: '', label: '— выберите —' }, ...nodes]} width={240} />
+                <Sel
+                  value={p.nodeId ?? ''}
+                  onChange={(v) => setP({ ...p, nodeId: v || undefined })}
+                  options={[{ value: '', label: '— выберите —' }, ...nodes]}
+                  width={240}
+                />
               </Field>
             )}
             {p.kind === 'condition' && (
               <Field label="Категория">
-                <Sel value={p.category ?? ''} onChange={(v) => setP({ ...p, category: v })} options={rs.conditions.map((c) => ({ value: c.id, label: c.name }))} width={180} />
+                <Sel
+                  value={p.category ?? ''}
+                  onChange={(v) => setP({ ...p, category: v })}
+                  options={rs.conditions.map((c) => ({ value: c.id, label: c.name }))}
+                  width={180}
+                />
               </Field>
             )}
             {p.kind === 'eventTurn' && (
@@ -121,7 +159,13 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                   <Sel
                     value={p.eventId ?? ''}
                     onChange={(v) => setP({ ...p, eventId: v })}
-                    options={[{ value: '', label: (sc.events ?? []).length ? '— выберите —' : 'в плане боя нет событий' }, ...(sc.events ?? []).map((e, i) => ({ value: e.id, label: `${i + 1}. ${e.kind === 'arrive' ? 'подход' : e.kind === 'order' ? 'приказ' : e.kind === 'strike' ? 'удар' : e.kind === 'effect' ? 'эффект' : 'условия'}, ход ${e.turn}${e.note ? ` — ${e.note}` : ''}` }))]}
+                    options={[
+                      { value: '', label: (sc.events ?? []).length ? '— выберите —' : 'в плане боя нет событий' },
+                      ...(sc.events ?? []).map((e, i) => ({
+                        value: e.id,
+                        label: `${i + 1}. ${e.kind === 'arrive' ? 'подход' : e.kind === 'order' ? 'приказ' : e.kind === 'strike' ? 'удар' : e.kind === 'effect' ? 'эффект' : 'условия'}, ход ${e.turn}${e.note ? ` — ${e.note}` : ''}`,
+                      })),
+                    ]}
                     width={240}
                   />
                 </Field>
@@ -129,14 +173,29 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                   <Num value={p.from ?? 1} onChange={(v) => setP({ ...p, from: Math.max(1, Math.round(v)) })} min={1} max={sc.maxTurns} integer width={70} />
                 </Field>
                 <Field label="по ход">
-                  <Num value={p.to ?? sc.maxTurns} onChange={(v) => setP({ ...p, to: Math.max(1, Math.round(v)) })} min={1} max={sc.maxTurns} integer width={70} />
+                  <Num
+                    value={p.to ?? sc.maxTurns}
+                    onChange={(v) => setP({ ...p, to: Math.max(1, Math.round(v)) })}
+                    min={1}
+                    max={sc.maxTurns}
+                    integer
+                    width={70}
+                  />
                 </Field>
               </>
             )}
             {p.kind === 'supportCount' && (
               <>
                 <Field label="Средство">
-                  <Sel value={p.assetId ?? ''} onChange={(v) => setP({ ...p, assetId: v })} options={[{ value: '', label: sd?.support?.length ? '— выберите —' : 'нет огневой поддержки' }, ...(sd?.support ?? []).map((a) => ({ value: a.id, label: a.name }))]} width={200} />
+                  <Sel
+                    value={p.assetId ?? ''}
+                    onChange={(v) => setP({ ...p, assetId: v })}
+                    options={[
+                      { value: '', label: sd?.support?.length ? '— выберите —' : 'нет огневой поддержки' },
+                      ...(sd?.support ?? []).map((a) => ({ value: a.id, label: a.name })),
+                    ]}
+                    width={200}
+                  />
                 </Field>
                 <Field label="Ударов до">
                   <Num value={p.to ?? 6} onChange={(v) => setP({ ...p, to: Math.max(1, Math.round(v)) })} min={1} max={20} integer width={70} />
@@ -145,8 +204,16 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
             )}
           </>
         ) : (
-          <Field label="Сценарий для сравнения" hint={others.length ? undefined : 'Нет других сценариев с этим набором правил — сделайте копию («Дублировать») и измените в ней что-нибудь.'}>
-            <Sel value={other} onChange={setOther} options={[{ value: '', label: '— выберите —' }, ...others.map((x) => ({ value: x.id, label: x.name }))]} width={280} />
+          <Field
+            label="Сценарий для сравнения"
+            hint={others.length ? undefined : 'Нет других сценариев с этим набором правил — сделайте копию («Дублировать») и измените в ней что-нибудь.'}
+          >
+            <Sel
+              value={other}
+              onChange={setOther}
+              options={[{ value: '', label: '— выберите —' }, ...others.map((x) => ({ value: x.id, label: x.name }))]}
+              width={280}
+            />
           </Field>
         )}
         <Field label="Прогонов на вариант">

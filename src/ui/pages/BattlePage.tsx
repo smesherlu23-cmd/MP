@@ -26,7 +26,16 @@ import {
   type SideId,
   type SideResult,
 } from '../../engine';
-import { EffectModal, ForecastModal, GroupEditModal, PauseSettingsModal, StrikeModal, SupportPanel, usePauseRules, type Target } from '../components/BattleControls';
+import {
+  EffectModal,
+  ForecastModal,
+  GroupEditModal,
+  PauseSettingsModal,
+  StrikeModal,
+  SupportPanel,
+  usePauseRules,
+  type Target,
+} from '../components/BattleControls';
 import { LineChart } from '../components/Charts';
 import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
@@ -163,12 +172,21 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
     <div className="page fill">
       <div className="battle-head">
         <div style={{ width: '100%', marginBottom: -6 }}>
-          <Crumbs items={[{ label: 'Бои', section: 'battles' }, scenarioExists ? { label: b.scenario.name, open: ['scenario', b.scenarioId] } : { label: b.scenario.name }]} />
+          <Crumbs
+            items={[
+              { label: 'Бои', section: 'battles' },
+              scenarioExists ? { label: b.scenario.name, open: ['scenario', b.scenarioId] } : { label: b.scenario.name },
+            ]}
+          />
         </div>
         <input className="title-input" value={b.name} onChange={(e) => renameBattle(b.id, e.target.value)} />
         {b.finished ? (
           <>
-            <Btn kind="primary" onClick={() => copyText(formatReport(b))} title="Полный отчёт для ГМ: все цифры обеих сторон. Донесения для игроков — в меню «⋯» и на вкладке «Итоги».">
+            <Btn
+              kind="primary"
+              onClick={() => copyText(formatReport(b))}
+              title="Полный отчёт для ГМ: все цифры обеих сторон. Донесения для игроков — в меню «⋯» и на вкладке «Итоги»."
+            >
               Скопировать отчёт
             </Btn>
             <Btn onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
@@ -182,9 +200,9 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             </Btn>
             <Btn
               onClick={untilEvent}
-              title={`Считать ходы, пока не случится важное: ${Object.entries(rules)
-                .filter(([k, v]) => k !== 'lossPct' && v)
-                .length} видов событий${rules.lossPct ? `, потери за ход ≥ ${rules.lossPct}%` : ''}. Настроить — в меню «⋯».`}
+              title={`Считать ходы, пока не случится важное: ${
+                Object.entries(rules).filter(([k, v]) => k !== 'lossPct' && v).length
+              } видов событий${rules.lossPct ? `, потери за ход ≥ ${rules.lossPct}%` : ''}. Настроить — в меню «⋯».`}
             >
               ⏭ До события
             </Btn>
@@ -194,7 +212,10 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             <Btn onClick={toEnd} title="Рассчитать бой до конца">
               До конца
             </Btn>
-            <Btn onClick={() => setForecastOpen(true)} title="Что дальше? Сотни продолжений боя с этого хода — вероятности исходов и потерь. Если вы только что приняли решения — рядом прогноз без них.">
+            <Btn
+              onClick={() => setForecastOpen(true)}
+              title="Что дальше? Сотни продолжений боя с этого хода — вероятности исходов и потерь. Если вы только что приняли решения — рядом прогноз без них."
+            >
               Прогноз
             </Btn>
           </>
@@ -207,20 +228,36 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
         <Menu
           items={[
             !!undoLabel && { label: `Отменить: ${undoLabel}`, kbd: 'Ctrl+Z', onClick: () => undoBattle(b.id) },
-            b.turn > 0 && { label: 'Вернуться к ходу…', onClick: () => rewindBattleDialog(b.id), tip: 'Повторить бой до выбранного хода с теми же бросками и вашими решениями' },
-            { label: 'Ответвить бой…', onClick: () => branchBattleDialog(b.id), tip: 'Копия боя с выбранного хода — сыграть иначе и сравнить; этот бой не меняется' },
+            b.turn > 0 && {
+              label: 'Вернуться к ходу…',
+              onClick: () => rewindBattleDialog(b.id),
+              tip: 'Повторить бой до выбранного хода с теми же бросками и вашими решениями',
+            },
+            {
+              label: 'Ответвить бой…',
+              onClick: () => branchBattleDialog(b.id),
+              tip: 'Копия боя с выбранного хода — сыграть иначе и сравнить; этот бой не меняется',
+            },
             'sep',
             !b.finished && { label: 'Прогноз с этого хода…', onClick: () => setForecastOpen(true) },
             !b.finished && { label: 'Настроить «до события»…', onClick: () => setPauseModal(true) },
             'sep',
             !b.finished && { label: 'Изменить условия и дистанцию…', onClick: () => setCondModal(true) },
-            !b.finished && { label: 'Завершить бой сейчас', onClick: () => iv('endBattle', { reason: 'Бой остановлен ГМ' }), tip: 'Подвести итоги на текущем ходу' },
+            !b.finished && {
+              label: 'Завершить бой сейчас',
+              onClick: () => iv('endBattle', { reason: 'Бой остановлен ГМ' }),
+              tip: 'Подвести итоги на текущем ходу',
+            },
             'sep',
             { label: 'Открыть сценарий', onClick: () => openTab('scenario', b.scenarioId) },
             'sep',
             { label: 'Переиграть (новый бой)', onClick: () => restart(false), tip: 'Тот же сценарий, другие случайности' },
             { label: 'Повторить этот же бой', onClick: () => restart(true), tip: 'Те же броски кубиков: без ваших решений бой пойдёт точно так же, как этот' },
-            b.interventions.length > 0 && { label: 'Повторить с решениями ГМ', onClick: () => restart(true, true), tip: 'Воспроизвести этот бой вместе с вашими вмешательствами до текущего хода' },
+            b.interventions.length > 0 && {
+              label: 'Повторить с решениями ГМ',
+              onClick: () => restart(true, true),
+              tip: 'Воспроизвести этот бой вместе с вашими вмешательствами до текущего хода',
+            },
             'sep',
             !b.finished && { label: 'Скопировать отчёт', onClick: () => copyText(formatReport(b)) },
             ...SIDES.map((sd) => ({
@@ -249,7 +286,9 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             b.sectors.map((sec) => (
               <span key={sec.id}>
                 {sec.name}: <b>{rs.rangeBands[sec.bandIndex]?.name ?? '—'}</b>
-                {!b.finished && sec.bandIndex < rs.rangeBands.length - 1 && sec.closingProgress > 0 ? ` (сближение ${Math.round(sec.closingProgress * 100)}%)` : ''}
+                {!b.finished && sec.bandIndex < rs.rangeBands.length - 1 && sec.closingProgress > 0
+                  ? ` (сближение ${Math.round(sec.closingProgress * 100)}%)`
+                  : ''}
               </span>
             ))
           ) : (
@@ -261,7 +300,12 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
           {b.finished ? (
             <span>{conditions}</span>
           ) : (
-            <span className="cond-link" data-tip="Изменить условия (вмешательство ГМ)" onClick={() => setCondModal(true)} {...pressable(() => setCondModal(true))}>
+            <span
+              className="cond-link"
+              data-tip="Изменить условия (вмешательство ГМ)"
+              onClick={() => setCondModal(true)}
+              {...pressable(() => setCondModal(true))}
+            >
               {conditions}
             </span>
           )}
@@ -278,7 +322,10 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
         </div>
         {pauseNote && !b.finished && (
           <div className="pause-note">
-            <b>Пауза после {b.turn}-го хода{pauseNote.length ? ':' : ''}</b> {pauseNote.length ? pauseNote.slice(0, 5).join('; ') : 'важного не произошло — достигнут предел ходов'}
+            <b>
+              Пауза после {b.turn}-го хода{pauseNote.length ? ':' : ''}
+            </b>{' '}
+            {pauseNote.length ? pauseNote.slice(0, 5).join('; ') : 'важного не произошло — достигнут предел ходов'}
             {pauseNote.length > 5 ? ` и ещё ${pauseNote.length - 5}` : ''}.
             <button type="button" className="link-btn small" onClick={() => setPauseNote(null)} title="Скрыть">
               {' '}
@@ -349,7 +396,9 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
         />
       )}
       {effectFor && <EffectModal b={b} target={effectFor} onClose={() => setEffectFor(null)} iv={iv} />}
-      {strikeFor && <StrikeModal b={b} side={strikeFor.side} assetId={strikeFor.assetId} target={strikeFor.target} onClose={() => setStrikeFor(null)} iv={iv} />}
+      {strikeFor && (
+        <StrikeModal b={b} side={strikeFor.side} assetId={strikeFor.assetId} target={strikeFor.target} onClose={() => setStrikeFor(null)} iv={iv} />
+      )}
       {pauseModal && <PauseSettingsModal onClose={() => setPauseModal(false)} />}
       {forecastOpen && <ForecastModal b={b} onClose={() => setForecastOpen(false)} />}
       {groupEdit && <GroupEditModal b={b} ids={groupEdit} onClose={() => setGroupEdit(null)} iv={iv} />}
@@ -382,8 +431,13 @@ function statusOf(E: EngineContext, el: ElementState): { label: string; cls: str
 function SideCompare({ b, result, full }: { b: Battle; result: BattleResult; full?: boolean }) {
   const f = b.ruleset.features;
   const R = SIDES.map((s) => result.sides[s]);
-  const eqTotal = (r: SideResult) => r.equipment.reduce((a, q) => ({ cur: a.cur + q.current, start: a.start + q.start, lost: a.lost + q.losses }), { cur: 0, start: 0, lost: 0 });
-  const eqTip = (r: SideResult) => r.equipment.filter((q) => q.losses).map((q) => `${q.name}: −${q.losses}`).join('\n') || undefined;
+  const eqTotal = (r: SideResult) =>
+    r.equipment.reduce((a, q) => ({ cur: a.cur + q.current, start: a.start + q.start, lost: a.lost + q.losses }), { cur: 0, start: 0, lost: 0 });
+  const eqTip = (r: SideResult) =>
+    r.equipment
+      .filter((q) => q.losses)
+      .map((q) => `${q.name}: −${q.losses}`)
+      .join('\n') || undefined;
   const lostTypes = [...new Set(R.flatMap((r) => r.equipment.filter((q) => q.losses > 0).map((q) => q.typeId)))];
   const row = (label: React.ReactNode, cell: (r: SideResult) => React.ReactNode, tip?: (r: SideResult) => string | undefined) => (
     <tr>
@@ -447,7 +501,11 @@ function SideCompare({ b, result, full }: { b: Battle; result: BattleResult; ful
                 {R.map((r) => {
                   const q = r.equipment.find((x) => x.typeId === id);
                   return (
-                    <td key={r.side} className="num" data-tip={q?.losses ? `уничтожено ${q.destroyed}, повреждено ${q.damaged}, брошено ${q.abandoned}` : undefined}>
+                    <td
+                      key={r.side}
+                      className="num"
+                      data-tip={q?.losses ? `уничтожено ${q.destroyed}, повреждено ${q.damaged}, брошено ${q.abandoned}` : undefined}
+                    >
                       {q ? (
                         <>
                           {q.current} <span className="faint">из {q.start}</span>
@@ -462,13 +520,23 @@ function SideCompare({ b, result, full }: { b: Battle; result: BattleResult; ful
               </tr>
             );
           })}
-        {row('Боеспособность', (r) => <b>{pct(r.combatEffectiveness)}</b>)}
+        {row('Боеспособность', (r) => (
+          <b>{pct(r.combatEffectiveness)}</b>
+        ))}
         {f.morale && row('Мораль', (r) => Math.round(r.morale))}
         {full && row('Организация', (r) => pct(r.organization))}
-        {full && f.ammo && row('Боезапас', (r) => pct(r.supply.ammo), (r) => `топливо ${pct(r.supply.fuel)}, снаряжение ${pct(r.supply.equipment)}`)}
+        {full &&
+          f.ammo &&
+          row(
+            'Боезапас',
+            (r) => pct(r.supply.ammo),
+            (r) => `топливо ${pct(r.supply.fuel)}, снаряжение ${pct(r.supply.equipment)}`,
+          )}
         {row(
           'Задачи',
-          (r) => <b className={r.score >= 0.75 ? 'good' : r.score < 0.4 ? 'bad' : 'warn'}>{pct(r.score * 100)}</b>,
+          (r) => (
+            <b className={r.score >= 0.75 ? 'good' : r.score < 0.4 ? 'bad' : 'warn'}>{pct(r.score * 100)}</b>
+          ),
           (r) => r.objectives.map((o) => `${pct(o.score * 100)} — ${o.label}`).join('\n') || undefined,
         )}
       </tbody>
@@ -532,7 +600,8 @@ function effectsNext(b: Battle, E: EngineContext, el: ElementState) {
   );
 }
 
-const CMD_TIP = 'Командир сейчас. Меняйте по обстановке: удачное решение — выше, ошибка или растерянность — ниже.\nДействует со следующего хода и записывается в журнал.';
+const CMD_TIP =
+  'Командир сейчас. Меняйте по обстановке: удачное решение — выше, ошибка или растерянность — ниже.\nДействует со следующего хода и записывается в журнал.';
 
 function Forces(props: {
   b: Battle;
@@ -597,11 +666,20 @@ function Forces(props: {
               боезапас +25%
             </Btn>
           )}
-          <Btn sm disabled={!oneSide} onClick={() => oneSide && props.onEffect({ side: oneSide, elementIds: sel, label: selLabel })} title={oneSide ? 'Временный эффект на выбранных' : 'Эффект — для элементов одной стороны'}>
+          <Btn
+            sm
+            disabled={!oneSide}
+            onClick={() => oneSide && props.onEffect({ side: oneSide, elementIds: sel, label: selLabel })}
+            title={oneSide ? 'Временный эффект на выбранных' : 'Эффект — для элементов одной стороны'}
+          >
             Эффект…
           </Btn>
           {enemySupport && oneSide && (
-            <Btn sm onClick={() => props.onStrike(oneSide === 'A' ? 'B' : 'A', undefined, { side: oneSide, elementIds: sel, label: selLabel })} title="Удар огневой поддержки противника по выбранным">
+            <Btn
+              sm
+              onClick={() => props.onStrike(oneSide === 'A' ? 'B' : 'A', undefined, { side: oneSide, elementIds: sel, label: selLabel })}
+              title="Удар огневой поддержки противника по выбранным"
+            >
               Удар по выбранным…
             </Btn>
           )}
@@ -704,7 +782,7 @@ function FormationRows(props: {
     let grew = true;
     while (grew) {
       grew = false;
-      for (const x of b.formations) if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) (ids.add(x.id), (grew = true));
+      for (const x of b.formations) if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) ids.add(x.id), (grew = true);
     }
     return b.elements.filter((x) => ids.has(x.formationId) && (x.status === 'active' || x.status === 'pending')).map((x) => x.id);
   }, [b, fs.id]);
@@ -721,7 +799,13 @@ function FormationRows(props: {
         <td colSpan={2} style={{ paddingLeft: 4 + depth * 14 }}>
           <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
             {!b.finished && subtree.length > 0 && (
-              <input type="checkbox" className="pick-check" checked={allOn} onChange={(e) => onSelect(subtree, e.target.checked)} title="Отметить всё формирование — для группового решения" />
+              <input
+                type="checkbox"
+                className="pick-check"
+                checked={allOn}
+                onChange={(e) => onSelect(subtree, e.target.checked)}
+                title="Отметить всё формирование — для группового решения"
+              />
             )}
             <button type="button" className="fold-btn" onClick={props.onToggle} title={props.folded ? 'Развернуть' : 'Свернуть'}>
               {props.folded ? '▸' : '▾'}
@@ -735,7 +819,14 @@ function FormationRows(props: {
               {fs.name}
             </a>
             {f.command && (
-              <CommanderSelect levels={b.ruleset.commandLevels} allowNone tip={CMD_TIP} value={fs.commandLevel} disabled={b.finished} onChange={(v) => iv('setFormation', { formationId: fs.id, commandLevel: v })} />
+              <CommanderSelect
+                levels={b.ruleset.commandLevels}
+                allowNone
+                tip={CMD_TIP}
+                value={fs.commandLevel}
+                disabled={b.finished}
+                onChange={(v) => iv('setFormation', { formationId: fs.id, commandLevel: v })}
+              />
             )}
             {fs.hqLost && <span className="badge bad">штаб потерян</span>}
             {fs.broken && <span className="badge bad">сломлено</span>}
@@ -764,7 +855,13 @@ function FormationRows(props: {
           <tr key={el.id} className={el.status !== 'active' ? 'dim' : ''}>
             <td style={{ paddingLeft: 24 + depth * 14 }}>
               {!b.finished && (el.status === 'active' || el.status === 'pending') && (
-                <input type="checkbox" className="pick-check" checked={selected.has(el.id)} onChange={(e) => onSelect([el.id], e.target.checked)} title="Отметить — для группового решения" />
+                <input
+                  type="checkbox"
+                  className="pick-check"
+                  checked={selected.has(el.id)}
+                  onChange={(e) => onSelect([el.id], e.target.checked)}
+                  title="Отметить — для группового решения"
+                />
               )}
               <span className={`status-dot ${st.cls}`} data-tip={st.label} />
               <a href="#" onClick={(e) => (e.preventDefault(), props.onElement(el.id))}>
@@ -773,7 +870,12 @@ function FormationRows(props: {
               {el.isHQ && <span className="faint small"> · штаб</span>}
               {sectorName(el) && <span className="badge sector-badge">{sectorName(el)}</span>}
               {effectsNext(b, E, el).length > 0 && (
-                <span className="badge info fx-badge" data-tip={effectsNext(b, E, el).map((x) => `«${x.name}» до ${x.until}-го хода`).join('\n')}>
+                <span
+                  className="badge info fx-badge"
+                  data-tip={effectsNext(b, E, el)
+                    .map((x) => `«${x.name}» до ${x.until}-го хода`)
+                    .join('\n')}
+                >
                   ◌ {effectsNext(b, E, el).length === 1 ? effectsNext(b, E, el)[0].name : `эффектов: ${effectsNext(b, E, el).length}`}
                 </span>
               )}
@@ -785,7 +887,12 @@ function FormationRows(props: {
                 <span className={`small ${st.cls}`}>{st.label}</span>
               )}
               {el.status === 'pending' && !b.finished && (
-                <button type="button" className="link-btn small" onClick={() => iv('arrive', { elementIds: [el.id] })} title="Подкрепление подходит раньше плана (вмешательство ГМ)">
+                <button
+                  type="button"
+                  className="link-btn small"
+                  onClick={() => iv('arrive', { elementIds: [el.id] })}
+                  title="Подкрепление подходит раньше плана (вмешательство ГМ)"
+                >
                   {' '}
                   ввести сейчас
                 </button>
@@ -807,7 +914,7 @@ function FormationRows(props: {
                 {f.suppression && <td className={`num ${el.suppression > 50 ? 'bad' : ''}`}>{Math.round(el.suppression)}</td>}
                 {f.fatigue && <td className="num">{Math.round(el.fatigue)}</td>}
                 {f.ammo && <td className={`num ${el.ammo < b.ruleset.coefficients.lowAmmoThreshold ? 'bad' : ''}`}>{Math.round(el.ammo)}</td>}
-                {f.detection && <td className="center">{el.status === 'active' ? (el.spotted ? 'да' : <span className="faint">—</span>) : ''}</td>}
+                {f.detection && <td className="center">{el.status === 'active' ? el.spotted ? 'да' : <span className="faint">—</span> : ''}</td>}
               </>
             )}
           </tr>
@@ -929,12 +1036,18 @@ function ElementModal({
             </Btn>
             <div className="grow" />
             {canEdit && (
-              <Btn onClick={() => onEffect({ side: el.side, elementIds: [el.id], label: el.name })} title="Временный эффект на этот элемент: дым, внезапность, растерянность…">
+              <Btn
+                onClick={() => onEffect({ side: el.side, elementIds: [el.id], label: el.name })}
+                title="Временный эффект на этот элемент: дым, внезапность, растерянность…"
+              >
                 Эффект…
               </Btn>
             )}
             {canEdit && (b.support ?? []).some((a) => a.side !== el.side && a.left > 0) && (
-              <Btn onClick={() => onStrike(el.side === 'A' ? 'B' : 'A', { side: el.side, elementIds: [el.id], label: el.name })} title="Удар огневой поддержки противника по этому элементу">
+              <Btn
+                onClick={() => onStrike(el.side === 'A' ? 'B' : 'A', { side: el.side, elementIds: [el.id], label: el.name })}
+                title="Удар огневой поддержки противника по этому элементу"
+              >
                 Удар…
               </Btn>
             )}
@@ -960,11 +1073,21 @@ function ElementModal({
           {canEdit && (
             <div className="row" style={{ alignItems: 'flex-end' }}>
               <Field label="Приказ">
-                <Sel value={el.orderId} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={rs.orders.map((o) => ({ value: o.id, label: o.name }))} />
+                <Sel
+                  value={el.orderId}
+                  onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })}
+                  options={rs.orders.map((o) => ({ value: o.id, label: o.name }))}
+                />
               </Field>
               {rs.features.command && ((el.ownCommandLevel ?? 0) > 0 || editing) && (
                 <Field label="Свой командир" hint="Обычно элементом командует его формирование; здесь ГМ может дать элементу собственного командира.">
-                  <CommanderSelect levels={rs.commandLevels} allowNone tip={CMD_TIP} value={el.ownCommandLevel ?? 0} onChange={(v) => iv('editElement', { elementId: el.id, patch: { ownCommandLevel: v } })} />
+                  <CommanderSelect
+                    levels={rs.commandLevels}
+                    allowNone
+                    tip={CMD_TIP}
+                    value={el.ownCommandLevel ?? 0}
+                    onChange={(v) => iv('editElement', { elementId: el.id, patch: { ownCommandLevel: v } })}
+                  />
                 </Field>
               )}
               {editing && (
@@ -980,7 +1103,11 @@ function ElementModal({
                       ]}
                     />
                   </Field>
-                  <Check value={el.holdFast} onChange={(v) => iv('editElement', { elementId: el.id, patch: { holdFast: v } })} title="Не отходит добровольно; шанс паники вдвое ниже">
+                  <Check
+                    value={el.holdFast}
+                    onChange={(v) => iv('editElement', { elementId: el.id, patch: { holdFast: v } })}
+                    title="Не отходит добровольно; шанс паники вдвое ниже"
+                  >
                     стоять насмерть
                   </Check>
                 </>
@@ -1005,7 +1132,14 @@ function ElementModal({
                     <td>{t.name}</td>
                     <td className="num nowrap">
                       {editing ? (
-                        <Num value={comps[c.typeId] ?? c.current} onChange={(v) => setComps({ ...comps, [c.typeId]: v })} min={0} integer width={64} title="Пополнение или списание" />
+                        <Num
+                          value={comps[c.typeId] ?? c.current}
+                          onChange={(v) => setComps({ ...comps, [c.typeId]: v })}
+                          min={0}
+                          integer
+                          width={64}
+                          title="Пополнение или списание"
+                        />
                       ) : (
                         <b>{c.current}</b>
                       )}{' '}
@@ -1013,7 +1147,11 @@ function ElementModal({
                     </td>
                     <td
                       className="num"
-                      data-tip={pers ? `убито ${c.kia}, ранено ${c.wia}, пропало ${c.mia}` : `уничтожено ${c.destroyed}, повреждено ${c.damaged}, брошено ${c.abandoned}`}
+                      data-tip={
+                        pers
+                          ? `убито ${c.kia}, ранено ${c.wia}, пропало ${c.mia}`
+                          : `уничтожено ${c.destroyed}, повреждено ${c.damaged}, брошено ${c.abandoned}`
+                      }
                     >
                       {lost > 0 ? <span className="bad">−{lost}</span> : <span className="faint">—</span>}
                     </td>
@@ -1043,7 +1181,13 @@ function ElementModal({
             <div className="fields" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
               {stateKeys.map((x) => (
                 <Field key={x.key} label={x.label}>
-                  <Num value={patch[x.key] ?? Math.round(el[x.key] as number)} onChange={(v) => setPatch({ ...patch, [x.key]: v })} min={0} max={100} width="100%" />
+                  <Num
+                    value={patch[x.key] ?? Math.round(el[x.key] as number)}
+                    onChange={(v) => setPatch({ ...patch, [x.key]: v })}
+                    min={0}
+                    max={100}
+                    width="100%"
+                  />
                 </Field>
               ))}
             </div>
@@ -1185,7 +1329,10 @@ function FormationModal({
             </Btn>
           )}
           {!b.finished && (b.support ?? []).some((a) => a.side !== fs.side && a.left > 0) && (
-            <Btn onClick={() => onStrike(fs.side === 'A' ? 'B' : 'A', { side: fs.side, formationId: fs.id, label: fs.name })} title="Удар огневой поддержки противника по этому формированию">
+            <Btn
+              onClick={() => onStrike(fs.side === 'A' ? 'B' : 'A', { side: fs.side, formationId: fs.id, label: fs.name })}
+              title="Удар огневой поддержки противника по этому формированию"
+            >
               Удар…
             </Btn>
           )}
@@ -1215,7 +1362,11 @@ function FormationModal({
         </Field>
         {rs.features.command && (
           <Field label="Командир">
-            <Sel value={cmd} onChange={setCmd} options={[{ value: 0, label: 'без командира' }, ...rs.commandLevels.map((l, i) => ({ value: i + 1, label: `${i + 1}. ${l.name}` }))]} />
+            <Sel
+              value={cmd}
+              onChange={setCmd}
+              options={[{ value: 0, label: 'без командира' }, ...rs.commandLevels.map((l, i) => ({ value: i + 1, label: `${i + 1}. ${l.name}` }))]}
+            />
           </Field>
         )}
         {rs.features.comms && (
@@ -1293,7 +1444,12 @@ function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onE
               полный отчёт (ГМ)
             </Btn>
             {SIDES.map((sd) => (
-              <Btn key={sd} sm onClick={() => copyText(formatSideReport(b, sd))} title="Свои силы и потери — точно, противник — оценкой: чем хуже разведданные и чем меньше противника видели, тем шире диапазон">
+              <Btn
+                key={sd}
+                sm
+                onClick={() => copyText(formatSideReport(b, sd))}
+                title="Свои силы и потери — точно, противник — оценкой: чем хуже разведданные и чем меньше противника видели, тем шире диапазон"
+              >
                 донесение для «{b.sides[sd].name}»
               </Btn>
             ))}
@@ -1360,7 +1516,6 @@ function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onE
           </div>
         </Section>
       )}
-
     </div>
   );
 }

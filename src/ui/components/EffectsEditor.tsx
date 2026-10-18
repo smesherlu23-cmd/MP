@@ -33,7 +33,12 @@ export function EffectsEditor(props: { value: Effects; onChange: (v: Effects) =>
         );
       })}
       {free.length > 0 && (
-        <select className="eff-add" value="" onChange={(e) => e.target.value && set(e.target.value as StatKey, 1)} title="Добавить эффект (множитель характеристики)">
+        <select
+          className="eff-add"
+          value=""
+          onChange={(e) => e.target.value && set(e.target.value as StatKey, 1)}
+          title="Добавить эффект (множитель характеристики)"
+        >
           <option value="">+ эффект</option>
           {free.map((k) => (
             <option key={k} value={k} title={STAT_HINTS[k]}>

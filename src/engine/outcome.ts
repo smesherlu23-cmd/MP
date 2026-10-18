@@ -166,7 +166,19 @@ function summarize(E: EngineContext, els: ElementState[]): UnitSummary {
       if (t.kind !== 'personnel') {
         const q =
           equipment.get(t.id) ??
-          ({ typeId: t.id, name: t.name, kind: t.kind, authorized: 0, start: 0, current: 0, destroyed: 0, damaged: 0, abandoned: 0, losses: 0, lossPct: 0 } as EquipmentStats);
+          ({
+            typeId: t.id,
+            name: t.name,
+            kind: t.kind,
+            authorized: 0,
+            start: 0,
+            current: 0,
+            destroyed: 0,
+            damaged: 0,
+            abandoned: 0,
+            losses: 0,
+            lossPct: 0,
+          } as EquipmentStats);
         q.authorized += c.authorized;
         q.start += c.start;
         q.current += c.current;
@@ -248,12 +260,21 @@ export function computeResult(E: EngineContext): BattleResult {
       let grew = true;
       while (grew) {
         grew = false;
-        for (const x of b.formations) if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) {
-          ids.add(x.id);
-          grew = true;
-        }
+        for (const x of b.formations)
+          if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) {
+            ids.add(x.id);
+            grew = true;
+          }
       }
-      formations.push({ ...summarize(E, els.filter((x) => ids.has(x.formationId))), formationId: fid, name: f.name, depth });
+      formations.push({
+        ...summarize(
+          E,
+          els.filter((x) => ids.has(x.formationId)),
+        ),
+        formationId: fid,
+        name: f.name,
+        depth,
+      });
       for (const ch of b.formations.filter((x) => x.parentId === fid)) walk(ch.id, depth + 1);
     };
     for (const f of b.formations.filter((x) => x.side === side && !x.parentId)) walk(f.id, 0);

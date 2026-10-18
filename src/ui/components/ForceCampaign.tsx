@@ -26,7 +26,9 @@ export function RestModal({ force, rs, onClose }: { force: UnitNode; rs: Ruleset
             onClick={() => {
               historyStep(`отдых «${force.name}»`);
               updateForce(force.id, (d) => void Object.assign(d, preview.force));
-              toastUndoable(`«${force.name}»: отдых ${days} ${plural(days, 'день', 'дня', 'дней')} — в строй вернулось ${fmt0(preview.personnel)} чел.${preview.equipment ? `, отремонтировано ${preview.equipment} ед.` : ''}`);
+              toastUndoable(
+                `«${force.name}»: отдых ${days} ${plural(days, 'день', 'дня', 'дней')} — в строй вернулось ${fmt0(preview.personnel)} чел.${preview.equipment ? `, отремонтировано ${preview.equipment} ед.` : ''}`,
+              );
               onClose();
             }}
           >
@@ -55,8 +57,8 @@ export function RestModal({ force, rs, onClose }: { force: UnitNode; rs: Ruleset
         . Мораль, слаженность, готовность, усталость, боезапас, топливо и снаряжение приблизятся к норме.
       </div>
       <p className="faint small" style={{ marginBottom: 0 }}>
-        Темпы — в наборе правил, «Коэффициенты» → «Между боями (силы)»: раненые {k.restWoundedPerDay ?? 4}%/день, ремонт {k.restRepairPerDay ?? 6}%/день, состояние {k.restRecoverPerDay ?? 15}%/день.
-        Сверх штата в строй не возвращаются.
+        Темпы — в наборе правил, «Коэффициенты» → «Между боями (силы)»: раненые {k.restWoundedPerDay ?? 4}%/день, ремонт {k.restRepairPerDay ?? 6}%/день,
+        состояние {k.restRecoverPerDay ?? 15}%/день. Сверх штата в строй не возвращаются.
       </p>
     </Modal>
   );

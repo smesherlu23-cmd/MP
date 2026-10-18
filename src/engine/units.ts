@@ -276,8 +276,8 @@ export function updateFromTemplate(copy: UnitNode, template: UnitNode): UnitNode
     if (!cur) delete base.rulesetId;
     base.level = tpl.level;
     base.commandLevel = tpl.commandLevel;
-    base.order = isRoot && cur ? cur.order ?? tpl.order : tpl.order;
-    base.echelon = isRoot && cur ? cur.echelon ?? tpl.echelon : tpl.echelon;
+    base.order = isRoot && cur ? (cur.order ?? tpl.order) : tpl.order;
+    base.echelon = isRoot && cur ? (cur.echelon ?? tpl.echelon) : tpl.echelon;
     base.isHQ = tpl.isHQ;
     base.holdFast = tpl.holdFast;
     base.attackMod = tpl.attackMod;
@@ -293,7 +293,12 @@ export function updateFromTemplate(copy: UnitNode, template: UnitNode): UnitNode
       const old = cur?.composition.find((c) => c.typeId === tc.typeId);
       if (!old) return { ...tc };
       const full = old.current >= old.authorized;
-      return { typeId: tc.typeId, authorized: tc.authorized, current: full ? tc.authorized : Math.min(old.current, tc.authorized), recoverable: old.recoverable };
+      return {
+        typeId: tc.typeId,
+        authorized: tc.authorized,
+        current: full ? tc.authorized : Math.min(old.current, tc.authorized),
+        recoverable: old.recoverable,
+      };
     });
     // Подчинённые: сопоставление по узлу шаблона.
     const curChildren = cur?.children ?? [];

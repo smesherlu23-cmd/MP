@@ -4,7 +4,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { makeDemoBattalion, makeDemoScenario } from '../src/engine';
 import { openApp, openFromNav, startBattle } from './helpers';
 
-const blueStart = async (page: Page) => Number((await page.locator('.tbl.compare tr', { hasText: 'Личный состав' }).locator('td').nth(1).locator('b').first().textContent())!.replace(/\s/g, ''));
+const blueStart = async (page: Page) =>
+  Number((await page.locator('.tbl.compare tr', { hasText: 'Личный состав' }).locator('td').nth(1).locator('b').first().textContent())!.replace(/\s/g, ''));
 
 test('итоги боя записываются в силы, а не в шаблон; следующий бой — с этими потерями', async ({ page }) => {
   const errors = await openApp(page);

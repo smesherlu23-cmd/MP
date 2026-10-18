@@ -82,7 +82,11 @@ export function Num(props: {
     return x;
   };
   return (
-    <span className={`numwrap${props.suffix ? (props.suffix.length > 1 ? ' has-suffix long-suffix' : ' has-suffix') : ''}`} style={{ width: props.width ?? 90 }} title={props.title}>
+    <span
+      className={`numwrap${props.suffix ? (props.suffix.length > 1 ? ' has-suffix long-suffix' : ' has-suffix') : ''}`}
+      style={{ width: props.width ?? 90 }}
+      title={props.title}
+    >
       <input
         type="text"
         inputMode="decimal"
@@ -146,7 +150,14 @@ export function Range(props: { value: number; onChange: (v: number) => void; min
   );
 }
 
-export function Txt(props: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string; width?: number | string; autoFocus?: boolean }) {
+export function Txt(props: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  width?: number | string;
+  autoFocus?: boolean;
+}) {
   return (
     <input
       type="text"
@@ -161,7 +172,15 @@ export function Txt(props: { value: string; onChange: (v: string) => void; place
 }
 
 export function Area(props: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number }) {
-  return <textarea value={props.value ?? ''} rows={props.rows ?? 3} placeholder={props.placeholder} style={{ width: '100%' }} onChange={(e) => props.onChange(e.target.value)} />;
+  return (
+    <textarea
+      value={props.value ?? ''}
+      rows={props.rows ?? 3}
+      placeholder={props.placeholder}
+      style={{ width: '100%' }}
+      onChange={(e) => props.onChange(e.target.value)}
+    />
+  );
 }
 
 export function Sel<T extends string | number>(props: {
@@ -181,7 +200,9 @@ export function Sel<T extends string | number>(props: {
       style={props.width ? { width: props.width } : undefined}
       onChange={(e) => props.onChange((isNum ? Number(e.target.value) : e.target.value) as T)}
     >
-      {!props.options.some((o) => String(o.value) === String(props.value)) && <option value={String(props.value)}>— {String(props.value) || 'не выбрано'} —</option>}
+      {!props.options.some((o) => String(o.value) === String(props.value)) && (
+        <option value={String(props.value)}>— {String(props.value) || 'не выбрано'} —</option>
+      )}
       {props.options.map((o) => (
         <option key={String(o.value)} value={String(o.value)} title={o.title}>
           {o.label}
@@ -300,7 +321,9 @@ export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefine
           <div ref={pop} className="menu-pop" role="menu" style={{ top: pos.top, right: pos.right }}>
             {items.map((it, i) =>
               it === 'sep' ? (
-                i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? <hr key={i} className="menu-sep" /> : null
+                i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? (
+                  <hr key={i} className="menu-sep" />
+                ) : null
               ) : (
                 <button
                   key={i}
@@ -376,7 +399,14 @@ export function Section(props: {
   );
 }
 
-export function Card(props: { title?: ReactNode; actions?: ReactNode; children?: ReactNode; tight?: boolean; className?: string; style?: React.CSSProperties }) {
+export function Card(props: {
+  title?: ReactNode;
+  actions?: ReactNode;
+  children?: ReactNode;
+  tight?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
   return (
     <div className={`card ${props.className ?? ''}`} style={props.style}>
       {(props.title || props.actions) && (
@@ -424,9 +454,11 @@ export function Tags(props: { value: string[]; onChange: (v: string[]) => void; 
       />
       {props.suggestions?.length ? (
         <datalist id={listId}>
-          {props.suggestions.filter((s) => !props.value.includes(s)).map((s) => (
-            <option key={s} value={s} />
-          ))}
+          {props.suggestions
+            .filter((s) => !props.value.includes(s))
+            .map((s) => (
+              <option key={s} value={s} />
+            ))}
         </datalist>
       ) : null}
     </div>

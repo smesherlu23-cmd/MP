@@ -6,7 +6,13 @@ import './styles.css';
 
 function Boot() {
   const loaded = useApp((s) => s.loaded);
-  return loaded ? <App /> : <div className="empty" style={{ paddingTop: 120 }}>Загрузка данных…</div>;
+  return loaded ? (
+    <App />
+  ) : (
+    <div className="empty" style={{ paddingTop: 120 }}>
+      Загрузка данных…
+    </div>
+  );
 }
 
 window.addEventListener('beforeunload', () => {

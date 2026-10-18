@@ -9,7 +9,16 @@ export * from './defaults';
 export { EngineContext } from './context';
 export { createBattle, stepTurn, runToEnd, combatEffectiveness, shooterMult, elementsOfNode, arrivalTurn, eventTurn, triggerMet, triggerText } from './battle';
 export { computeResult, defaultObjectives, explainResult } from './outcome';
-export { INTERVENTION_LABELS, applyIntervention, lastBattleAction, replayBattle, restoreBattleLog, rewindBattle, trimBattleForStorage, undoBattleAction } from './interventions';
+export {
+  INTERVENTION_LABELS,
+  applyIntervention,
+  lastBattleAction,
+  replayBattle,
+  restoreBattleLog,
+  rewindBattle,
+  trimBattleForStorage,
+  undoBattleAction,
+} from './interventions';
 export type { ElementPatch } from './interventions';
 export { formatReport, formatSideReport, formatLog, formatFactor, intelError, resolveRefs } from './report';
 export * from './montecarlo';

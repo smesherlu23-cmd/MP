@@ -159,25 +159,92 @@ export function aggregate(runs: RunSummary[], ruleset: Ruleset, sideNames: Recor
   const outcomes = [...buckets.values()].map((b) => ({ ...b, pct: n ? (b.count / n) * 100 : 0 })).sort((a, b) => rank(a) - rank(b));
 
   const metrics: MetricRow[] = [];
-  const add = (key: string, label: string, unit: string, side: SideId | null, values: number[]) => metrics.push({ key, label, unit, side, stats: stats(values), values });
-  add('turns', 'Длительность боя', 'ход.', null, runs.map((r) => r.turns));
+  const add = (key: string, label: string, unit: string, side: SideId | null, values: number[]) =>
+    metrics.push({ key, label, unit, side, stats: stats(values), values });
+  add(
+    'turns',
+    'Длительность боя',
+    'ход.',
+    null,
+    runs.map((r) => r.turns),
+  );
   for (const side of ['A', 'B'] as SideId[]) {
     const pick = (f: (s: RunSideSummary) => number) => runs.map((r) => f(r.sides[side]));
-    add(`${side}.personnelLoss`, 'Потери личного состава', 'чел.', side, pick((s) => s.personnelLoss));
-    add(`${side}.personnelLossPct`, 'Потери личного состава', '%', side, pick((s) => s.personnelLossPct));
-    add(`${side}.kia`, '  в т.ч. убитыми', 'чел.', side, pick((s) => s.kia));
+    add(
+      `${side}.personnelLoss`,
+      'Потери личного состава',
+      'чел.',
+      side,
+      pick((s) => s.personnelLoss),
+    );
+    add(
+      `${side}.personnelLossPct`,
+      'Потери личного состава',
+      '%',
+      side,
+      pick((s) => s.personnelLossPct),
+    );
+    add(
+      `${side}.kia`,
+      '  в т.ч. убитыми',
+      'чел.',
+      side,
+      pick((s) => s.kia),
+    );
     const typeIds = new Set<string>();
     for (const r of runs) for (const id of Object.keys(r.sides[side].equipmentLoss)) typeIds.add(id);
     for (const id of typeIds) {
       const t = ruleset.componentTypes.find((x) => x.id === id);
-      add(`${side}.eq.${id}`, `Потери: ${t?.name ?? id}`, 'ед.', side, pick((s) => s.equipmentLoss[id] ?? 0));
+      add(
+        `${side}.eq.${id}`,
+        `Потери: ${t?.name ?? id}`,
+        'ед.',
+        side,
+        pick((s) => s.equipmentLoss[id] ?? 0),
+      );
     }
-    add(`${side}.valueLossPct`, 'Потеря боевой ценности', '%', side, pick((s) => s.valueLossPct));
-    add(`${side}.ce`, 'Остаточная боеспособность', '%', side, pick((s) => s.ce));
-    add(`${side}.organization`, 'Организация', '%', side, pick((s) => s.organization));
-    add(`${side}.morale`, 'Мораль в конце', '', side, pick((s) => s.morale));
-    add(`${side}.ammo`, 'Боезапас в конце', '%', side, pick((s) => s.ammo));
-    add(`${side}.score`, 'Выполнение задач', '%', side, pick((s) => s.score));
+    add(
+      `${side}.valueLossPct`,
+      'Потеря боевой ценности',
+      '%',
+      side,
+      pick((s) => s.valueLossPct),
+    );
+    add(
+      `${side}.ce`,
+      'Остаточная боеспособность',
+      '%',
+      side,
+      pick((s) => s.ce),
+    );
+    add(
+      `${side}.organization`,
+      'Организация',
+      '%',
+      side,
+      pick((s) => s.organization),
+    );
+    add(
+      `${side}.morale`,
+      'Мораль в конце',
+      '',
+      side,
+      pick((s) => s.morale),
+    );
+    add(
+      `${side}.ammo`,
+      'Боезапас в конце',
+      '%',
+      side,
+      pick((s) => s.ammo),
+    );
+    add(
+      `${side}.score`,
+      'Выполнение задач',
+      '%',
+      side,
+      pick((s) => s.score),
+    );
   }
   return {
     runs,

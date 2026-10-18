@@ -32,11 +32,11 @@ export function phaseDetection(E: EngineContext) {
       const observers = b.sectors ? allObservers.filter((o) => o.sector === t.sector) : allObservers;
       const band = E.bandOf(t);
       const base = band?.detection ?? 0.5;
-      const conceal = Math.max(0.05, E.mult(t, 'concealment') * echelonConceal(E, t) / (t.firedLastTurn ? k.firingReveal : 1));
+      const conceal = Math.max(0.05, (E.mult(t, 'concealment') * echelonConceal(E, t)) / (t.firedLastTurn ? k.firingReveal : 1));
       const scores: { p: number; w: number; o: ElementState }[] = [];
       for (const o of observers) {
         const det = E.mult(o, 'detection', { enemy: t });
-        const p = clamp(base * det / conceal + (t.spottedLastTurn ? k.spottedPersistence : 0), k.detectMin, k.detectMax);
+        const p = clamp((base * det) / conceal + (t.spottedLastTurn ? k.spottedPersistence : 0), k.detectMin, k.detectMax);
         const w = E.isRecon(o) ? k.reconObserverWeight : k.observerWeight;
         scores.push({ p, w, o });
       }

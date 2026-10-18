@@ -17,7 +17,9 @@ test('на сторону — силы целиком и частями, нов�
   await modal.locator('.pick-row', { hasText: '1-й мотострелковый батальон' }).locator('.side-fold').click();
   await modal.locator('.pick-row', { hasText: '2-я мотострелковая рота' }).locator('input[type=checkbox]').check();
   await modal.getByRole('button', { name: 'Добавить (1)' }).click();
-  await expect(blue.locator('.side-unit', { hasText: '2-я мотострелковая рота · 1-й мотострелковый батальон' }).locator('.badge', { hasText: 'часть' })).toHaveCount(1);
+  await expect(
+    blue.locator('.side-unit', { hasText: '2-я мотострелковая рота · 1-й мотострелковый батальон' }).locator('.badge', { hasText: 'часть' }),
+  ).toHaveCount(1);
 
   // Новые силы по шаблону ×2 — сразу на сторону и в «Силы».
   await blue.getByRole('button', { name: '+ Добавить на сторону…' }).click();

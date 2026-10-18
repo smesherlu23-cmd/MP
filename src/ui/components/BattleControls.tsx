@@ -114,7 +114,9 @@ export function ForecastModal({ b, onClose }: { b: Battle; onClose: () => void }
     void run();
     return () => void (closed.current = true);
   }, []);
-  const cols: { title: string; r: MonteCarloResult }[] = res ? [{ title: decisions.length ? 'С вашими решениями' : 'Если продолжить', r: res.now }, ...(res.without ? [{ title: 'Без них', r: res.without }] : [])] : [];
+  const cols: { title: string; r: MonteCarloResult }[] = res
+    ? [{ title: decisions.length ? 'С вашими решениями' : 'Если продолжить', r: res.now }, ...(res.without ? [{ title: 'Без них', r: res.without }] : [])]
+    : [];
   const row = (label: string, fn: (r: MonteCarloResult) => React.ReactNode) => (
     <tr>
       <td>{label}</td>
@@ -155,7 +157,11 @@ export function ForecastModal({ b, onClose }: { b: Battle; onClose: () => void }
           Ваши решения после {b.turn}-го хода:{' '}
           {b.log
             .filter((l) => l.phase === 'gm' && l.turn === b.turn)
-            .map((l) => resolveRefs(l.text, b).replace(/^ГМ( изменил)?:?\s*/, '').replace(/\.$/, ''))
+            .map((l) =>
+              resolveRefs(l.text, b)
+                .replace(/^ГМ( изменил)?:?\s*/, '')
+                .replace(/\.$/, ''),
+            )
             .join('; ') || `${decisions.length}`}
           . {base ? 'Справа — тот же бой без них.' : 'Сравнить без них не получилось: бой сохранён другой версией программы.'}
         </p>
@@ -189,9 +195,13 @@ export function ForecastModal({ b, onClose }: { b: Battle; onClose: () => void }
                 </td>
               ))}
             </tr>
-            {row(`Победа: ${b.sides.A.name}`, (r) => <b style={{ color: b.sides.A.color }}>{pct(r.winA)}</b>)}
+            {row(`Победа: ${b.sides.A.name}`, (r) => (
+              <b style={{ color: b.sides.A.color }}>{pct(r.winA)}</b>
+            ))}
             {row('Ничья', (r) => pct(r.draw))}
-            {row(`Победа: ${b.sides.B.name}`, (r) => <b style={{ color: b.sides.B.color }}>{pct(r.winB)}</b>)}
+            {row(`Победа: ${b.sides.B.name}`, (r) => (
+              <b style={{ color: b.sides.B.color }}>{pct(r.winB)}</b>
+            ))}
             {row(`Потери к концу: ${b.sides.A.name}`, (r) => `${fmt0(mean(r, 'A.personnelLoss'))} чел. · ${pct(mean(r, 'A.personnelLossPct'))}`)}
             {row(`Потери к концу: ${b.sides.B.name}`, (r) => `${fmt0(mean(r, 'B.personnelLoss'))} чел. · ${pct(mean(r, 'B.personnelLossPct'))}`)}
             {row('Бой продлится до хода (в среднем)', (r) => fmt0(mean(r, 'turns')))}
@@ -200,7 +210,14 @@ export function ForecastModal({ b, onClose }: { b: Battle; onClose: () => void }
       )}
       {res && (
         <div className="faint small" style={{ marginTop: 8 }}>
-          Самые частые исходы: {res.now.outcomes.slice().sort((a, b2) => b2.count - a.count).slice(0, 3).map((o) => `${o.label} — ${pct(o.pct)}`).join('; ')}.
+          Самые частые исходы:{' '}
+          {res.now.outcomes
+            .slice()
+            .sort((a, b2) => b2.count - a.count)
+            .slice(0, 3)
+            .map((o) => `${o.label} — ${pct(o.pct)}`)
+            .join('; ')}
+          .
         </div>
       )}
     </Modal>
@@ -273,7 +290,21 @@ export function EffectModal({ b, target, onClose, iv }: { b: Battle; target: Tar
 // ------------------------------------------------------------------ удар огневой поддержки
 
 /** Вызвать удар: средство стороны side по цели на стороне противника. */
-export function StrikeModal({ b, side, target, assetId, onClose, iv }: { b: Battle; side: SideId; target?: Target; assetId?: string; onClose: () => void; iv: Iv }) {
+export function StrikeModal({
+  b,
+  side,
+  target,
+  assetId,
+  onClose,
+  iv,
+}: {
+  b: Battle;
+  side: SideId;
+  target?: Target;
+  assetId?: string;
+  onClose: () => void;
+  iv: Iv;
+}) {
   const assets = (b.support ?? []).filter((a) => a.side === side);
   const [asset, setAsset] = useState(assetId ?? assets.find((a) => a.left > 0)?.id ?? '');
   const enemy = other(side);
@@ -341,7 +372,17 @@ export function StrikeModal({ b, side, target, assetId, onClose, iv }: { b: Batt
 // ------------------------------------------------------------------ эффекты и поддержка в бою
 
 /** Действующие эффекты, средства поддержки и заказанные удары — с кнопками «снять», «удар», «отменить». */
-export function SupportPanel({ b, iv, onStrike, onEffect }: { b: Battle; iv: Iv; onStrike: (side: SideId, assetId?: string) => void; onEffect: (t: Target) => void }) {
+export function SupportPanel({
+  b,
+  iv,
+  onStrike,
+  onEffect,
+}: {
+  b: Battle;
+  iv: Iv;
+  onStrike: (side: SideId, assetId?: string) => void;
+  onEffect: (t: Target) => void;
+}) {
   const next = b.turn + 1;
   const effects = (b.effects ?? []).filter((x) => x.until >= next);
   const strikes = (b.strikes ?? []).filter((x) => !x.done && x.turn >= next);
@@ -368,7 +409,12 @@ export function SupportPanel({ b, iv, onStrike, onEffect }: { b: Battle; iv: Iv;
               <b style={{ color: b.sides[side].color }}>{b.sides[side].name}</b>
               <span className="grow" />
               {live && (
-                <button type="button" className="link-btn small" onClick={() => onEffect({ side, label: `вся сторона «${b.sides[side].name}»` })} title="Временный эффект на всю сторону">
+                <button
+                  type="button"
+                  className="link-btn small"
+                  onClick={() => onEffect({ side, label: `вся сторона «${b.sides[side].name}»` })}
+                  title="Временный эффект на всю сторону"
+                >
                   + эффект
                 </button>
               )}
@@ -378,7 +424,10 @@ export function SupportPanel({ b, iv, onStrike, onEffect }: { b: Battle; iv: Iv;
               return (
                 <div key={a.id} className="support-item">
                   <span className="grow">
-                    ✦ {a.name} <span className="faint small">· {a.count} × {t?.name ?? '?'}</span>
+                    ✦ {a.name}{' '}
+                    <span className="faint small">
+                      · {a.count} × {t?.name ?? '?'}
+                    </span>
                   </span>
                   <span className={`small ${a.left ? '' : 'faint'}`}>
                     {a.left} из {a.missions}
@@ -465,7 +514,14 @@ export function GroupEditModal({ b, ids, onClose, iv }: { b: Battle; ids: string
     >
       <div className="fields" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))' }}>
         {fields.map((x) => (
-          <Field key={x.key} label={<>{x.label} <span className="faint small">· сейчас в среднем {avg(x.key)}</span></>}>
+          <Field
+            key={x.key}
+            label={
+              <>
+                {x.label} <span className="faint small">· сейчас в среднем {avg(x.key)}</span>
+              </>
+            }
+          >
             <div className="row" style={{ gap: 4, flexWrap: 'nowrap' }}>
               <Check
                 value={x.key in patch}
@@ -476,7 +532,13 @@ export function GroupEditModal({ b, ids, onClose, iv }: { b: Battle; ids: string
                   setPatch(next);
                 }}
               />
-              <Num value={patch[x.key] ?? avg(x.key)} onChange={(v) => setPatch({ ...patch, [x.key]: Math.max(0, Math.min(100, v)) })} min={0} max={100} width="100%" />
+              <Num
+                value={patch[x.key] ?? avg(x.key)}
+                onChange={(v) => setPatch({ ...patch, [x.key]: Math.max(0, Math.min(100, v)) })}
+                min={0}
+                max={100}
+                width="100%"
+              />
             </div>
           </Field>
         ))}

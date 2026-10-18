@@ -64,7 +64,15 @@ function jumpTo(key: string): boolean {
   const ref = i < 0 ? undefined : key.slice(i + 1);
   const exists =
     s.tabs.some((t) => t.key === key) ||
-    (kind === 'scenario' || kind === 'montecarlo' ? !!s.scenarios[ref!] : kind === 'ruleset' ? !!s.rulesets[ref!] : kind === 'formation' ? !!resolveFormation(ref!) : kind === 'battle' ? !!s.battleIndex[ref!] : true);
+    (kind === 'scenario' || kind === 'montecarlo'
+      ? !!s.scenarios[ref!]
+      : kind === 'ruleset'
+        ? !!s.rulesets[ref!]
+        : kind === 'formation'
+          ? !!resolveFormation(ref!)
+          : kind === 'battle'
+            ? !!s.battleIndex[ref!]
+            : true);
   if (!exists) return false;
   jumping = true;
   openTab(kind, ref);

@@ -12,7 +12,15 @@ export function battleForces(b: Battle) {
 
 export async function applyResultsToForces(b: Battle) {
   const forces = useApp.getState().forces;
-  if (b.appliedToForces && !(await confirmDialog('Итоги уже записаны', `Итоги этого боя записаны в силы ${fmtDate(b.appliedToForces)}. Записать ещё раз? Потери вычтутся повторно.`, 'Записать ещё раз', true)))
+  if (
+    b.appliedToForces &&
+    !(await confirmDialog(
+      'Итоги уже записаны',
+      `Итоги этого боя записаны в силы ${fmtDate(b.appliedToForces)}. Записать ещё раз? Потери вычтутся повторно.`,
+      'Записать ещё раз',
+      true,
+    ))
+  )
     return;
   const { updated, changes } = applyBattleToForces(b, forces);
   if (!updated.length) return;

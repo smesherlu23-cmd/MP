@@ -75,7 +75,10 @@ export function phaseInitiative(E: EngineContext): Initiative {
     text: `Инициатива: ${s(first)}${reason} (${Math.round(scores[first])} против ${Math.round(scores[E.enemyOf(first)])}). ${
       sequential ? 'Первый огонь — за ними.' : `Их огонь ×${k.initiativeBonus}.`
     }`,
-    factors: [...breakdown[first].map((x) => ({ ...x, label: `${b.sides[first].name}: ${x.label}` })), ...breakdown[E.enemyOf(first)].map((x) => ({ ...x, label: `${b.sides[E.enemyOf(first)].name}: ${x.label}` }))],
+    factors: [
+      ...breakdown[first].map((x) => ({ ...x, label: `${b.sides[first].name}: ${x.label}` })),
+      ...breakdown[E.enemyOf(first)].map((x) => ({ ...x, label: `${b.sides[E.enemyOf(first)].name}: ${x.label}` })),
+    ],
   });
   return { first, sequential, bonusSide: sequential ? null : first };
 }

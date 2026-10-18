@@ -253,8 +253,16 @@ function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false)[] {
       },
     },
     !isRoot && { label: 'Дублировать', kbd: 'Ctrl+D', onClick: () => duplicateNode(ctx, node) },
-    !isRoot && { label: 'Раньше в списке', disabled: idx <= 0, onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx - 1].id, 'before', true)) },
-    !isRoot && { label: 'Позже в списке', disabled: !parent || idx >= parent.children.length - 1, onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx + 1].id, 'after', true)) },
+    !isRoot && {
+      label: 'Раньше в списке',
+      disabled: idx <= 0,
+      onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx - 1].id, 'before', true)),
+    },
+    !isRoot && {
+      label: 'Позже в списке',
+      disabled: !parent || idx >= parent.children.length - 1,
+      onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx + 1].id, 'after', true)),
+    },
     'sep',
     { label: 'Сохранить как шаблон', tip: 'Устройство и штат этого подразделения — отдельным шаблоном', onClick: () => saveAsTemplate(node, ctx.rs) },
     !!tpl && outdated && { label: 'Обновить из шаблона', onClick: () => updateCopy(ctx.ref, node.id), tip: `Шаблон «${tpl.name}» изменён после вставки` },
@@ -477,11 +485,19 @@ export function FormationPage({ tab }: { tab: Tab }) {
   const outdatedUsages = usages.filter((u) => u.outdated).length;
   const forceCopies = usages.filter((u) => u.ref.startsWith('force:')).length;
   const scenariosUsing = isLib ? [] : forceUsage(root.id);
-  const factions = [...new Set(Object.values(st.forces).map((f) => f.faction?.trim()).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, 'ru'));
+  const factions = [
+    ...new Set(
+      Object.values(st.forces)
+        .map((f) => f.faction?.trim())
+        .filter((x): x is string => !!x),
+    ),
+  ].sort((a, b) => a.localeCompare(b, 'ru'));
 
   return (
     <div className="page">
-      <Crumbs items={isLib ? [{ label: 'Шаблоны', section: 'units' }] : [{ label: 'Силы', section: 'forces' }, ...(root.faction ? [{ label: root.faction }] : [])]} />
+      <Crumbs
+        items={isLib ? [{ label: 'Шаблоны', section: 'units' }] : [{ label: 'Силы', section: 'forces' }, ...(root.faction ? [{ label: root.faction }] : [])]}
+      />
       <div className="page-head">
         <input className="title-input" value={root.name} onChange={(e) => ctx.upd((d) => void (d.name = e.target.value))} />
         <Seg
@@ -502,7 +518,11 @@ export function FormationPage({ tab }: { tab: Tab }) {
                     label: 'Создать силы по шаблону…',
                     tip: 'Конкретные подразделения с этим устройством и штатом — у каждого будут свои потери',
                     onClick: async () => {
-                      const v = await promptDialog('Сколько подразделений сил создать?', '1', `По шаблону «${root.name}». Названия — с номерами по порядку; их можно поменять.`);
+                      const v = await promptDialog(
+                        'Сколько подразделений сил создать?',
+                        '1',
+                        `По шаблону «${root.name}». Названия — с номерами по порядку; их можно поменять.`,
+                      );
                       const n = Math.round(Number(v));
                       if (!v || !Number.isFinite(n) || n < 1) return;
                       const ids = createForcesFromTemplate(root.id, { count: n, open: n === 1 });
@@ -515,7 +535,11 @@ export function FormationPage({ tab }: { tab: Tab }) {
                   { label: 'Удалить шаблон', danger: true, onClick: () => deleteFormation(root.id) },
                 ]
               : [
-                  { label: 'Отдых и восстановление…', onClick: () => setBetween('rest'), tip: 'Раненые возвращаются в строй, техника ремонтируется, мораль и усталость приходят в норму' },
+                  {
+                    label: 'Отдых и восстановление…',
+                    onClick: () => setBetween('rest'),
+                    tip: 'Раненые возвращаются в строй, техника ремонтируется, мораль и усталость приходят в норму',
+                  },
                   { label: 'Пополнить до штата…', onClick: () => setBetween('replenish'), tip: 'Довести численность людей и техники до штата' },
                   'sep' as const,
                   !!tpl && { label: `Открыть шаблон «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
@@ -532,7 +556,12 @@ export function FormationPage({ tab }: { tab: Tab }) {
       <div className="meta" style={{ marginTop: -8, marginBottom: 14 }}>
         <span>
           набор правил:{' '}
-          <select className="inline-select" value={rs.id} onChange={(e) => changeRuleset(e.target.value)} title="По какому набору правил считается это подразделение: каталог типов, уровни">
+          <select
+            className="inline-select"
+            value={rs.id}
+            onChange={(e) => changeRuleset(e.target.value)}
+            title="По какому набору правил считается это подразделение: каталог типов, уровни"
+          >
             {Object.values(st.rulesets).map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
@@ -568,7 +597,11 @@ export function FormationPage({ tab }: { tab: Tab }) {
               <>
                 {' '}
                 — <span className="warn">шаблон изменён</span>{' '}
-                <a href="#" onClick={(e) => (e.preventDefault(), updateCopy(ref, root.id))} title="Устройство и штат — из шаблона; названия, потери и состояние сил сохраняются">
+                <a
+                  href="#"
+                  onClick={(e) => (e.preventDefault(), updateCopy(ref, root.id))}
+                  title="Устройство и штат — из шаблона; названия, потери и состояние сил сохраняются"
+                >
                   обновить
                 </a>
               </>
@@ -639,7 +672,13 @@ export function FormationPage({ tab }: { tab: Tab }) {
       {between === 'rest' && <RestModal force={root} rs={rs} onClose={() => setBetween(null)} />}
       {between === 'replenish' && <ReplenishModal force={root} rs={rs} onClose={() => setBetween(null)} />}
       {typeMap && st.rulesets[typeMap.to] && (
-        <TypeMapModal from={rs} to={st.rulesets[typeMap.to]} ids={typeMap.ids} onClose={() => setTypeMap(null)} onApply={(map, copy) => applyTypeMap(typeMap.to, map, copy)} />
+        <TypeMapModal
+          from={rs}
+          to={st.rulesets[typeMap.to]}
+          ids={typeMap.ids}
+          onClose={() => setTypeMap(null)}
+          onApply={(map, copy) => applyTypeMap(typeMap.to, map, copy)}
+        />
       )}
     </div>
   );
@@ -788,7 +827,6 @@ function OrgBox({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       <div className="org-name">{node.name}</div>
       <div className="org-stats" data-tip={statsTip(st)}>
         {statsLine(st)}
-
       </div>
       <div className="org-badges">
         <NodeBadges ctx={ctx} node={node} />
@@ -1000,7 +1038,15 @@ function SummaryCard({ node, rs, resolved, template }: { node: UnitNode; rs: Rul
 
 // ------------------------------------------------------------------ редактор подразделения
 
-function InheritRange(props: { label: string; own: number | null | undefined; inherited: number; isRoot: boolean; onSet: (v: number) => void; onClear: () => void; hint?: string }) {
+function InheritRange(props: {
+  label: string;
+  own: number | null | undefined;
+  inherited: number;
+  isRoot: boolean;
+  onSet: (v: number) => void;
+  onClear: () => void;
+  hint?: string;
+}) {
   const isOwn = props.own !== undefined && props.own !== null;
   return (
     <Field
@@ -1008,7 +1054,12 @@ function InheritRange(props: { label: string; own: number | null | undefined; in
         <>
           {props.label}
           {isOwn ? (
-            <a href="#" className="small" onClick={(e) => (e.preventDefault(), props.onClear())} data-tip={props.isRoot ? 'Вернуть значение по умолчанию' : 'Брать значение у старшего'}>
+            <a
+              href="#"
+              className="small"
+              onClick={(e) => (e.preventDefault(), props.onClear())}
+              data-tip={props.isRoot ? 'Вернуть значение по умолчанию' : 'Брать значение у старшего'}
+            >
               ↺
             </a>
           ) : (
@@ -1098,7 +1149,12 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
             {node.attachedFrom !== undefined && (
               <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
                 придано из
-                <input value={node.attachedFrom} placeholder="откуда (необязательно)" onChange={(e) => un((n) => void (n.attachedFrom = e.target.value))} style={{ minHeight: 24, width: 200 }} />
+                <input
+                  value={node.attachedFrom}
+                  placeholder="откуда (необязательно)"
+                  onChange={(e) => un((n) => void (n.attachedFrom = e.target.value))}
+                  style={{ minHeight: 24, width: 200 }}
+                />
               </span>
             )}
           </div>
@@ -1116,7 +1172,10 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
             <Sel
               value={node.echelon ?? ''}
               onChange={(v) => un((n) => void (n.echelon = (v || null) as Echelon | null))}
-              options={[{ value: '', label: `${ECHELON_LABELS[pr.echelon]} (${inheritText})` }, ...(Object.keys(ECHELON_LABELS) as Echelon[]).map((k) => ({ value: k, label: ECHELON_LABELS[k] }))]}
+              options={[
+                { value: '', label: `${ECHELON_LABELS[pr.echelon]} (${inheritText})` },
+                ...(Object.keys(ECHELON_LABELS) as Echelon[]).map((k) => ({ value: k, label: ECHELON_LABELS[k] })),
+              ]}
             />
           </Field>
         </div>
@@ -1179,7 +1238,11 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
                 {node.composition.map((c, i) => (
                   <tr key={i}>
                     <td>
-                      <Sel value={c.typeId} onChange={(v) => un((n) => void (n.composition[i].typeId = v))} options={rs.componentTypes.map((tt) => ({ value: tt.id, label: tt.name }))} />
+                      <Sel
+                        value={c.typeId}
+                        onChange={(v) => un((n) => void (n.composition[i].typeId = v))}
+                        options={rs.componentTypes.map((tt) => ({ value: tt.id, label: tt.name }))}
+                      />
                     </td>
                     <td className="num">
                       <Num
@@ -1273,55 +1336,69 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       </Card>
 
       {!ctx.isLib && (
-      <Section
-        id="unit-state"
-        title={
-          <>
-            Состояние{' '}
-            <Info text="Незаданное значение берётся у старшего подразделения — так можно задать мораль или опыт целому батальону и уточнить только отдельные роты. Значок ↺ возвращает наследование." />
-          </>
-        }
-        summary={stateSummary}
-      >
-        <div className="fields two">
-          <Field label={<>Опыт{node.state.experience === undefined && <span className="faint small">· {inheritText}</span>}</>}>
-            <Sel
-              value={node.state.experience ?? 0}
-              onChange={(v) => setState('experience', v || undefined)}
-              options={[{ value: 0, label: `${expName(pr.state.experience)} (${inheritText})` }, ...rs.experienceLevels.map((_, i) => ({ value: i + 1, label: expName(i + 1) }))]}
-            />
-          </Field>
-          {stateKeys.map((k) => (
+        <Section
+          id="unit-state"
+          title={
+            <>
+              Состояние{' '}
+              <Info text="Незаданное значение берётся у старшего подразделения — так можно задать мораль или опыт целому батальону и уточнить только отдельные роты. Значок ↺ возвращает наследование." />
+            </>
+          }
+          summary={stateSummary}
+        >
+          <div className="fields two">
+            <Field label={<>Опыт{node.state.experience === undefined && <span className="faint small">· {inheritText}</span>}</>}>
+              <Sel
+                value={node.state.experience ?? 0}
+                onChange={(v) => setState('experience', v || undefined)}
+                options={[
+                  { value: 0, label: `${expName(pr.state.experience)} (${inheritText})` },
+                  ...rs.experienceLevels.map((_, i) => ({ value: i + 1, label: expName(i + 1) })),
+                ]}
+              />
+            </Field>
+            {stateKeys.map((k) => (
+              <InheritRange
+                key={k}
+                label={`${STATE_LABELS[k]}${k === 'morale' || k === 'cohesion' || k === 'readiness' ? '' : ', %'}`}
+                own={node.state[k]}
+                inherited={pr.state[k]}
+                isRoot={isRoot}
+                onSet={(v) => setState(k, v)}
+                onClear={() => setState(k, undefined)}
+              />
+            ))}
+            {ft.comms && (
+              <InheritRange
+                label="Связь, %"
+                own={node.comms}
+                inherited={pr.comms}
+                isRoot={isRoot}
+                onSet={(v) => un((n) => void (n.comms = v))}
+                onClear={() => un((n) => void (n.comms = null))}
+              />
+            )}
             <InheritRange
-              key={k}
-              label={`${STATE_LABELS[k]}${k === 'morale' || k === 'cohesion' || k === 'readiness' ? '' : ', %'}`}
-              own={node.state[k]}
-              inherited={pr.state[k]}
+              label="Снабжение, %"
+              own={node.supply}
+              inherited={pr.supply}
               isRoot={isRoot}
-              onSet={(v) => setState(k, v)}
-              onClear={() => setState(k, undefined)}
+              onSet={(v) => un((n) => void (n.supply = v))}
+              onClear={() => un((n) => void (n.supply = null))}
+              hint="Скорость подвоза боезапаса и топлива во время боя."
             />
-          ))}
-          {ft.comms && (
-            <InheritRange label="Связь, %" own={node.comms} inherited={pr.comms} isRoot={isRoot} onSet={(v) => un((n) => void (n.comms = v))} onClear={() => un((n) => void (n.comms = null))} />
-          )}
-          <InheritRange
-            label="Снабжение, %"
-            own={node.supply}
-            inherited={pr.supply}
-            isRoot={isRoot}
-            onSet={(v) => un((n) => void (n.supply = v))}
-            onClear={() => un((n) => void (n.supply = null))}
-            hint="Скорость подвоза боезапаса и топлива во время боя."
-          />
-        </div>
-      </Section>
+          </div>
+        </Section>
       )}
 
       <Section
         id="unit-extra"
         title="Дополнительно"
-        summary={[node.attackMod !== 100 && `атака ${node.attackMod}%`, node.defenseMod !== 100 && `защита ${node.defenseMod}%`, ...node.tags].filter(Boolean).join(', ') || 'атака и защита, теги, заметки'}
+        summary={
+          [node.attackMod !== 100 && `атака ${node.attackMod}%`, node.defenseMod !== 100 && `защита ${node.defenseMod}%`, ...node.tags]
+            .filter(Boolean)
+            .join(', ') || 'атака и защита, теги, заметки'
+        }
       >
         <div className="stack" style={{ gap: 10 }}>
           <div className="row">
@@ -1333,7 +1410,11 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
             </Field>
           </div>
           <Field label="Теги" hint={`Используются в своих правилах. Тег «${rs.reconTag}» делает подразделение разведчиком.`}>
-            <Tags value={node.tags} onChange={(v) => un((n) => void (n.tags = v))} suggestions={[...new Set(rs.componentTypes.flatMap((t) => t.tags).concat(rs.reconTag ? [rs.reconTag] : []))]} />
+            <Tags
+              value={node.tags}
+              onChange={(v) => un((n) => void (n.tags = v))}
+              suggestions={[...new Set(rs.componentTypes.flatMap((t) => t.tags).concat(rs.reconTag ? [rs.reconTag] : []))]}
+            />
           </Field>
           <Area value={node.notes ?? ''} onChange={(v) => un((n) => void (n.notes = v))} rows={2} placeholder="Заметки" />
         </div>
@@ -1391,7 +1472,14 @@ function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; targetId: 
         </>
       }
     >
-      <input type="search" autoFocus placeholder="Поиск по шаблонам…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
+      <input
+        type="search"
+        autoFocus
+        placeholder="Поиск по шаблонам…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        style={{ width: '100%', marginBottom: 10 }}
+      />
       <div className="insert-list">
         {items.map((u) => {
           const s = summarizeUnits([u], ctx.rs);

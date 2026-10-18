@@ -125,7 +125,14 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
           {pick && mode === 'templates' && (
             <span className="row nowrap" style={{ gap: 4 }} title="Сколько подразделений сил создать (номера в названиях — по порядку)">
               <span className="faint small">×</span>
-              <Num value={pick.count} onChange={(v) => setPicks((prev) => new Map(prev).set(key, { ...pick, count: Math.max(1, Math.min(50, Math.round(v))) }))} min={1} max={50} integer width={52} />
+              <Num
+                value={pick.count}
+                onChange={(v) => setPicks((prev) => new Map(prev).set(key, { ...pick, count: Math.max(1, Math.min(50, Math.round(v))) }))}
+                min={1}
+                max={50}
+                integer
+                width={52}
+              />
             </span>
           )}
         </div>
@@ -142,7 +149,11 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
       footer={
         <>
           <span className="muted small grow">
-            {count ? `Выбрано: ${count} · ${fmt0(total)} чел.` : mode === 'forces' ? 'Отметьте силы или их части (▸ — раскрыть)' : 'Отметьте шаблоны — по ним будут созданы новые силы'}
+            {count
+              ? `Выбрано: ${count} · ${fmt0(total)} чел.`
+              : mode === 'forces'
+                ? 'Отметьте силы или их части (▸ — раскрыть)'
+                : 'Отметьте шаблоны — по ним будут созданы новые силы'}
           </span>
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn kind="primary" disabled={!count} onClick={add}>
@@ -163,7 +174,14 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
             { value: 'templates', label: 'Новые из шаблона', title: 'Создать новые силы по шаблону (полный штат) и сразу взять их в бой' },
           ]}
         />
-        <input type="search" autoFocus placeholder="Поиск по названию, в том числе частей…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1 }} />
+        <input
+          type="search"
+          autoFocus
+          placeholder="Поиск по названию, в том числе частей…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          style={{ flex: 1 }}
+        />
         {others > 0 && (
           <Check value={all} onChange={setAll} title="Подразделения других наборов правил: их типы могут отсутствовать в наборе правил сценария">
             другие наборы правил ({others})
@@ -179,7 +197,9 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
         {list.map((u) => row(u, u, 0))}
         {!list.length && (
           <div className="muted" style={{ padding: 10 }}>
-            {mode === 'forces' ? 'Сил этого набора правил пока нет — создайте их по шаблону (вкладка «Новые из шаблона»).' : 'Шаблонов этого набора правил нет.'}
+            {mode === 'forces'
+              ? 'Сил этого набора правил пока нет — создайте их по шаблону (вкладка «Новые из шаблона»).'
+              : 'Шаблонов этого набора правил нет.'}
           </div>
         )}
       </div>

@@ -115,15 +115,17 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
         let grew = true;
         while (grew) {
           grew = false;
-          for (const x of b.formations) if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) {
-            ids.add(x.id);
-            grew = true;
+          for (const x of b.formations)
+            if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) {
+              ids.add(x.id);
+              grew = true;
+            }
+        }
+        for (const el of b.elements)
+          if (ids.has(el.formationId) && el.status === 'active') {
+            el.orderId = p.orderId;
+            el.exitTurns = 0;
           }
-        }
-        for (const el of b.elements) if (ids.has(el.formationId) && el.status === 'active') {
-          el.orderId = p.orderId;
-          el.exitTurns = 0;
-        }
       }
       E.log({ phase: 'gm', level: 0, side: f.side, text: `ГМ: ${fm(f)} — ${changes.join(', ') || 'без изменений'}${note}.` });
       break;
@@ -131,7 +133,9 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
     case 'editElement': {
       // Один элемент (с составом) или несколько сразу — групповое решение, только состояние.
       const group = Array.isArray(p.elementIds);
-      const els = (group ? (p.elementIds as string[]) : [p.elementId as string]).map((id) => E.elements.get(id)).filter((x): x is ElementState => !!x && (!group || x.status !== 'destroyed'));
+      const els = (group ? (p.elementIds as string[]) : [p.elementId as string])
+        .map((id) => E.elements.get(id))
+        .filter((x): x is ElementState => !!x && (!group || x.status !== 'destroyed'));
       if (!els.length) return;
       const patch = (p.patch ?? {}) as ElementPatch;
       const changes: string[] = [];
@@ -142,7 +146,12 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
         changes.push(label);
       }
       if (group) {
-        E.log({ phase: 'gm', level: 0, refs: els.map((x) => x.id), text: `ГМ изменил ${els.length > 3 ? `${els.length} элементов` : els.map((x) => e(x)).join(', ')}: ${changes.join(', ') || 'без изменений'}${note}.` });
+        E.log({
+          phase: 'gm',
+          level: 0,
+          refs: els.map((x) => x.id),
+          text: `ГМ изменил ${els.length > 3 ? `${els.length} элементов` : els.map((x) => e(x)).join(', ')}: ${changes.join(', ') || 'без изменений'}${note}.`,
+        });
         break;
       }
       const el = els[0];
@@ -179,8 +188,15 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
         if (typeof p.fuel === 'number') el.fuel = clamp(el.fuel + p.fuel, 0, 100);
         if (typeof p.equipment === 'number') el.equipment = clamp(el.equipment + p.equipment, 0, 100);
       }
-      const what = [p.ammo ? `боезапас +${p.ammo}%` : '', p.fuel ? `топливо +${p.fuel}%` : '', p.equipment ? `снаряжение +${p.equipment}%` : ''].filter(Boolean).join(', ');
-      E.log({ phase: 'gm', level: 0, refs: ids, text: `ГМ: снабжение (${what}) для ${ids.length > 3 ? `${ids.length} элементов` : ids.map((id) => e(id)).join(', ')}${note}.` });
+      const what = [p.ammo ? `боезапас +${p.ammo}%` : '', p.fuel ? `топливо +${p.fuel}%` : '', p.equipment ? `снаряжение +${p.equipment}%` : '']
+        .filter(Boolean)
+        .join(', ');
+      E.log({
+        phase: 'gm',
+        level: 0,
+        refs: ids,
+        text: `ГМ: снабжение (${what}) для ${ids.length > 3 ? `${ids.length} элементов` : ids.map((id) => e(id)).join(', ')}${note}.`,
+      });
       break;
     }
     case 'setConditions': {
@@ -220,7 +236,11 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
           x.bandIndex = i;
           x.closingProgress = 0;
         }
-        E.log({ phase: 'gm', level: 0, text: `ГМ: дистанция${secs.length === 1 ? ` на участке «${secs[0].name}»` : ' на всех участках'} — «${b.ruleset.rangeBands[i].name}»${note}.` });
+        E.log({
+          phase: 'gm',
+          level: 0,
+          text: `ГМ: дистанция${secs.length === 1 ? ` на участке «${secs[0].name}»` : ' на всех участках'} — «${b.ruleset.rangeBands[i].name}»${note}.`,
+        });
         break;
       }
       b.bandIndex = i;
@@ -248,8 +268,20 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
         ...(formationId ? { formationId } : elementIds?.length ? { elementIds } : {}),
         source: 'gm',
       });
-      const who = formationId ? fm(formationId) : elementIds?.length ? (elementIds.length > 3 ? `${elementIds.length} элементов` : elementIds.map((id) => e(id)).join(', ')) : sd(side);
-      E.log({ phase: 'gm', level: 0, side, refs: elementIds, text: `ГМ: «${name}» — ${who}, ${turns} ${plural(turns, 'ход', 'хода', 'ходов')} (до ${b.turn + turns}-го)${note}.` });
+      const who = formationId
+        ? fm(formationId)
+        : elementIds?.length
+          ? elementIds.length > 3
+            ? `${elementIds.length} элементов`
+            : elementIds.map((id) => e(id)).join(', ')
+          : sd(side);
+      E.log({
+        phase: 'gm',
+        level: 0,
+        side,
+        refs: elementIds,
+        text: `ГМ: «${name}» — ${who}, ${turns} ${plural(turns, 'ход', 'хода', 'ходов')} (до ${b.turn + turns}-го)${note}.`,
+      });
       break;
     }
     case 'removeEffect': {
@@ -266,7 +298,8 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       a.left--;
       const enemy = a.side === 'A' ? 'B' : 'A';
       const formationId = typeof p.formationId === 'string' && E.formations.get(p.formationId)?.side === enemy ? p.formationId : undefined;
-      const elementIds = !formationId && Array.isArray(p.elementIds) ? (p.elementIds as string[]).filter((id) => E.elements.get(id)?.side === enemy) : undefined;
+      const elementIds =
+        !formationId && Array.isArray(p.elementIds) ? (p.elementIds as string[]).filter((id) => E.elements.get(id)?.side === enemy) : undefined;
       (b.strikes ??= []).push({
         id: `st${b.strikes.length + 1}`,
         side: a.side,
@@ -275,8 +308,20 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
         turn: b.turn + 1,
         source: 'gm',
       });
-      const who = formationId ? fm(formationId) : elementIds?.length ? (elementIds.length > 3 ? `${elementIds.length} элементов` : elementIds.map((id) => e(id)).join(', ')) : `всей стороне ${sd(enemy)}`;
-      E.log({ phase: 'gm', level: 0, side: a.side, refs: elementIds, text: `ГМ: вызван удар «${a.name}» по ${who} — в начале ${b.turn + 1}-го хода (осталось ударов: ${a.left})${note}.` });
+      const who = formationId
+        ? fm(formationId)
+        : elementIds?.length
+          ? elementIds.length > 3
+            ? `${elementIds.length} элементов`
+            : elementIds.map((id) => e(id)).join(', ')
+          : `всей стороне ${sd(enemy)}`;
+      E.log({
+        phase: 'gm',
+        level: 0,
+        side: a.side,
+        refs: elementIds,
+        text: `ГМ: вызван удар «${a.name}» по ${who} — в начале ${b.turn + 1}-го хода (осталось ударов: ${a.left})${note}.`,
+      });
       break;
     }
     case 'cancelStrike': {
@@ -295,7 +340,13 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       if (!els.length) return;
       for (const el of els) el.status = 'active';
       E.invalidate();
-      E.log({ phase: 'gm', level: 0, side: els[0].side, refs: els.map((x) => x.id), text: `ГМ: подкрепление вводится в бой раньше плана — ${els.length > 3 ? `${els.length} элементов` : els.map((x) => e(x)).join(', ')}${note}.` });
+      E.log({
+        phase: 'gm',
+        level: 0,
+        side: els[0].side,
+        refs: els.map((x) => x.id),
+        text: `ГМ: подкрепление вводится в бой раньше плана — ${els.length > 3 ? `${els.length} элементов` : els.map((x) => e(x)).join(', ')}${note}.`,
+      });
       break;
     }
     case 'endBattle': {

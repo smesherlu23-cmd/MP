@@ -94,7 +94,15 @@ export function phaseMovement(E: EngineContext) {
           c.current -= n;
           c.damaged += n;
           E.invalidate(el);
-          E.log({ phase: 'movement', level: 1, side: el.side, severity: 'bad', refs: [el.id], text: `${e(el)}: поломка на марше — ${E.type(c.typeId).name} ×${n}.`, factors: [{ label: 'Шанс поломки на машину', value: pBreak, kind: 'chance' }] });
+          E.log({
+            phase: 'movement',
+            level: 1,
+            side: el.side,
+            severity: 'bad',
+            refs: [el.id],
+            text: `${e(el)}: поломка на марше — ${E.type(c.typeId).name} ×${n}.`,
+            factors: [{ label: 'Шанс поломки на машину', value: pBreak, kind: 'chance' }],
+          });
         }
       }
     }

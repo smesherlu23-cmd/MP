@@ -39,7 +39,12 @@ export function snapshot(E: EngineContext) {
     };
   }
   const secs = E.b.sectors;
-  E.b.history.push({ turn: E.b.turn, band: secs ? secs[0].bandIndex : E.b.bandIndex, ...(secs ? { bands: Object.fromEntries(secs.map((x) => [x.id, x.bandIndex])) } : {}), sides });
+  E.b.history.push({
+    turn: E.b.turn,
+    band: secs ? secs[0].bandIndex : E.b.bandIndex,
+    ...(secs ? { bands: Object.fromEntries(secs.map((x) => [x.id, x.bandIndex])) } : {}),
+    sides,
+  });
 }
 
 /** Сторона ждёт подкреплений по плану (их ход ещё не наступил). */

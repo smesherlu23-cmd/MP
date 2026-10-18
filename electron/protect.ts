@@ -298,7 +298,10 @@ export class DataStore {
       days.add(d);
       keep.add(b.id);
     }
-    all.filter((b) => b.kind !== 'auto').slice(0, KEEP_BACKUPS).forEach((b) => keep.add(b.id));
+    all
+      .filter((b) => b.kind !== 'auto')
+      .slice(0, KEEP_BACKUPS)
+      .forEach((b) => keep.add(b.id));
     for (const id of await readdir(this.backupsDir)) {
       // Незавершённые копии (без описи) тоже убираются; чужие файлы в папке не трогаются.
       if (keep.has(id) || !/^\d{4}-\d\d-\d\d_/.test(id)) continue;

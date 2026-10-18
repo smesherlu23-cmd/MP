@@ -29,7 +29,10 @@ test('шаблон: вставка ×3 с номерами и обновлени
   const cnt = page.locator('.modal-foot input').first();
   await cnt.fill('3');
   await cnt.press('Tab');
-  await page.locator('.modal').getByRole('button', { name: /Вставить/ }).click();
+  await page
+    .locator('.modal')
+    .getByRole('button', { name: /Вставить/ })
+    .click();
   await expect(page.locator('.org-name', { hasText: 'Мотострелковый взвод 3' })).toHaveCount(1);
 
   // шаблон изменился — копии в батальоне помечены

@@ -50,7 +50,13 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   const add = (kind: ScenarioEventKind) =>
     upd((list) => {
       const last = Math.max(0, ...list.map((x) => x.turn));
-      const ev: ScenarioEvent = { id: newId('ev'), kind, turn: Math.min(sc.maxTurns, last + 2 || 3), side: kind === 'conditions' ? undefined : 'A', chance: 100 };
+      const ev: ScenarioEvent = {
+        id: newId('ev'),
+        kind,
+        turn: Math.min(sc.maxTurns, last + 2 || 3),
+        side: kind === 'conditions' ? undefined : 'A',
+        chance: 100,
+      };
       if (kind === 'strike') {
         ev.turn = 1;
         ev.assetId = sc.sides[0].support?.[0]?.id;
@@ -61,7 +67,8 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   const sideNodes = (side: SideId) => {
     const sd = sc.sides.find((x) => x.id === side);
     const out: { value: string; label: string }[] = [];
-    for (const f of sd?.formations ?? []) walkUnits(f, (n, _p, depth) => void out.push({ value: n.id, label: `${'  '.repeat(depth)}${n.name}${n.level ? ` · ${n.level}` : ''}` }));
+    for (const f of sd?.formations ?? [])
+      walkUnits(f, (n, _p, depth) => void out.push({ value: n.id, label: `${'  '.repeat(depth)}${n.name}${n.level ? ` · ${n.level}` : ''}` }));
     return out;
   };
   const sideName = (id?: SideId) => sc.sides.find((x) => x.id === id)?.name ?? '';
@@ -143,7 +150,10 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                   <Sel
                     value={ev.assetId ?? ''}
                     onChange={(v) => set((e) => void (e.assetId = v || undefined))}
-                    options={[{ value: '', label: assets.length ? '— средство —' : 'нет средств у стороны' }, ...assets.map((a) => ({ value: a.id, label: a.name }))]}
+                    options={[
+                      { value: '', label: assets.length ? '— средство —' : 'нет средств у стороны' },
+                      ...assets.map((a) => ({ value: a.id, label: a.name })),
+                    ]}
                     width={170}
                     title="Средство огневой поддержки стороны (задаётся в карточке стороны)"
                   />
@@ -228,7 +238,11 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                         t.value = v === 'band' ? (rs.rangeBands[rs.rangeBands.length - 1]?.id ?? '') : v === 'morale' ? 40 : 30;
                       })
                     }
-                    options={(Object.keys(TRIGGER_LABELS) as TriggerMetric[]).map((k) => ({ value: k, label: TRIGGER_LABELS[k].replace(/[≥≤].*$/, '').trim(), title: TRIGGER_TIP[k] }))}
+                    options={(Object.keys(TRIGGER_LABELS) as TriggerMetric[]).map((k) => ({
+                      value: k,
+                      label: TRIGGER_LABELS[k].replace(/[≥≤].*$/, '').trim(),
+                      title: TRIGGER_TIP[k],
+                    }))}
                     width={120}
                   />
                   {tr.metric !== 'band' && (
@@ -251,7 +265,15 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                         width={200}
                       />
                       <span className="plan-label">{tr.metric === 'morale' ? '≤' : '≥'}</span>
-                      <Num value={Number(tr.value) || 0} onChange={(v) => setTr((t) => void (t.value = Math.max(0, Math.min(100, v))))} min={0} max={100} integer suffix={tr.metric === 'morale' ? '' : '%'} width={70} />
+                      <Num
+                        value={Number(tr.value) || 0}
+                        onChange={(v) => setTr((t) => void (t.value = Math.max(0, Math.min(100, v))))}
+                        min={0}
+                        max={100}
+                        integer
+                        suffix={tr.metric === 'morale' ? '' : '%'}
+                        width={70}
+                      />
                     </>
                   )}
                   {tr.metric === 'band' && (
@@ -263,15 +285,40 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                     />
                   )}
                   <span className="plan-label">задержка</span>
-                  <Num value={ev.delay ?? 0} onChange={(v) => set((e) => void (e.delay = Math.max(0, Math.round(v)) || undefined))} min={0} max={20} integer suffix="ход" width={78} title="Через сколько ходов после выполнения условия событие наступит" />
+                  <Num
+                    value={ev.delay ?? 0}
+                    onChange={(v) => set((e) => void (e.delay = Math.max(0, Math.round(v)) || undefined))}
+                    min={0}
+                    max={20}
+                    integer
+                    suffix="ход"
+                    width={78}
+                    title="Через сколько ходов после выполнения условия событие наступит"
+                  />
                 </>
               )}
               <span className="plan-label">вероятность</span>
-              <Num value={ev.chance ?? 100} onChange={(v) => set((e) => void (e.chance = Math.max(0, Math.min(100, v))))} min={0} max={100} integer suffix="%" width={74} />
+              <Num
+                value={ev.chance ?? 100}
+                onChange={(v) => set((e) => void (e.chance = Math.max(0, Math.min(100, v))))}
+                min={0}
+                max={100}
+                integer
+                suffix="%"
+                width={74}
+              />
               {!tr && (
                 <>
                   <span className="plan-label">разброс ±</span>
-                  <Num value={ev.spread ?? 0} onChange={(v) => set((e) => void (e.spread = Math.max(0, Math.round(v)) || undefined))} min={0} max={20} integer suffix="ход" width={84} />
+                  <Num
+                    value={ev.spread ?? 0}
+                    onChange={(v) => set((e) => void (e.spread = Math.max(0, Math.round(v)) || undefined))}
+                    min={0}
+                    max={20}
+                    integer
+                    suffix="ход"
+                    width={84}
+                  />
                 </>
               )}
               <Txt value={ev.note ?? ''} onChange={(v) => set((e) => void (e.note = v || undefined))} placeholder="примечание для журнала" width={220} />
@@ -280,13 +327,24 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
         );
       })}
       <div className="row" style={{ marginTop: events.length ? 10 : 0 }}>
-        <Btn sm onClick={() => add('arrive')}>+ Подход подкреплений</Btn>
-        <Btn sm onClick={() => add('order')}>+ Смена приказа</Btn>
-        <Btn sm onClick={() => add('conditions')}>+ Смена условий</Btn>
+        <Btn sm onClick={() => add('arrive')}>
+          + Подход подкреплений
+        </Btn>
+        <Btn sm onClick={() => add('order')}>
+          + Смена приказа
+        </Btn>
+        <Btn sm onClick={() => add('conditions')}>
+          + Смена условий
+        </Btn>
         <Btn sm onClick={() => add('strike')} title={hasSupport ? undefined : 'Сначала задайте огневую поддержку в карточке стороны'}>
           + Удар поддержки
         </Btn>
-        <Btn sm onClick={() => add('effect')} disabled={!rs.tempEffects.length} title={rs.tempEffects.length ? undefined : 'В наборе правил нет заготовок эффектов'}>
+        <Btn
+          sm
+          onClick={() => add('effect')}
+          disabled={!rs.tempEffects.length}
+          title={rs.tempEffects.length ? undefined : 'В наборе правил нет заготовок эффектов'}
+        >
           + Эффект
         </Btn>
         <Info text="Примеры: «ход 6, Синие, Танковая рота — подход подкреплений, вероятность 80%, разброс ±1» — танки подходят на 5–7-м ходу, а в одном бою из пяти не подходят вовсе. «Когда потери Красных ≥ 30%, задержка 1 — Красные, Резерв: приказ «Атака»» — контратака резерва. «Ход 1, удар поддержки по опорному пункту» — артподготовка." />

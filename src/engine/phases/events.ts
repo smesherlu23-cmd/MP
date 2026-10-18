@@ -57,7 +57,12 @@ export function phaseEvents(E: EngineContext) {
       const delay = Math.max(0, Math.round(ev.delay ?? 0));
       (b.eventTurns ??= {})[ev.id] = b.turn + delay;
       if (delay > 0)
-        E.log({ phase: 'plan', level: 1, side: ev.side, text: `Условие плана выполнено (${triggerText(b, ev.trigger)}): «${eventTitle(b, ev)}» — через ${delay} ${plural(delay, 'ход', 'хода', 'ходов')}.` });
+        E.log({
+          phase: 'plan',
+          level: 1,
+          side: ev.side,
+          text: `Условие плана выполнено (${triggerText(b, ev.trigger)}): «${eventTitle(b, ev)}» — через ${delay} ${plural(delay, 'ход', 'хода', 'ходов')}.`,
+        });
     }
     if ((b.eventTurns?.[ev.id] ?? ev.turn) !== b.turn) continue;
     const chance = ev.chance ?? 100;
@@ -155,7 +160,13 @@ export function phaseEvents(E: EngineContext) {
         source: 'plan',
       });
       E.invalidate();
-      E.log({ phase: 'plan', level: 0, side, refs: els.map((x) => x.id), text: `По плану: «${def.name}» — ${ev.nodeId ? who() : s(side)}, ${turns} ${plural(turns, 'ход', 'хода', 'ходов')}${note}.` });
+      E.log({
+        phase: 'plan',
+        level: 0,
+        side,
+        refs: els.map((x) => x.id),
+        text: `По плану: «${def.name}» — ${ev.nodeId ? who() : s(side)}, ${turns} ${plural(turns, 'ход', 'хода', 'ходов')}${note}.`,
+      });
     }
   }
 }

@@ -318,7 +318,12 @@ describe('бой', () => {
       newRootUnit(name, {
         order,
         children: Array.from({ length: 12 }, (_, i) =>
-          newUnit(`${name} ${i + 1}`, { composition: [{ typeId: 'rifleman', authorized: 250, current: 250 }, { typeId: 'mg', authorized: 9, current: 9 }] }),
+          newUnit(`${name} ${i + 1}`, {
+            composition: [
+              { typeId: 'rifleman', authorized: 250, current: 250 },
+              { typeId: 'mg', authorized: 9, current: 9 },
+            ],
+          }),
         ),
       });
     const s = duel(rs, big('Полк А', 'attack'), big('Полк Б', 'defend'));
@@ -477,7 +482,10 @@ describe('бой', () => {
     const root = newRootUnit('Полк', {
       state: { morale: 60, experience: 3 },
       supply: 40,
-      children: [newUnit('Батальон', { state: { morale: 90 }, children: [newUnit('Рота', { composition: rifles(50) })] }), newUnit('Рота 2', { composition: rifles(50), state: { experience: 1 } })],
+      children: [
+        newUnit('Батальон', { state: { morale: 90 }, children: [newUnit('Рота', { composition: rifles(50) })] }),
+        newUnit('Рота 2', { composition: rifles(50), state: { experience: 1 } }),
+      ],
     });
     const r1 = resolveUnit(root, root.children[0].children[0].id)!;
     expect(r1.state.morale).toBe(90);
@@ -501,7 +509,10 @@ describe('бой', () => {
     copy.children.push(newUnit('Снайперская пара', { composition: rifles(2) })); // добавлено вручную
     expect(isOutdated(copy, tpl)).toBe(false);
     // Шаблон меняется: больше людей, новый пулемёт, ещё одно отделение
-    tpl.composition = [{ typeId: 'rifleman', authorized: 32, current: 32 }, { typeId: 'mg', authorized: 2, current: 2 }];
+    tpl.composition = [
+      { typeId: 'rifleman', authorized: 32, current: 32 },
+      { typeId: 'mg', authorized: 2, current: 2 },
+    ];
     tpl.children.push(newUnit('Отделение', { composition: rifles(10) }));
     expect(isOutdated(copy, tpl)).toBe(true);
     const upd = updateFromTemplate(copy, tpl);
@@ -560,8 +571,45 @@ describe('бой', () => {
       comms: 70,
       supply: 60,
       order: 'attack',
-      elements: [{ id: 'old-e1', name: 'Рота', role: 'рота', echelon: 'front', order: null, composition: rifles(90, 80), experience: 3, morale: 65, cohesion: 70, readiness: 90, ammo: 100, fuel: 100, equipment: 100, fatigue: 5, vehicleCondition: 90, attackMod: 100, defenseMod: 100, isHQ: false, holdFast: false, tags: [] }],
-      subunits: [{ id: 'old-sub', name: 'Группа', kind: 'группа', commanderName: '', commandLevel: 3, comms: null, supply: null, order: null, elements: [], subunits: [], tags: [] }],
+      elements: [
+        {
+          id: 'old-e1',
+          name: 'Рота',
+          role: 'рота',
+          echelon: 'front',
+          order: null,
+          composition: rifles(90, 80),
+          experience: 3,
+          morale: 65,
+          cohesion: 70,
+          readiness: 90,
+          ammo: 100,
+          fuel: 100,
+          equipment: 100,
+          fatigue: 5,
+          vehicleCondition: 90,
+          attackMod: 100,
+          defenseMod: 100,
+          isHQ: false,
+          holdFast: false,
+          tags: [],
+        },
+      ],
+      subunits: [
+        {
+          id: 'old-sub',
+          name: 'Группа',
+          kind: 'группа',
+          commanderName: '',
+          commandLevel: 3,
+          comms: null,
+          supply: null,
+          order: null,
+          elements: [],
+          subunits: [],
+          tags: [],
+        },
+      ],
       tags: [],
     };
     const u = migrateUnit(legacy);
@@ -771,8 +819,12 @@ describe('шаблоны и силы', () => {
 describe('участки, удары, эффекты, условия плана', () => {
   const rs = makeUniversalRuleset();
   const twoSectors = () => {
-    const a = infantry('Синие', 100, 'attack', { children: [newUnit('Левая рота', { composition: rifles(50) }), newUnit('Правая рота', { composition: rifles(50) })] });
-    const b = infantry('Красные', 100, 'defend', { children: [newUnit('Левый взвод', { composition: rifles(50) }), newUnit('Правый взвод', { composition: rifles(50) })] });
+    const a = infantry('Синие', 100, 'attack', {
+      children: [newUnit('Левая рота', { composition: rifles(50) }), newUnit('Правая рота', { composition: rifles(50) })],
+    });
+    const b = infantry('Красные', 100, 'defend', {
+      children: [newUnit('Левый взвод', { composition: rifles(50) }), newUnit('Правый взвод', { composition: rifles(50) })],
+    });
     const sc = duel(rs, a, b);
     sc.sectors = [
       { id: 'L', name: 'Левый' },
@@ -851,7 +903,9 @@ describe('участки, удары, эффекты, условия плана'
 
   it('событие по условию наступает, когда условие выполнено (с задержкой); без условия — не наступает', () => {
     const { sc, b: red } = twoSectors();
-    sc.events = [{ id: 'ev', kind: 'order', turn: 1, side: 'B', nodeId: red.id, orderId: 'retreat', trigger: { metric: 'losses', side: 'B', value: 2 }, delay: 1 }];
+    sc.events = [
+      { id: 'ev', kind: 'order', turn: 1, side: 'B', nodeId: red.id, orderId: 'retreat', trigger: { metric: 'losses', side: 'B', value: 2 }, delay: 1 },
+    ];
     const b = createBattle(sc, rs, { seed: 'S4' });
     let fired = 0;
     while (!b.finished && !fired) {

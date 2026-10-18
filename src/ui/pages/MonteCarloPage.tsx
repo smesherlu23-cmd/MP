@@ -53,7 +53,12 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
   const colors = { A: sc.sides[0].color, B: sc.sides[1].color };
   return (
     <div className="page">
-      <Crumbs items={[{ label: 'Сценарии', section: 'scenarios' }, { label: sc.name, open: ['scenario', sc.id] }]} />
+      <Crumbs
+        items={[
+          { label: 'Сценарии', section: 'scenarios' },
+          { label: sc.name, open: ['scenario', sc.id] },
+        ]}
+      />
       <div className="page-head">
         <h1 className="grow">Прогоны</h1>
       </div>
@@ -85,13 +90,31 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
           {r && !run?.running && (
             <Menu
               items={[
-                { label: 'Скопировать сводку', onClick: () => navigator.clipboard?.writeText(summaryText(r, sc.name)).then(() => toast('Сводка скопирована.', 'good')) },
-                { label: 'Сохранить таблицу прогонов (CSV)…', onClick: () => exportText(`${sc.name} — прогоны`, toCsv(r, rs.componentTypes.map((t) => ({ id: t.id, name: t.name }))), 'csv') },
+                {
+                  label: 'Скопировать сводку',
+                  onClick: () => navigator.clipboard?.writeText(summaryText(r, sc.name)).then(() => toast('Сводка скопирована.', 'good')),
+                },
+                {
+                  label: 'Сохранить таблицу прогонов (CSV)…',
+                  onClick: () =>
+                    exportText(
+                      `${sc.name} — прогоны`,
+                      toCsv(
+                        r,
+                        rs.componentTypes.map((t) => ({ id: t.id, name: t.name })),
+                      ),
+                      'csv',
+                    ),
+                },
               ]}
             />
           )}
         </div>
-        {stale && <div className="note warn" style={{ marginTop: 10 }}>Сценарий изменился после этого моделирования — запустите заново.</div>}
+        {stale && (
+          <div className="note warn" style={{ marginTop: 10 }}>
+            Сценарий изменился после этого моделирования — запустите заново.
+          </div>
+        )}
       </Card>
 
       {r && (
@@ -164,7 +187,19 @@ function shade(hex: string, i: number, n: number): string {
 
 const MAIN_METRICS = ['personnelLoss', 'personnelLossPct', 'kia', 'ce', 'score'];
 
-function MetricsTable({ r, colors, metric, setMetric, tabKey }: { r: MonteCarloResult; colors: Record<SideId, string>; metric: string; setMetric: (m: string) => void; tabKey: string }) {
+function MetricsTable({
+  r,
+  colors,
+  metric,
+  setMetric,
+  tabKey,
+}: {
+  r: MonteCarloResult;
+  colors: Record<SideId, string>;
+  metric: string;
+  setMetric: (m: string) => void;
+  tabKey: string;
+}) {
   const [all, setAll] = useTabState(`${tabKey}:allMetrics`, false);
   const turns = r.metrics.find((m) => m.key === 'turns')!;
   const allKeys = [...new Set(r.metrics.filter((m) => m.side).map((m) => m.key.slice(2)))];
@@ -193,7 +228,8 @@ function MetricsTable({ r, colors, metric, setMetric, tabKey }: { r: MonteCarloR
       <Card
         title={
           <>
-            Показатели <Info text="Среднее и диапазон, в который попадают 80% прогонов (от 10-го до 90-го процентиля). Наведите на число — медиана, минимум, максимум. Нажмите на строку — гистограмма справа." />
+            Показатели{' '}
+            <Info text="Среднее и диапазон, в который попадают 80% прогонов (от 10-го до 90-го процентиля). Наведите на число — медиана, минимум, максимум. Нажмите на строку — гистограмма справа." />
           </>
         }
         tight
@@ -230,7 +266,10 @@ function MetricsTable({ r, colors, metric, setMetric, tabKey }: { r: MonteCarloR
             <tr title={tip(turns)}>
               <td>Длительность, ходов</td>
               <td className="num" colSpan={4}>
-                <b>{fmt1(turns.stats.mean)}</b> <span className="muted small">(10–90%: {fmt1(turns.stats.p10)}–{fmt1(turns.stats.p90)})</span>
+                <b>{fmt1(turns.stats.mean)}</b>{' '}
+                <span className="muted small">
+                  (10–90%: {fmt1(turns.stats.p10)}–{fmt1(turns.stats.p90)})
+                </span>
               </td>
             </tr>
             {keys.map((key) => {
@@ -238,7 +277,14 @@ function MetricsTable({ r, colors, metric, setMetric, tabKey }: { r: MonteCarloR
               const b = r.metrics.find((x) => x.key === `B.${key}`);
               const m = a ?? b!;
               return (
-                <tr key={key} className={key === metric ? 'sel' : ''} style={{ cursor: 'pointer' }} onClick={() => setMetric(key)} title="Показать гистограмму" {...pressable(() => setMetric(key))}>
+                <tr
+                  key={key}
+                  className={key === metric ? 'sel' : ''}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setMetric(key)}
+                  title="Показать гистограмму"
+                  {...pressable(() => setMetric(key))}
+                >
                   <td>
                     {m.label}
                     {m.unit ? <span className="faint">, {m.unit}</span> : null}
@@ -253,7 +299,10 @@ function MetricsTable({ r, colors, metric, setMetric, tabKey }: { r: MonteCarloR
       </Card>
       <div className="stack">
         <Card title={`Распределение: ${sel[0]?.label.trim() ?? metric}${sel[0]?.unit ? `, ${sel[0].unit}` : ''}`}>
-          <Histogram series={sel.map((m) => ({ name: r.sideNames[m.side!], color: colors[m.side!], values: m.values }))} unit={sel[0]?.unit === '%' ? '%' : ''} />
+          <Histogram
+            series={sel.map((m) => ({ name: r.sideNames[m.side!], color: colors[m.side!], values: m.values }))}
+            unit={sel[0]?.unit === '%' ? '%' : ''}
+          />
         </Card>
         <Card title="Длительность боя, ходов">
           <Histogram series={[{ name: 'Ходов', color: 'var(--accent)', values: turns.values }]} height={120} />
@@ -277,7 +326,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
   // biome-ignore lint/correctness/useExhaustiveDependencies: val — чистая функция
   const rows = useMemo(() => [...r.runs].sort((a, b) => (val(a, sort.key) > val(b, sort.key) ? 1 : -1) * sort.dir), [r, sort]);
   const th = (key: string, label: string, color?: string) => (
-    <th className="num" style={{ cursor: 'pointer', color }} onClick={() => setSort({ key, dir: sort.key === key ? ((-sort.dir) as 1 | -1) : -1 })}>
+    <th className="num" style={{ cursor: 'pointer', color }} onClick={() => setSort({ key, dir: sort.key === key ? (-sort.dir as 1 | -1) : -1 })}>
       {label}
       {sort.key === key ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}
     </th>
@@ -355,7 +404,19 @@ function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): stri
   const typeIds = [...new Set(r.runs.flatMap((x) => SIDES.flatMap((s) => Object.keys(x.sides[s].equipmentLoss))))];
   const head = ['run', 'outcome', 'winner', 'turns', 'end'];
   for (const s of SIDES) {
-    head.push(`${s}_personnel_loss`, `${s}_personnel_loss_pct`, `${s}_kia`, `${s}_wia`, `${s}_mia`, `${s}_value_loss_pct`, `${s}_ce`, `${s}_org`, `${s}_morale`, `${s}_ammo`, `${s}_score`);
+    head.push(
+      `${s}_personnel_loss`,
+      `${s}_personnel_loss_pct`,
+      `${s}_kia`,
+      `${s}_wia`,
+      `${s}_mia`,
+      `${s}_value_loss_pct`,
+      `${s}_ce`,
+      `${s}_org`,
+      `${s}_morale`,
+      `${s}_ammo`,
+      `${s}_score`,
+    );
     for (const id of typeIds) head.push(`${s}_loss_${types.find((t) => t.id === id)?.name ?? id}`);
   }
   const q = (v: string | number) => (typeof v === 'number' ? String(Math.round(v * 100) / 100) : `"${v.replace(/"/g, '""')}"`);
@@ -373,12 +434,16 @@ function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): stri
 }
 
 function summaryText(r: MonteCarloResult, name: string): string {
-  const lines = [`Сценарий «${name}»: ${r.n} прогонов.`, `Победа ${r.sideNames.A}: ${fmt1(r.winA)}% · ничья: ${fmt1(r.draw)}% · победа ${r.sideNames.B}: ${fmt1(r.winB)}%.`];
+  const lines = [
+    `Сценарий «${name}»: ${r.n} прогонов.`,
+    `Победа ${r.sideNames.A}: ${fmt1(r.winA)}% · ничья: ${fmt1(r.draw)}% · победа ${r.sideNames.B}: ${fmt1(r.winB)}%.`,
+  ];
   for (const o of r.outcomes) lines.push(`  ${o.label}: ${fmt1(o.pct)}%`);
   for (const m of r.metrics) {
     const side = m.side ? `${r.sideNames[m.side]} — ` : '';
-    lines.push(`${side}${m.label.trim()}: в среднем ${fmt1(m.stats.mean)} ${m.unit}, медиана ${fmt1(m.stats.median)}, 10–90%: ${fmt1(m.stats.p10)}–${fmt1(m.stats.p90)}, разброс ${fmt1(m.stats.min)}–${fmt1(m.stats.max)}`);
+    lines.push(
+      `${side}${m.label.trim()}: в среднем ${fmt1(m.stats.mean)} ${m.unit}, медиана ${fmt1(m.stats.median)}, 10–90%: ${fmt1(m.stats.p10)}–${fmt1(m.stats.p90)}, разброс ${fmt1(m.stats.min)}–${fmt1(m.stats.max)}`,
+    );
   }
   return lines.join('\n');
 }
-

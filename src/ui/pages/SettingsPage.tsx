@@ -20,7 +20,14 @@ export function SettingsPage() {
     refresh();
   }, [refresh]);
   // Удаление в другой вкладке тоже должно появиться в корзине.
-  const libSize = useApp((x) => Object.keys(x.rulesets).length + Object.keys(x.formations).length + Object.keys(x.forces).length + Object.keys(x.scenarios).length + Object.keys(x.battleIndex).length);
+  const libSize = useApp(
+    (x) =>
+      Object.keys(x.rulesets).length +
+      Object.keys(x.formations).length +
+      Object.keys(x.forces).length +
+      Object.keys(x.scenarios).length +
+      Object.keys(x.battleIndex).length,
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: сведения о папке обновляются при изменении данных
   useEffect(refresh, [libSize, refresh]);
   return (
@@ -32,10 +39,24 @@ export function SettingsPage() {
         <Card title="Внешний вид">
           <div className="stack" style={{ gap: 12 }}>
             <Field label="Тема">
-              <Seg value={s.theme} onChange={(v) => updateSettings({ theme: v })} options={[{ value: 'dark', label: 'Тёмная' }, { value: 'light', label: 'Светлая' }]} />
+              <Seg
+                value={s.theme}
+                onChange={(v) => updateSettings({ theme: v })}
+                options={[
+                  { value: 'dark', label: 'Тёмная' },
+                  { value: 'light', label: 'Светлая' },
+                ]}
+              />
             </Field>
             <Field label="Плотность">
-              <Seg value={s.density} onChange={(v) => updateSettings({ density: v })} options={[{ value: 'normal', label: 'Обычная' }, { value: 'compact', label: 'Компактная' }]} />
+              <Seg
+                value={s.density}
+                onChange={(v) => updateSettings({ density: v })}
+                options={[
+                  { value: 'normal', label: 'Обычная' },
+                  { value: 'compact', label: 'Компактная' },
+                ]}
+              />
             </Field>
           </div>
         </Card>
@@ -55,15 +76,37 @@ export function SettingsPage() {
             <Field label="Прогонов по умолчанию">
               <Num value={s.mcRuns} onChange={(v) => updateSettings({ mcRuns: v })} min={10} max={20000} integer width={120} />
             </Field>
-            <Field label="Сохранённые бои" hint="Бои хранятся без подробного журнала — подробности и разборы восстанавливаются повтором боя, когда их открывают.">
+            <Field
+              label="Сохранённые бои"
+              hint="Бои хранятся без подробного журнала — подробности и разборы восстанавливаются повтором боя, когда их открывают."
+            >
               <div className="row">
                 <span className="muted">
                   всего {battles.length}, завершённых {finished.length}
                 </span>
-                <Btn sm disabled={!finished.length} onClick={() => deleteBattles(finished.map((b) => b.id), 'Удалить завершённые бои?')}>
+                <Btn
+                  sm
+                  disabled={!finished.length}
+                  onClick={() =>
+                    deleteBattles(
+                      finished.map((b) => b.id),
+                      'Удалить завершённые бои?',
+                    )
+                  }
+                >
                   Удалить завершённые
                 </Btn>
-                <Btn sm kind="danger" disabled={!battles.length} onClick={() => deleteBattles(battles.map((b) => b.id), 'Удалить все бои?')}>
+                <Btn
+                  sm
+                  kind="danger"
+                  disabled={!battles.length}
+                  onClick={() =>
+                    deleteBattles(
+                      battles.map((b) => b.id),
+                      'Удалить все бои?',
+                    )
+                  }
+                >
                   Удалить все
                 </Btn>
               </div>
@@ -72,7 +115,10 @@ export function SettingsPage() {
         </Card>
         <Card title="Данные">
           <div className="stack" style={{ gap: 10 }}>
-            <Field label="Папка данных" hint="Наборы правил, подразделения, сценарии и бои хранятся там как JSON-файлы — их можно копировать, переносить и править вручную.">
+            <Field
+              label="Папка данных"
+              hint="Наборы правил, подразделения, сценарии и бои хранятся там как JSON-файлы — их можно копировать, переносить и править вручную."
+            >
               <div className="mono small" style={{ wordBreak: 'break-all' }}>
                 {dir}
               </div>
@@ -103,7 +149,10 @@ export function SettingsPage() {
                   sm
                   onClick={async () => {
                     const b = await storage.backup('manual');
-                    toast(!b ? 'Копировать пока нечего.' : b.unchanged ? `Изменений нет — копия от ${fmtDate(b.createdAt)} актуальна.` : 'Резервная копия сделана.', 'good');
+                    toast(
+                      !b ? 'Копировать пока нечего.' : b.unchanged ? `Изменений нет — копия от ${fmtDate(b.createdAt)} актуальна.` : 'Резервная копия сделана.',
+                      'good',
+                    );
                     refresh();
                   }}
                 >
@@ -125,7 +174,13 @@ export function SettingsPage() {
             <div className="row">
               <Btn
                 onClick={async () => {
-                  if (!(await confirmDialog('Установить примеры заново?', 'Будут восстановлены примеры наборов правил, подразделений и сценариев (с исходными идентификаторами — ваши изменения в примерах будут заменены). Перед этим делается резервная копия.'))) return;
+                  if (
+                    !(await confirmDialog(
+                      'Установить примеры заново?',
+                      'Будут восстановлены примеры наборов правил, подразделений и сценариев (с исходными идентификаторами — ваши изменения в примерах будут заменены). Перед этим делается резервная копия.',
+                    ))
+                  )
+                    return;
                   await storage.backup('examples').catch(() => null);
                   await installExamples();
                   toast('Примеры установлены.', 'good');

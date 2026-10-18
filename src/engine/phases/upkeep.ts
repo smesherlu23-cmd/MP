@@ -34,7 +34,14 @@ export function phaseFatigue(E: EngineContext) {
     if (Math.abs(el.fatigue - before) >= 0.5) {
       const ff: Factor[] = [{ label: 'База за ход', value: k.fatiguePerTurn, kind: 'base' }];
       if (E.logging) E.mult(el, 'fatigue', {}, ff);
-      E.log({ phase: 'fatigue', level: 2, side: el.side, refs: [el.id], text: `${e(el)}: усталость ${Math.round(before)} → ${Math.round(el.fatigue)}%.`, factors: ff });
+      E.log({
+        phase: 'fatigue',
+        level: 2,
+        side: el.side,
+        refs: [el.id],
+        text: `${e(el)}: усталость ${Math.round(before)} → ${Math.round(el.fatigue)}%.`,
+        factors: ff,
+      });
     }
   }
 }

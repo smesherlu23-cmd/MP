@@ -123,7 +123,11 @@ function Tabs({ tabs, active }: { tabs: Tab[]; active?: string }) {
             sm
             label={`▾ ${tabs.length}`}
             title="Все открытые вкладки"
-            items={tabs.map((t) => ({ label: `${tabIcon(t)} ${tabTitle(t, s, battles)}`, onClick: () => activateTab(t.key), kbd: t.key === active ? '●' : undefined }))}
+            items={tabs.map((t) => ({
+              label: `${tabIcon(t)} ${tabTitle(t, s, battles)}`,
+              onClick: () => activateTab(t.key),
+              kbd: t.key === active ? '●' : undefined,
+            }))}
           />
         </div>
       )}
@@ -154,7 +158,8 @@ function TabItem({ t, active }: { t: Tab; active: boolean }) {
     >
       <span className="tab-icon">{tabIcon(t)}</span>
       <span className="tab-title">{title}</span>
-      <button type="button"
+      <button
+        type="button"
         className="tab-close"
         title="Закрыть (Ctrl+W)"
         onClick={(e) => {
@@ -203,7 +208,11 @@ function DialogHost() {
           <h2>{d.title}</h2>
         </div>
         <div className="modal-body stack" style={{ gap: 10 }}>
-          {d.text && <div className="muted" style={{ whiteSpace: 'pre-wrap' }}>{d.text}</div>}
+          {d.text && (
+            <div className="muted" style={{ whiteSpace: 'pre-wrap' }}>
+              {d.text}
+            </div>
+          )}
           {d.input && (
             <input
               autoFocus
@@ -245,7 +254,8 @@ function Toasts() {
         <div key={t.id} className={`toast ${t.kind}`}>
           <span>{t.text}</span>
           {t.action && (
-            <button type="button"
+            <button
+              type="button"
               className="toast-action"
               onClick={() => {
                 dismissToast(t.id);
@@ -383,8 +393,15 @@ export function App() {
               { label: 'Повторить', kbd: 'Ctrl+Y', disabled: !hist.redo, tip: hist.redo ?? undefined, onClick: redo },
               'sep',
               { label: 'Импорт из файла…', onClick: () => importFile(), tip: 'Набор правил, подразделение, сценарий или бой в формате JSON' },
-              { label: s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', onClick: () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }) },
-              { label: s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор', kbd: 'Ctrl+B', onClick: () => updateSettings({ sidebar: !s.settings.sidebar }) },
+              {
+                label: s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема',
+                onClick: () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }),
+              },
+              {
+                label: s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор',
+                kbd: 'Ctrl+B',
+                onClick: () => updateSettings({ sidebar: !s.settings.sidebar }),
+              },
               'sep',
               { label: 'О программе', onClick: () => void showAbout() },
             ]}

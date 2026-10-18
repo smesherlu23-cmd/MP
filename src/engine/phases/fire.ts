@@ -329,12 +329,17 @@ export function applyShots(E: EngineContext, shots: Shot[]) {
       const factors: Factor[] = [];
       const mainCls = [...perClass.entries()].sort((a, b2) => b2[1].hits - a[1].hits)[0]?.[0];
       if (mainCls) {
-        factors.push({ label: `Воздействие по классу «${E.classes.get(mainCls)?.name ?? mainCls}»`, value: round1(perClass.get(mainCls)!.hits * 100) / 100, kind: 'base' });
+        factors.push({
+          label: `Воздействие по классу «${E.classes.get(mainCls)?.name ?? mainCls}»`,
+          value: round1(perClass.get(mainCls)!.hits * 100) / 100,
+          kind: 'base',
+        });
         const pf: Factor[] = [];
         protectionMult(E, t, mainCls, undefined, pf);
         for (const x of pf) factors.push({ ...x, label: `Защищённость — ${x.label}` });
       }
-      if (E.f.suppression && suppGain > 0) factors.push({ label: `Подавление ${Math.round(before)} → ${Math.round(t.suppression)}%`, value: round1(suppGain), kind: 'add' });
+      if (E.f.suppression && suppGain > 0)
+        factors.push({ label: `Подавление ${Math.round(before)} → ${Math.round(t.suppression)}%`, value: round1(suppGain), kind: 'add' });
       const who = [...[...shooters].map((id) => E.elements.get(id)?.name ?? id), ...[...sources].map((x) => `«${x}» (огневая поддержка)`)].join(', ');
       factors.unshift({ label: `Огонь вели: ${who}`, value: shooters.size + sources.size, kind: 'base' });
       E.log({
@@ -348,7 +353,13 @@ export function applyShots(E: EngineContext, shots: Shot[]) {
           : `${e(t)} под огнём, потерь нет${E.f.suppression ? ` (подавление ${Math.round(t.suppression)}%)` : ''}.`,
         factors,
         data: parts.length
-          ? { pers: loss.pers, kia: loss.kia, wia: loss.wia, mia: loss.mia, equip: Object.fromEntries([...loss.equip].map(([id, q]) => [id, q.destroyed + q.damaged + q.abandoned])) }
+          ? {
+              pers: loss.pers,
+              kia: loss.kia,
+              wia: loss.wia,
+              mia: loss.mia,
+              equip: Object.fromEntries([...loss.equip].map(([id, q]) => [id, q.destroyed + q.damaged + q.abandoned])),
+            }
           : undefined,
       });
     }
@@ -376,7 +387,6 @@ function splitCasualties(E: EngineContext, n: number, routing: boolean): [number
   const wia = E.rng.binomial(n - kia, ws + ms > 0 ? ws / (ws + ms) : 0);
   return [kia, wia, n - kia - wia];
 }
-
 
 // ------------------------------------------------------------------ огневая поддержка
 
@@ -426,10 +436,11 @@ function resolveStrike(E: EngineContext, st: StrikeOrder) {
     const ex = exposureOf(E, x, t.indirect);
     const vis = !E.f.detection || x.spotted ? 1 : k.strikeUnspotted;
     const pres = new Map<Id, number>();
-    for (const c of x.comps) if (c.current > 0) {
-      const tt = E.type(c.typeId);
-      pres.set(tt.targetClass, (pres.get(tt.targetClass) ?? 0) + c.current * Math.max(0.1, tt.value));
-    }
+    for (const c of x.comps)
+      if (c.current > 0) {
+        const tt = E.type(c.typeId);
+        pres.set(tt.targetClass, (pres.get(tt.targetClass) ?? 0) + c.current * Math.max(0.1, tt.value));
+      }
     for (const [cls, p] of pres) {
       const r = raw.get(cls);
       if (r) cands.push({ t: x, cls, w: r * Math.sqrt(p) * ex * vis, vis });

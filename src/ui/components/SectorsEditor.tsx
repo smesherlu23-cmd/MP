@@ -101,7 +101,10 @@ export function SectorsEditor({ sc, rsc, rs }: { sc: Scenario; rsc: Scenario; rs
                     else delete s.fortification[sd.id];
                   })
                 }
-                options={[{ value: '', label: `${sd.name}: укрепления стороны` }, ...rs.fortifications.map((o) => ({ value: o.id, label: `${sd.name}: ${o.name}` }))]}
+                options={[
+                  { value: '', label: `${sd.name}: укрепления стороны` },
+                  ...rs.fortifications.map((o) => ({ value: o.id, label: `${sd.name}: ${o.name}` })),
+                ]}
                 width={220}
                 title={`Укрепления стороны «${sd.name}» на этом участке`}
               />
@@ -110,8 +113,12 @@ export function SectorsEditor({ sc, rsc, rs }: { sc: Scenario; rsc: Scenario; rs
         </div>
       ))}
       <div className="row" style={{ marginTop: sectors.length ? 10 : 0 }}>
-        <Btn sm onClick={add}>{sectors.length ? '+ Участок' : '+ Разделить поле боя на участки'}</Btn>
-        {sectors.length > 0 && <Info text="Назначить подразделение на участок — в карточке стороны, у подразделения (и у его частей в структуре ▸). Не назначенные — на первом участке." />}
+        <Btn sm onClick={add}>
+          {sectors.length ? '+ Участок' : '+ Разделить поле боя на участки'}
+        </Btn>
+        {sectors.length > 0 && (
+          <Info text="Назначить подразделение на участок — в карточке стороны, у подразделения (и у его частей в структуре ▸). Не назначенные — на первом участке." />
+        )}
       </div>
     </Section>
   );

@@ -104,7 +104,11 @@ export const OP_LABELS: Record<ConditionOp, string> = {
 };
 
 /** Поля, доступные в условиях пользовательских модификаторов (кроме cond.<категория>). */
-export const MODIFIER_FIELDS: { field: string; label: string; kind: 'order' | 'behavior' | 'tag' | 'kind' | 'number' | 'side' | 'echelon' | 'range' | 'class' | 'fort' | 'intel' }[] = [
+export const MODIFIER_FIELDS: {
+  field: string;
+  label: string;
+  kind: 'order' | 'behavior' | 'tag' | 'kind' | 'number' | 'side' | 'echelon' | 'range' | 'class' | 'fort' | 'intel';
+}[] = [
   { field: 'range', label: 'Дистанция', kind: 'range' },
   { field: 'turn', label: 'Номер хода', kind: 'number' },
   { field: 'order', label: 'Приказ (свой)', kind: 'order' },

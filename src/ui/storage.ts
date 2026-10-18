@@ -109,7 +109,7 @@ const keysWith = (prefix: string) => {
   }
   return out;
 };
-const read = <T,>(key: string): T | null => {
+const read = <T>(key: string): T | null => {
   try {
     const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : null;
@@ -225,7 +225,13 @@ const browserBridge: Bridge = {
     const now = new Date();
     let id = stamp(now);
     for (let i = 2; list.some((b) => b.id === id); i++) id = `${stamp(now)}-${i}`;
-    const info: BackupInfo = { id, createdAt: now.toISOString(), kind, counts: Object.fromEntries(BACKED_UP.map((c) => [c, Object.keys(files[c]).length])), hash };
+    const info: BackupInfo = {
+      id,
+      createdAt: now.toISOString(),
+      kind,
+      counts: Object.fromEntries(BACKED_UP.map((c) => [c, Object.keys(files[c]).length])),
+      hash,
+    };
     for (const old of list.slice(BROWSER_BACKUPS - 1)) localStorage.removeItem(`${PREFIX}backup:${old.id}`);
     try {
       localStorage.setItem(`${PREFIX}backup:${id}`, JSON.stringify({ info, files }));

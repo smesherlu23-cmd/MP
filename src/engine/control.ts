@@ -81,11 +81,31 @@ function happened(b: Battle, was: Before, rules: PauseRules, logFrom: number): s
   };
   const changed = (pred: (prevStatus: string, prevBh: string, el: (typeof b.elements)[number]) => boolean) =>
     b.elements.filter((el) => pred(was.status.get(el.id) ?? '', was.behavior.get(el.id) ?? '', el)).map((x) => x.id);
-  if (rules.rout) list(changed((_ps, pb, el) => el.status === 'active' && E.behavior(el) === 'rout' && pb !== 'rout'), 'бегство');
-  if (rules.retreat) list(changed((_ps, pb, el) => el.status === 'active' && E.behavior(el) === 'retreat' && pb !== 'retreat'), 'отход');
-  if (rules.destroyed) list(changed((ps, _pb, el) => el.status === 'destroyed' && ps !== 'destroyed'), 'уничтожено');
-  if (rules.arrive) list(changed((ps, _pb, el) => ps === 'pending' && el.status === 'active'), 'подошло');
-  if (rules.reserve) list(changed((ps, pb, el) => ps === 'active' && pb === 'reserve' && el.status === 'active' && E.behavior(el) !== 'reserve'), 'введено в бой');
+  if (rules.rout)
+    list(
+      changed((_ps, pb, el) => el.status === 'active' && E.behavior(el) === 'rout' && pb !== 'rout'),
+      'бегство',
+    );
+  if (rules.retreat)
+    list(
+      changed((_ps, pb, el) => el.status === 'active' && E.behavior(el) === 'retreat' && pb !== 'retreat'),
+      'отход',
+    );
+  if (rules.destroyed)
+    list(
+      changed((ps, _pb, el) => el.status === 'destroyed' && ps !== 'destroyed'),
+      'уничтожено',
+    );
+  if (rules.arrive)
+    list(
+      changed((ps, _pb, el) => ps === 'pending' && el.status === 'active'),
+      'подошло',
+    );
+  if (rules.reserve)
+    list(
+      changed((ps, pb, el) => ps === 'active' && pb === 'reserve' && el.status === 'active' && E.behavior(el) !== 'reserve'),
+      'введено в бой',
+    );
   for (const f of b.formations) {
     if (rules.hq && f.hqLost && !was.hq.has(f.id)) out.push(`${resolveRefs(`[[f:${f.id}]]`, b)} — штаб потерян`);
     if (rules.broken && f.broken && !was.broken.has(f.id)) out.push(`${resolveRefs(`[[f:${f.id}]]`, b)} — формирование сломлено`);
@@ -99,7 +119,8 @@ function happened(b: Battle, was: Before, rules: PauseRules, logFrom: number): s
     });
   }
   if (rules.plan)
-    for (const e of b.log.slice(logFrom)) if (e.level === 0 && (e.phase === 'plan' || (e.phase === 'fire' && /удар «/.test(e.text)))) out.push(resolveRefs(e.text, b).replace(/\.$/, ''));
+    for (const e of b.log.slice(logFrom))
+      if (e.level === 0 && (e.phase === 'plan' || (e.phase === 'fire' && /удар «/.test(e.text)))) out.push(resolveRefs(e.text, b).replace(/\.$/, ''));
   if (rules.lossPct > 0 && b.history.length >= 2) {
     const prev = b.history[b.history.length - 2].sides;
     const cur = b.history[b.history.length - 1].sides;

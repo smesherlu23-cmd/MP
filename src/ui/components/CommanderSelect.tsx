@@ -2,7 +2,14 @@
 
 import { defaultCommandLevel, type LevelDef } from '../../engine';
 
-export function CommanderSelect(props: { levels: LevelDef[]; value: number; onChange: (v: number) => void; disabled?: boolean; allowNone?: boolean; tip?: string }) {
+export function CommanderSelect(props: {
+  levels: LevelDef[];
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+  allowNone?: boolean;
+  tip?: string;
+}) {
   const def = defaultCommandLevel({ commandLevels: props.levels });
   const cls = !props.value ? 'none' : props.value < def ? 'worse' : props.value > def ? 'better' : '';
   return (

@@ -49,7 +49,14 @@ export const SECTIONS: { id: string; label: string; count?: (r: Ruleset) => numb
 ];
 
 /** Старые адреса разделов — на них ссылаются справка и другие страницы. */
-const ALIASES: Record<string, string> = { features: 'general', bands: 'classes', experience: 'levels', command: 'levels', fortifications: 'conditions', intel: 'conditions' };
+const ALIASES: Record<string, string> = {
+  features: 'general',
+  bands: 'classes',
+  experience: 'levels',
+  command: 'levels',
+  fortifications: 'conditions',
+  intel: 'conditions',
+};
 
 export function RulesetPage({ tab }: { tab: Tab }) {
   const r = useApp((s) => s.rulesets[tab.ref!]);
@@ -65,7 +72,11 @@ export function RulesetPage({ tab }: { tab: Tab }) {
         <Menu
           items={[
             { label: 'Дублировать', onClick: () => createRuleset(r.id), tip: 'Копия для экспериментов с балансом' },
-            { label: 'Перенести из другого набора…', onClick: () => setTransfer(true), tip: 'Скопировать типы, приказы, условия, правила или эффекты из другого набора правил' },
+            {
+              label: 'Перенести из другого набора…',
+              onClick: () => setTransfer(true),
+              tip: 'Скопировать типы, приказы, условия, правила или эффекты из другого набора правил',
+            },
             { label: 'Сохранить в файл…', onClick: () => exportJson('ruleset', r.name, r) },
             { label: 'Редактировать как JSON', onClick: () => setTabSub(tab.key, 'json') },
             'sep',
@@ -155,7 +166,11 @@ function TempEffectsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
         </>
       }
       actions={
-        <Btn sm kind="ghost" onClick={() => upd((d) => void (d.tempEffects ??= []).push({ id: newId('fx'), name: 'Новый эффект', turns: 2, effects: { fire: 1.2 } }))}>
+        <Btn
+          sm
+          kind="ghost"
+          onClick={() => upd((d) => void (d.tempEffects ??= []).push({ id: newId('fx'), name: 'Новый эффект', turns: 2, effects: { fire: 1.2 } }))}
+        >
           + Эффект
         </Btn>
       }
@@ -166,10 +181,24 @@ function TempEffectsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
           <div key={x.id} className="kpi stack" style={{ gap: 8 }}>
             <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
               <Txt value={x.name} onChange={(v) => upd((d) => void (d.tempEffects[i].name = v))} width="100%" />
-              <Num value={x.turns} onChange={(v) => upd((d) => void (d.tempEffects[i].turns = Math.max(1, Math.round(v))))} min={1} max={50} integer suffix="ход" width={78} title="Сколько ходов действует по умолчанию" />
+              <Num
+                value={x.turns}
+                onChange={(v) => upd((d) => void (d.tempEffects[i].turns = Math.max(1, Math.round(v))))}
+                min={1}
+                max={50}
+                integer
+                suffix="ход"
+                width={78}
+                title="Сколько ходов действует по умолчанию"
+              />
               <Menu sm items={[{ label: 'Удалить эффект', danger: true, onClick: () => upd((d) => void d.tempEffects.splice(i, 1)) }]} />
             </div>
-            <Txt value={x.description ?? ''} onChange={(v) => upd((d) => void (d.tempEffects[i].description = v || undefined))} placeholder="описание (необязательно)" width="100%" />
+            <Txt
+              value={x.description ?? ''}
+              onChange={(v) => upd((d) => void (d.tempEffects[i].description = v || undefined))}
+              placeholder="описание (необязательно)"
+              width="100%"
+            />
             <EffectsEditor value={x.effects} onChange={(v) => upd((d) => void (d.tempEffects[i].effects = v))} />
           </div>
         ))}
@@ -198,7 +227,10 @@ function General({ r, upd }: { r: Ruleset; upd: Upd }) {
         </Field>
       </div>
       <div style={{ marginTop: 12 }}>
-        <Field label="Уровни подразделений" hint="Подсказки для поля «Уровень» в конструкторе, от младшего к старшему. «Добавить подчинённое» предлагает уровень на ступень ниже.">
+        <Field
+          label="Уровни подразделений"
+          hint="Подсказки для поля «Уровень» в конструкторе, от младшего к старшему. «Добавить подчинённое» предлагает уровень на ступень ниже."
+        >
           <Tags value={r.unitLevels} onChange={(v) => upd((d) => void (d.unitLevels = v))} placeholder="отделение, взвод, рота…" />
         </Field>
       </div>
@@ -367,7 +399,15 @@ function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Component
               label: 'Удалить тип',
               danger: true,
               onClick: async () => {
-                if (!(await confirmDialog(`Удалить тип «${t.name}»?`, used ? `Он используется в ${used} элементах — там он перестанет учитываться.` : undefined, 'Удалить', true))) return;
+                if (
+                  !(await confirmDialog(
+                    `Удалить тип «${t.name}»?`,
+                    used ? `Он используется в ${used} элементах — там он перестанет учитываться.` : undefined,
+                    'Удалить',
+                    true,
+                  ))
+                )
+                  return;
                 upd((d) => void (d.componentTypes = d.componentTypes.filter((y) => y.id !== t.id)));
               },
             },
@@ -392,7 +432,11 @@ function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Component
           />
         </Field>
         <Field label="Класс цели" hint="Каким классом этот тип является для огня противника.">
-          <Sel value={t.targetClass} onChange={(v) => ut((x) => void (x.targetClass = v))} options={r.targetClasses.map((c) => ({ value: c.id, label: c.name }))} />
+          <Sel
+            value={t.targetClass}
+            onChange={(v) => ut((x) => void (x.targetClass = v))}
+            options={r.targetClasses.map((c) => ({ value: c.id, label: c.name }))}
+          />
         </Field>
         {t.kind !== 'personnel' && (
           <Field label="Экипаж / расчёт, чел.">
@@ -419,7 +463,11 @@ function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Component
           </Field>
         )}
         <Field label="Огонь">
-          <Check value={t.indirect} onChange={(v) => ut((x) => void (x.indirect = v))} title="Навесной/непрямой огонь: не требует прямой видимости, достаёт второй эшелон и тыл.">
+          <Check
+            value={t.indirect}
+            onChange={(v) => ut((x) => void (x.indirect = v))}
+            title="Навесной/непрямой огонь: не требует прямой видимости, достаёт второй эшелон и тыл."
+          >
             с закрытых позиций
           </Check>
         </Field>
@@ -469,7 +517,11 @@ function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Component
           </tbody>
         </table>
       </div>
-      {used > 0 && <p className="faint small" style={{ margin: '8px 0 0' }}>Используется в элементах: {used}</p>}
+      {used > 0 && (
+        <p className="faint small" style={{ margin: '8px 0 0' }}>
+          Используется в элементах: {used}
+        </p>
+      )}
     </Card>
   );
 }
@@ -502,7 +554,11 @@ function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => void })
                   <a href="#" onClick={(e) => (e.preventDefault(), onPick(t.id))}>
                     {t.name}
                   </a>
-                  {t.indirect && <span className="badge info" style={{ marginLeft: 6 }}>навесной</span>}
+                  {t.indirect && (
+                    <span className="badge info" style={{ marginLeft: 6 }}>
+                      навесной
+                    </span>
+                  )}
                 </td>
                 <td className="small">{KIND_LABELS[t.kind]}</td>
                 <td className="small">{r.targetClasses.find((c) => c.id === t.targetClass)?.name}</td>
@@ -569,7 +625,15 @@ function ClassesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                   title="Удалить класс"
                   disabled={r.targetClasses.length <= 1}
                   onClick={async () => {
-                    if (!(await confirmDialog(`Удалить класс «${c.name}»?`, 'Огневая мощь по этому классу будет удалена из всех типов; типы этого класса перейдут в первый оставшийся класс.', 'Удалить', true))) return;
+                    if (
+                      !(await confirmDialog(
+                        `Удалить класс «${c.name}»?`,
+                        'Огневая мощь по этому классу будет удалена из всех типов; типы этого класса перейдут в первый оставшийся класс.',
+                        'Удалить',
+                        true,
+                      ))
+                    )
+                      return;
                     upd((d) => {
                       d.targetClasses = d.targetClasses.filter((x) => x.id !== c.id);
                       const fallback = d.targetClasses[0]?.id ?? '';
@@ -607,7 +671,11 @@ function BandsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
         </>
       }
       actions={
-        <Btn sm kind="ghost" onClick={() => upd((d) => void d.rangeBands.push({ id: newId('band'), name: 'Новая дистанция', detection: 0.8, turnsToClose: 2 }))}>
+        <Btn
+          sm
+          kind="ghost"
+          onClick={() => upd((d) => void d.rangeBands.push({ id: newId('band'), name: 'Новая дистанция', detection: 0.8, turnsToClose: 2 }))}
+        >
           + Дистанция
         </Btn>
       }
@@ -633,7 +701,14 @@ function BandsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                 <Txt value={b.name} onChange={(v) => upd((d) => void (d.rangeBands[i].name = v))} width="100%" />
               </td>
               <td className="num" style={{ width: 120 }}>
-                <Num value={Math.round(b.detection * 100)} onChange={(v) => upd((d) => void (d.rangeBands[i].detection = v / 100))} min={0} max={100} suffix="%" width={80} />
+                <Num
+                  value={Math.round(b.detection * 100)}
+                  onChange={(v) => upd((d) => void (d.rangeBands[i].detection = v / 100))}
+                  min={0}
+                  max={100}
+                  suffix="%"
+                  width={80}
+                />
               </td>
               <td className="num" style={{ width: 140 }}>
                 {i < r.rangeBands.length - 1 ? (
@@ -691,7 +766,11 @@ function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
           </>
         }
         actions={
-          <Btn sm kind="ghost" onClick={() => upd((d) => void d.orders.push({ id: newId('order'), name: 'Новый приказ', behavior: 'defend', exposure: 1, effects: {} }))}>
+          <Btn
+            sm
+            kind="ghost"
+            onClick={() => upd((d) => void d.orders.push({ id: newId('order'), name: 'Новый приказ', behavior: 'defend', exposure: 1, effects: {} }))}
+          >
             + Приказ
           </Btn>
         }
@@ -718,9 +797,23 @@ function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
               </div>
               <div className="row" style={{ flexWrap: 'nowrap', gap: 6 }}>
                 <div className="grow">
-                  <Sel value={o.behavior} width="100%" onChange={(v) => upd((d) => void (d.orders[i].behavior = v))} options={BEHAVIORS.map((b) => ({ value: b, label: BEHAVIOR_LABELS[b] }))} title="Поведение" />
+                  <Sel
+                    value={o.behavior}
+                    width="100%"
+                    onChange={(v) => upd((d) => void (d.orders[i].behavior = v))}
+                    options={BEHAVIORS.map((b) => ({ value: b, label: BEHAVIOR_LABELS[b] }))}
+                    title="Поведение"
+                  />
                 </div>
-                <Num value={o.exposure} onChange={(v) => upd((d) => void (d.orders[i].exposure = v))} min={0} max={3} step={0.05} width={64} title="Подставленность под огонь: 0 — вне огня, 1 — полностью" />
+                <Num
+                  value={o.exposure}
+                  onChange={(v) => upd((d) => void (d.orders[i].exposure = v))}
+                  min={0}
+                  max={3}
+                  step={0.05}
+                  width={64}
+                  title="Подставленность под огонь: 0 — вне огня, 1 — полностью"
+                />
               </div>
               <EffectsEditor value={o.effects} onChange={(v) => upd((d) => void (d.orders[i].effects = v))} />
             </div>
@@ -812,7 +905,14 @@ function ConditionsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
       {r.conditions.map((cat, ci) => (
         <Card
           key={cat.id}
-          title={<input className="title-input" style={{ fontSize: 14, minWidth: 180 }} value={cat.name} onChange={(e) => upd((d) => void (d.conditions[ci].name = e.target.value))} />}
+          title={
+            <input
+              className="title-input"
+              style={{ fontSize: 14, minWidth: 180 }}
+              value={cat.name}
+              onChange={(e) => upd((d) => void (d.conditions[ci].name = e.target.value))}
+            />
+          }
           actions={
             <div className="row" style={{ gap: 4 }}>
               <Btn sm kind="ghost" onClick={() => upd((d) => void d.conditions[ci].options.push({ id: newId('opt'), name: 'Новый вариант', effects: {} }))}>
@@ -837,7 +937,12 @@ function ConditionsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
         </Card>
       ))}
       <div className="row" style={{ gap: 6 }}>
-        <Btn kind="ghost" onClick={() => upd((d) => void d.conditions.push({ id: newId('cat'), name: 'Новая категория', options: [{ id: newId('opt'), name: 'Обычно', effects: {} }] }))}>
+        <Btn
+          kind="ghost"
+          onClick={() =>
+            upd((d) => void d.conditions.push({ id: newId('cat'), name: 'Новая категория', options: [{ id: newId('opt'), name: 'Обычно', effects: {} }] }))
+          }
+        >
           + Категория условий
         </Btn>
         <Info text="Кроме местности, времени суток и погоды можно добавить свои категории: сезон, высота, радиационная обстановка… Эффекты варианта действуют на все элементы обеих сторон." />
@@ -906,7 +1011,10 @@ function opsFor(kind: FieldKind): ConditionOp[] {
 function ConditionRow({ r, c, onChange, onRemove }: { r: Ruleset; c: ModifierCondition; onChange: (c: ModifierCondition) => void; onRemove: () => void }) {
   const info = fieldInfo(r, c.field);
   const ops = opsFor(info.kind);
-  const fields = [...r.conditions.map((cat) => ({ value: `cond.${cat.id}`, label: `Условие: ${cat.name}` })), ...MODIFIER_FIELDS.map((f) => ({ value: f.field, label: f.label }))];
+  const fields = [
+    ...r.conditions.map((cat) => ({ value: `cond.${cat.id}`, label: `Условие: ${cat.name}` })),
+    ...MODIFIER_FIELDS.map((f) => ({ value: f.field, label: f.label })),
+  ];
   const multi = c.op === 'in' || c.op === 'nin';
   const arr = Array.isArray(c.value) ? c.value.map(String) : [String(c.value)];
   const allTags = [...new Set(r.componentTypes.flatMap((t) => t.tags))];
@@ -925,7 +1033,7 @@ function ConditionRow({ r, c, onChange, onRemove }: { r: Ruleset; c: ModifierCon
         value={c.op}
         onChange={(op) => {
           const m = op === 'in' || op === 'nin';
-          onChange({ ...c, op, value: m ? arr.filter(Boolean) : arr[0] ?? '' });
+          onChange({ ...c, op, value: m ? arr.filter(Boolean) : (arr[0] ?? '') });
         }}
         options={ops.map((o) => ({ value: o, label: OP_LABELS[o] }))}
       />
@@ -950,7 +1058,13 @@ function ConditionRow({ r, c, onChange, onRemove }: { r: Ruleset; c: ModifierCon
           <Sel value={arr[0] ?? ''} onChange={(v) => onChange({ ...c, value: v })} options={info.options} />
         ) : (
           <>
-            <input list="mod-tags" value={arr[0] ?? ''} onChange={(e) => onChange({ ...c, value: e.target.value })} placeholder="тег" style={{ width: '100%' }} />
+            <input
+              list="mod-tags"
+              value={arr[0] ?? ''}
+              onChange={(e) => onChange({ ...c, value: e.target.value })}
+              placeholder="тег"
+              style={{ width: '100%' }}
+            />
             <datalist id="mod-tags">
               {allTags.map((t) => (
                 <option key={t} value={t} />
@@ -986,7 +1100,12 @@ function ModifiersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
           title={
             <div className="row" style={{ flexWrap: 'nowrap' }}>
               <Check value={m.enabled} onChange={(v) => um(i, (x) => void (x.enabled = v))} title="Включено" />
-              <input className="title-input" style={{ fontSize: 14, minWidth: 200, width: '100%' }} value={m.name} onChange={(e) => um(i, (x) => void (x.name = e.target.value))} />
+              <input
+                className="title-input"
+                style={{ fontSize: 14, minWidth: 200, width: '100%' }}
+                value={m.name}
+                onChange={(e) => um(i, (x) => void (x.name = e.target.value))}
+              />
             </div>
           }
           actions={
@@ -1015,7 +1134,17 @@ function ModifiersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
               {!m.when.length && <span className="faint small">Без условий — правило действует всегда.</span>}
               <Btn
                 sm
-                onClick={() => um(i, (x) => void x.when.push({ field: r.conditions[0] ? `cond.${r.conditions[0].id}` : 'tag', op: 'eq', value: r.conditions[0]?.options[0]?.id ?? '' }))}
+                onClick={() =>
+                  um(
+                    i,
+                    (x) =>
+                      void x.when.push({
+                        field: r.conditions[0] ? `cond.${r.conditions[0].id}` : 'tag',
+                        op: 'eq',
+                        value: r.conditions[0]?.options[0]?.id ?? '',
+                      }),
+                  )
+                }
                 className="grow"
               >
                 + условие
@@ -1027,7 +1156,12 @@ function ModifiersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
             </div>
           </div>
           <div style={{ marginTop: 8 }}>
-            <Txt value={m.description ?? ''} onChange={(v) => um(i, (x) => void (x.description = v))} placeholder="Описание (для себя и игроков)" width="100%" />
+            <Txt
+              value={m.description ?? ''}
+              onChange={(v) => um(i, (x) => void (x.description = v))}
+              placeholder="Описание (для себя и игроков)"
+              width="100%"
+            />
           </div>
         </Card>
       ))}
@@ -1070,7 +1204,13 @@ function OutcomesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                   <Txt value={o.name} onChange={(v) => upd((d) => void (d.outcomeLevels[i].name = v))} width={260} />
                 </td>
                 <td className="num">
-                  <Num value={Math.round(o.minDiff * 100)} onChange={(v) => upd((d) => void (d.outcomeLevels[i].minDiff = v / 100))} min={0} max={100} suffix="%" />
+                  <Num
+                    value={Math.round(o.minDiff * 100)}
+                    onChange={(v) => upd((d) => void (d.outcomeLevels[i].minDiff = v / 100))}
+                    min={0}
+                    max={100}
+                    suffix="%"
+                  />
                 </td>
                 <td>
                   <Btn sm kind="danger" disabled={r.outcomeLevels.length <= 1} onClick={() => upd((d) => void d.outcomeLevels.splice(i, 1))}>
@@ -1125,11 +1265,20 @@ function CoefficientsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                       <td>
                         <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
                           {m.label}
-                          <Info text={`${m.description ? `${m.description}\n` : ''}${off ? `Механика «${FEATURE_LABELS[m.feature!]}» выключена.\n` : ''}Ключ: ${m.key} · по умолчанию ${m.default}`} />
+                          <Info
+                            text={`${m.description ? `${m.description}\n` : ''}${off ? `Механика «${FEATURE_LABELS[m.feature!]}» выключена.\n` : ''}Ключ: ${m.key} · по умолчанию ${m.default}`}
+                          />
                         </span>
                       </td>
                       <td style={{ width: 120 }}>
-                        <Num value={v} onChange={(x) => upd((d) => void (d.coefficients[m.key] = x))} min={m.min} max={m.max} step={m.step ?? 0.05} width={100} />
+                        <Num
+                          value={v}
+                          onChange={(x) => upd((d) => void (d.coefficients[m.key] = x))}
+                          min={m.min}
+                          max={m.max}
+                          step={m.step ?? 0.05}
+                          width={100}
+                        />
                       </td>
                       <td style={{ width: 90 }} className="small">
                         {v !== m.default && (
@@ -1188,7 +1337,13 @@ function JsonSection({ r }: { r: Ruleset }) {
       }
     >
       {err && <div className="note bad">Ошибка: {err}</div>}
-      <textarea className="mono" style={{ width: '100%', minHeight: 520, fontSize: 12 }} value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+      <textarea
+        className="mono"
+        style={{ width: '100%', minHeight: 520, fontSize: 12 }}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        spellCheck={false}
+      />
     </Card>
   );
 }

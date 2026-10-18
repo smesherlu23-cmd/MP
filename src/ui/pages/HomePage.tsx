@@ -37,10 +37,42 @@ export function HomePage() {
   const finished = battles.filter((b) => b.finished).slice(0, 6);
   // Недавно изменённое — только то, что правили (у примеров после установки даты изменения нет).
   const recent: Recent[] = [
-    ...Object.values(s.scenarios).map((x) => ({ key: `sc:${x.id}`, kind: 'scenario' as TabKind, ref: x.id, icon: '◈', what: 'сценарий', name: x.name, at: x.updatedAt ?? '' })),
-    ...Object.values(s.forces).map((x) => ({ key: `fc:${x.id}`, kind: 'formation' as TabKind, ref: `force:${x.id}`, icon: '⚑', what: 'силы', name: x.name, at: x.updatedAt ?? '' })),
-    ...Object.values(s.formations).map((x) => ({ key: `fm:${x.id}`, kind: 'formation' as TabKind, ref: `lib:${x.id}`, icon: '▦', what: 'шаблон', name: x.name, at: x.updatedAt ?? '' })),
-    ...Object.values(s.rulesets).map((x) => ({ key: `rs:${x.id}`, kind: 'ruleset' as TabKind, ref: x.id, icon: '§', what: 'набор правил', name: x.name, at: x.updatedAt ?? '' })),
+    ...Object.values(s.scenarios).map((x) => ({
+      key: `sc:${x.id}`,
+      kind: 'scenario' as TabKind,
+      ref: x.id,
+      icon: '◈',
+      what: 'сценарий',
+      name: x.name,
+      at: x.updatedAt ?? '',
+    })),
+    ...Object.values(s.forces).map((x) => ({
+      key: `fc:${x.id}`,
+      kind: 'formation' as TabKind,
+      ref: `force:${x.id}`,
+      icon: '⚑',
+      what: 'силы',
+      name: x.name,
+      at: x.updatedAt ?? '',
+    })),
+    ...Object.values(s.formations).map((x) => ({
+      key: `fm:${x.id}`,
+      kind: 'formation' as TabKind,
+      ref: `lib:${x.id}`,
+      icon: '▦',
+      what: 'шаблон',
+      name: x.name,
+      at: x.updatedAt ?? '',
+    })),
+    ...Object.values(s.rulesets).map((x) => ({
+      key: `rs:${x.id}`,
+      kind: 'ruleset' as TabKind,
+      ref: x.id,
+      icon: '§',
+      what: 'набор правил',
+      name: x.name,
+      at: x.updatedAt ?? '',
+    })),
   ]
     .filter((x) => x.at)
     .sort((a, b) => b.at.localeCompare(a.at))
@@ -91,8 +123,15 @@ export function HomePage() {
         <Card title="С чего начать" className="home-continue">
           <ol className="home-steps">
             <li>
-              Откройте пример — {firstExample ? <Link kind="scenario" refId={firstExample.id}>{firstExample.name}</Link> : 'сценарий из раздела «Сценарии»'} — и нажмите
-              «▶ Начать бой»: ход за ходом видно, кто по кому стреляет и почему.
+              Откройте пример —{' '}
+              {firstExample ? (
+                <Link kind="scenario" refId={firstExample.id}>
+                  {firstExample.name}
+                </Link>
+              ) : (
+                'сценарий из раздела «Сценарии»'
+              )}{' '}
+              — и нажмите «▶ Начать бой»: ход за ходом видно, кто по кому стреляет и почему.
             </li>
             <li>
               <a href="#" onClick={(e) => (e.preventDefault(), updateSettings({ navSection: 'units' }))}>
@@ -115,7 +154,11 @@ export function HomePage() {
             <div className="home-list">
               {scenarios.map((x) => {
                 const rs = s.rulesets[x.rulesetId];
-                const forces = rs ? resolveScenario(x, s.forces).sides.map((sd) => fmt0(summarizeUnits(sideUnits(sd), rs).persCur)).join(' : ') : '';
+                const forces = rs
+                  ? resolveScenario(x, s.forces)
+                      .sides.map((sd) => fmt0(summarizeUnits(sideUnits(sd), rs).persCur))
+                      .join(' : ')
+                  : '';
                 return (
                   <div key={x.id} className="row">
                     <Link kind="scenario" refId={x.id} className="grow">

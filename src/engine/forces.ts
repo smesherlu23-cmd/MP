@@ -118,7 +118,11 @@ export function forceRefIssues(sc: Scenario, forces: Record<Id, UnitNode>): Issu
       for (const u of list) {
         // Одно и то же или вложенное друг в друга — силы задвоятся.
         const overlap = u.nodeId === nodeId || pathTo(f, nodeId).some((n) => n.id === u.nodeId) || pathTo(f, u.nodeId).some((n) => n.id === nodeId);
-        if (overlap) issues.push({ level: 'error', text: `«${f.name}» участвует в бою дважды (${u.side} и ${sd.name}) — одно подразделение не может быть в двух местах.` });
+        if (overlap)
+          issues.push({
+            level: 'error',
+            text: `«${f.name}» участвует в бою дважды (${u.side} и ${sd.name}) — одно подразделение не может быть в двух местах.`,
+          });
       }
       list.push({ side: sd.name, nodeId });
       used.set(f.id, list);

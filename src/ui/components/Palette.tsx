@@ -7,18 +7,7 @@ import { walkUnits, type UnitNode } from '../../engine';
 import { openUnit, setTabState } from '../hooks';
 import { SECTIONS } from '../pages/RulesetPage';
 import { startBattle } from '../pages/ScenarioPage';
-import {
-  createFormation,
-  createScenario,
-  importFile,
-  newRulesetDialog,
-  openTab,
-  redo,
-  tabKey,
-  undo,
-  updateSettings,
-  useApp,
-} from '../store';
+import { createFormation, createScenario, importFile, newRulesetDialog, openTab, redo, tabKey, undo, updateSettings, useApp } from '../store';
 
 export const usePalette = create<{ open: boolean }>(() => ({ open: false }));
 export const openPalette = () => usePalette.setState({ open: true });
@@ -80,7 +69,13 @@ function buildItems(): Item[] {
   for (const r of Object.values(s.rulesets).sort(byName)) {
     items.push({ id: `rs:${r.id}`, group: 'Наборы правил', title: r.name, top: true, run: (bg) => openTab('ruleset', r.id, { background: bg }) });
     for (const sec of SECTIONS)
-      items.push({ id: `rs:${r.id}:${sec.id}`, group: 'Наборы правил', title: sec.label, sub: r.name, run: (bg) => openTab('ruleset', r.id, { background: bg, sub: sec.id }) });
+      items.push({
+        id: `rs:${r.id}:${sec.id}`,
+        group: 'Наборы правил',
+        title: sec.label,
+        sub: r.name,
+        run: (bg) => openTab('ruleset', r.id, { background: bg, sub: sec.id }),
+      });
     for (const t of r.componentTypes)
       items.push({
         id: `rt:${r.id}:${t.id}`,
@@ -96,7 +91,14 @@ function buildItems(): Item[] {
 
   const battles = Object.values(s.battleIndex).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
   battles.forEach((b, i) =>
-    items.push({ id: `b:${b.id}`, group: 'Бои', title: b.name, sub: b.finished ? 'итог' : `ход ${b.turn}`, top: i < 3, run: (bg) => openTab('battle', b.id, { background: bg }) }),
+    items.push({
+      id: `b:${b.id}`,
+      group: 'Бои',
+      title: b.name,
+      sub: b.finished ? 'итог' : `ход ${b.turn}`,
+      top: i < 3,
+      run: (bg) => openTab('battle', b.id, { background: bg }),
+    }),
   );
   return items;
 }

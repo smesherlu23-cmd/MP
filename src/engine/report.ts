@@ -75,7 +75,12 @@ export function formatReport(b: Battle, opts: { includeLog?: boolean; logLevel?:
   const cond = b.ruleset.conditions.map((c) => `${c.name}: ${c.options.find((o) => o.id === b.conditions[c.id])?.name ?? '—'}`).join(' · ');
   lines.push(`${cond}. Ходов: ${b.turn} (≈${Math.round((b.turn * b.ruleset.turnMinutes) / 6) / 10} ч).`);
   if (r) {
-    lines.push('', `ИТОГ: ${r.headline}. ${r.endReason}.`, explainResult(r), `Оценка выполнения задач: ${b.sides.A.name} ${p0(r.sides.A.score * 100)} / ${b.sides.B.name} ${p0(r.sides.B.score * 100)}.`);
+    lines.push(
+      '',
+      `ИТОГ: ${r.headline}. ${r.endReason}.`,
+      explainResult(r),
+      `Оценка выполнения задач: ${b.sides.A.name} ${p0(r.sides.A.score * 100)} / ${b.sides.B.name} ${p0(r.sides.B.score * 100)}.`,
+    );
     for (const side of ['A', 'B'] as const) lines.push('', ...sideBlock(r.sides[side]));
     if (r.keyEvents.length) {
       lines.push('', '## Ключевые события');
@@ -108,7 +113,10 @@ function nice(v: number): number {
  */
 export function intelError(b: Battle, side: SideId, spottedPct: number): number {
   const levels = b.ruleset.intelLevels;
-  const idx = Math.max(0, levels.findIndex((x) => x.id === b.sides[side].intel));
+  const idx = Math.max(
+    0,
+    levels.findIndex((x) => x.id === b.sides[side].intel),
+  );
   const q = levels.length > 1 ? idx / (levels.length - 1) : 0.5;
   const base = 0.45 - 0.35 * q;
   return Math.min(0.9, base * (1 + (1 - Math.min(100, spottedPct) / 100)));
@@ -144,7 +152,10 @@ export function formatSideReport(b: Battle, side: SideId): string {
   const top = own.formations.filter((f) => f.depth === 1 && f.personnel.start > 0);
   if (top.length) {
     lines.push('По подразделениям:');
-    for (const f of top) lines.push(`  ▸ ${f.name}: ${n0(f.personnel.current)} из ${n0(f.personnel.start)} чел., потери ${n0(f.personnel.losses)} (убито ${n0(f.personnel.kia)}, ранено ${n0(f.personnel.wia)}, пропало ${n0(f.personnel.mia)})`);
+    for (const f of top)
+      lines.push(
+        `  ▸ ${f.name}: ${n0(f.personnel.current)} из ${n0(f.personnel.start)} чел., потери ${n0(f.personnel.losses)} (убито ${n0(f.personnel.kia)}, ранено ${n0(f.personnel.wia)}, пропало ${n0(f.personnel.mia)})`,
+      );
   }
 
   // Противник — оценкой
@@ -173,12 +184,25 @@ export function formatSideReport(b: Battle, side: SideId): string {
         if (lost > 0) byType.set(t.name, (byType.get(t.name) ?? 0) + lost);
       }
     for (const [name, n] of byType) lines.push(`${name}: выведено из строя ${range(n)}.`);
-    const state = foe.status.routed + foe.status.routing > foe.status.active ? 'большей частью бежал' : foe.status.withdrawn + foe.status.retreating > foe.status.active ? 'большей частью отошёл' : 'сохранил порядок';
+    const state =
+      foe.status.routed + foe.status.routing > foe.status.active
+        ? 'большей частью бежал'
+        : foe.status.withdrawn + foe.status.retreating > foe.status.active
+          ? 'большей частью отошёл'
+          : 'сохранил порядок';
     lines.push(`Состояние к концу боя: ${state}.`);
   }
 
   // Свои события и обстановка — без решений ГМ и без того, что видно только противнику
-  const events = b.log.filter((x) => x.level === 0 && x.phase !== 'turn' && x.phase !== 'setup' && x.phase !== 'end' && x.phase !== 'gm' && (x.side === side || (!x.side && x.phase === 'plan')));
+  const events = b.log.filter(
+    (x) =>
+      x.level === 0 &&
+      x.phase !== 'turn' &&
+      x.phase !== 'setup' &&
+      x.phase !== 'end' &&
+      x.phase !== 'gm' &&
+      (x.side === side || (!x.side && x.phase === 'plan')),
+  );
   if (events.length) {
     lines.push('', '## Ключевые события');
     for (const ev of events.slice(0, 40)) lines.push(`  Ход ${ev.turn}: ${resolveRefs(ev.text, b)}`);

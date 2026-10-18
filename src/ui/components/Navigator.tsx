@@ -5,7 +5,18 @@ import { useRef, useState } from 'react';
 import { arrowNav, pressable } from './ui';
 import { SECTIONS, sectionOf } from '../nav';
 import { DND_FORCE, DND_LIB } from '../pages/FormationPage';
-import { createFormation, createScenario, deleteBattles, newForceDialog, newRulesetDialog, openTab, updateSettings, useApp, type NavSection, type TabKind } from '../store';
+import {
+  createFormation,
+  createScenario,
+  deleteBattles,
+  newForceDialog,
+  newRulesetDialog,
+  openTab,
+  updateSettings,
+  useApp,
+  type NavSection,
+  type TabKind,
+} from '../store';
 
 function NavItem(props: { icon: string; label: string; count?: number; selected?: boolean; here?: boolean; onClick: () => void; title?: string }) {
   return (
@@ -35,11 +46,23 @@ export function Navigator() {
   };
   const meta = SECTIONS.find((x) => x.id === sec)!;
   const create = () =>
-    sec === 'scenarios' ? createScenario() : sec === 'forces' ? void newForceDialog() : sec === 'units' ? createFormation() : sec === 'rulesets' ? void newRulesetDialog() : undefined;
-  const isOpen = (kind: TabKind, ref: string) =>
-    activeTab?.ref === ref && activeTab.kind === kind;
+    sec === 'scenarios'
+      ? createScenario()
+      : sec === 'forces'
+        ? void newForceDialog()
+        : sec === 'units'
+          ? createFormation()
+          : sec === 'rulesets'
+            ? void newRulesetDialog()
+            : undefined;
+  const isOpen = (kind: TabKind, ref: string) => activeTab?.ref === ref && activeTab.kind === kind;
 
-  const row = (key: string, name: string, onOpen: (bg: boolean) => void, opts: { sub?: string; active?: boolean; dragLib?: string; dragForce?: string } = {}) => (
+  const row = (
+    key: string,
+    name: string,
+    onOpen: (bg: boolean) => void,
+    opts: { sub?: string; active?: boolean; dragLib?: string; dragForce?: string } = {},
+  ) => (
     <div
       key={key}
       className={`side-item${opts.active ? ' active' : ''}`}
@@ -93,7 +116,8 @@ export function Navigator() {
       .map((x) =>
         row(x.id, x.name, (bg) => openTab('scenario', x.id, { background: bg }), {
           sub: battlesBy.get(x.id) ? `боёв: ${battlesBy.get(x.id)}` : undefined,
-          active: (activeTab?.kind === 'scenario' || activeTab?.kind === 'montecarlo') && activeTab.ref === x.id ? true : !!activeTab?.ref?.startsWith(`sc:${x.id}:`),
+          active:
+            (activeTab?.kind === 'scenario' || activeTab?.kind === 'montecarlo') && activeTab.ref === x.id ? true : !!activeTab?.ref?.startsWith(`sc:${x.id}:`),
         }),
       );
     list = items;
@@ -103,19 +127,37 @@ export function Navigator() {
       .filter((x) => match(x.name))
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     const rsIds = [...new Set(units.map((u) => u.rulesetId ?? ''))];
-    const item = (x: (typeof units)[number]) => row(x.id, x.name, (bg) => openTab('formation', `lib:${x.id}`, { background: bg }), { sub: x.level, active: isOpen('formation', `lib:${x.id}`), dragLib: x.id });
+    const item = (x: (typeof units)[number]) =>
+      row(x.id, x.name, (bg) => openTab('formation', `lib:${x.id}`, { background: bg }), {
+        sub: x.level,
+        active: isOpen('formation', `lib:${x.id}`),
+        dragLib: x.id,
+      });
     // Подразделения разных наборов правил — отдельными группами: видно, к какому набору относится каждое.
-    list = rsIds.length > 1 ? rsIds.map((id) => group(s.rulesets[id]?.name ?? 'Без набора правил', units.filter((u) => (u.rulesetId ?? '') === id).map(item))) : units.map(item);
+    list =
+      rsIds.length > 1
+        ? rsIds.map((id) => group(s.rulesets[id]?.name ?? 'Без набора правил', units.filter((u) => (u.rulesetId ?? '') === id).map(item)))
+        : units.map(item);
     empty = q ? 'Ничего не найдено' : 'Шаблонов нет. Шаблон — устройство и штат подразделения: по нему создаются силы, из шаблонов собираются и более крупные.';
   } else if (sec === 'forces') {
     const units = Object.values(s.forces)
       .filter((x) => match(x.name) || match(x.faction ?? ''))
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     const factions = [...new Set(units.map((u) => u.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
-    const item = (x: (typeof units)[number]) => row(x.id, x.name, (bg) => openTab('formation', `force:${x.id}`, { background: bg }), { sub: x.level, active: isOpen('formation', `force:${x.id}`), dragForce: x.id });
+    const item = (x: (typeof units)[number]) =>
+      row(x.id, x.name, (bg) => openTab('formation', `force:${x.id}`, { background: bg }), {
+        sub: x.level,
+        active: isOpen('formation', `force:${x.id}`),
+        dragForce: x.id,
+      });
     // Силы — по принадлежности: чьи это войска.
-    list = factions.length > 1 ? factions.map((f) => group(f || 'Без принадлежности', units.filter((u) => (u.faction?.trim() || '') === f).map(item))) : units.map(item);
-    empty = q ? 'Ничего не найдено' : 'Сил пока нет. Силы — конкретные подразделения, созданные по шаблонам: у каждого своё состояние и свои потери после боёв.';
+    list =
+      factions.length > 1
+        ? factions.map((f) => group(f || 'Без принадлежности', units.filter((u) => (u.faction?.trim() || '') === f).map(item)))
+        : units.map(item);
+    empty = q
+      ? 'Ничего не найдено'
+      : 'Сил пока нет. Силы — конкретные подразделения, созданные по шаблонам: у каждого своё состояние и свои потери после боёв.';
   } else if (sec === 'battles') {
     const battles = Object.values(s.battleIndex)
       .filter((x) => match(x.name))
@@ -132,7 +174,11 @@ export function Navigator() {
             active: isOpen('battle', b.id),
           }),
         ),
-        () => deleteBattles(items.map((b) => b.id), `Удалить все бои сценария «${scName}»?`),
+        () =>
+          deleteBattles(
+            items.map((b) => b.id),
+            `Удалить все бои сценария «${scName}»?`,
+          ),
         `Удалить все бои этого сценария (${items.length})`,
       );
     });
@@ -151,7 +197,15 @@ export function Navigator() {
       <nav className="nav-sections">
         <NavItem icon="⌂" label="Главная" here={activeTab?.kind === 'home'} onClick={() => openTab('home')} />
         {SECTIONS.map((x) => (
-          <NavItem key={x.id} icon={x.icon} label={x.label} count={counts[x.id]} selected={sec === x.id} here={here === x.id} onClick={() => updateSettings({ navSection: x.id })} />
+          <NavItem
+            key={x.id}
+            icon={x.icon}
+            label={x.label}
+            count={counts[x.id]}
+            selected={sec === x.id}
+            here={here === x.id}
+            onClick={() => updateSettings({ navSection: x.id })}
+          />
         ))}
       </nav>
       <div className="nav-panel">

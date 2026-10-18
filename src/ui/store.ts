@@ -305,7 +305,10 @@ export function historyStep(label: string) {
 function applyEntry(e: HistEntry): HistEntry {
   const inv: HistEntry = { items: new Map(), op: e.op, label: e.label, at: 0 };
   set((s) => {
-    const next = { rulesets: { ...s.rulesets }, formations: { ...s.formations }, forces: { ...s.forces }, scenarios: { ...s.scenarios } } as Record<Col, Record<Id, unknown>>;
+    const next = { rulesets: { ...s.rulesets }, formations: { ...s.formations }, forces: { ...s.forces }, scenarios: { ...s.scenarios } } as Record<
+      Col,
+      Record<Id, unknown>
+    >;
     for (const [key, val] of e.items) {
       const [col, id] = splitKey(key);
       inv.items.set(key, s[col][id]);
@@ -420,7 +423,13 @@ export async function initApp() {
   });
   if (problems.length) void reportProblems(problems);
   // Пока программа открыта, копия делается раз в час (если что-то изменилось).
-  setInterval(() => void flushSaves().then(() => storage.backup('auto')).catch(() => null), 3600e3);
+  setInterval(
+    () =>
+      void flushSaves()
+        .then(() => storage.backup('auto'))
+        .catch(() => null),
+    3600e3,
+  );
 }
 
 const COL_LABEL: Record<string, string> = { rulesets: 'Наборы правил', formations: 'Шаблоны', forces: 'Силы', scenarios: 'Сценарии', battles: 'Бои' };
@@ -491,7 +500,11 @@ const MODEL_FLAG = 'warsim-model-forces';
 /** Примеры: шаблоны (чертежи) отдельно, силы сторон — отдельно; сценарии ссылаются на силы. */
 function exampleScenario(sc: Scenario, rootIds: [string, string], templates: Record<Id, UnitNode>, before: Map<Id, string>) {
   sc.sides.forEach((sd, i) => sd.formations[0] && (sd.formations[0].id = rootIds[i]));
-  rehashCopies(sc.sides.flatMap((sd) => sd.formations), before, templates);
+  rehashCopies(
+    sc.sides.flatMap((sd) => sd.formations),
+    before,
+    templates,
+  );
   return extractForces(sc, new Set(), () => newId('u'));
 }
 
@@ -500,7 +513,11 @@ export async function installExamples() {
   const linear = makeLinearRuleset();
   const named = (u: UnitNode, name: string) => ({ ...u, name });
   const raw = [
-    ...[...makeDemoTemplates(), named(makeDemoBattalion(), 'Мотострелковый батальон (пример)'), named(makeDemoDefenders(), 'Оборонительный узел усиленной роты (пример)')].map((u) => ({
+    ...[
+      ...makeDemoTemplates(),
+      named(makeDemoBattalion(), 'Мотострелковый батальон (пример)'),
+      named(makeDemoDefenders(), 'Оборонительный узел усиленной роты (пример)'),
+    ].map((u) => ({
       ...u,
       rulesetId: universal.id,
     })),
@@ -562,7 +579,12 @@ async function migrateToForces() {
   for (const sc of Object.values(s.scenarios)) {
     if (sc.sides.every((sd) => sd.units)) continue;
     const copy = clone(sc);
-    if (first) rehashCopies(copy.sides.flatMap((sd) => sd.formations), before, templates);
+    if (first)
+      rehashCopies(
+        copy.sides.flatMap((sd) => sd.formations),
+        before,
+        templates,
+      );
     const r = extractForces(copy, taken, () => newId('u'));
     forces.push(...r.forces);
     scenarios.push(r.scenario);
@@ -595,7 +617,10 @@ async function addLinearExample() {
   if (!rs || s.scenarios['sc-demo-linear']) return;
   // Прежние значения примера давали слишком вялый бой; свои настройки ГМ не трогаем.
   const k = rs.coefficients;
-  const upd = k.casualtyScale === 1 && k.moralePerLossPct === 1.2 ? [{ ...rs, coefficients: { ...k, ...pickCoefficients(makeLinearRuleset(), ['casualtyScale', 'moralePerLossPct']) } }] : [];
+  const upd =
+    k.casualtyScale === 1 && k.moralePerLossPct === 1.2
+      ? [{ ...rs, coefficients: { ...k, ...pickCoefficients(makeLinearRuleset(), ['casualtyScale', 'moralePerLossPct']) } }]
+      : [];
   const units = linearUnits().filter((u) => !s.formations[u.id]);
   await putExamples(upd, units, [makeLinearScenario()]);
 }
@@ -744,7 +769,12 @@ export async function deleteRuleset(id: Id) {
     return;
   }
   const users = Object.values(s.scenarios).filter((x) => x.rulesetId === id).length;
-  const ok = await confirmDialog(`Удалить набор правил «${r.name}»?`, users ? `Его используют сценарии: ${users}. Их придётся перевести на другой набор.` : undefined, 'Удалить', true);
+  const ok = await confirmDialog(
+    `Удалить набор правил «${r.name}»?`,
+    users ? `Его используют сценарии: ${users}. Их придётся перевести на другой набор.` : undefined,
+    'Удалить',
+    true,
+  );
   if (!ok) return;
   await flushSave('rulesets', id);
   record('rulesets', id, 'delete');
@@ -821,7 +851,10 @@ export function defaultRulesetId(): Id | undefined {
   const main = (r: Ruleset) => (r.id === 'rs-universal' ? 0 : 1);
   return Object.values(s.rulesets).sort(
     (a, b) =>
-      (used.get(b.id) ?? 0) - (used.get(a.id) ?? 0) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || main(a) - main(b) || a.name.localeCompare(b.name, 'ru'),
+      (used.get(b.id) ?? 0) - (used.get(a.id) ?? 0) ||
+      (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') ||
+      main(a) - main(b) ||
+      a.name.localeCompare(b.name, 'ru'),
   )[0]?.id;
 }
 
@@ -840,7 +873,8 @@ export function duplicateFormation(id: Id): Id | undefined {
 export async function deleteFormation(id: Id) {
   const f = get().formations[id];
   if (!f) return;
-  if (!(await confirmDialog(`Удалить шаблон «${f.name}»?`, 'Силы, созданные по нему, останутся — просто перестанут обновляться по шаблону.', 'Удалить', true))) return;
+  if (!(await confirmDialog(`Удалить шаблон «${f.name}»?`, 'Силы, созданные по нему, останутся — просто перестанут обновляться по шаблону.', 'Удалить', true)))
+    return;
   await flushSave('formations', id);
   record('formations', id, 'delete');
   set((s) => {
@@ -897,7 +931,10 @@ export async function newForceDialog(faction?: string): Promise<Id | undefined> 
   const list = Object.values(s.formations).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const v = await chooseDialog(
     'Новые силы — по какому шаблону?',
-    [...list.map((t) => ({ value: t.id, label: `${t.level ? `${t.level} · ` : ''}${t.name}` })), { value: '', label: 'Пустое подразделение (собрать вручную)' }],
+    [
+      ...list.map((t) => ({ value: t.id, label: `${t.level ? `${t.level} · ` : ''}${t.name}` })),
+      { value: '', label: 'Пустое подразделение (собрать вручную)' },
+    ],
     'Силы — конкретное подразделение: по шаблону берётся устройство и штат, а состояние и потери у каждого свои. Шаблон потом можно менять — силы обновятся по нему, сохранив потери.',
   );
   if (v === null) return;
@@ -1012,10 +1049,15 @@ export function putBattle(b: Battle, persist = true) {
   set((s) => ({ battleIndex: { ...s.battleIndex, [b.id]: battleMeta(b) } }));
   // На диск — без подробного журнала: в 5–10 раз меньше; подробности восстанавливаются повтором.
   if (persist)
-    scheduleSave('battles', b.id, () => {
-      const x = useBattles.getState().battles[b.id];
-      return x && trimBattleForStorage(x);
-    }, 1200);
+    scheduleSave(
+      'battles',
+      b.id,
+      () => {
+        const x = useBattles.getState().battles[b.id];
+        return x && trimBattleForStorage(x);
+      },
+      1200,
+    );
 }
 
 /**
@@ -1035,7 +1077,10 @@ export async function deleteBattles(ids: Id[], title: string): Promise<boolean> 
   if (!ids.length) return false;
   if (!(await confirmDialog(title, `Будет удалено боёв: ${ids.length}. Сценарии и подразделения не затрагиваются.`, 'Удалить', true))) return false;
   for (const id of ids) await deleteBattle(id, false, true);
-  toast(`Удалено боёв: ${ids.length} (они в корзине).`, 'good', { label: 'Вернуть', run: () => void restoreFromTrash(ids.map((key) => ({ col: 'battles', key }))) });
+  toast(`Удалено боёв: ${ids.length} (они в корзине).`, 'good', {
+    label: 'Вернуть',
+    run: () => void restoreFromTrash(ids.map((key) => ({ col: 'battles', key }))),
+  });
   return true;
 }
 
@@ -1043,7 +1088,8 @@ export async function deleteBattles(ids: Id[], title: string): Promise<boolean> 
 // Отменённые состояния хранятся в памяти — «Вернуть» (Ctrl+Y) возвращает их, пока бой не продолжили.
 const battleRedo = new Map<Id, Battle[]>();
 
-const NOT_REPLAYABLE = 'Этот бой сохранён другой версией программы — повтор с ним расходится, отменить ход нельзя. Можно «Повторить с решениями ГМ» в меню боя.';
+const NOT_REPLAYABLE =
+  'Этот бой сохранён другой версией программы — повтор с ним расходится, отменить ход нельзя. Можно «Повторить с решениями ГМ» в меню боя.';
 
 function replaceBattle(prev: Battle, next: Battle, what: string) {
   battleRedo.set(prev.id, [...(battleRedo.get(prev.id) ?? []), prev]);
@@ -1109,7 +1155,12 @@ export async function branchBattleDialog(id: Id) {
   const time = (t: number) => `${Math.floor((t * min) / 60)}:${String((t * min) % 60).padStart(2, '0')}`;
   const options = Array.from({ length: b.turn + 1 }, (_, i) => b.turn - i).map((t) => ({
     value: String(t),
-    label: t === b.turn ? `С текущего момента (после хода ${t}${b.interventions.some((x) => x.turn === t) ? ', с вашими решениями' : ''})` : t === 0 ? 'С начала боя' : `После хода ${t} · ${time(t)}`,
+    label:
+      t === b.turn
+        ? `С текущего момента (после хода ${t}${b.interventions.some((x) => x.turn === t) ? ', с вашими решениями' : ''})`
+        : t === 0
+          ? 'С начала боя'
+          : `После хода ${t} · ${time(t)}`,
   }));
   const v = await chooseDialog(
     'Ответвить бой',
@@ -1159,7 +1210,8 @@ export async function deleteBattle(id: Id, ask = true, quiet = false) {
   });
   await storage.remove('battles', id);
   closeTabsWhere((t) => t.kind === 'battle' && t.ref === id);
-  if (!quiet) toast(`Бой «${meta?.name ?? id}» удалён (он в корзине).`, 'info', { label: 'Вернуть', run: () => void restoreFromTrash([{ col: 'battles', key: id }]) });
+  if (!quiet)
+    toast(`Бой «${meta?.name ?? id}» удалён (он в корзине).`, 'info', { label: 'Вернуть', run: () => void restoreFromTrash([{ col: 'battles', key: id }]) });
 }
 
 export function renameBattle(id: Id, name: string) {
