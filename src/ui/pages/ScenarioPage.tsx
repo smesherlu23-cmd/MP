@@ -212,11 +212,11 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
                 hint={
                   (sc.frontWidth && rs ? `В первой линии — до ${fmt0((sc.frontWidth / 100) * rs.coefficients.frontDensity)} мест у каждой стороны. ` : '') +
                   'Сколько сил одновременно ведут прямой огонь: бойцы, расчёты и боевые машины сверх этого стреляют слабее («вклад сил сверх охвата» в наборе правил, там же плотность на 100 м). ' +
-                  '0 — ширина не задана: ограничивает только охват (по силам противника на участке).'
+                  'Пусто — ширина не задана: ограничивает только охват (по силам противника на участке).'
                 }
               >
                 <Num
-                  value={sc.frontWidth ?? 0}
+                  value={sc.frontWidth}
                   onChange={(v) => upd((d) => void (v > 0 ? (d.frontWidth = v) : delete d.frontWidth))}
                   min={0}
                   max={100000}
@@ -224,6 +224,7 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
                   integer
                   width="100%"
                   placeholder="не задана"
+                  emptyAs={0}
                 />
               </Field>
             )}

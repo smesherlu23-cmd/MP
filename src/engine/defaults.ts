@@ -8,6 +8,12 @@ import type { ComponentType, EffectDef, Id, LevelDef, Objective, OrderDef, Rules
 
 export const SCHEMA_VERSION = 1;
 
+/**
+ * Версия данных наборов правил и сценариев — хранится в самих файлах, чтобы одноразовые обновления
+ * выполнялись один раз для данных, а не для компьютера: 2 — калибровка коэффициентов, длительность в часах.
+ */
+export const DATA_VERSION = 2;
+
 let idCounter = 0;
 /** Уникальный идентификатор для новых объектов (не влияет на расчёт боя). */
 export function newId(prefix = 'id'): string {
@@ -224,6 +230,7 @@ export function makeUniversalRuleset(): Ruleset {
   const B = ['long', 'medium', 'close'];
   return {
     schemaVersion: SCHEMA_VERSION,
+    dataVersion: DATA_VERSION,
     id: 'rs-universal',
     name: 'Универсальный (пример)',
     era: 'XX–XXI век, обобщённо',
@@ -608,6 +615,8 @@ export function normalizeRuleset(r: Ruleset, compat = false): Ruleset {
   const base = makeUniversalRuleset();
   const out: Ruleset = { ...base, ...r };
   out.schemaVersion = SCHEMA_VERSION;
+  // Версия данных — только своя: у набора прежней версии её нет (обновления ещё не применялись).
+  if (r.dataVersion === undefined) delete out.dataVersion;
   out.features = { ...DEFAULT_FEATURES, ...(compat ? { orderDelay: false } : {}), ...(r.features ?? {}) };
   out.coefficients = { ...COEFFICIENT_DEFAULTS, ...(compat ? COMPAT_NEUTRAL : {}), ...(r.coefficients ?? {}) };
   out.targetClasses = r.targetClasses ?? [];
@@ -651,6 +660,7 @@ export function newScenario(rs: Ruleset, name = 'Новый сценарий', s
   for (const cat of rs.conditions) if (cat.options[0]) conditions[cat.id] = cat.options[0].id;
   return {
     schemaVersion: SCHEMA_VERSION,
+    dataVersion: DATA_VERSION,
     id: newId('sc'),
     name,
     description: '',
@@ -867,7 +877,7 @@ export function makeLinearScenario(): Scenario {
   sc.sides[1].name = 'Красные';
   sc.sides[1].formations = [instantiate(makeLinearDefenders())];
   sc.sides[1].fortification = 'earthworks';
-  sc.sides[1].objectives = [newObjective('hold', 4, 2), newObjective('inflict', 20, 1)];
+  sc.sides[1].objectives = [newObjective('hold', 6, 2), newObjective('inflict', 20, 1)];
   // План боя: резервы вводятся по ходам — и в бою, и в массовых прогонах.
   const node = (side: 0 | 1, name: string) => {
     let id = '';
@@ -909,6 +919,6 @@ export function makeDemoScenario(): Scenario {
   sc.sides[1].formations = [instantiate(makeDemoDefenders())];
   sc.sides[1].fortification = 'prepared';
   sc.sides[1].intel = 'partial';
-  sc.sides[1].objectives = [newObjective('hold', 3, 2), newObjective('inflict', 20, 1)];
+  sc.sides[1].objectives = [newObjective('hold', 3.5, 2), newObjective('inflict', 20, 1)];
   return sc;
 }

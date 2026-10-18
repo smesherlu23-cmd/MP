@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useState } from 'react';
 import { create } from 'zustand';
-import { createBattle, newId, randomSeed, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
+import { createBattle, fmtDuration, newId, randomSeed, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
 import { Histogram, StackBar } from '../components/Charts';
 import { Crumbs } from '../components/Crumbs';
 import { CompareSection } from '../components/McCompare';
@@ -156,7 +156,7 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
               ))}
             </div>
           </Card>
-          <MetricsTable r={r} colors={colors} metric={metric} setMetric={setMetric} tabKey={tab.key} />
+          <MetricsTable r={r} colors={colors} metric={metric} setMetric={setMetric} tabKey={tab.key} scId={sc.id} />
           <Section id="mc-runs" title="Отдельные прогоны" summary="любой можно открыть как полноценный бой" tight>
             <RunsTable r={r} scId={sc.id} colors={colors} />
           </Section>
@@ -193,15 +193,30 @@ function MetricsTable({
   metric,
   setMetric,
   tabKey,
+  scId,
 }: {
   r: MonteCarloResult;
   colors: Record<SideId, string>;
   metric: string;
   setMetric: (m: string) => void;
   tabKey: string;
+  scId: string;
 }) {
   const [all, setAll] = useTabState(`${tabKey}:allMetrics`, false);
-  const turns = r.metrics.find((m) => m.key === 'turns')!;
+  // Длительность — в часах (у результатов прежней версии — пересчёт из ходов).
+  const tm = useTurnMinutes(scId);
+  const turnsRow = r.metrics.find((m) => m.key === 'turns')!;
+  const hours =
+    r.metrics.find((m) => m.key === 'hours') ??
+    (() => {
+      const f = (v: number) => (v * tm) / 60;
+      const st = turnsRow.stats;
+      return {
+        ...turnsRow,
+        values: turnsRow.values.map(f),
+        stats: { mean: f(st.mean), sd: f(st.sd), min: f(st.min), p10: f(st.p10), median: f(st.median), p90: f(st.p90), max: f(st.max) },
+      };
+    })();
   const allKeys = [...new Set(r.metrics.filter((m) => m.side).map((m) => m.key.slice(2)))];
   const keys = all ? allKeys : allKeys.filter((k) => MAIN_METRICS.includes(k));
   const sel = SIDES.map((s) => r.metrics.find((m) => m.key === `${s}.${metric}`)).filter(Boolean) as MonteCarloResult['metrics'];
@@ -263,12 +278,12 @@ function MetricsTable({
             </tr>
           </thead>
           <tbody>
-            <tr title={tip(turns)}>
-              <td>Длительность, ходов</td>
+            <tr title={`${tip(hours)} ч; ходов в среднем ${fmt1(turnsRow.stats.mean)}`}>
+              <td>Длительность боя</td>
               <td className="num" colSpan={4}>
-                <b>{fmt1(turns.stats.mean)}</b>{' '}
+                <b>{fmtDuration(hours.stats.mean)}</b>{' '}
                 <span className="muted small">
-                  (10–90%: {fmt1(turns.stats.p10)}–{fmt1(turns.stats.p90)})
+                  (10–90%: {fmtDuration(hours.stats.p10)} – {fmtDuration(hours.stats.p90)})
                 </span>
               </td>
             </tr>
@@ -304,15 +319,19 @@ function MetricsTable({
             unit={sel[0]?.unit === '%' ? '%' : ''}
           />
         </Card>
-        <Card title="Длительность боя, ходов">
-          <Histogram series={[{ name: 'Ходов', color: 'var(--accent)', values: turns.values }]} height={120} />
+        <Card title="Длительность боя, ч">
+          <Histogram series={[{ name: 'Часов', color: 'var(--accent)', values: hours.values }]} height={120} />
         </Card>
       </div>
     </div>
   );
 }
 
+/** Минут в ходу набора правил сценария (для пересчёта ходов в часы). */
+const useTurnMinutes = (scId: string) => useApp((s) => s.rulesets[s.scenarios[scId]?.rulesetId ?? '']?.turnMinutes ?? 15);
+
 function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; colors: Record<SideId, string> }) {
+  const tm = useTurnMinutes(scId);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: 'index', dir: 1 });
   const [page, setPage] = useState(0);
   const per = 50;
@@ -347,7 +366,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
           <tr>
             {th('index', '№')}
             <th>Исход</th>
-            {th('turns', 'Ходов')}
+            {th('turns', 'Длительность')}
             {th('A.personnelLoss', `Потери ${r.sideNames.A}`, colors.A)}
             {th('B.personnelLoss', `Потери ${r.sideNames.B}`, colors.B)}
             {th('A.ce', `Боесп. ${r.sideNames.A}`, colors.A)}
@@ -362,7 +381,9 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
               <td className="small" style={{ color: x.winner ? colors[x.winner] : undefined }}>
                 {x.headline}
               </td>
-              <td className="num">{x.turns}</td>
+              <td className="num" title={`${x.turns}-й ход`}>
+                {fmtDuration(x.hours ?? (x.turns * tm) / 60)}
+              </td>
               <td className="num">
                 {x.sides.A.personnelLoss} <span className="faint">({Math.round(x.sides.A.personnelLossPct)}%)</span>
               </td>
@@ -402,7 +423,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
 
 function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): string {
   const typeIds = [...new Set(r.runs.flatMap((x) => SIDES.flatMap((s) => Object.keys(x.sides[s].equipmentLoss))))];
-  const head = ['run', 'outcome', 'winner', 'turns', 'end'];
+  const head = ['run', 'outcome', 'winner', 'turns', 'hours', 'end'];
   for (const s of SIDES) {
     head.push(
       `${s}_personnel_loss`,
@@ -422,7 +443,7 @@ function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): stri
   const q = (v: string | number) => (typeof v === 'number' ? String(Math.round(v * 100) / 100) : `"${v.replace(/"/g, '""')}"`);
   const lines = [head.map((h) => q(h)).join(';')];
   for (const x of r.runs) {
-    const row: (string | number)[] = [x.index + 1, x.outcomeName, x.winner ? r.sideNames[x.winner] : '', x.turns, x.endReason];
+    const row: (string | number)[] = [x.index + 1, x.outcomeName, x.winner ? r.sideNames[x.winner] : '', x.turns, x.hours ?? '', x.endReason];
     for (const s of SIDES) {
       const d = x.sides[s];
       row.push(d.personnelLoss, d.personnelLossPct, d.kia, d.wia, d.mia, d.valueLossPct, d.ce, d.organization, d.morale, d.ammo, d.score);

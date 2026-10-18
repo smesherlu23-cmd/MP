@@ -73,6 +73,7 @@ import {
   scenarioInTurns,
   scenarioToHours,
   turnsFor,
+  computeResult,
   type Battle,
   type UnitNode,
   type Ruleset,
@@ -1192,7 +1193,7 @@ describe('часы боя, «стоять насмерть» в сценарии
     const b = createBattle(sc, rs, { seed: 'H1' });
     expect(b.scenario.maxTurns).toBe(16);
     expect(b.scenario.hours).toBeUndefined();
-    expect(b.scenario.sides[1].objectives.find((o) => o.type === 'hold')!.value).toBe(12);
+    expect(b.scenario.sides[1].objectives.find((o) => o.type === 'hold')!.value).toBe(14);
     // Ход вдвое длиннее — ходов вдвое меньше, время то же.
     const slow = { ...clone(rs), turnMinutes: 30 };
     expect(createBattle(sc, slow, { seed: 'H1' }).scenario.maxTurns).toBe(8);
@@ -1272,5 +1273,37 @@ describe('часы боя, «стоять насмерть» в сценарии
     expect(r[a.id]!.id).toBe(a.id);
     expect(r[a.id]!.transfer).toBeUndefined();
     expect(findUnit(r[b.id]!, a.id)).toBeNull();
+  });
+});
+
+describe('итоги в часах и «удержать позицию»', () => {
+  const rs = makeUniversalRuleset();
+  const hold = (b: Battle) => computeResult(new EngineContext(b)).sides.B.objectives.find((o) => o.objective.type === 'hold')!;
+
+  it('срок выдержан — задача выполнена, даже если позицию оставили позже; раньше срока — не больше 60%', () => {
+    const sc = makeDemoScenario();
+    sc.sides[1].objectives[0].value = 3; // удержать 3 ч из 4
+    const b = createBattle(sc, rs, { seed: 'HO' });
+    b.turn = 16;
+    b.sides.B.lostHoldTurn = 15; // держались 14 ходов из 12 положенных (3 ч)
+    expect(hold(b).label).toBe('Удержать позицию 3 ч');
+    expect(hold(b).score).toBe(1);
+    expect(hold(b).explanation).toContain('положенные 3 ч');
+    b.sides.B.lostHoldTurn = 8; // 7 ходов из 12
+    expect(hold(b).score).toBeCloseTo((7 / 12) * 0.6);
+    expect(hold(b).explanation).toContain('раньше срока');
+    // Бой прежней версии (в снимке правил нет нового коэффициента) — по прежнему правилу, чтобы повтор совпал.
+    const old = clone(b);
+    delete old.ruleset.coefficients.holdOnTime;
+    old.sides.B.lostHoldTurn = 15;
+    expect(hold(old).score).toBeCloseTo(0.6);
+  });
+
+  it('прогоны считают длительность и в часах', () => {
+    const r = runMany(makeDemoScenario(), rs, 10, 'HR');
+    const turns = r.metrics.find((m) => m.key === 'turns')!.stats.mean;
+    const hours = r.metrics.find((m) => m.key === 'hours')!.stats.mean;
+    expect(hours).toBeCloseTo((turns * rs.turnMinutes) / 60);
+    expect(r.runs[0].hours).toBeCloseTo((r.runs[0].turns * 15) / 60);
   });
 });

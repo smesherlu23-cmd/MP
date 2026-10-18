@@ -7,6 +7,7 @@ import {
   EngineContext,
   PAUSE_LABELS,
   STAT_LABELS,
+  fmtDuration,
   forecastAsync,
   plural,
   randomSeed,
@@ -204,7 +205,7 @@ export function ForecastModal({ b, onClose }: { b: Battle; onClose: () => void }
             ))}
             {row(`Потери к концу: ${b.sides.A.name}`, (r) => `${fmt0(mean(r, 'A.personnelLoss'))} чел. · ${pct(mean(r, 'A.personnelLossPct'))}`)}
             {row(`Потери к концу: ${b.sides.B.name}`, (r) => `${fmt0(mean(r, 'B.personnelLoss'))} чел. · ${pct(mean(r, 'B.personnelLossPct'))}`)}
-            {row('Бой продлится до хода (в среднем)', (r) => fmt0(mean(r, 'turns')))}
+            {row('Бой продлится (в среднем)', (r) => `${fmtDuration((mean(r, 'turns') * b.ruleset.turnMinutes) / 60)} — до ${fmt0(mean(r, 'turns'))}-го хода`)}
           </tbody>
         </table>
       )}
@@ -267,7 +268,7 @@ export function EffectModal({ b, target, onClose, iv }: { b: Battle; target: Tar
         <Field label="Заготовка" hint={presets.find((x) => x.id === preset)?.description}>
           <Sel value={preset} onChange={pick} options={[...presets.map((p) => ({ value: p.id, label: p.name })), { value: '', label: 'свой эффект' }]} />
         </Field>
-        <Field label="Ходов">
+        <Field label={`Ходов (${fmtDuration((turns * b.ruleset.turnMinutes) / 60)})`}>
           <Num value={turns} onChange={(v) => setTurns(Math.max(1, Math.round(v)))} min={1} max={50} integer width="100%" />
         </Field>
         <Field label="Название (для журнала)">

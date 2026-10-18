@@ -1,6 +1,7 @@
 // Загрузка данных, примеры и перенос старых форматов, корзина и резервные копии, импорт и экспорт.
 
 import {
+  DATA_VERSION,
   clone,
   cloneUnit,
   makeBlankRuleset,
@@ -88,15 +89,13 @@ export async function initApp() {
   if (firstRun) {
     await installExamples();
     localStorage.setItem('warsim-initialized', '1');
-    localStorage.setItem(MODEL_FLAG, '1');
-    localStorage.setItem(CALIBRATION_FLAG, '1');
-    localStorage.setItem(HOLDFAST_FLAG, '1');
   } else {
+    // Одноразовые обновления данных прежних версий. Каждое узнаёт старые данные по ним самим (версия в
+    // файле или прежний формат), а не по памяти браузера: папку данных можно перенести на другой компьютер.
     await addLinearExample();
     await migrateToForces();
-    recalibrate();
-    scenariosToHours();
     holdFastToScenarios();
+    upgradeData();
   }
   if (!Object.keys(get().rulesets).length) {
     // Без набора правил программа бесполезна — создаём пустой.
@@ -178,31 +177,61 @@ export function migrateScenario(sc: Scenario): Scenario {
   return { ...sc, sides: sc.sides.map((sd) => ({ ...sd, formations: (sd.formations ?? []).map((f) => migrateUnit(f)) })) as Scenario['sides'] };
 }
 
-/** Калибровка правдоподобия исходов проведена: несменённые коэффициенты наборов переведены на новые значения. */
-export const CALIBRATION_FLAG = 'warsim-calibration-2';
+/**
+ * Отметка прежней версии программы (в памяти браузера): на этом компьютере калибровка уже применялась.
+ * Наборы без версии данных тогда только получают версию — их значения ГМ мог уже поменять сознательно.
+ */
+const CALIBRATED_HERE = 'warsim-calibration-2';
+
+/** Набор правил прежней версии — к текущей: несменённые коэффициенты — откалиброванные. Возвращает, менялись ли значения. */
+export function upgradeRuleset(r: Ruleset, calibrate = true): { ruleset: Ruleset; changed: boolean } {
+  if ((r.dataVersion ?? 0) >= DATA_VERSION) return { ruleset: r, changed: false };
+  const copy = clone(r);
+  const changed = calibrate && recalibrateRuleset(copy).length > 0;
+  copy.dataVersion = DATA_VERSION;
+  return { ruleset: copy, changed };
+}
 
 /**
- * Один раз после калибровки: в наборах правил коэффициенты, которые не меняли, — на новые значения
- * (заданные вручную остаются); пример «Высота 212» начинается с рубежа атаки, как в новых примерах.
+ * Сценарий прежней версии — к текущей: длительность и «удержать позицию» — в часах; в примерах «Высота 212» —
+ * с рубежа атаки, оборона держится дольше. Без набора правил сценарий остаётся как есть (обновится, когда
+ * набор найдётся).
  */
-export function recalibrate() {
-  if (localStorage.getItem(CALIBRATION_FLAG)) return;
+export function upgradeScenario(sc: Scenario, rs: Ruleset | undefined, calibrate = true): Scenario {
+  if ((sc.dataVersion ?? 0) >= DATA_VERSION || !rs) return sc;
+  const next = { ...scenarioToHours(sc, rs), dataVersion: DATA_VERSION };
+  if (calibrate && next.id === 'sc-demo' && next.startBand === 'long') next.startBand = 'medium';
+  // Примеры: удержание теперь засчитывается, когда срок выдержан, — оборона держится дольше, как в новых примерах.
+  const longerHold = (id: string, was: number, now: number) => {
+    if (next.id !== id) return;
+    next.sides = next.sides.map((sd) => ({
+      ...sd,
+      objectives: sd.objectives.map((o) => (o.type === 'hold' && Math.abs(o.value - was) < 0.01 ? { ...o, value: now } : o)),
+    })) as Scenario['sides'];
+  };
+  longerHold('sc-demo', 3, 3.5);
+  longerHold('sc-demo-linear', 4, 6);
+  return next;
+}
+
+/** Наборы правил и сценарии прежних версий — к текущей (по версии данных в самих файлах). */
+export function upgradeData() {
   const s = get();
+  const calibrate = !localStorage.getItem(CALIBRATED_HERE);
   const names: string[] = [];
   for (const r of Object.values(s.rulesets)) {
-    const copy = clone(r);
-    if (!recalibrateRuleset(copy).length) continue;
-    set((st) => ({ rulesets: { ...st.rulesets, [r.id]: copy } }));
+    const { ruleset, changed } = upgradeRuleset(r, calibrate);
+    if (ruleset === r) continue;
+    set((st) => ({ rulesets: { ...st.rulesets, [r.id]: ruleset } }));
     scheduleSave('rulesets', r.id, () => get().rulesets[r.id]);
-    names.push(`«${r.name}»`);
+    if (changed) names.push(`«${r.name}»`);
   }
-  const demo = s.scenarios['sc-demo'];
-  if (demo && demo.startBand === 'long') {
-    const copy = { ...demo, startBand: 'medium' };
-    set((st) => ({ scenarios: { ...st.scenarios, [demo.id]: copy } }));
-    scheduleSave('scenarios', demo.id, () => get().scenarios[demo.id]);
+  for (const sc of Object.values(s.scenarios)) {
+    const next = upgradeScenario(sc, get().rulesets[sc.rulesetId], calibrate);
+    if (next === sc) continue;
+    set((st) => ({ scenarios: { ...st.scenarios, [sc.id]: next } }));
+    scheduleSave('scenarios', sc.id, () => get().scenarios[sc.id]);
   }
-  localStorage.setItem(CALIBRATION_FLAG, '1');
   if (names.length)
     toast(
       `Модель боя откалибрована: в наборах ${names.join(', ')} обновлены «Мораль за 1% потерь» и «Порог отхода (потери)» — там, где их не меняли. Начатые бои идут по своим прежним правилам.`,
@@ -210,16 +239,16 @@ export function recalibrate() {
     );
 }
 
-/** «Стоять насмерть» перенесён из шаблонов и сил в сценарий. */
-export const HOLDFAST_FLAG = 'warsim-holdfast-scenario';
-
 /**
- * Один раз: отметки «стоять насмерть» у сил переносятся в сценарии, где эти силы воюют (у той же части),
- * а у сил и шаблонов снимаются; копии шаблонов остаются актуальными.
+ * «Стоять насмерть» перенесён из шаблонов и сил в сценарий: отметки у сил (их больше нельзя поставить —
+ * значит, это данные прежней версии) переносятся в сценарии, где эти силы воюют, а у сил и шаблонов
+ * снимаются; копии шаблонов остаются актуальными.
  */
 export function holdFastToScenarios() {
-  if (localStorage.getItem(HOLDFAST_FLAG)) return;
   const s = get();
+  let any = false;
+  for (const u of [...Object.values(s.formations), ...Object.values(s.forces)]) walkUnits(u, (n) => void (n.holdFast && (any = true)));
+  if (!any) return;
   const marked = new Set<Id>();
   const clearIn = (root: UnitNode) => {
     let hit = false;
@@ -270,25 +299,9 @@ export function holdFastToScenarios() {
   for (const t of changedT) scheduleSave('formations', t.id, () => get().formations[t.id]);
   for (const f of changedF) scheduleSave('forces', f.id, () => get().forces[f.id]);
   for (const x of scenarios) scheduleSave('scenarios', x.id, () => get().scenarios[x.id]);
-  localStorage.setItem(HOLDFAST_FLAG, '1');
-}
-
-/** Сценарии прежней версии (лимит в ходах) — на часы: длительность боя и «удержать позицию». */
-export function scenariosToHours() {
-  const s = get();
-  for (const sc of Object.values(s.scenarios)) {
-    const rs = s.rulesets[sc.rulesetId];
-    if (sc.hours !== undefined || !rs) continue;
-    const next = scenarioToHours(sc, rs);
-    set((st) => ({ scenarios: { ...st.scenarios, [sc.id]: next } }));
-    scheduleSave('scenarios', sc.id, () => get().scenarios[sc.id]);
-  }
 }
 
 export const linearUnits = () => [...makeLinearTemplates(), makeLinearBrigade(), makeLinearDefenders()];
-
-/** Модель «шаблоны + силы» введена: шаблоны очищены, подразделения сценариев перенесены в силы. */
-export const MODEL_FLAG = 'warsim-model-forces';
 
 /** Примеры: шаблоны (чертежи) отдельно, силы сторон — отдельно; сценарии ссылаются на силы. */
 export function exampleScenario(sc: Scenario, rootIds: [string, string], templates: Record<Id, UnitNode>, before: Map<Id, string>) {
@@ -322,7 +335,6 @@ export async function installExamples() {
   const a = exampleScenario(makeDemoScenario(), ['force-demo-bn', 'force-demo-def'], templates, before);
   const b = exampleScenario(makeLinearScenario(), ['force-lin-brig', 'force-lin-def'], templates, before);
   await putExamples([universal, linear], Object.values(templates), [a.scenario, b.scenario], [...a.forces, ...b.forces]);
-  localStorage.setItem('warsim-examples-linear', '1');
 }
 
 export async function putExamples(rs: Ruleset[], units: UnitNode[], scs: Scenario[], forces: UnitNode[] = []) {
@@ -339,21 +351,23 @@ export async function putExamples(rs: Ruleset[], units: UnitNode[], scs: Scenari
 }
 
 /**
- * Переход на «шаблоны + силы». Один раз: шаблоны очищаются от приказов и состояния (актуальные копии
- * остаются актуальными), подразделения с потерями сохраняются ещё и как силы. Всегда: сценарий со
- * старыми копиями подразделений (в том числе импортированный) переводится на силы.
+ * Переход на «шаблоны + силы». Шаблон с приказами, состоянием или потерями — это подразделение
+ * библиотеки прежней версии: он очищается (актуальные копии остаются актуальными), а с потерями —
+ * сохраняется ещё и как силы. Сценарий со старыми копиями подразделений (в том числе импортированный)
+ * переводится на силы. Всё узнаётся по самим данным — повторный запуск ничего не меняет.
  */
 export async function migrateToForces() {
   const s = get();
-  const first = !localStorage.getItem(MODEL_FLAG);
-  let templates = s.formations;
   const extraForces: UnitNode[] = [];
   const before = new Map(Object.values(s.formations).map((t) => [t.id, unitHash(t)]));
+  const old = Object.values(s.formations).filter((t) => JSON.stringify(toTemplate(t)) !== JSON.stringify(t));
+  const first = old.length > 0;
+  let templates = s.formations;
   if (first) {
-    templates = Object.fromEntries(Object.values(s.formations).map((t) => [t.id, toTemplate(t)]));
+    templates = { ...s.formations, ...Object.fromEntries(old.map((t) => [t.id, toTemplate(t)])) };
     rehashCopies(Object.values(templates), before, templates);
     // Шаблон (бывшее подразделение библиотеки) с потерями — это, по сути, уже конкретные силы: сохраняем и их.
-    for (const t of Object.values(s.formations)) {
+    for (const t of old) {
       if (t.id.startsWith('demo-')) continue;
       let hurt = false;
       walkUnits(t, (n) => n.composition.forEach((c) => (c.current < c.authorized || (c.recoverable ?? 0) > 0) && (hurt = true)));
@@ -372,12 +386,11 @@ export async function migrateToForces() {
   for (const sc of Object.values(s.scenarios)) {
     if (sc.sides.every((sd) => sd.units)) continue;
     const copy = clone(sc);
-    if (first)
-      rehashCopies(
-        copy.sides.flatMap((sd) => sd.formations),
-        before,
-        templates,
-      );
+    rehashCopies(
+      copy.sides.flatMap((sd) => sd.formations),
+      before,
+      templates,
+    );
     const r = extractForces(copy, taken, () => newId('u'));
     forces.push(...r.forces);
     scenarios.push(r.scenario);
@@ -391,8 +404,7 @@ export async function migrateToForces() {
   for (const t of changedTemplates) await storage.save('formations', t.id, t);
   for (const f of forces) await storage.save('forces', f.id, f);
   for (const x of scenarios) await storage.save('scenarios', x.id, x);
-  localStorage.setItem(MODEL_FLAG, '1');
-  if (first && (forces.length || changedTemplates.length))
+  if (forces.length || changedTemplates.length)
     queueMicrotask(() =>
       toast(
         `Подразделения теперь делятся на «Шаблоны» (устройство и штат) и «Силы» (конкретные подразделения с потерями). Подразделения сценариев перенесены в «Силы»: ${forces.length}.`,
@@ -403,11 +415,10 @@ export async function migrateToForces() {
 
 /** Пример боя для «Линейной тактики» появился позже остальных — добавляется один раз тем, у кого этот набор уже есть. */
 export async function addLinearExample() {
-  if (localStorage.getItem('warsim-examples-linear')) return;
-  localStorage.setItem('warsim-examples-linear', '1');
   const s = get();
   const rs = s.rulesets['rs-linear'];
-  if (!rs || s.scenarios['sc-demo-linear']) return;
+  // Набор текущей версии данных уже видел этот пример (удалённый пример не возвращается); прежняя отметка браузера — тоже.
+  if (!rs || s.scenarios['sc-demo-linear'] || (rs.dataVersion ?? 0) >= DATA_VERSION || localStorage.getItem('warsim-examples-linear')) return;
   // Прежние значения примера давали слишком вялый бой; свои настройки ГМ не трогаем.
   const k = rs.coefficients;
   const upd =
@@ -446,7 +457,8 @@ export async function importFile() {
   }
   const s = get();
   if (data?.componentTypes && data?.rangeBands) {
-    const r = normalizeRuleset(data as Ruleset);
+    // Файл прежней версии — сразу к текущей (калибровка несменённых коэффициентов).
+    const r = upgradeRuleset(normalizeRuleset(data as Ruleset)).ruleset;
     if (s.rulesets[r.id]) {
       r.id = newId('rs');
       r.name = `${r.name} (импорт)`;
@@ -462,7 +474,7 @@ export async function importFile() {
     toast(`Импортирован бой «${b.name}».`, 'good');
   } else if (data?.sides && data?.rulesetId) {
     let sc = migrateScenario(data as Scenario);
-    if (s.rulesets[sc.rulesetId]) sc = scenarioToHours(sc, s.rulesets[sc.rulesetId]);
+    sc = upgradeScenario(sc, s.rulesets[sc.rulesetId]);
     if (s.scenarios[sc.id]) {
       sc.id = newId('sc');
       sc.name = `${sc.name} (импорт)`;

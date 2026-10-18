@@ -65,8 +65,11 @@ export function Num(props: {
   integer?: boolean;
   title?: string;
   placeholder?: string;
+  /** Пустое поле — это значение (обычно 0 — «не задано»): поле можно очистить, и оно показывается пустым с подписью placeholder. */
+  emptyAs?: number;
 }) {
-  const fmt = (v: number | null | undefined) => (v === null || v === undefined || Number.isNaN(v) ? '' : String(Math.round(v * 10000) / 10000));
+  const fmt = (v: number | null | undefined) =>
+    v === null || v === undefined || Number.isNaN(v) || (props.emptyAs !== undefined && v === props.emptyAs) ? '' : String(Math.round(v * 10000) / 10000);
   const [text, setText] = useState(fmt(props.value));
   const focused = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: fmt — чистая функция; текст обновляется только при смене значения
@@ -74,6 +77,7 @@ export function Num(props: {
     if (!focused.current) setText(fmt(props.value));
   }, [props.value]);
   const parse = (t: string) => {
+    if (t.trim() === '' && props.emptyAs !== undefined) return props.emptyAs;
     const v = Number(t.replace(',', '.').trim());
     if (t.trim() === '' || !Number.isFinite(v)) return null;
     let x = v;
@@ -110,7 +114,8 @@ export function Num(props: {
           const t = e.target.value;
           if (/[.,-]$/.test(t)) return;
           const v = parse(t);
-          if (v !== null && v !== props.value && String(v) === t.replace(',', '.').trim()) props.onChange(v);
+          if (v !== null && v !== props.value && (String(v) === t.replace(',', '.').trim() || (t.trim() === '' && props.emptyAs !== undefined)))
+            props.onChange(v);
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();

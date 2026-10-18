@@ -160,6 +160,8 @@ export type Coefficients = Record<string, number>;
 
 export interface Ruleset {
   schemaVersion: number;
+  /** Версия данных: какие одноразовые обновления к набору уже применены (см. DATA_VERSION). Нет — данные прежних версий. */
+  dataVersion?: number;
   id: Id;
   name: string;
   era?: string;
@@ -371,6 +373,8 @@ export interface SectorDef {
 
 export interface Scenario {
   schemaVersion: number;
+  /** Версия данных: какие одноразовые обновления к сценарию уже применены (см. DATA_VERSION). Нет — данные прежних версий. */
+  dataVersion?: number;
   id: Id;
   name: string;
   description?: string;

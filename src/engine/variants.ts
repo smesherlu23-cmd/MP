@@ -1,7 +1,7 @@
 // Варианты сценария для массового моделирования: перебор одного параметра — «как исход зависит от X».
 
 import { clone } from './defaults';
-import { scenarioTurns } from './duration';
+import { fmtDuration, hoursFor, scenarioTurns } from './duration';
 import type { Id, Ruleset, Scenario, SideId, UnitNode } from './types';
 import { findUnit } from './units';
 
@@ -99,7 +99,9 @@ export function sweepVariants(sc: Scenario, rs: Ruleset, p: SweepParam): Variant
       if (!ev) return [];
       const from = Math.max(1, Math.round(p.from ?? 1));
       const to = Math.min(Math.max(from, Math.round(p.to ?? scenarioTurns(sc, rs))), from + 29);
-      for (let t = from; t <= to; t++) make(`ход ${t}`, (d) => void (d.events!.find((x) => x.id === ev.id)!.turn = t));
+      // Ход и время от начала боя: «ход 8 (+1 ч 45 мин)».
+      for (let t = from; t <= to; t++)
+        make(`ход ${t} (${t > 1 ? `+${fmtDuration(hoursFor(t - 1, rs))}` : 'начало'})`, (d) => void (d.events!.find((x) => x.id === ev.id)!.turn = t));
       make('без события', (d) => void (d.events = d.events!.filter((x) => x.id !== ev.id)));
       break;
     }

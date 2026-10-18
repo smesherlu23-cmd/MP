@@ -384,6 +384,14 @@ export const COEFFICIENTS: CoefficientMeta[] = [
     'Доля начальной боевой ценности стороны, которая должна оставаться на позициях.',
     { min: 0, max: 1, step: 0.05 },
   ),
+  c(
+    'Проверки конца хода',
+    'holdOnTime',
+    1,
+    'Удержание засчитано по сроку',
+    '1 — задача «Удержать позицию» выполнена, если позицию держали положенное время, даже если оставили её позже. 0 — оставленная позиция засчитывается не больше чем на 60%, как бы долго её ни держали.',
+    { min: 0, max: 1, step: 1 },
+  ),
   c('Проверки конца хода', 'autoCommitReserves', 1, 'Автоввод резервов', '1 — резервы вступают в бой, когда в первой линии никого не осталось.', {
     min: 0,
     max: 1,
@@ -531,7 +539,7 @@ export const COEFFICIENT_DEFAULTS: Record<string, number> = Object.fromEntries(C
  * Снимок правил боя, начатого в прежней версии, — недостающие ключи: механики, появившиеся позже, выключены,
  * изменённые калибровкой коэффициенты — прежние. Повтор, откат и продолжение такого боя идут так же, как шли.
  */
-export const COMPAT_NEUTRAL: Record<string, number> = { frontageOverlap: 0, sideLuck: 0, moralePerLossPct: 1.2, retreatLossPct: 50 };
+export const COMPAT_NEUTRAL: Record<string, number> = { frontageOverlap: 0, sideLuck: 0, moralePerLossPct: 1.2, retreatLossPct: 50, holdOnTime: 0 };
 
 /**
  * Значения по умолчанию, изменённые калибровкой, — [прежнее, новое]. В сохранённых наборах правил значение,

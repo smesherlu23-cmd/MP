@@ -29,6 +29,8 @@ export interface RunSummary {
   headline: string;
   diff: number;
   turns: number;
+  /** Длительность боя, ч. */
+  hours: number;
   endReason: string;
   sides: Record<SideId, RunSideSummary>;
 }
@@ -109,6 +111,7 @@ export function summarizeRun(b: Battle, index: number): RunSummary {
     headline: r.headline,
     diff: r.scoreDiff,
     turns: r.turns,
+    hours: (r.turns * b.ruleset.turnMinutes) / 60,
     endReason: r.endReason,
     sides,
   };
@@ -167,6 +170,13 @@ export function aggregate(runs: RunSummary[], ruleset: Ruleset, sideNames: Recor
     'ход.',
     null,
     runs.map((r) => r.turns),
+  );
+  add(
+    'hours',
+    'Длительность боя',
+    'ч',
+    null,
+    runs.map((r) => r.hours ?? (r.turns * ruleset.turnMinutes) / 60),
   );
   for (const side of ['A', 'B'] as SideId[]) {
     const pick = (f: (s: RunSideSummary) => number) => runs.map((r) => f(r.sides[side]));

@@ -1,6 +1,6 @@
 // Итоги и оценка боя, сравнение сторон, графики, запись итогов в силы.
 
-import { explainResult, formatReport, formatSideReport, type Battle, type BattleResult, type SideResult } from '../../../engine';
+import { explainResult, fmtDuration, formatReport, formatSideReport, plural, type Battle, type BattleResult, type SideResult } from '../../../engine';
 import { LineChart } from '../../components/Charts';
 import { RichText } from '../../components/LogView';
 import { Btn, Card, Section, fmt0, pct } from '../../components/ui';
@@ -145,7 +145,8 @@ export function Result({ b, result, onElement }: { b: Battle; result: BattleResu
           {result.headline}
         </div>
         <div className="muted" style={{ marginTop: 4 }}>
-          {b.finished ? `${result.endReason}. ` : ''}Ходов: {result.turns}.
+          {b.finished ? `${result.endReason}. ` : ''}Длительность: {fmtDuration((result.turns * b.ruleset.turnMinutes) / 60)} ({result.turns}{' '}
+          {plural(result.turns, 'ход', 'хода', 'ходов')}).
         </div>
         <div className="result-why">{explainResult(result)}</div>
         {b.finished && <ForcesCard b={b} />}

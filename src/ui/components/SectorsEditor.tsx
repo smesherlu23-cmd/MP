@@ -68,15 +68,16 @@ export function SectorsEditor({ sc, rsc, rs }: { sc: Scenario; rsc: Scenario; rs
             />
             <span className="plan-label">ширина, м</span>
             <Num
-              value={sec.width ?? 0}
+              value={sec.width}
               onChange={(v) => setSec(i, (s) => void (v > 0 ? (s.width = v) : delete s.width))}
               min={0}
               max={100000}
               step={100}
               integer
-              width={80}
-              placeholder="—"
-              title={`Ширина фронта участка: в первой линии ${sec.width ? `до ${fmt0((sec.width / 100) * rs.coefficients.frontDensity)} мест у каждой стороны` : 'ограничивает только охват (ширина не задана, 0)'}`}
+              width={90}
+              placeholder="не задана"
+              emptyAs={0}
+              title={`Ширина фронта участка: в первой линии ${sec.width ? `до ${fmt0((sec.width / 100) * rs.coefficients.frontDensity)} мест у каждой стороны` : 'не задана — ограничивает только охват'}`}
             />
             <span className="grow" />
             <span className="faint small nowrap" title="Личный состав сторон на участке">

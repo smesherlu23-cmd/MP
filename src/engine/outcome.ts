@@ -2,6 +2,7 @@
 
 import { type EngineContext, lerp } from './context';
 import { newObjective } from './defaults';
+import { fmtDuration, hoursFor } from './duration';
 import { OBJECTIVE_SHORT } from './labels';
 import type {
   Behavior,
@@ -35,8 +36,11 @@ export function defaultObjectives(E: EngineContext, side: SideId, maxTurns: numb
     case 'retreat':
     case 'rout':
       return [newObjective('preserve', 30, 2), newObjective('noRout', 0, 1)];
-    default:
-      return [newObjective('hold', Math.max(1, Math.round(maxTurns * 0.75)), 2), newObjective('inflict', 20, 1)];
+    default: {
+      // Удержать — до конца боя (засчитывается, когда срок выдержан); у боёв прежней версии — 3/4 срока, как было.
+      const need = E.k.holdOnTime >= 0.5 ? maxTurns : Math.max(1, Math.round(maxTurns * 0.75));
+      return [newObjective('hold', need, 2), newObjective('inflict', 20, 1)];
+    }
   }
 }
 
@@ -68,7 +72,9 @@ function scoreObjective(E: EngineContext, side: SideId, o: Objective): Objective
   const enemy = E.enemyOf(side);
   const own = present(E, side);
   const foe = present(E, enemy);
-  const label = o.label?.trim() || OBJECTIVE_SHORT[o.type](o.value);
+  // В бою «удержать» — в ходах; ГМ задавал часы — и в итогах они в часах.
+  const h = (turns: number) => fmtDuration(hoursFor(turns, E.rs));
+  const label = o.label?.trim() || OBJECTIVE_SHORT[o.type](o.type === 'hold' ? hoursFor(o.value, E.rs) : o.value);
   let score = 0;
   let explanation = '';
   switch (o.type) {
@@ -79,12 +85,16 @@ function scoreObjective(E: EngineContext, side: SideId, o: Objective): Objective
       const enemyOut = !foe.some((x) => E.fighting(x) && E.behavior(x) === 'attack') && foe.every((x) => !E.fighting(x));
       if (!lost && (held >= need || enemyOut)) {
         score = 1;
-        explanation = enemyOut ? 'Позиция удержана: атакующий выбыл из боя.' : `Позиция удерживалась ${held} ход. из ${need}.`;
+        explanation = enemyOut ? 'Позиция удержана: атакующий выбыл из боя.' : `Позиция удерживалась ${h(held)} из ${h(need)}.`;
+      } else if (lost && held >= need && E.k.holdOnTime >= 0.5) {
+        // Срок выдержан — задача выполнена, даже если позицию оставили позже.
+        score = 1;
+        explanation = `Позиция удерживалась положенные ${h(need)} (оставлена позже — через ${h(held)} боя).`;
       } else {
         score = Math.min(1, held / need) * (lost ? 0.6 : 1);
         explanation = lost
-          ? `Позиция оставлена на ${lost}-м ходу, до этого удерживалась ${held} ход. из ${need}; оставленная позиция засчитывается не больше чем на 60%.`
-          : `Бой закончился раньше: удерживалась ${held} из ${need} ход.`;
+          ? `Позиция оставлена через ${h(held)} боя — раньше срока (${h(need)}); оставленная позиция засчитывается не больше чем на 60%.`
+          : `Бой закончился раньше: позиция удерживалась ${h(held)} из ${h(need)}.`;
       }
       break;
     }

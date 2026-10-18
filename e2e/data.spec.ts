@@ -135,6 +135,7 @@ test('у кого «Линейная тактика» уже была, прим�
     const rs = JSON.parse(localStorage.getItem('warsim:rulesets:rs-linear')!);
     rs.coefficients.casualtyScale = 1;
     rs.coefficients.moralePerLossPct = 1.2;
+    delete rs.dataVersion; // набор прежней версии
     localStorage.setItem('warsim:rulesets:rs-linear', JSON.stringify(rs));
     localStorage.removeItem('warsim-examples-linear');
   });
@@ -151,5 +152,32 @@ test('у кого «Линейная тактика» уже была, прим�
   await page.reload();
   await page.locator('.nav-item', { hasText: 'Сценарии' }).first().click();
   await expect(page.locator('.sidebar .side-item')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test('одноразовые обновления — по версии данных в файлах, а не по памяти браузера', async ({ page }) => {
+  const errors = await openApp(page);
+  await page.evaluate(() => {
+    // Набор текущей версии, где ГМ сознательно вернул «Мораль за 1% потерь» = 1.2…
+    const rs = JSON.parse(localStorage.getItem('warsim:rulesets:rs-universal')!);
+    rs.coefficients.moralePerLossPct = 1.2;
+    localStorage.setItem('warsim:rulesets:rs-universal', JSON.stringify(rs));
+    // …и набор прежней версии (без версии данных) со значением по умолчанию прежней версии.
+    const lin = JSON.parse(localStorage.getItem('warsim:rulesets:rs-linear')!);
+    delete lin.dataVersion;
+    lin.coefficients.retreatLossPct = 50;
+    localStorage.setItem('warsim:rulesets:rs-linear', JSON.stringify(lin));
+    // Память браузера чистая — как будто папку данных перенесли на другой компьютер.
+    for (const k of Object.keys(localStorage)) if (k.startsWith('warsim-') && k !== 'warsim-initialized') localStorage.removeItem(k);
+  });
+  await page.reload();
+  await expect(page.getByText('Симулятор боя').first()).toBeVisible();
+  const read = () =>
+    page.evaluate(() => {
+      const u = JSON.parse(localStorage.getItem('warsim:rulesets:rs-universal')!);
+      const l = JSON.parse(localStorage.getItem('warsim:rulesets:rs-linear')!);
+      return [u.coefficients.moralePerLossPct, l.coefficients.retreatLossPct, l.dataVersion];
+    });
+  await expect.poll(read).toEqual([1.2, 40, 2]);
   expect(errors).toEqual([]);
 });

@@ -1,5 +1,6 @@
 // Человекочитаемый отчёт о бое — для копирования в чат игры, на форум или в документ.
 
+import { fmtDuration } from './duration';
 import { STATUS_LABELS } from './labels';
 import { explainResult } from './outcome';
 import { displayNames } from './names';
@@ -73,7 +74,7 @@ export function formatReport(b: Battle, opts: { includeLog?: boolean; logLevel?:
   const lines: string[] = [];
   lines.push(`# ${b.name}`);
   const cond = b.ruleset.conditions.map((c) => `${c.name}: ${c.options.find((o) => o.id === b.conditions[c.id])?.name ?? '—'}`).join(' · ');
-  lines.push(`${cond}. Ходов: ${b.turn} (≈${Math.round((b.turn * b.ruleset.turnMinutes) / 6) / 10} ч).`);
+  lines.push(`${cond}. Длительность: ${fmtDuration((b.turn * b.ruleset.turnMinutes) / 60)} (${b.turn} ход.).`);
   if (r) {
     lines.push(
       '',
@@ -135,7 +136,7 @@ export function formatSideReport(b: Battle, side: SideId): string {
   const lines: string[] = [];
   lines.push(`# ${b.name} — донесение для стороны «${b.sides[side].name}»`);
   const cond = b.ruleset.conditions.map((c) => `${c.name}: ${c.options.find((o) => o.id === b.conditions[c.id])?.name ?? '—'}`).join(' · ');
-  lines.push(`${cond}. Ходов: ${b.turn} (≈${Math.round((b.turn * b.ruleset.turnMinutes) / 6) / 10} ч).`);
+  lines.push(`${cond}. Длительность: ${fmtDuration((b.turn * b.ruleset.turnMinutes) / 60)} (${b.turn} ход.).`);
   if (!r || !own || !foe) {
     lines.push('', `Бой продолжается (ход ${b.turn}).`);
     return lines.join('\n');

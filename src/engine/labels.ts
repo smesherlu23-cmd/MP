@@ -1,5 +1,6 @@
 // Человекочитаемые названия для журнала, отчётов и интерфейса.
 
+import { fmtDuration } from './duration';
 import type { Behavior, ComponentKind, ConditionOp, Echelon, ElementStatus, ObjectiveType, ScenarioEventKind, StatKey, TriggerMetric } from './types';
 
 export const STAT_LABELS: Record<StatKey, string> = {
@@ -75,7 +76,7 @@ export const OBJECTIVE_LABELS: Record<ObjectiveType, string> = {
 };
 
 export const OBJECTIVE_SHORT: Record<ObjectiveType, (v: number) => string> = {
-  hold: (v) => `Удержать позицию ${v} ход.`,
+  hold: (v) => `Удержать позицию ${fmtDuration(v)}`,
   take: () => 'Захватить позицию',
   inflict: (v) => `Нанести потери ≥ ${v}%`,
   preserve: (v) => `Свои потери ≤ ${v}%`,

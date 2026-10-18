@@ -7,6 +7,7 @@ import {
   SWEEP_LABELS,
   randomSeed,
   runManyAsync,
+  fmtDuration,
   scenarioTurns,
   sweepVariants,
   walkUnits,
@@ -269,7 +270,7 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
               </th>
               <th className="num">Потери {rsc.sides[0].name}</th>
               <th className="num">Потери {rsc.sides[1].name}</th>
-              <th className="num">Ходов</th>
+              <th className="num">Длительность</th>
             </tr>
           </thead>
           <tbody>
@@ -292,7 +293,7 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                 </td>
                 <td className="num">{fmt1(mean(x.r, 'A.personnelLossPct'))}%</td>
                 <td className="num">{fmt1(mean(x.r, 'B.personnelLossPct'))}%</td>
-                <td className="num">{fmt1(mean(x.r, 'turns'))}</td>
+                <td className="num">{fmtDuration((mean(x.r, 'turns') * rs.turnMinutes) / 60)}</td>
               </tr>
             ))}
           </tbody>
