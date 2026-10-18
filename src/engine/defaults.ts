@@ -458,7 +458,6 @@ export function makeDemoBattalion(): UnitNode {
   return newRootUnit('1-й мотострелковый батальон (пример)', {
     id: 'demo-bn',
     level: 'батальон',
-    commanderName: 'майор Орлов',
     commandLevel: 4,
     comms: 85,
     supply: 80,
@@ -484,7 +483,6 @@ export function makeDemoDefenders(): UnitNode {
   return newRootUnit('Оборонительный узел «Высота 212» (пример)', {
     id: 'demo-def',
     level: 'усиленная рота',
-    commanderName: 'капитан Вольф',
     commandLevel: 3,
     comms: 70,
     supply: 60,
@@ -540,7 +538,6 @@ export function makeLinearBrigade(): UnitNode {
     id: 'demo-lin-brig',
     level: 'бригада',
     rulesetId: 'rs-linear',
-    commanderName: 'генерал-майор Раевский',
     order: 'attack',
     supply: 85,
     children: [
@@ -558,7 +555,6 @@ export function makeLinearDefenders(): UnitNode {
     id: 'demo-lin-def',
     level: 'полк',
     rulesetId: 'rs-linear',
-    commanderName: 'полковник Дюбуа',
     order: 'defend',
     supply: 70,
     children: [

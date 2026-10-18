@@ -1,7 +1,7 @@
 // Дерево подразделений: создание, наследование параметров, шаблоны, перемещение, сводка, проверка.
 // Подразделение любого уровня — один и тот же узел UnitNode, глубина не ограничена.
 
-import type { ComponentKind, ComponentEntry, Echelon, Id, Ruleset, StateKey, UnitNode, UnitState } from './types';
+import type { ComponentKind, ComponentEntry, Echelon, Id, Ruleset, SideDef, StateKey, UnitNode, UnitState } from './types';
 import { STATE_KEYS } from './types';
 
 let idCounter = 0;
@@ -175,6 +175,44 @@ export function cloneUnit(node: UnitNode): UnitNode {
   const c = cloneDeep(node);
   walkUnits(c, (n) => (n.id = uid('u')));
   return c;
+}
+
+/**
+ * Часть подразделения как самостоятельное: копия поддерева узла nodeId с новыми идентификаторами
+ * (связи частей с их шаблонами сохраняются). Что часть наследовала от старших — приказ, эшелон,
+ * связь, снабжение, состояние, — записывается в неё явно, чтобы в бою она была такой же, как в составе.
+ * В название добавляется старшее подразделение («2-я рота · 1-й батальон»).
+ */
+export function extractPart(root: UnitNode, nodeId: Id): UnitNode | null {
+  const path = pathTo(root, nodeId);
+  if (path.length < 2) return null;
+  let parent = ROOT_RESOLVED;
+  for (const n of path.slice(0, -1)) parent = resolveChild(n, parent);
+  const c = cloneUnit(path[path.length - 1]);
+  c.order ??= parent.order;
+  if (c.echelon === null && parent.echelon !== 'front') c.echelon = parent.echelon;
+  if (c.comms === null && parent.comms !== ROOT_COMMS) c.comms = parent.comms;
+  if (c.supply === null && parent.supply !== ROOT_SUPPLY) c.supply = parent.supply;
+  for (const k of STATE_KEYS) if (c.state[k] === undefined && parent.state[k] !== ROOT_STATE[k]) c.state[k] = parent.state[k];
+  c.name = `${c.name} · ${path[path.length - 2].name}`;
+  delete c.attachedFrom;
+  delete c.rulesetId;
+  delete c.updatedAt;
+  return c;
+}
+
+/** Подразделение без исключённых из боя частей (вместе с их подчинёнными). null — исключено целиком. */
+export function withoutExcluded(root: UnitNode, excluded?: Iterable<Id>): UnitNode | null {
+  const ex = new Set(excluded ?? []);
+  if (!ex.size) return root;
+  if (ex.has(root.id)) return null;
+  const prune = (n: UnitNode): UnitNode => ({ ...n, children: n.children.filter((c) => !ex.has(c.id)).map(prune) });
+  return prune(root);
+}
+
+/** Подразделения стороны сценария так, как они вступают в бой: без исключённых частей. */
+export function sideUnits(side: Pick<SideDef, 'formations' | 'excluded'>): UnitNode[] {
+  return side.formations.map((f) => withoutExcluded(f, side.excluded)).filter((f): f is UnitNode => !!f);
 }
 
 /** Отпечаток «устройства» подразделения: всё, что переносится из шаблона в копии. Названия и состояние не входят. */

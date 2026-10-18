@@ -1,6 +1,6 @@
 // Каркас: вкладки-«окна» сверху, навигатор слева, содержимое активной вкладки.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BattlePage } from './pages/BattlePage';
 import { FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
@@ -49,6 +49,10 @@ const ICONS: Record<TabKind, string> = {
 function useTabTitle(t: Tab): string {
   const s = useApp();
   const battles = useBattles((x) => x.battles);
+  return tabTitle(t, s, battles);
+}
+
+function tabTitle(t: Tab, s: ReturnType<typeof useApp.getState>, battles: ReturnType<typeof useBattles.getState>['battles']): string {
   switch (t.kind) {
     case 'home':
       return 'Главная';
@@ -78,6 +82,48 @@ function useTabTitle(t: Tab): string {
       return i > 0 ? `${name.slice(i + 3)}${turn} — ${name.slice(0, i)}` : `${name}${turn}`;
     }
   }
+}
+
+/**
+ * Полоса вкладок: вкладки сжимаются, как в браузере; если и так не помещаются — прокручиваются,
+ * активная всегда видна, а кнопка «▾» справа показывает список всех вкладок.
+ */
+function Tabs({ tabs, active }: { tabs: Tab[]; active?: string }) {
+  const ref = useRef<HTMLElement>(null);
+  const [overflow, setOverflow] = useState(false);
+  const s = useApp();
+  const battles = useBattles((x) => x.battles);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setOverflow(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [tabs.length]);
+  useEffect(() => {
+    ref.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [active, tabs.length, overflow]);
+  return (
+    <>
+      <nav className="tabs" ref={ref}>
+        {tabs.map((t) => (
+          <TabItem key={t.key} t={t} active={t.key === active} />
+        ))}
+      </nav>
+      {overflow && (
+        <div className="tabs-more">
+          <Menu
+            sm
+            label={`▾ ${tabs.length}`}
+            title="Все открытые вкладки"
+            items={tabs.map((t) => ({ label: `${ICONS[t.kind]} ${tabTitle(t, s, battles)}`, onClick: () => activateTab(t.key), kbd: t.key === active ? '●' : undefined }))}
+          />
+        </div>
+      )}
+    </>
+  );
 }
 
 function TabItem({ t, active }: { t: Tab; active: boolean }) {
@@ -318,11 +364,7 @@ export function App() {
             ›
           </button>
         </div>
-        <nav className="tabs">
-          {s.tabs.map((t) => (
-            <TabItem key={t.key} t={t} active={t.key === active?.key} />
-          ))}
-        </nav>
+        <Tabs tabs={s.tabs} active={active?.key} />
         <div className="topbar-right">
           <button className="find-btn" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
             <span>Найти…</span>

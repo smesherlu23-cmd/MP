@@ -20,7 +20,7 @@ import type {
   SideState,
   UnitNode,
 } from './types';
-import { migrateUnit, resolveChild, ROOT_RESOLVED, type Resolved } from './units';
+import { migrateUnit, resolveChild, ROOT_RESOLVED, withoutExcluded, type Resolved } from './units';
 
 export interface CreateOptions {
   seed?: string;
@@ -83,14 +83,15 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       lostHoldTurn: 0,
       initiative: 0,
     };
-    // В шаблоне — только то, есть ли у подразделения свой командир. Компетентность в начале боя
-    // задаётся в сценарии (иначе обычная); по ходу боя её меняет ГМ (setFormation / editElement).
+    // Командир есть у каждого формирования — у подразделения целиком и у каждого звена с подчинёнными.
+    // Его компетентность в начале боя задаётся в сценарии (0 — без командира), иначе обычная;
+    // по ходу боя её меняет ГМ (setFormation / editElement). В конструкторе командира нет.
     const startCmd = defaultCommandLevel(rs);
     const maxCmd = Math.max(1, rs.commandLevels.length);
     const cmd = (node: UnitNode) => {
-      if (!node.commandLevel) return 0;
       const set = sd.commanders?.[node.id];
-      return set ? clamp(Math.round(set), 1, maxCmd) : startCmd;
+      if (set === undefined || set === null) return startCmd;
+      return set <= 0 ? 0 : clamp(Math.round(set), 1, maxCmd);
     };
     /**
      * Узел с подчинёнными (и любой корень) становится формированием — звеном управления.
@@ -123,9 +124,7 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
         const own = isGroup && node.children.length > 0;
         const el = makeElement(node, own ? `${node.name} (${node.isHQ ? 'управление' : 'свой состав'})` : node.name, f, `e${++eCount}`, rs, typeIds, res, order, warnings);
         if (!own) {
-          // Свой командир, связь и снабжение у подразделения без подчинённых.
-          el.ownCommandLevel = cmd(node);
-          el.ownCommanderName = node.commanderName;
+          // Связь и снабжение у подразделения без подчинённых (своего командира у него нет — им командует формирование).
           el.comms = node.comms;
           el.supply = node.supply;
         }
@@ -135,7 +134,11 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       }
       for (const ch of node.children) addNode(ch, f, res);
     };
-    for (const f of sd.formations) addNode(migrateUnit(f), null, ROOT_RESOLVED);
+    // Части, исключённые из этого боя (в сценарии), не создаются вовсе.
+    for (const f of sd.formations) {
+      const u = withoutExcluded(migrateUnit(f), sd.excluded);
+      if (u) addNode(u, null, ROOT_RESOLVED);
+    }
   }
 
   let E = new EngineContext(b);

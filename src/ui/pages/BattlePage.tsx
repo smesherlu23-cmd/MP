@@ -522,7 +522,7 @@ function FormationRows(props: {
               href="#"
               className="nowrap"
               onClick={(e) => (e.preventDefault(), props.onFormation(fs.id))}
-              data-tip={`${fs.level}${fs.commanderName ? ` · ${fs.commanderName}` : ''}${f.comms ? `\nсвязь ${Math.round(fs.comms)}%` : ''}\nснабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
+              data-tip={`${fs.level}${f.comms ? `\nсвязь ${Math.round(fs.comms)}%` : ''}\nснабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
             >
               {fs.name}
             </a>
@@ -718,7 +718,7 @@ function ElementModal({ b, E, id, onClose, iv, onFocusLog }: { b: Battle; E: Eng
                 <Sel value={el.orderId} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={rs.orders.map((o) => ({ value: o.id, label: o.name }))} />
               </Field>
               {rs.features.command && ((el.ownCommandLevel ?? 0) > 0 || editing) && (
-                <Field label={el.ownCommanderName ? `Командир (${el.ownCommanderName})` : 'Свой командир'}>
+                <Field label="Свой командир" hint="Обычно элементом командует его формирование; здесь ГМ может дать элементу собственного командира.">
                   <CommanderSelect levels={rs.commandLevels} allowNone tip={CMD_TIP} value={el.ownCommandLevel ?? 0} onChange={(v) => iv('editElement', { elementId: el.id, patch: { ownCommandLevel: v } })} />
                 </Field>
               )}
@@ -913,7 +913,7 @@ function FormationModal({ b, id, onClose, iv }: { b: Battle; id: string; onClose
           <Sel value={order} onChange={setOrder} options={[{ value: '', label: '— не менять —' }, ...rs.orders.map((o) => ({ value: o.id, label: o.name }))]} />
         </Field>
         {rs.features.command && (
-          <Field label={`Командир${fs.commanderName ? ` (${fs.commanderName})` : ''}`}>
+          <Field label="Командир">
             <Sel value={cmd} onChange={setCmd} options={[{ value: 0, label: 'без командира' }, ...rs.commandLevels.map((l, i) => ({ value: i + 1, label: `${i + 1}. ${l.name}` }))]} />
           </Field>
         )}

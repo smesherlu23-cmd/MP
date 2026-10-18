@@ -6,6 +6,7 @@ import {
   createBattle,
   defaultCommandLevel,
   displayNames,
+  extractPart,
   explainResult,
   formatReport,
   formatSideReport,
@@ -13,6 +14,10 @@ import {
   rewindBattle,
   undoBattleAction,
   walkUnits,
+  withoutExcluded,
+  sideUnits,
+  summarizeUnits,
+  makeDemoBattalion,
   makeDemoScenario,
   makeLinearRuleset,
   makeLinearScenario,
@@ -179,8 +184,13 @@ describe('бой', () => {
     const f = b0.formations.find((x) => x.side === 'A' && !x.parentId)!;
     expect(f.commandLevel).toBe(defaultCommandLevel(rs));
     expect(rs.commandLevels[f.commandLevel - 1].name).toBe('Обычный');
-    // без своего командира в шаблоне — без командира в бою
-    const noCmd = createBattle(duel(rs, infantry('Синие', 60, 'attack', { commandLevel: null }), infantry('Красные', 60)), rs, { seed: 'CMD' });
+    // командир есть у каждого формирования, что бы ни стояло в шаблоне; «без командира» — решение сценария
+    const tplNo = createBattle(duel(rs, infantry('Синие', 60, 'attack', { commandLevel: null }), infantry('Красные', 60)), rs, { seed: 'CMD' });
+    expect(tplNo.formations.find((x) => x.side === 'A' && !x.parentId)!.commandLevel).toBe(defaultCommandLevel(rs));
+    expect(tplNo.elements.every((x) => x.ownCommandLevel === 0)).toBe(true);
+    const scNo = duel(rs, infantry('Синие', 60, 'attack'), infantry('Красные', 60));
+    scNo.sides[0].commanders = { [scNo.sides[0].formations[0].id]: 0 };
+    const noCmd = createBattle(scNo, rs, { seed: 'CMD' });
     expect(noCmd.formations.find((x) => x.side === 'A' && !x.parentId)!.commandLevel).toBe(0);
     // ГМ: удачное решение на одном ходу, ошибка — на другом; всё воспроизводится повтором
     stepTurn(b0);
@@ -623,5 +633,48 @@ describe('план боя и донесения', () => {
       expect(hi).toBeGreaterThanOrEqual(Math.min(truth, hi));
     } else expect(text).toContain('Сведений почти нет');
     expect(formatSideReport(b, 'A')).toBe(text);
+  });
+});
+
+describe('стороны: несколько подразделений и части', () => {
+  const rs = makeUniversalRuleset();
+
+  it('часть подразделения воюет самостоятельно, с унаследованными приказом и состоянием', () => {
+    const bn = makeDemoBattalion();
+    const co = bn.children.find((c) => c.name.includes('2-я'))!;
+    const part = extractPart(bn, co.id)!;
+    expect(part.id).not.toBe(co.id);
+    expect(part.name).toContain(bn.name);
+    expect(part.order).toBe(bn.order);
+    expect(part.templateId).toBe(co.templateId);
+    expect(extractPart(bn, bn.id)).toBeNull();
+    // На сторону — целиком, часть и ещё подразделение: все в одном бою.
+    const sc = makeDemoScenario();
+    sc.sides[0].formations.push(part, instantiate(makeDemoBattalion()));
+    expect(validateScenario(sc, rs).filter((x) => x.level === 'error')).toHaveLength(0);
+    const b = createBattle(sc, rs, { seed: 'MULTI' });
+    const roots = b.formations.filter((f) => f.side === 'A' && !f.parentId);
+    expect(roots).toHaveLength(3);
+    runToEnd(b);
+    expect(b.finished).toBe(true);
+  });
+
+  it('исключённые части не вступают в бой и не считаются в сводках', () => {
+    const sc = makeDemoScenario();
+    const bn = sc.sides[0].formations[0];
+    const third = bn.children.find((c) => c.name.includes('3-я'))!;
+    const tank = bn.children.find((c) => c.name.includes('Танковая'))!;
+    const full = createBattle(sc, rs, { seed: 'EX' });
+    sc.sides[0].excluded = [third.id, tank.id];
+    const b = createBattle(sc, rs, { seed: 'EX' });
+    expect(b.elements.filter((x) => x.side === 'A')).toHaveLength(full.elements.filter((x) => x.side === 'A').length - 2);
+    expect(b.elements.some((x) => x.defId === third.id || x.defId === tank.id)).toBe(false);
+    const pruned = withoutExcluded(bn, sc.sides[0].excluded)!;
+    expect(pruned.children).toHaveLength(bn.children.length - 2);
+    expect(bn.children).toHaveLength(7); // сам сценарий не меняется
+    expect(summarizeUnits(sideUnits(sc.sides[0]), rs).persCur).toBeLessThan(summarizeUnits(sc.sides[0].formations, rs).persCur);
+    // Исключить всё — ошибка проверки сценария.
+    sc.sides[0].excluded = [bn.id];
+    expect(validateScenario(sc, rs).some((x) => x.level === 'error' && x.text.includes('исключены'))).toBe(true);
   });
 });

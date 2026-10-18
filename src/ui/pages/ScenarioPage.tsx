@@ -12,8 +12,11 @@ import {
   randomSeed,
   summarizeUnits,
   defaultCommandLevel,
+  plural,
+  sideUnits,
   validateScenario,
   walkUnits,
+  withoutExcluded,
   type ObjectiveType,
   type Ruleset,
   type Scenario,
@@ -22,6 +25,7 @@ import {
 import { effectsText } from '../components/EffectsEditor';
 import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
+import { AddUnitsModal } from '../components/AddUnits';
 import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
 import { Link } from '../components/Link';
 import { Area, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable } from '../components/ui';
@@ -162,24 +166,53 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
   );
 }
 
-/** Структура подразделения стороны: компактное дерево, щелчок открывает узел в конструкторе. */
-function SideTree({ root, refId, rs, arrivals }: { root: UnitNode; refId: string; rs: Ruleset; arrivals?: Map<string, number> }) {
+/**
+ * Структура подразделения стороны: компактное дерево, щелчок открывает узел в конструкторе.
+ * Галочка — участвует ли часть в этом бою (снятая исключает её вместе с подчинёнными).
+ */
+function SideTree(props: {
+  root: UnitNode;
+  refId: string;
+  rs: Ruleset;
+  arrivals?: Map<string, number>;
+  excluded?: Set<string>;
+  onToggle?: (id: string, on: boolean) => void;
+}) {
+  const { root, refId, rs, arrivals, excluded, onToggle } = props;
   const stats = computeStats(root, rs);
   const orders = new Map(rs.orders.map((o) => [o.id, o.name]));
   const LIMIT = 150;
-  const rows: { n: UnitNode; depth: number }[] = [];
-  walkUnits(root, (n, _p, depth) => void (depth > 0 && rows.push({ n, depth })));
+  const rows: { n: UnitNode; depth: number; off: boolean; inherited: boolean }[] = [];
+  const walk = (n: UnitNode, depth: number, parentOff: boolean) => {
+    const own = !!excluded?.has(n.id);
+    if (depth > 0) rows.push({ n, depth, off: own || parentOff, inherited: parentOff });
+    n.children.forEach((c) => walk(c, depth + 1, own || parentOff));
+  };
+  walk(root, 0, false);
   return (
     <div className="side-tree">
-      {rows.slice(0, LIMIT).map(({ n, depth }) => (
+      {onToggle && <div className="faint small" style={{ padding: '2px 4px 4px' }}>Галочка — часть участвует в этом бою. Снимите, чтобы воевать без неё.</div>}
+      {rows.slice(0, LIMIT).map(({ n, depth, off, inherited }) => (
         <div
           key={n.id}
-          className="side-node"
+          className={`side-node${off ? ' off' : ''}`}
           style={{ paddingLeft: 4 + (depth - 1) * 16 }}
           onClick={(e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey)}
           title="Открыть в конструкторе"
           {...pressable((e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey))}
         >
+          {onToggle && (
+            <input
+              type="checkbox"
+              className="part-check"
+              checked={!off}
+              disabled={inherited}
+              title={inherited ? 'Не участвует вместе со старшим подразделением' : off ? 'Не участвует в бою — отметьте, чтобы вернуть' : 'Участвует в бою — снимите, чтобы исключить'}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              onChange={(e) => onToggle(n.id, e.target.checked)}
+            />
+          )}
           {n.level && <span className="faint">{n.level}</span>}
           <span className="side-node-name">{n.name}</span>
           {n.attachedFrom !== undefined && <span className="badge info">придано</span>}
@@ -197,11 +230,11 @@ function SideTree({ root, refId, rs, arrivals }: { root: UnitNode; refId: string
 }
 
 function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
-  const st = useApp();
   const side = sc.sides[i];
   const upd = (fn: (s: Scenario['sides'][number]) => void) => updateScenario(sc.id, (d) => fn(d.sides[i]));
-  const library = Object.values(st.formations).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const [over, setOver] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const excludedSet = new Set(side.excluded ?? []);
   const scRef = `sc:${sc.id}`;
   const defaultOrderName = rs.orders.find((o) => o.behavior === 'defend')?.name ?? 'Оборона';
   const [openIds, setOpenIds] = useTabState<string[]>(`sc-tree:${sc.id}`, []);
@@ -275,9 +308,11 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
           onDrop={onListDrop}
         >
           {side.formations.map((f, fi) => {
-            const s = summarizeUnits([f], rs);
+            const live = withoutExcluded(f, side.excluded);
+            const s = summarizeUnits(live ? [live] : [], rs);
             const attached = f.children.filter((c) => c.attachedFrom !== undefined);
             const isOpen = openIds.includes(f.id);
+            const out = countExcluded(f, excludedSet);
             return (
               <div key={f.id}>
                 <div
@@ -300,7 +335,7 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
                     className="side-fold"
                     disabled={!f.children.length}
                     onClick={() => setOpenIds(isOpen ? openIds.filter((x) => x !== f.id) : [...openIds, f.id])}
-                    title={f.children.length ? (isOpen ? 'Скрыть структуру' : 'Показать структуру') : undefined}
+                    title={f.children.length ? (isOpen ? 'Скрыть структуру' : 'Показать структуру и выбрать, какие части участвуют в бою') : undefined}
                   >
                     {f.children.length ? (isOpen ? '▾' : '▸') : ''}
                   </button>
@@ -316,6 +351,11 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
                       <span className="faint small" data-tip={attached.map((c) => c.name).join('\n')}>
                         {' '}
                         · придано: {attached.length}
+                      </span>
+                    )}
+                    {out > 0 && (
+                      <span className="badge warn" data-tip="Часть подразделения в этом бою не участвует — раскройте ▸, чтобы изменить">
+                        без {out} {out === 1 ? 'части' : 'частей'}
                       </span>
                     )}
                   </div>
@@ -340,30 +380,37 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
                     ×
                   </Btn>
                 </div>
-                {isOpen && <SideTree root={f} refId={`sc:${sc.id}:${f.id}`} rs={rs} arrivals={arrivalsOf(sc)} />}
+                {isOpen && (
+                  <SideTree
+                    root={f}
+                    refId={`sc:${sc.id}:${f.id}`}
+                    rs={rs}
+                    arrivals={arrivalsOf(sc)}
+                    excluded={excludedSet}
+                    onToggle={(id, on) =>
+                      upd((d) => {
+                        const set = new Set(d.excluded ?? []);
+                        if (on) set.delete(id);
+                        else set.add(id);
+                        d.excluded = [...set];
+                      })
+                    }
+                  />
+                )}
               </div>
             );
           })}
-          {!side.formations.length && <div className="muted" style={{ padding: '6px 4px' }}>Нет подразделений — перетащите сюда из навигатора слева или добавьте ниже</div>}
+          {!side.formations.length && <div className="muted" style={{ padding: '6px 4px' }}>Нет подразделений — добавьте ниже или перетащите из навигатора слева</div>}
+          {side.formations.length > 1 && (
+            <div className="faint small" style={{ padding: '4px 4px 0' }}>
+              Всего на стороне: {side.formations.length} {plural(side.formations.length, 'подразделение', 'подразделения', 'подразделений')}, {fmt0(summarizeUnits(sideUnits(side), rs).persCur)} чел.
+            </div>
+          )}
           <div className="row" style={{ marginTop: 6, gap: 6 }}>
-            <select
-              value=""
-              style={{ flex: 1 }}
-              onChange={(e) => {
-                const c = instantiateLibrary(e.target.value);
-                if (c) upd((d) => void d.formations.push(c));
-              }}
-              title="В сценарий добавляется копия — её можно менять, не трогая библиотеку"
-            >
-              <option value="">+ Добавить из библиотеки…</option>
-              {library.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.level ? `${f.level} · ` : ''}
-                  {f.name}
-                  {f.rulesetId && f.rulesetId !== sc.rulesetId ? ' (другой набор правил)' : ''}
-                </option>
-              ))}
-            </select>
+            <Btn onClick={() => setAdding(true)} title="Несколько подразделений сразу, копии ×N, целиком или отдельные части. В сценарий добавляется копия — библиотека не меняется.">
+              + Добавить подразделения…
+            </Btn>
+            <span className="grow" />
             <Btn
               kind="ghost"
               onClick={() => {
@@ -426,28 +473,46 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
 
         {rs.features.command && <SideCommanders sc={sc} i={i} rs={rs} />}
       </div>
+      {adding && <AddUnitsModal sc={sc} side={i} rs={rs} onClose={() => setAdding(false)} />}
     </div>
   );
 }
 
+/** Сколько частей подразделения исключено из боя (считаются верхние исключённые узлы). */
+function countExcluded(root: UnitNode, ex: Set<string>): number {
+  if (!ex.size) return 0;
+  let n = 0;
+  const walk = (u: UnitNode) => u.children.forEach((c) => (ex.has(c.id) ? n++ : walk(c)));
+  walk(root);
+  return n;
+}
+
 /**
- * Командиры стороны в начале боя. В шаблоне подразделения отмечено только, есть ли командир;
- * насколько он хорош в этом сражении — решается здесь (для боя и прогонов), а по ходу боя — ГМ.
+ * Командиры стороны в начале боя. Командир есть у каждого формирования — у подразделения целиком и у
+ * каждого звена с подчинёнными; в конструкторе его нет. Здесь — насколько он хорош в этом сражении
+ * (или «без командира»); это учитывают и бой, и прогоны. По ходу боя уровень меняет ГМ.
  */
 function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
   const side = sc.sides[i];
   const [open, setOpen] = useTabState(`sc-cmd:${sc.id}:${i}`, false);
-  const list: { id: string; name: string; parent?: string; commander: string }[] = [];
-  for (const f of side.formations) walkUnits(f, (n, p) => void (n.commandLevel && list.push({ id: n.id, name: n.name, parent: p?.name, commander: n.commanderName })));
+  const excluded = new Set(side.excluded ?? []);
+  const list: { id: string; name: string; parent?: string; depth: number }[] = [];
+  for (const f of side.formations)
+    walkUnits(f, (n, p, depth) => {
+      if (excluded.has(n.id) || (p && excluded.has(p.id))) return;
+      if (depth === 0 || n.children.some((c) => !excluded.has(c.id))) list.push({ id: n.id, name: n.name, parent: p?.name, depth });
+    });
   if (!list.length) return null;
   const counts = new Map<string, number>();
   for (const c of list) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
   const def = defaultCommandLevel(rs);
   const set = side.commanders ?? {};
-  const changed = list.filter((c) => set[c.id] && set[c.id] !== def);
+  const valueOf = (id: string) => (id in set ? set[id] : def);
+  const levelName = (v: number) => (v <= 0 ? 'без командира' : (rs.commandLevels[v - 1]?.name ?? ''));
+  const changed = list.filter((c) => valueOf(c.id) !== def);
   const summary = changed.length
-    ? changed.map((c) => `${c.name}: ${rs.commandLevels[set[c.id] - 1]?.name ?? ''}`.toLowerCase()).join(', ')
-    : `${list.length === 1 ? 'командир' : `все ${list.length}`} — ${rs.commandLevels[def - 1]?.name.toLowerCase() ?? 'обычные'}`;
+    ? changed.map((c) => `${c.name}: ${levelName(valueOf(c.id))}`.toLowerCase()).join(', ')
+    : `${list.length === 1 ? 'командир' : `все ${list.length}`} — ${levelName(def).toLowerCase() || 'обычные'}`;
   const upd = (fn: (d: Scenario['sides'][number]) => void) => updateScenario(sc.id, (d) => fn(d.sides[i]));
   return (
     <div>
@@ -456,7 +521,7 @@ function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset })
           <span className="chev">{open ? '▾' : '▸'}</span>
           <h4>Командиры в начале боя</h4>
         </button>
-        <Info text="В подразделении отмечено только, есть ли у него свой командир. Насколько он хорош в этом сражении — задаётся здесь (это учитывают и бой, и прогоны). По ходу боя ГМ меняет компетентность в таблице сил — по обстановке." />
+        <Info text="Командир есть у каждого формирования — у подразделения целиком и у каждого звена с подчинёнными. Насколько он хорош в этом сражении (или что командира нет) — задаётся здесь; это учитывают и бой, и прогоны. По ходу боя ГМ меняет уровень в таблице сил — по обстановке." />
         <span className="faint small grow nowrap" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={summary}>
           {summary}
         </span>
@@ -464,15 +529,15 @@ function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset })
       {open && (
         <div className="cmd-list">
           {list.map((c) => (
-            <div key={c.id} className="cmd-row">
+            <div key={c.id} className="cmd-row" style={{ paddingLeft: 4 + Math.min(c.depth, 4) * 12 }}>
               <span className="grow" style={{ minWidth: 0 }}>
                 {c.name}
                 {(counts.get(c.name) ?? 0) > 1 && c.parent ? <span className="faint"> · {c.parent}</span> : null}
-                {c.commander && <span className="faint small"> — {c.commander}</span>}
               </span>
               <CommanderSelect
                 levels={rs.commandLevels}
-                value={set[c.id] ?? def}
+                allowNone
+                value={valueOf(c.id)}
                 onChange={(v) =>
                   upd((d) => {
                     d.commanders = { ...(d.commanders ?? {}) };
@@ -490,7 +555,7 @@ function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset })
 }
 
 function ForceRatio({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
-  const sums = sc.sides.map((s) => summarizeUnits(s.formations, rs));
+  const sums = sc.sides.map((s) => summarizeUnits(sideUnits(s), rs));
   const band = sc.startBand;
   const ratio = (a: number, b: number) => (a <= 0 && b <= 0 ? '—' : b <= 0 ? '∞' : a <= 0 ? '0' : a >= b ? `${fmt1(a / b)} : 1` : `1 : ${fmt1(b / a)}`);
   const rows: { label: string; a: number; b: number; fmt?: (v: number) => string }[] = [

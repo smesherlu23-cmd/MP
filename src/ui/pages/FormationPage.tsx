@@ -34,7 +34,7 @@ import {
 } from '../../engine';
 import { Crumbs } from '../components/Crumbs';
 import { Link } from '../components/Link';
-import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, Seg, Tags, Txt, fmt0, fmt1, pressable, type MenuItem } from '../components/ui';
+import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, Seg, Tags, fmt0, fmt1, pressable, type MenuItem } from '../components/ui';
 import { useTabState } from '../hooks';
 import {
   addFormation,
@@ -1068,23 +1068,6 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
               options={[{ value: '', label: `${ECHELON_LABELS[pr.echelon]} (${inheritText})` }, ...(Object.keys(ECHELON_LABELS) as Echelon[]).map((k) => ({ value: k, label: ECHELON_LABELS[k] }))]}
             />
           </Field>
-          <Field label="Командир">
-            <Txt value={node.commanderName} onChange={(v) => un((n) => void (n.commanderName = v))} placeholder="звание, фамилия" />
-          </Field>
-          {ft.command && (
-            <Field
-              label="Командование"
-              hint={
-                'Есть ли у подразделения свой командир. Его компетентность задаётся не здесь: в начале боя — в сценарии («Командиры в начале боя», ' +
-                'по умолчанию обычная), а по ходу боя её меняет ГМ по обстановке — удачное решение или ошибка командира в конкретный момент. ' +
-                'Командир влияет на подразделение и всех подчинённых; влияние старших ослабевает с каждым уровнем.'
-              }
-            >
-              <Check value={!!node.commandLevel} onChange={(v) => un((n) => void (n.commandLevel = v ? 1 : null))}>
-                свой командир
-              </Check>
-            </Field>
-          )}
         </div>
         <div className="row" style={{ marginTop: 10, gap: 18 }}>
           <Check value={node.isHQ} onChange={(v) => un((n) => void (n.isHQ = v))} title="Потеря штаба лишает старшее подразделение командира и ухудшает связь">

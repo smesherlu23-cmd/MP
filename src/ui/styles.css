@@ -222,14 +222,15 @@ a:hover,
   align-items: center;
   gap: 6px;
   padding: 0 6px 0 12px;
+  /* как в браузере: вкладки сжимаются до минимума, дальше — прокрутка и список «▾» */
+  flex: 0 1 220px;
   max-width: 230px;
-  min-width: 90px;
+  min-width: 96px;
   border-right: 1px solid var(--border);
   color: var(--muted);
   cursor: pointer;
   user-select: none;
   position: relative;
-  flex-shrink: 0;
 }
 .tab:hover {
   background: var(--panel);
@@ -2784,4 +2785,94 @@ button.link-btn:hover {
 .plan-label {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Главная: продолжить, недавно изменённое */
+.home-continue {
+  margin-bottom: 16px;
+}
+.home-icon {
+  width: 18px;
+  text-align: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.home-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-sub {
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-steps {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.6;
+}
+
+.tabs-more {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  border-left: 1px solid var(--border);
+  -webkit-app-region: no-drag;
+}
+/* В узком окне «Найти…» сжимается до значка — место отдаётся вкладкам */
+@media (max-width: 1180px) {
+  .find-btn {
+    gap: 0;
+  }
+  .find-btn .kbd {
+    display: none;
+  }
+}
+@media (max-width: 1000px) {
+  .find-btn span:first-child {
+    font-size: 0;
+  }
+  .find-btn span:first-child::before {
+    content: '⌕';
+    font-size: 15px;
+  }
+}
+
+/* Части подразделений: участие в бою (структура стороны сценария) */
+.side-node.off .side-node-name {
+  text-decoration: line-through;
+  color: var(--faint);
+}
+.side-node.off {
+  opacity: 0.7;
+}
+.part-check {
+  margin: 0 2px 0 0;
+  flex-shrink: 0;
+}
+/* Окно «Добавить подразделения» */
+.pick-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 55vh;
+  overflow: auto;
+}
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  min-height: 34px;
+}
+.pick-row + div > .pick-row,
+.pick-list > div + div > .pick-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.pick-row.on {
+  background: var(--accent-soft);
+}
+.pick-name {
+  white-space: nowrap;
 }

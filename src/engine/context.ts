@@ -218,14 +218,14 @@ export class EngineContext {
     let w = 1;
     if (el.ownCommandLevel) {
       const level = this.rs.commandLevels[el.ownCommandLevel - 1];
-      if (level) out.push({ level, weight: w, name: el.ownCommanderName || el.name });
+      if (level) out.push({ level, weight: w, name: el.name });
       w *= this.k.commandChainWeight;
     }
     for (const f of this.chain(el)) {
       if (w < 0.01) break;
       if (!f.commandLevel) continue;
       const level = this.rs.commandLevels[f.commandLevel - 1];
-      if (level && !f.hqLost) out.push({ level, weight: w, name: f.commanderName || f.name });
+      if (level && !f.hqLost) out.push({ level, weight: w, name: f.name });
       w *= this.k.commandChainWeight;
     }
     return out;
