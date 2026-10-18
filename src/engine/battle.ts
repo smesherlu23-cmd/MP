@@ -16,6 +16,7 @@ import { phaseFire, phaseStrikes } from './phases/fire';
 import { phaseInitiative } from './phases/initiative';
 import { phaseMorale } from './phases/morale';
 import { phaseMovement } from './phases/movement';
+import { phaseOrders } from './phases/orders';
 import { phaseFatigue, phaseSupply } from './phases/upkeep';
 
 export { elementsOfNode } from './phases/common';
@@ -31,12 +32,14 @@ export interface CreateOptions {
   id?: string;
   /** Не копировать сценарий и правила (для массового моделирования: входные данные только читаются). */
   shareInputs?: boolean;
+  /** Повтор сохранённого боя: механики, которых нет в его снимке правил, выключены. */
+  compat?: boolean;
 }
 
 // ================================================================== создание боя
 
 export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateOptions = {}): Battle {
-  const rs = opts.shareInputs ? ruleset : normalizeRuleset(clone(ruleset));
+  const rs = opts.shareInputs ? ruleset : normalizeRuleset(clone(ruleset), opts.compat);
   const sc = opts.shareInputs ? scenario : clone(scenario);
   const seed = opts.seed ?? sc.seed ?? 'seed';
   const rng = Rng.fromSeed(seed);
@@ -81,6 +84,7 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       closingProgress: 0,
       conditions: { ...(sec.conditions ?? {}) },
       fortification: { ...(sec.fortification ?? {}) },
+      ...(sec.width ? { width: sec.width } : {}),
     }));
   }
   const sectorIds = new Set((b.sectors ?? []).map((x) => x.id));
@@ -200,6 +204,15 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       const off = Math.floor(E.rng.next() * (2 * ev.spread + 1)) - ev.spread;
       (b.eventTurns ??= {})[ev.id] = Math.max(1, ev.turn + off);
     }
+  }
+  // Удача и исполнение сторон в этом бою: внезапность, слаженность действий, ошибки, везение.
+  if (E.k.sideLuck > 0) {
+    for (const side of SIDES) b.sides[side].luck = clamp(Math.exp(E.rng.normal(0, E.k.sideLuck)), 0.5, 2);
+    E.log({
+      phase: 'setup',
+      level: 2,
+      text: `Удача и исполнение сторон в этом бою: ${SIDES.map((x) => `${s(x)} ×${b.sides[x].luck!.toFixed(2)}`).join(', ')}.`,
+    });
   }
 
   // Вводная запись журнала
@@ -361,6 +374,7 @@ export function stepTurn(b: Battle): void {
   E.log({ phase: 'turn', level: 0, text: `Ход ${b.turn} · ${fmtTime(t0)} · ${bandText}` });
 
   phaseEvents(E);
+  phaseOrders(E);
   phaseDetection(E);
   phaseStrikes(E);
   const ini = phaseInitiative(E);

@@ -61,13 +61,18 @@ import {
   suggestTypeMap,
   remapTypes,
   makeBlankRuleset,
+  frontage,
+  orderChance,
+  recalibrateRuleset,
   type Battle,
   type UnitNode,
   type Ruleset,
   type Scenario,
 } from '../src/engine';
 
-const strip = (b: Battle) => JSON.stringify({ el: b.elements, hist: b.history, res: b.result ? { ...b.result, keyEvents: [] } : null, rng: b.rng });
+// Сравнение боёв без случайных идентификаторов задач по умолчанию (они создаются заново при каждом создании боя).
+const strip = (b: Battle) =>
+  JSON.stringify({ el: b.elements, hist: b.history, res: b.result ? { ...b.result, keyEvents: [] } : null, rng: b.rng }).replace(/"obj-[a-z0-9]+"/g, '"obj"');
 
 const rifles = (n: number, cur = n) => [{ typeId: 'rifleman', authorized: n, current: cur }];
 
@@ -995,5 +1000,118 @@ describe('силы между боями, варианты прогонов, п�
     expect(m).toEqual({ rifleman: 'my-rifle', mg: null });
     remapTypes(unit, m);
     expect(unit.composition).toEqual([{ typeId: 'my-rifle', authorized: 10, current: 10 }]);
+  });
+});
+
+describe('ширина фронта, удача стороны, доведение приказов', () => {
+  const rs = makeUniversalRuleset();
+  const ctx = (b: Battle) => new EngineContext(b);
+
+  it('ширина фронта: сверх охвата огонь слабее, грузовики фронта не занимают, без охвата — как раньше', () => {
+    const b = createBattle(duel(rs, infantry('Много', 300), infantry('Мало', 100, 'defend')), rs, { seed: 'F1' });
+    const big = frontage(ctx(b), 'A').get('')!;
+    expect(big.by).toBe('overlap');
+    expect(big.factor).toBeLessThan(1);
+    // 300 против 100 при охвате 1.5: в первой линии половина; остальные дают 25% огня.
+    expect(big.engaged).toBeCloseTo(50);
+    expect(big.factor).toBeCloseTo((1 + 1 * rs.coefficients.frontageExcess) / 2);
+    expect(frontage(ctx(b), 'B').get('')!.factor).toBe(1);
+
+    // Грузовики и тягачи огня не ведут — места в первой линии не занимают.
+    const trucks = infantry('С грузовиками', 100, 'attack', {
+      children: [newUnit('Рота', { composition: [...rifles(100), { typeId: 'truck', authorized: 40, current: 40 }] })],
+    });
+    const t = createBattle(duel(rs, trucks, infantry('Б', 100, 'defend')), rs, { seed: 'F2' });
+    expect(frontage(ctx(t), 'A').get('')!.factor).toBe(1);
+
+    // Ширина фронта: 200 м при плотности 20 мест на 100 м — в контакте не больше 40.
+    const w = createBattle(duel(rs, infantry('А', 100), infantry('Б', 100, 'defend'), { frontWidth: 200 }), rs, { seed: 'F3' });
+    const fw = frontage(ctx(w), 'A').get('')!;
+    expect(fw.by).toBe('width');
+    expect(fw.engaged).toBeCloseTo(40);
+
+    const off = clone(rs);
+    off.coefficients.frontageOverlap = 0;
+    const o = createBattle(duel(off, infantry('Много', 300), infantry('Мало', 100, 'defend')), off, { seed: 'F1' });
+    expect(frontage(ctx(o), 'A').get('')!.factor).toBe(1);
+  });
+
+  it('удача стороны: выпадает в начале боя каждой стороне, входит в огонь; при 0 её нет', () => {
+    const b = createBattle(duel(rs, infantry('А', 50), infantry('Б', 50, 'defend')), rs, { seed: 'L1' });
+    for (const side of ['A', 'B'] as const) {
+      expect(b.sides[side].luck).toBeGreaterThanOrEqual(0.5);
+      expect(b.sides[side].luck).toBeLessThanOrEqual(2);
+    }
+    expect(b.sides.A.luck).not.toBe(b.sides.B.luck);
+    expect(b.log.some((e) => e.phase === 'setup' && e.text.includes('Удача'))).toBe(true);
+    const off = clone(rs);
+    off.coefficients.sideLuck = 0;
+    const c = createBattle(duel(off, infantry('А', 50), infantry('Б', 50, 'defend')), off, { seed: 'L1' });
+    expect(c.sides.A.luck).toBeUndefined();
+  });
+
+  it('приказ ГМ доходит не сразу: шанс от связи и командира; без механики — сразу; повтор тот же', () => {
+    const sc = makeDemoScenario();
+    const b = createBattle(sc, rs, { seed: 'O1' });
+    stepTurn(b);
+    const el = b.elements.find((x) => x.name.startsWith('1-я мотострелковая'))!;
+    const was = el.orderId;
+    applyIntervention(b, { type: 'setOrder', payload: { elementIds: [el.id], orderId: 'defend' } });
+    expect(el.orderId).toBe(was);
+    expect(el.pendingOrder).toEqual({ orderId: 'defend', since: b.turn });
+    const chance = orderChance(ctx(b), el);
+    expect(chance).toBeGreaterThan(0.05);
+    expect(chance).toBeLessThanOrEqual(1);
+    // Хуже связь — дольше доходит.
+    const f = b.formations.find((x) => x.id === el.formationId)!;
+    const comms = f.comms;
+    f.comms = 10;
+    expect(orderChance(ctx(b), el)).toBeLessThan(chance);
+    f.comms = comms;
+    let turns = 0;
+    while (el.pendingOrder && turns++ < 30 && !b.finished) stepTurn(b);
+    expect(el.pendingOrder).toBeUndefined();
+    if (el.status === 'active') expect(el.orderId).toBe('defend');
+    expect(b.log.some((e) => e.phase === 'orders' && e.text.includes('дошёл'))).toBe(true);
+    // Повтор с вмешательствами — тот же бой.
+    expect(strip(replayBattle(b, { withInterventions: true }))).toBe(strip(b));
+
+    const off = clone(rs);
+    off.features.orderDelay = false;
+    const c = createBattle(sc, off, { seed: 'O1' });
+    const el2 = c.elements.find((x) => x.name === el.name)!;
+    applyIntervention(c, { type: 'setOrder', payload: { elementIds: [el2.id], orderId: 'defend' } });
+    expect(el2.orderId).toBe('defend');
+    expect(el2.pendingOrder).toBeUndefined();
+  });
+
+  it('бой прежней версии (в снимке правил нет новых ключей) повторяется по прежним правилам', () => {
+    const sc = makeDemoScenario();
+    const old = clone(rs);
+    for (const key of ['frontageOverlap', 'frontageExcess', 'vehicleFrontage', 'frontDensity', 'sideLuck', 'orderSpeed', 'orderCommsMin', 'orderNoCommander'])
+      delete old.coefficients[key];
+    delete (old.features as Partial<typeof old.features>).orderDelay;
+    Object.assign(old.coefficients, { moralePerLossPct: 1.2, retreatLossPct: 50 });
+    const b = createBattle(sc, rs, { seed: 'C1' });
+    b.ruleset = clone(old);
+    const r = replayBattle(b, { toEnd: true });
+    expect(r.sides.A.luck).toBeUndefined();
+    expect(r.log.some((e) => e.factors?.some((f) => f.label.startsWith('Ширина фронта')))).toBe(false);
+    // Тот же бой, что с явно выключенными механиками.
+    const manual = clone(rs);
+    Object.assign(manual.coefficients, { frontageOverlap: 0, sideLuck: 0, moralePerLossPct: 1.2, retreatLossPct: 50 });
+    manual.features.orderDelay = false;
+    const m = createBattle(sc, manual, { seed: 'C1' });
+    runToEnd(m);
+    expect(strip(r)).toBe(strip(m));
+  });
+
+  it('калибровка переводит на новые значения только то, что в наборе не меняли', () => {
+    const r = clone(rs);
+    Object.assign(r.coefficients, { moralePerLossPct: 1.2, retreatLossPct: 45 });
+    expect(recalibrateRuleset(r)).toEqual(['moralePerLossPct']);
+    expect(r.coefficients.moralePerLossPct).toBe(1.5);
+    expect(r.coefficients.retreatLossPct).toBe(45);
+    expect(recalibrateRuleset(r)).toEqual([]);
   });
 });

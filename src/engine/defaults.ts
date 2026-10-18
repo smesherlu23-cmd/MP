@@ -1,7 +1,7 @@
 // Наборы правил-примеры и «фабрики» новых объектов. Всё это — данные:
 // ГМ может скопировать, переименовать или удалить их в программе.
 
-import { COEFFICIENT_DEFAULTS, DEFAULT_FEATURES } from './coefficients';
+import { COEFFICIENT_DEFAULTS, COMPAT_NEUTRAL, DEFAULT_FEATURES, RECALIBRATED } from './coefficients';
 import { instantiate, newRootUnit, newUnit, walkUnits } from './units';
 import type { ComponentType, EffectDef, Id, LevelDef, Objective, OrderDef, Ruleset, Scenario, SideDef, UnitNode } from './types';
 
@@ -553,7 +553,15 @@ export function makeLinearRuleset(): Ruleset {
     ],
     features: { ...DEFAULT_FEATURES, fuel: false, breakdowns: false, vehicleCondition: false, comms: false },
     // Потери от залпов и штыков выше, чем у «универсального» набора, а исход решает мораль.
-    coefficients: { ...COEFFICIENT_DEFAULTS, casualtyScale: 3, moralePerLossPct: 2, killedShare: 0.3, woundedShare: 0.55, missingShare: 0.15 },
+    coefficients: {
+      ...COEFFICIENT_DEFAULTS,
+      casualtyScale: 3,
+      moralePerLossPct: 2,
+      killedShare: 0.3,
+      woundedShare: 0.55,
+      missingShare: 0.15,
+      frontDensity: 250,
+    },
   };
 }
 
@@ -579,13 +587,30 @@ export function defaultCommandLevel(rs: Pick<Ruleset, 'commandLevels'>): number 
   return i >= 0 ? i + 1 : Math.ceil(n / 2);
 }
 
-/** Заполняет поля, которых нет в старых файлах, значениями по умолчанию. */
-export function normalizeRuleset(r: Ruleset): Ruleset {
+/**
+ * Перевести на откалиброванные значения коэффициенты набора, которые в нём не меняли (равны прежним значениям
+ * по умолчанию). Возвращает изменённые ключи.
+ */
+export function recalibrateRuleset(r: Ruleset): string[] {
+  const changed: string[] = [];
+  for (const [key, [was, now]] of Object.entries(RECALIBRATED))
+    if (r.coefficients[key] === was) {
+      r.coefficients[key] = now;
+      changed.push(key);
+    }
+  return changed;
+}
+
+/**
+ * Дополнить набор правил недостающим (наборы прежних версий). compat — для снимка правил старого боя:
+ * механики, которых тогда не было, выключены (бой повторяется и продолжается так же, как шёл).
+ */
+export function normalizeRuleset(r: Ruleset, compat = false): Ruleset {
   const base = makeUniversalRuleset();
   const out: Ruleset = { ...base, ...r };
   out.schemaVersion = SCHEMA_VERSION;
-  out.features = { ...DEFAULT_FEATURES, ...(r.features ?? {}) };
-  out.coefficients = { ...COEFFICIENT_DEFAULTS, ...(r.coefficients ?? {}) };
+  out.features = { ...DEFAULT_FEATURES, ...(compat ? { orderDelay: false } : {}), ...(r.features ?? {}) };
+  out.coefficients = { ...COEFFICIENT_DEFAULTS, ...(compat ? COMPAT_NEUTRAL : {}), ...(r.coefficients ?? {}) };
   out.targetClasses = r.targetClasses ?? [];
   out.rangeBands = r.rangeBands ?? [];
   out.componentTypes = (r.componentTypes ?? []).map((t) => ({ ...type({ ...t }), ...t, tags: t.tags ?? [] }));
@@ -879,8 +904,9 @@ export function makeDemoScenario(): Scenario {
   const sc = newScenario(rs, 'Пример: атака на высоту 212', 'DEMO-0001');
   sc.id = 'sc-demo';
   sc.description =
-    'Мотострелковый батальон с приданной танковой ротой атакует подготовленный оборонительный узел усиленной роты. Сумерки, холмы. 3-я рота — в резерве комбата: ГМ может ввести её в бой между ходами (смена приказа), иначе она вступит, только если первая линия выбудет.';
+    'Мотострелковый батальон с приданной танковой ротой атакует подготовленный оборонительный узел усиленной роты с рубежа атаки (средняя дистанция). Сумерки, холмы. 3-я рота — в резерве комбата: ГМ может ввести её в бой между ходами (смена приказа), иначе она вступит, только если первая линия выбудет.';
   sc.conditions = { terrain: 'hills', time: 'twilight', weather: 'clear' };
+  sc.startBand = 'medium';
   sc.maxTurns = 16;
   sc.sides[0].name = 'Синие';
   sc.sides[0].formations = [instantiate(makeDemoBattalion())];

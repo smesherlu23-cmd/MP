@@ -24,6 +24,7 @@ export const FEATURE_HINTS: Record<keyof Features, string> = {
   breakdowns: 'Небоевые поломки техники при движении.',
   panic: 'Проверка паники при низкой морали.',
   retreat: 'Проверка отхода при низкой морали и больших потерях.',
+  orderDelay: 'Приказ ГМ доходит не сразу: чем хуже связь и командир, тем чаще с опозданием на ход и больше.',
 };
 
 export function General({ r, upd }: { r: Ruleset; upd: Upd }) {

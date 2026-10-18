@@ -7,6 +7,8 @@ export * from './coefficients';
 export * from './labels';
 export * from './defaults';
 export { EngineContext } from './context';
+export { frontage, type Frontage } from './phases/frontage';
+export { orderChance } from './phases/orders';
 export { createBattle, stepTurn, runToEnd, combatEffectiveness, shooterMult, elementsOfNode, arrivalTurn, eventTurn, triggerMet, triggerText } from './battle';
 export { computeResult, defaultObjectives, explainResult } from './outcome';
 export {

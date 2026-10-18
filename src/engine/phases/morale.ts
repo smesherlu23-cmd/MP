@@ -39,6 +39,11 @@ export function phaseMorale(E: EngineContext) {
         const mf: Factor[] | undefined = E.logging ? [] : undefined;
         negMult = E.mult(el, 'moraleLoss', {}, mf);
         if (mf) for (const x of mf) factors.push({ ...x, label: `Потери морали — ${x.label}` });
+        const luck = E.b.sides[el.side].luck;
+        if (luck) {
+          negMult /= luck;
+          factors.push({ label: 'Потери морали — удача и исполнение стороны', value: 1 / luck, kind: 'mult' });
+        }
         if (f.cohesion) {
           const cm = lerp(k.moraleLowCohesionMult, 1, el.cohesion / 100);
           if (Math.abs(cm - 1) > 1e-6) {

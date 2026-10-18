@@ -4,6 +4,7 @@ import { type EngineContext, clamp, e, fm, lerp, round1, s } from '../context';
 import { plural } from '../labels';
 import type { ElementState, Factor, Id, SideId, StrikeOrder } from '../types';
 import { subtreeIds } from './common';
+import { frontage, frontageKey } from './frontage';
 import type { Initiative } from './initiative';
 
 // ------------------------------------------------------------------ огонь
@@ -50,6 +51,8 @@ export function shooterMult(E: EngineContext, el: ElementState, out?: Factor[]):
   if (f.suppression) add(`Подавление ${Math.round(el.suppression)}%`, 1 - (el.suppression / 100) * k.suppressionFirePenalty);
   if (f.ammo) add(`Боезапас ${Math.round(el.ammo)}%`, el.ammo >= k.lowAmmoThreshold ? 1 : lerp(k.noAmmoFire, 1, el.ammo / Math.max(1, k.lowAmmoThreshold)));
   if (f.comms) add(`Связь ${Math.round(E.comms(el) * 100)}%`, lerp(k.commsFireMin, 1, E.comms(el)));
+  const luck = E.b.sides[el.side].luck;
+  if (luck) add('Удача и исполнение стороны в этом бою', luck);
   return Math.max(0, m);
 }
 
@@ -71,6 +74,8 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
   const targets = E.sideElements(E.enemyOf(side)).filter((t) => t.status === 'active' && E.order(t).exposure > 0 && E.size(t) > 0);
   if (!targets.length) return shots;
   const shooters = E.sideElements(side).filter((x) => E.engaged(x));
+  // Ширина фронта: прямой огонь сил сверх охвата или фронта — с меньшим весом.
+  const front = frontage(E, side);
   // Присутствие классов целей в каждом элементе противника (вес при выборе цели)
   const presenceOf = new Map<Id, Map<Id, number>>();
   for (const t of targets) {
@@ -118,6 +123,14 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
     let ammoNum = 0;
     let ammoDen = 0;
     const ownBand = bandIdOf(sh);
+    const fr = front.get(frontageKey(sh));
+    const frontMult = fr?.factor ?? 1;
+    if (frontMult < 1 && sh.comps.some((c) => c.current > 0 && !E.type(c.typeId).indirect))
+      factors?.push({
+        label: `Ширина фронта: в первой линии ~${Math.round(fr!.engaged)}% сил стороны (${fr!.by === 'width' ? 'ширина фронта' : 'охват'}), прямой огонь`,
+        value: frontMult,
+        kind: 'mult',
+      });
     for (const indirect of [false, true]) {
       const comps = sh.comps.filter((c) => c.current > 0 && E.type(c.typeId).indirect === indirect);
       if (!comps.length) continue;
@@ -180,7 +193,7 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
         const share = c.w / W;
         const r = c.raw.get(c.cls)!;
         const ctxFire = E.contextual(sh, 'fire', { enemy: c.t, targetClass: c.cls });
-        const fire = r * share * c.vis * c.pursuit * sm * ctxFire;
+        const fire = r * share * c.vis * c.pursuit * sm * ctxFire * (indirect ? 1 : frontMult);
         if (fire <= 0) continue;
         const cls = E.classes.get(c.cls);
         const leth = (cls?.lethality ?? 1) * E.mult(sh, 'lethality', { enemy: c.t, targetClass: c.cls }) * k.casualtyScale;
@@ -430,7 +443,7 @@ function resolveStrike(E: EngineContext, st: StrikeOrder) {
     for (const band of E.rs.rangeBands) m = Math.max(m, t.firepower[cls.id]?.[band.id] ?? 0);
     if (m > 0) raw.set(cls.id, m * asset.count * k.strikeScale);
   }
-  const rnd = Math.max(0, 1 + k.strikeSpread * (E.rng.next() + E.rng.next() - 1));
+  const rnd = Math.max(0, 1 + k.strikeSpread * (E.rng.next() + E.rng.next() - 1)) * (b.sides[st.side].luck ?? 1);
   const cands: { t: ElementState; cls: Id; w: number; vis: number }[] = [];
   for (const x of targets) {
     const ex = exposureOf(E, x, t.indirect);

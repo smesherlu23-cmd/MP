@@ -6,6 +6,7 @@ import {
   STATUS_LABELS,
   arrivalTurn,
   combatEffectiveness,
+  orderChance,
   plural,
   resolveRefs,
   type Battle,
@@ -20,6 +21,22 @@ import { Btn, Card, Check, Meter, Sel, fmt0, pct } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { type Iv, SIDES } from './common';
 import { SideCompare } from './Result';
+
+/** Приказ ГМ ещё в пути (задержка доведения приказов): куда идёт и с каким шансом дойдёт к следующему ходу. */
+export function PendingOrder({ E, el }: { E: EngineContext; el: ElementState }) {
+  const p = el.pendingOrder;
+  if (!p || el.status !== 'active') return null;
+  const name = E.orders.get(p.orderId)?.name ?? p.orderId;
+  const tip =
+    `Приказ «${name}» отдан на ${p.since}-м ходу и ещё не дошёл: пока элемент действует по прежнему приказу. ` +
+    `Шанс, что дойдёт в начале следующего хода, — ${Math.round(orderChance(E, el) * 100)}% (связь, командир). ` +
+    'Выбор текущего приказа отменяет передачу.';
+  return (
+    <span className="badge warn order-pending" data-tip={tip}>
+      ✉ {name}
+    </span>
+  );
+}
 
 export function statusOf(E: EngineContext, el: ElementState): { label: string; cls: string } {
   if (el.status === 'active') {
@@ -376,7 +393,10 @@ export function FormationRows(props: {
             </td>
             <td>
               {active && E.behavior(el) !== 'rout' ? (
-                <Sel value={el.orderId} width={124} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={orderOptions} />
+                <>
+                  <Sel value={el.orderId} width={124} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={orderOptions} />
+                  <PendingOrder E={E} el={el} />
+                </>
               ) : (
                 <span className={`small ${st.cls}`}>{st.label}</span>
               )}

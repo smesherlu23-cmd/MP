@@ -152,6 +152,8 @@ export interface Features {
   breakdowns: boolean;
   panic: boolean;
   retreat: boolean;
+  /** Приказ ГМ доходит до подразделения не сразу (связь, командир). */
+  orderDelay: boolean;
 }
 
 export type Coefficients = Record<string, number>;
@@ -342,6 +344,8 @@ export interface SectorDef {
   conditions?: Record<Id, Id>;
   /** Укрепления сторон на участке; не задано — как у стороны. */
   fortification?: Partial<Record<SideId, Id>>;
+  /** Ширина фронта участка, м; не задано — ограничивает только охват. */
+  width?: number;
 }
 
 export interface Scenario {
@@ -359,6 +363,8 @@ export interface Scenario {
   events?: ScenarioEvent[];
   /** Участки боя; пусто — один общий участок. */
   sectors?: SectorDef[];
+  /** Ширина фронта, м (без участков); не задано — ограничивает только охват. */
+  frontWidth?: number;
   updatedAt?: string;
 }
 
@@ -480,6 +486,8 @@ export interface ElementState {
   startMorale: number;
   /** Участок боя (если участков несколько). */
   sector?: Id;
+  /** Приказ ГМ, который ещё не дошёл до элемента (задержка приказов). */
+  pendingOrder?: { orderId: Id; since: number };
   /** Свой командир элемента (0 — нет), его связь и снабжение (null — как у формирования). */
   ownCommandLevel?: number;
   ownCommanderName?: string;
@@ -514,6 +522,8 @@ export interface SideState {
   /** Ход, на котором сторона перестала удерживать позиции (0 — удерживает). */
   lostHoldTurn: number;
   initiative: number;
+  /** Удача и качество исполнения стороны в этом бою (множитель, выпадает в начале боя). */
+  luck?: number;
 }
 
 export type Phase =
@@ -530,6 +540,7 @@ export type Phase =
   | 'checks'
   | 'gm'
   | 'plan'
+  | 'orders'
   | 'end';
 
 export type Severity = 'info' | 'good' | 'bad' | 'critical';
@@ -599,6 +610,7 @@ export interface SectorState {
   /** Условия участка поверх общих (категория → вариант). */
   conditions: Record<Id, Id>;
   fortification: Partial<Record<SideId, Id>>;
+  width?: number;
 }
 
 /** Действующий (или отработавший) временный эффект. */

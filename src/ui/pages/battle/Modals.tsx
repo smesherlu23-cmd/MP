@@ -7,7 +7,7 @@ import { CommanderSelect } from '../../components/CommanderSelect';
 import { RichText } from '../../components/LogView';
 import { Btn, Check, Field, Modal, Num, Sel, fmt0 } from '../../components/ui';
 import type { Iv } from './common';
-import { CMD_TIP, statusOf } from './ForcesTable';
+import { CMD_TIP, PendingOrder, statusOf } from './ForcesTable';
 
 export const EDITABLE: { key: keyof ElementState; label: string; feature?: keyof Battle['ruleset']['features'] }[] = [
   { key: 'morale', label: 'Мораль', feature: 'morale' },
@@ -161,6 +161,7 @@ export function ElementModal({
                   onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })}
                   options={rs.orders.map((o) => ({ value: o.id, label: o.name }))}
                 />
+                <PendingOrder E={E} el={el} />
               </Field>
               {rs.features.command && ((el.ownCommandLevel ?? 0) > 0 || editing) && (
                 <Field label="Свой командир" hint="Обычно элементом командует его формирование; здесь ГМ может дать элементу собственного командира.">

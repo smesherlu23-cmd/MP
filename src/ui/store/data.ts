@@ -18,6 +18,7 @@ import {
   walkUnits,
   newId,
   normalizeRuleset,
+  recalibrateRuleset,
   extractForces,
   rehashCopies,
   toTemplate,
@@ -86,9 +87,11 @@ export async function initApp() {
     await installExamples();
     localStorage.setItem('warsim-initialized', '1');
     localStorage.setItem(MODEL_FLAG, '1');
+    localStorage.setItem(CALIBRATION_FLAG, '1');
   } else {
     await addLinearExample();
     await migrateToForces();
+    recalibrate();
   }
   if (!Object.keys(get().rulesets).length) {
     // Без набора правил программа бесполезна — создаём пустой.
@@ -168,6 +171,38 @@ export async function restoreBackup(id: string, label: string) {
 
 export function migrateScenario(sc: Scenario): Scenario {
   return { ...sc, sides: sc.sides.map((sd) => ({ ...sd, formations: (sd.formations ?? []).map((f) => migrateUnit(f)) })) as Scenario['sides'] };
+}
+
+/** Калибровка правдоподобия исходов проведена: несменённые коэффициенты наборов переведены на новые значения. */
+export const CALIBRATION_FLAG = 'warsim-calibration-2';
+
+/**
+ * Один раз после калибровки: в наборах правил коэффициенты, которые не меняли, — на новые значения
+ * (заданные вручную остаются); пример «Высота 212» начинается с рубежа атаки, как в новых примерах.
+ */
+export function recalibrate() {
+  if (localStorage.getItem(CALIBRATION_FLAG)) return;
+  const s = get();
+  const names: string[] = [];
+  for (const r of Object.values(s.rulesets)) {
+    const copy = clone(r);
+    if (!recalibrateRuleset(copy).length) continue;
+    set((st) => ({ rulesets: { ...st.rulesets, [r.id]: copy } }));
+    scheduleSave('rulesets', r.id, () => get().rulesets[r.id]);
+    names.push(`«${r.name}»`);
+  }
+  const demo = s.scenarios['sc-demo'];
+  if (demo && demo.startBand === 'long') {
+    const copy = { ...demo, startBand: 'medium' };
+    set((st) => ({ scenarios: { ...st.scenarios, [demo.id]: copy } }));
+    scheduleSave('scenarios', demo.id, () => get().scenarios[demo.id]);
+  }
+  localStorage.setItem(CALIBRATION_FLAG, '1');
+  if (names.length)
+    toast(
+      `Модель боя откалибрована: в наборах ${names.join(', ')} обновлены «Мораль за 1% потерь» и «Порог отхода (потери)» — там, где их не меняли. Начатые бои идут по своим прежним правилам.`,
+      'info',
+    );
 }
 
 export const linearUnits = () => [...makeLinearTemplates(), makeLinearBrigade(), makeLinearDefenders()];

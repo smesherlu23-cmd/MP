@@ -105,6 +105,16 @@ export function SideCompare({ b, result, full }: { b: Battle; result: BattleResu
           <b>{pct(r.combatEffectiveness)}</b>
         ))}
         {f.morale && row('Мораль', (r) => Math.round(r.morale))}
+        {b.sides.A.luck !== undefined &&
+          row(
+            'Удача и исполнение',
+            (r) => {
+              const v = b.sides[r.side].luck ?? 1;
+              return <span className={v >= 1.1 ? 'good' : v <= 0.9 ? 'bad' : 'faint'}>×{v.toFixed(2)}</span>;
+            },
+            () =>
+              'Выпадает каждой стороне в начале боя: множитель огня и стойкости — внезапность, слаженность, ошибки, везение («Удача и исполнение стороны» в наборе правил).',
+          )}
         {full && row('Организация', (r) => pct(r.organization))}
         {full &&
           f.ammo &&

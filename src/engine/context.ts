@@ -1,5 +1,6 @@
 // Контекст расчёта: быстрый доступ к справочникам, система модификаторов и общие формулы.
 
+import { COMPAT_NEUTRAL } from './coefficients';
 import { Rng } from './rng';
 import { STAT_KEYS } from './types';
 import type {
@@ -64,7 +65,8 @@ export class EngineContext {
 
   constructor(readonly b: Battle) {
     this.rs = b.ruleset;
-    this.k = b.ruleset.coefficients;
+    // Снимок правил старого боя может не знать новых коэффициентов — для него новые механики выключены.
+    this.k = { ...COMPAT_NEUTRAL, ...b.ruleset.coefficients };
     this.rng = new Rng([...b.rng] as Battle['rng']);
     for (const t of this.rs.componentTypes) this.types.set(t.id, t);
     for (const o of this.rs.orders) this.orders.set(o.id, o);

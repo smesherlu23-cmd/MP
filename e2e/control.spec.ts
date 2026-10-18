@@ -34,6 +34,8 @@ test('бой: групповой приказ, эффект на выбранн�
   await expect(bar).toContainText('Выбрано: 2 элемента');
   await bar.locator('select').selectOption({ label: 'Закрепление' });
   await expect(page.locator('.battle-log')).toContainText('приказ «Закрепление»');
+  // Приказ доходит не сразу: под приказом — «в пути».
+  await expect(blue.locator('.order-pending', { hasText: 'Закрепление' })).toHaveCount(2);
   await bar.getByRole('button', { name: 'Эффект…' }).click();
   await page.locator('.modal').getByRole('button', { name: 'Наложить' }).click();
   await expect(page.locator('.support-panel')).toContainText('«Дымовая завеса»');
@@ -54,10 +56,17 @@ test('бой: групповой приказ, эффект на выбранн�
 test('сценарий: участки боя, событие по условию и удар по плану', async ({ page }) => {
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
+  // Ширина фронта: общая — в «Обстановке»; с участками — у каждого участка.
+  const width = page.locator('.field', { hasText: 'Ширина фронта, м' }).locator('input');
+  await width.fill('800');
+  await width.blur();
+  await expect(width).toHaveValue('800');
   const sectors = page.locator('.section', { hasText: 'Участки боя' });
   if (!(await sectors.locator('.card-body').count())) await sectors.locator('.card-head').click();
   await sectors.getByRole('button', { name: '+ Разделить поле боя на участки' }).click();
   await expect(sectors.locator('.sector-row')).toHaveCount(2);
+  await expect(page.locator('.field', { hasText: 'Ширина фронта, м' })).toHaveCount(0);
+  await sectors.locator('.sector-row').nth(0).locator('.numwrap input').fill('500');
   await sectors.locator('.sector-row').nth(1).locator('select').first().selectOption({ label: 'Средняя' });
   // Оборона Красных — на втором участке.
   const red = page.locator('.side-card').nth(1);

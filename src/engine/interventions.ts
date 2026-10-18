@@ -4,6 +4,7 @@
 import { createBattle, finish, stepTurn } from './battle';
 import { EngineContext, clamp, e, fm, s as sd } from './context';
 import { plural } from './labels';
+import { giveOrder } from './phases/orders';
 import type { Battle, ElementState, Intervention, InterventionType } from './types';
 
 export interface ElementPatch {
@@ -42,6 +43,13 @@ const PATCH_LABELS: Record<string, string> = {
   echelon: 'эшелон',
   holdFast: '«стоять насмерть»',
 };
+
+/** Приказ ГМ: сразу или, при задержке приказов, — в пути (доходит в начале одного из следующих ходов). */
+function sendOrder(E: EngineContext, el: ElementState, orderId: string) {
+  if (!E.f.orderDelay) return giveOrder(E, el, orderId);
+  if (el.orderId === orderId) delete el.pendingOrder;
+  else el.pendingOrder = { orderId, since: E.b.turn };
+}
 
 type PatchKey = Exclude<keyof ElementPatch, 'comps'>;
 
@@ -85,11 +93,10 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       for (const id of ids) {
         const el = E.elements.get(id);
         if (el?.status !== 'active') continue;
-        el.orderId = order.id;
-        if (order.behavior !== 'retreat' && order.behavior !== 'rout') el.exitTurns = 0;
+        sendOrder(E, el, order.id);
       }
       const names = ids.length > 3 ? `${ids.length} элементов` : ids.map((id) => e(id)).join(', ');
-      E.log({ phase: 'gm', level: 0, refs: ids, text: `ГМ: приказ «${order.name}» для ${names}${note}.` });
+      E.log({ phase: 'gm', level: 0, refs: ids, text: `ГМ: приказ «${order.name}» для ${names}${E.f.orderDelay ? ' — передаётся' : ''}${note}.` });
       break;
     }
     case 'setFormation': {
@@ -121,11 +128,7 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
               grew = true;
             }
         }
-        for (const el of b.elements)
-          if (ids.has(el.formationId) && el.status === 'active') {
-            el.orderId = p.orderId;
-            el.exitTurns = 0;
-          }
+        for (const el of b.elements) if (ids.has(el.formationId) && el.status === 'active') sendOrder(E, el, p.orderId);
       }
       E.log({ phase: 'gm', level: 0, side: f.side, text: `ГМ: ${fm(f)} — ${changes.join(', ') || 'без изменений'}${note}.` });
       break;
@@ -365,7 +368,7 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
  */
 export function replayBattle(src: Battle, opts: { seed?: string; withInterventions?: boolean; toEnd?: boolean } = {}): Battle {
   const seed = opts.seed ?? src.seed;
-  const b = createBattle(src.scenario, src.ruleset, { seed, name: src.name, id: `${src.scenarioId}-${seed}-${Date.now().toString(36)}` });
+  const b = createBattle(src.scenario, src.ruleset, { seed, name: src.name, id: `${src.scenarioId}-${seed}-${Date.now().toString(36)}`, compat: true });
   const ivs: Intervention[] = opts.withInterventions ? src.interventions : [];
   const target = opts.toEnd ? Infinity : src.turn;
   let guard = 0;
@@ -417,7 +420,7 @@ function printUpTo(b: Battle, turn: number): string {
 export function rewindBattle(src: Battle, toTurn: number, keepAtTurn = Infinity): Battle | null {
   const target = Math.max(0, Math.min(src.turn, toTurn));
   const ivs = [...src.interventions.filter((x) => x.turn < target), ...src.interventions.filter((x) => x.turn === target).slice(0, keepAtTurn)];
-  const b = createBattle(src.scenario, src.ruleset, { seed: src.seed, name: src.name, id: src.id });
+  const b = createBattle(src.scenario, src.ruleset, { seed: src.seed, name: src.name, id: src.id, compat: true });
   let guard = 0;
   while (!b.finished && guard++ < 1000) {
     for (const iv of ivs.filter((x) => x.turn === b.turn)) applyIntervention(b, iv, true);

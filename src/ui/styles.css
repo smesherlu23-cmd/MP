@@ -3040,14 +3040,12 @@ select.sector-mini {
   vertical-align: middle;
   margin-left: 6px;
 }
-select.sector-mini {
-  max-width: 104px;
-}
-.fx-badge {
-  max-width: 130px;
+.order-pending {
+  display: block;
+  width: fit-content;
+  max-width: 124px;
+  margin-top: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
-  margin-left: 6px;
 }

@@ -15,6 +15,7 @@ const PHASES: { id: Phase; label: string; icon: string }[] = [
   { id: 'fatigue', label: 'Усталость', icon: '≈' },
   { id: 'morale', label: 'Мораль', icon: '♥' },
   { id: 'checks', label: 'Проверки', icon: '!' },
+  { id: 'orders', label: 'Приказы', icon: '✉' },
   { id: 'gm', label: 'ГМ', icon: '✎' },
 ];
 const ICON: Partial<Record<Phase, string>> = Object.fromEntries(PHASES.map((p) => [p.id, p.icon]));

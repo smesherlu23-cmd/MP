@@ -3,12 +3,12 @@
 
 import { newId, nodeSectors, summarizeUnits, type Ruleset, type Scenario, type SectorDef, type UnitNode } from '../../engine';
 import { historyStep, toastUndoable, updateScenario } from '../store';
-import { Btn, Info, Section, Sel, Txt, fmt0 } from './ui';
+import { Btn, Info, Num, Section, Sel, Txt, fmt0 } from './ui';
 
 const HINT =
   'Без участков бой идёт на одной общей дистанции. Если поле боя делится на направления (фланги, высота и деревня), задайте участки: у каждого своя дистанция и сближение, ' +
   'при желании — своя местность и укрепления. Наблюдение и прямой огонь — только в пределах участка; миномёты и артиллерия достают и соседние (коэффициент в наборе правил). ' +
-  'Переброски между участками нет. Подразделения назначаются на участок на сторонах (по умолчанию — первый участок).';
+  'Переброски между участками нет. Подразделения назначаются на участок на сторонах (по умолчанию — первый участок). Ширина участка ограничивает, сколько сил одновременно ведут прямой огонь (0 — только охват).';
 
 export function SectorsEditor({ sc, rsc, rs }: { sc: Scenario; rsc: Scenario; rs: Ruleset }) {
   const sectors = sc.sectors ?? [];
@@ -65,6 +65,18 @@ export function SectorsEditor({ sc, rsc, rs }: { sc: Scenario; rsc: Scenario; rs
               onChange={(v) => setSec(i, (s) => void (v ? (s.startBand = v) : delete s.startBand))}
               options={[{ value: '', label: `как в сценарии (${bandName().toLowerCase()})` }, ...rs.rangeBands.map((b) => ({ value: b.id, label: b.name }))]}
               width={210}
+            />
+            <span className="plan-label">ширина, м</span>
+            <Num
+              value={sec.width ?? 0}
+              onChange={(v) => setSec(i, (s) => void (v > 0 ? (s.width = v) : delete s.width))}
+              min={0}
+              max={100000}
+              step={100}
+              integer
+              width={80}
+              placeholder="—"
+              title={`Ширина фронта участка: в первой линии ${sec.width ? `до ${fmt0((sec.width / 100) * rs.coefficients.frontDensity)} мест у каждой стороны` : 'ограничивает только охват (ширина не задана, 0)'}`}
             />
             <span className="grow" />
             <span className="faint small nowrap" title="Личный состав сторон на участке">

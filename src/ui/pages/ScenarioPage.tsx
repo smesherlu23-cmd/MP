@@ -185,6 +185,27 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
                 options={(rs?.rangeBands ?? []).map((b) => ({ value: b.id, label: b.name }))}
               />
             </Field>
+            {!sc.sectors?.length && (
+              <Field
+                label="Ширина фронта, м"
+                hint={
+                  (sc.frontWidth && rs ? `В первой линии — до ${fmt0((sc.frontWidth / 100) * rs.coefficients.frontDensity)} мест у каждой стороны. ` : '') +
+                  'Сколько сил одновременно ведут прямой огонь: бойцы, расчёты и боевые машины сверх этого стреляют слабее («вклад сил сверх охвата» в наборе правил, там же плотность на 100 м). ' +
+                  '0 — ширина не задана: ограничивает только охват (по силам противника на участке).'
+                }
+              >
+                <Num
+                  value={sc.frontWidth ?? 0}
+                  onChange={(v) => upd((d) => void (v > 0 ? (d.frontWidth = v) : delete d.frontWidth))}
+                  min={0}
+                  max={100000}
+                  step={100}
+                  integer
+                  width="100%"
+                  placeholder="не задана"
+                />
+              </Field>
+            )}
             <Field label="Лимит ходов" hint={rs ? `≈ ${fmt1((sc.maxTurns * rs.turnMinutes) / 60)} ч боя` : undefined}>
               <Num value={sc.maxTurns} onChange={(v) => upd((d) => void (d.maxTurns = v))} min={1} max={500} integer width="100%" />
             </Field>
