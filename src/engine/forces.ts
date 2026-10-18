@@ -165,7 +165,13 @@ export function extractForces(sc: Scenario, taken: Set<Id>, newId: () => Id): { 
     if (remap.size) {
       if (sd.commanders) sd.commanders = Object.fromEntries(Object.entries(sd.commanders).map(([k, v]) => [map(k), v]));
       if (sd.excluded) sd.excluded = sd.excluded.map(map);
-      for (const ev of out.events ?? []) if (ev.side === sd.id && ev.nodeId) ev.nodeId = map(ev.nodeId);
+      if (sd.sectorOf) sd.sectorOf = Object.fromEntries(Object.entries(sd.sectorOf).map(([k, v]) => [map(k), v]));
+      for (const ev of out.events ?? []) {
+        if (ev.side === sd.id && ev.nodeId) ev.nodeId = map(ev.nodeId);
+        // Цель удара — на стороне противника; условие — на своей стороне.
+        if (ev.side && ev.side !== sd.id && ev.targetNodeId) ev.targetNodeId = map(ev.targetNodeId);
+        if (ev.trigger?.side === sd.id && ev.trigger.nodeId) ev.trigger.nodeId = map(ev.trigger.nodeId);
+      }
     }
     sd.units = units;
     sd.orders = orders;
