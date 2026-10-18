@@ -17,10 +17,13 @@ import {
   newUnit,
   nextName,
   pathTo,
+  remapTypes,
   removeUnit,
   resolveTree,
   summarizeUnits,
   toTemplate,
+  transferFromRuleset,
+  usedTypeIds,
   validateUnit,
   walkUnits,
   type ComponentKind,
@@ -34,6 +37,8 @@ import {
 } from '../../engine';
 import { Crumbs } from '../components/Crumbs';
 import { Link } from '../components/Link';
+import { TypeMapModal } from '../components/RulesetTransfer';
+import { ForceHistory, ReplenishModal, RestModal } from '../components/ForceCampaign';
 import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, Seg, Tags, fmt0, fmt1, pressable, type MenuItem } from '../components/ui';
 import { useTabState } from '../hooks';
 import {
@@ -47,6 +52,7 @@ import {
   instantiateLibrary,
   openTab,
   promptDialog,
+  replaceRuleset,
   resolveFormation,
   templateUsages,
   toast,
@@ -367,6 +373,8 @@ export function FormationPage({ tab }: { tab: Tab }) {
   const [collapsedArr, setCollapsed] = useTabState<string[]>(`${tab.key}:collapsed`, res ? initialCollapsed(res.f) : []);
   const [insert, setInsert] = useState<{ id: Id; attach: boolean } | null>(null);
   const [drop, setDrop] = useState<{ id: Id; pos: DropPos } | null>(null);
+  const [typeMap, setTypeMap] = useState<{ to: Id; ids: Id[] } | null>(null);
+  const [between, setBetween] = useState<'rest' | 'replenish' | null>(null);
   const ctxRef = useRef<Ctx | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -446,11 +454,21 @@ export function FormationPage({ tab }: { tab: Tab }) {
     const nr = st.rulesets[id];
     if (!nr || id === rs.id) return;
     const known = new Set(nr.componentTypes.map((t) => t.id));
-    const missing = new Set<string>();
-    walkUnits(root, (n) => n.composition.forEach((c) => !known.has(c.typeId) && missing.add(rs.componentTypes.find((t) => t.id === c.typeId)?.name ?? c.typeId)));
+    const missing = usedTypeIds(root).filter((t) => !known.has(t));
+    // Типов нет в новом наборе — сопоставить: заменить, добавить в набор или убрать.
+    if (missing.length) return setTypeMap({ to: id, ids: missing });
     ctx.upd((d) => void (d.rulesetId = id));
-    if (missing.size) toast(`В наборе «${nr.name}» нет типов: ${[...missing].join(', ')} — замените их в составе (Ctrl+Z — вернуть как было).`, 'bad');
-    else toast(`Подразделение считается по набору «${nr.name}».`, 'good');
+    toast(`Подразделение считается по набору «${nr.name}».`, 'good');
+  };
+  const applyTypeMap = (to: Id, map: Record<Id, Id | null>, copy: Id[]) => {
+    const nr = st.rulesets[to];
+    historyStep(`переход на набор «${nr.name}»`);
+    if (copy.length) replaceRuleset(transferFromRuleset(nr, rs, { componentTypes: copy }).ruleset);
+    ctx.upd((d) => {
+      remapTypes(d, map);
+      d.rulesetId = to;
+    });
+    toast(`Подразделение считается по набору «${nr.name}»${copy.length ? `; в набор добавлено типов: ${copy.length}` : ''}.`, 'good');
   };
   const sel = findUnit(root, ctx.sel) ?? root;
   const issues = validateUnit(root, rs);
@@ -497,6 +515,9 @@ export function FormationPage({ tab }: { tab: Tab }) {
                   { label: 'Удалить шаблон', danger: true, onClick: () => deleteFormation(root.id) },
                 ]
               : [
+                  { label: 'Отдых и восстановление…', onClick: () => setBetween('rest'), tip: 'Раненые возвращаются в строй, техника ремонтируется, мораль и усталость приходят в норму' },
+                  { label: 'Пополнить до штата…', onClick: () => setBetween('replenish'), tip: 'Довести численность людей и техники до штата' },
+                  'sep' as const,
                   !!tpl && { label: `Открыть шаблон «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
                   { label: 'Сохранить как шаблон', onClick: () => saveAsTemplate(root, rs) },
                   { label: 'Дублировать', onClick: () => duplicateForce(root.id) },
@@ -614,6 +635,12 @@ export function FormationPage({ tab }: { tab: Tab }) {
         </div>
       )}
       {insert && <InsertDialog ctx={ctx} targetId={insert.id} attach={insert.attach} onClose={() => setInsert(null)} />}
+      {!isLib && <ForceHistory force={root} />}
+      {between === 'rest' && <RestModal force={root} rs={rs} onClose={() => setBetween(null)} />}
+      {between === 'replenish' && <ReplenishModal force={root} rs={rs} onClose={() => setBetween(null)} />}
+      {typeMap && st.rulesets[typeMap.to] && (
+        <TypeMapModal from={rs} to={st.rulesets[typeMap.to]} ids={typeMap.ids} onClose={() => setTypeMap(null)} onApply={(map, copy) => applyTypeMap(typeMap.to, map, copy)} />
+      )}
     </div>
   );
 }

@@ -784,7 +784,9 @@ describe('участки, удары, эффекты, условия плана'
   };
 
   it('без новых механик бой тот же, что и раньше: участки и поддержка не создаются', () => {
-    const b = createBattle(makeDemoScenario(), rs, { seed: 'S0' });
+    const sc = makeDemoScenario();
+    delete sc.sides[0].support;
+    const b = createBattle(sc, rs, { seed: 'S0' });
     expect(b.sectors).toBeUndefined();
     expect(b.support).toBeUndefined();
     expect(b.elements.every((x) => x.sector === undefined)).toBe(true);

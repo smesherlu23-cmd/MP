@@ -2917,3 +2917,134 @@ select.order-mini {
 .forces-note.done {
   border-left-color: var(--good);
 }
+
+/* Бой: эффекты и огневая поддержка, групповые решения, пауза «до события», прогноз */
+.support-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 900px) {
+  .support-panel {
+    grid-template-columns: 1fr;
+  }
+}
+.support-side {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.support-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.support-item.planned {
+  color: var(--accent);
+}
+.support-item.effect .grow {
+  color: var(--muted);
+}
+.group-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel2);
+}
+.pick-check {
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+  accent-color: var(--accent);
+}
+.sector-badge {
+  margin-left: 6px;
+}
+.pause-note {
+  width: 100%;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--panel2);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.fc-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--panel3);
+  min-width: 160px;
+}
+.fc-bar > div {
+  height: 100%;
+}
+.fc-draw {
+  background: var(--border2);
+}
+table.forecast td:first-child {
+  white-space: nowrap;
+}
+.support-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.transfer-kind {
+  border-top: 1px solid var(--border);
+  padding: 6px 0;
+}
+.transfer-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 4px 12px;
+  padding: 6px 0 4px 22px;
+}
+.history-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.history-icon {
+  width: 16px;
+  text-align: center;
+  color: var(--muted);
+}
+.best-row td:first-child { font-weight: 600; }
+select.sector-mini {
+  max-width: 104px;
+}
+.fx-badge {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+select.sector-mini {
+  max-width: 104px;
+}
+.fx-badge {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-left: 6px;
+}

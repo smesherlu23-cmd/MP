@@ -42,6 +42,7 @@ import {
   undoBattleAction,
   lastBattleAction,
   type Battle,
+  type PauseRules,
   type UnitNode,
   type Id,
   type Ruleset,
@@ -66,6 +67,10 @@ export interface Settings {
   density: 'compact' | 'normal';
   /** Раздел, список которого показан в навигаторе. */
   navSection: NavSection;
+  /** Что останавливает «ход до события» в бою. */
+  pauseRules?: PauseRules;
+  /** Прогонов в прогнозе боя. */
+  forecastRuns?: number;
 }
 
 export interface Toast {
@@ -1091,6 +1096,39 @@ export async function rewindBattleDialog(id: Id) {
   const nb = rewindBattle(b, t);
   if (!nb) return toast(NOT_REPLAYABLE, 'bad');
   replaceBattle(b, nb, t === 0 ? 'Бой возвращён к началу' : `Бой возвращён к ходу ${t}`);
+}
+
+/**
+ * Ответвить бой: новый бой — копия этого до выбранного хода (те же броски и решения ГМ), а исходный
+ * остаётся как есть — можно сыграть иначе и сравнить.
+ */
+export async function branchBattleDialog(id: Id) {
+  const b = useBattles.getState().battles[id];
+  if (!b) return;
+  const min = b.ruleset.turnMinutes;
+  const time = (t: number) => `${Math.floor((t * min) / 60)}:${String((t * min) % 60).padStart(2, '0')}`;
+  const options = Array.from({ length: b.turn + 1 }, (_, i) => b.turn - i).map((t) => ({
+    value: String(t),
+    label: t === b.turn ? `С текущего момента (после хода ${t}${b.interventions.some((x) => x.turn === t) ? ', с вашими решениями' : ''})` : t === 0 ? 'С начала боя' : `После хода ${t} · ${time(t)}`,
+  }));
+  const v = await chooseDialog(
+    'Ответвить бой',
+    options,
+    'Новый бой — копия этого до выбранного момента: те же броски и ваши решения. Исходный бой не меняется — можно сыграть иначе и сравнить исходы.',
+  );
+  if (v === null) return;
+  const t = Number(v);
+  const nb = t === b.turn ? clone(b) : rewindBattle(b, t);
+  if (!nb) return toast(NOT_REPLAYABLE, 'bad');
+  const base = b.name.replace(/ — ветка с хода \d+$/, '');
+  nb.id = newId('bt');
+  nb.name = `${base} — ветка с хода ${t}`;
+  nb.branchOf = { battleId: b.id, name: b.name, turn: t };
+  nb.createdAt = new Date().toISOString();
+  delete nb.appliedToForces;
+  putBattle(nb);
+  openTab('battle', nb.id);
+  toast(`Ветка боя создана: «${nb.name}». Исходный бой не изменился.`, 'good');
 }
 
 /** Вызвать после изменения боя движком (ход, вмешательство). */

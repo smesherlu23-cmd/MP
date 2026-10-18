@@ -27,6 +27,7 @@ import {
   type Ruleset,
 } from '../../engine';
 import { EffectsEditor } from '../components/EffectsEditor';
+import { TransferModal } from '../components/RulesetTransfer';
 import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Sel, Seg, Tags, Txt, pressable } from '../components/ui';
 import { Crumbs } from '../components/Crumbs';
 import { useTabState } from '../hooks';
@@ -42,6 +43,7 @@ export const SECTIONS: { id: string; label: string; count?: (r: Ruleset) => numb
   { id: 'levels', label: 'Опыт и командиры' },
   { id: 'conditions', label: 'Условия боя' },
   { id: 'modifiers', label: 'Свои правила', count: (r) => r.modifiers.length },
+  { id: 'effects', label: 'Временные эффекты', count: (r) => r.tempEffects?.length ?? 0 },
   { id: 'coefficients', label: 'Коэффициенты' },
   { id: 'outcomes', label: 'Исходы' },
 ];
@@ -51,6 +53,7 @@ const ALIASES: Record<string, string> = { features: 'general', bands: 'classes',
 
 export function RulesetPage({ tab }: { tab: Tab }) {
   const r = useApp((s) => s.rulesets[tab.ref!]);
+  const [transfer, setTransfer] = useState(false);
   if (!r) return <div className="empty">Набор правил не найден.</div>;
   const sub = ALIASES[tab.sub ?? ''] ?? tab.sub ?? 'general';
   const upd: Upd = (fn) => updateRuleset(r.id, fn);
@@ -62,6 +65,7 @@ export function RulesetPage({ tab }: { tab: Tab }) {
         <Menu
           items={[
             { label: 'Дублировать', onClick: () => createRuleset(r.id), tip: 'Копия для экспериментов с балансом' },
+            { label: 'Перенести из другого набора…', onClick: () => setTransfer(true), tip: 'Скопировать типы, приказы, условия, правила или эффекты из другого набора правил' },
             { label: 'Сохранить в файл…', onClick: () => exportJson('ruleset', r.name, r) },
             { label: 'Редактировать как JSON', onClick: () => setTabSub(tab.key, 'json') },
             'sep',
@@ -127,12 +131,50 @@ export function RulesetPage({ tab }: { tab: Tab }) {
             </>
           )}
           {sub === 'modifiers' && <ModifiersSection r={r} upd={upd} />}
+          {sub === 'effects' && <TempEffectsSection r={r} upd={upd} />}
           {sub === 'coefficients' && <CoefficientsSection r={r} upd={upd} />}
           {sub === 'outcomes' && <OutcomesSection r={r} upd={upd} />}
           {sub === 'json' && <JsonSection r={r} />}
         </div>
       </div>
+      {transfer && <TransferModal target={r} onClose={() => setTransfer(false)} />}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ временные эффекты
+
+function TempEffectsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
+  const list = r.tempEffects ?? [];
+  return (
+    <Card
+      title={
+        <>
+          Временные эффекты{' '}
+          <Info text="Заготовки для боя: ГМ накладывает эффект на сторону, формирование или выбранные элементы на несколько ходов (в бою — кнопка «Эффект…», в плане боя — событие «Временный эффект»). Множители действуют, как у приказов и условий." />
+        </>
+      }
+      actions={
+        <Btn sm kind="ghost" onClick={() => upd((d) => void (d.tempEffects ??= []).push({ id: newId('fx'), name: 'Новый эффект', turns: 2, effects: { fire: 1.2 } }))}>
+          + Эффект
+        </Btn>
+      }
+    >
+      {!list.length && <div className="muted">Заготовок нет — добавьте, чтобы накладывать их в бою одним щелчком.</div>}
+      <div className="grid two">
+        {list.map((x, i) => (
+          <div key={x.id} className="kpi stack" style={{ gap: 8 }}>
+            <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
+              <Txt value={x.name} onChange={(v) => upd((d) => void (d.tempEffects[i].name = v))} width="100%" />
+              <Num value={x.turns} onChange={(v) => upd((d) => void (d.tempEffects[i].turns = Math.max(1, Math.round(v))))} min={1} max={50} integer suffix="ход" width={78} title="Сколько ходов действует по умолчанию" />
+              <Menu sm items={[{ label: 'Удалить эффект', danger: true, onClick: () => upd((d) => void d.tempEffects.splice(i, 1)) }]} />
+            </div>
+            <Txt value={x.description ?? ''} onChange={(v) => upd((d) => void (d.tempEffects[i].description = v || undefined))} placeholder="описание (необязательно)" width="100%" />
+            <EffectsEditor value={x.effects} onChange={(v) => upd((d) => void (d.tempEffects[i].effects = v))} />
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 

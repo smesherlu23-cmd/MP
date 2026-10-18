@@ -8,6 +8,7 @@ import {
   createBattle,
   findUnit,
   forceRefIssues,
+  nodeSectors,
   newId,
   newObjective,
   partOf,
@@ -32,6 +33,8 @@ import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
 import { AddUnitsModal } from '../components/AddUnits';
 import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
+import { SectorSelect, SectorsEditor } from '../components/SectorsEditor';
+import { SideSupport } from '../components/SupportEditor';
 import { Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import {
@@ -181,6 +184,8 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
           </div>
         </Card>
 
+        {rs && <SectorsEditor sc={sc} rsc={rsc} rs={rs} />}
+
         {rs ? (
           <div className="grid two">
             {[0, 1].map((i) => (
@@ -206,14 +211,18 @@ function SideTree(props: {
   root: UnitNode;
   refId: string;
   rs: Ruleset;
-  arrivals?: Map<string, number>;
+  arrivals?: Map<string, number | 'cond'>;
   excluded?: Set<string>;
   onToggle?: (id: string, on: boolean) => void;
   /** Приказы частей на этот бой (сценарий). */
   orders?: Record<string, string>;
   onOrder?: (id: string, orderId: string) => void;
+  /** Участки частей (если в сценарии есть участки). */
+  sc?: Scenario;
+  sectorOf?: Record<string, string>;
+  onSector?: (id: string, sectorId: string) => void;
 }) {
-  const { root, refId, rs, arrivals, excluded, onToggle, orders: setOrders, onOrder } = props;
+  const { root, refId, rs, arrivals, excluded, onToggle, orders: setOrders, onOrder, sc, sectorOf, onSector } = props;
   const stats = computeStats(root, rs);
   const LIMIT = 150;
   const rows: { n: UnitNode; depth: number; off: boolean; inherited: boolean }[] = [];
@@ -250,8 +259,13 @@ function SideTree(props: {
           {n.level && <span className="faint">{n.level}</span>}
           <span className="side-node-name">{n.name}</span>
           {n.attachedFrom !== undefined && <span className="badge info">придано</span>}
-          {arrivals?.has(n.id) && <span className="badge warn" data-tip="Подкрепление по плану боя">с {arrivals.get(n.id)}-го хода</span>}
+          {arrivals?.has(n.id) && (
+            <span className="badge warn" data-tip="Подкрепление по плану боя">
+              {arrivals.get(n.id) === 'cond' ? 'подойдёт по условию' : `с ${arrivals.get(n.id)}-го хода`}
+            </span>
+          )}
           <span className="grow" />
+          {sc && onSector && !off && <SectorSelect sc={sc} mini value={sectorOf?.[n.id]} onChange={(v) => onSector(n.id, v)} />}
           {onOrder && !off && (
             <select
               className="order-mini"
@@ -343,6 +357,13 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
       if (u) (d.sides[i].units ??= []).push({ forceId: u.forceId, nodeId: u.nodeId });
     });
   };
+  const setSector = (id: string, v: string) =>
+    upd((d) => {
+      d.sectorOf ??= {};
+      if (v) d.sectorOf[id] = v;
+      else delete d.sectorOf[id];
+      if (!Object.keys(d.sectorOf).length) delete d.sectorOf;
+    });
   const remove = (ri: number, name: string) => {
     historyStep(`удаление «${name}» из сценария`);
     upd((d) => void d.units?.splice(ri, 1));
@@ -436,6 +457,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
               title="Приказ на этот бой (подчинённые — так же, если им не задан свой)"
             />
           )}
+          {!attachedTo && <SectorSelect sc={sc} root value={side.sectorOf?.[root]} onChange={(v) => setSector(root, v)} />}
           {attachedTo && (
             <Btn sm kind="ghost" title="Снова самостоятельное подразделение стороны" onClick={() => upd((d) => void delete d.units![ri].attachTo)}>
               отделить
@@ -468,6 +490,9 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
                 else delete d.orders[id];
               })
             }
+            sc={sc}
+            sectorOf={side.sectorOf}
+            onSector={setSector}
           />
         )}
       </div>
@@ -558,6 +583,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
         </div>
 
         {rs.features.command && <SideCommanders sc={rsc} i={i} rs={rs} />}
+        <SideSupport sc={sc} i={i} rs={rs} />
       </div>
       {adding && <AddUnitsModal sc={sc} side={i} rs={rs} onClose={() => setAdding(false)} />}
     </div>
@@ -654,6 +680,26 @@ function ForceRatio({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
       fmt: fmt1,
     })),
   ];
+  // По участкам: у каждого своя дистанция, поэтому соотношение — отдельно.
+  const sectors = sc.sectors ?? [];
+  if (sectors.length) {
+    const bySector = sc.sides.map((sd) => {
+      const map = nodeSectors(sd, sectors[0].id);
+      return sectors.map((sec) => {
+        const nodes: UnitNode[] = [];
+        const walk = (n: UnitNode) => {
+          if (n.composition.length && map.get(n.id) === sec.id) nodes.push({ ...n, children: [] });
+          n.children.forEach(walk);
+        };
+        for (const f of sideUnits(sd)) walk(f);
+        return summarizeUnits(nodes, rs);
+      });
+    });
+    sectors.forEach((sec, j) => {
+      rows.push({ label: `${sec.name}: личный состав`, a: bySector[0][j].persCur, b: bySector[1][j].persCur });
+      rows.push({ label: `${sec.name}: боевая ценность`, a: bySector[0][j].value, b: bySector[1][j].value });
+    });
+  }
   for (const id of [...new Set(sums.flatMap((s) => s.equip.map((q) => q.id)))]) {
     rows.push({
       label: rs.componentTypes.find((t) => t.id === id)?.name ?? id,

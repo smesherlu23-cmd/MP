@@ -632,6 +632,8 @@ export function makeDemoScenario(): Scenario {
   sc.sides[0].formations = [instantiate(makeDemoBattalion())];
   sc.sides[0].intel = 'partial';
   sc.sides[0].objectives = [newObjective('take', 0, 2), newObjective('preserve', 25, 1)];
+  // Артиллерия старшего начальника — по вызову ГМ («Удар…» в бою); в плане боя ударов нет, баланс примера тот же.
+  sc.sides[0].support = [{ id: 'sup-art', name: 'Артдивизион полка', typeId: 'gun', count: 6, missions: 3 }];
   sc.sides[1].name = 'Красные';
   sc.sides[1].formations = [instantiate(makeDemoDefenders())];
   sc.sides[1].fortification = 'prepared';

@@ -56,7 +56,7 @@ test('командира в конструкторе нет; в сценарии
   const row = blue.locator('.cmd-row').first();
   await expect(row).toContainText('1-й мотострелковый батальон');
   await row.locator('select').selectOption('0');
-  await expect(blue.locator('.sec-toggle').locator('..')).toContainText('без командира');
+  await expect(blue.locator('.sec-toggle', { hasText: 'Командиры в начале боя' }).locator('..')).toContainText('без командира');
   await startBattle(page);
   await expect(page.locator('.tbl.forces tr.group select').first()).toHaveValue('0');
   expect(errors).toEqual([]);

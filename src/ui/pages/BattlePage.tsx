@@ -12,10 +12,13 @@ import {
   formatReport,
   formatSideReport,
   lastBattleAction,
+  plural,
   randomSeed,
   replayBattle,
+  resolveRefs,
   runToEnd,
   stepTurn,
+  stepUntilEvent,
   type Battle,
   type BattleResult,
   type ElementState,
@@ -23,6 +26,7 @@ import {
   type SideId,
   type SideResult,
 } from '../../engine';
+import { EffectModal, ForecastModal, GroupEditModal, PauseSettingsModal, StrikeModal, SupportPanel, usePauseRules, type Target } from '../components/BattleControls';
 import { LineChart } from '../components/Charts';
 import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
@@ -32,6 +36,7 @@ import { useTabState } from '../hooks';
 import { nextBattleName } from './ScenarioPage';
 import { applyResultsToForces, battleForces } from '../postBattle';
 import {
+  branchBattleDialog,
   deleteBattle,
   ensureFullLog,
   fmtDate,
@@ -86,6 +91,13 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
   const [focus, setFocus] = useTabState<string | null>(`${tab.key}:focus`, null);
   const [condModal, setCondModal] = useState(false);
   const [fmModal, setFmModal] = useState<string | null>(null);
+  const [effectFor, setEffectFor] = useState<Target | null>(null);
+  const [strikeFor, setStrikeFor] = useState<{ side: SideId; assetId?: string; target?: Target } | null>(null);
+  const [pauseModal, setPauseModal] = useState(false);
+  const [forecastOpen, setForecastOpen] = useState(false);
+  const [groupEdit, setGroupEdit] = useState<string[] | null>(null);
+  const [pauseNote, setPauseNote] = useState<string[] | null>(null);
+  const rules = usePauseRules();
 
   const E = useMemo(() => new EngineContext(b), [b, rev]);
   const result: BattleResult = useMemo(() => b.result ?? computeResult(E), [E]);
@@ -95,15 +107,29 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
 
   const step = (n: number) => {
     forgetBattleRedo(b.id);
+    setPauseNote(null);
     for (let i = 0; i < n && !b.finished; i++) stepTurn(b);
     touchBattle(b.id);
     if (b.finished) setView('result');
   };
   const toEnd = () => {
     forgetBattleRedo(b.id);
+    setPauseNote(null);
     runToEnd(b);
     touchBattle(b.id);
     setView('result');
+  };
+  /** Ход за ходом, пока не случится важное (что именно — настраивается). */
+  const untilEvent = () => {
+    forgetBattleRedo(b.id);
+    const { reasons } = stepUntilEvent(b, rules);
+    touchBattle(b.id);
+    if (b.finished) {
+      setPauseNote(null);
+      setView('result');
+      return;
+    }
+    setPauseNote(reasons);
   };
   /** again — та же случайность (тот же бой заново), иначе — новый случайный бой. */
   const restart = (again: boolean, withInterventions = false) => {
@@ -115,6 +141,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
   };
   const iv = (type: Parameters<typeof applyIntervention>[1]['type'], payload: Record<string, unknown>) => {
     forgetBattleRedo(b.id);
+    setPauseNote(null);
     applyIntervention(b, { type, payload });
     touchBattle(b.id);
     if (b.finished) setView('result');
@@ -150,11 +177,22 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             <Btn kind="primary" onClick={() => step(1)} title="Рассчитать один ход">
               ▶ Ход
             </Btn>
+            <Btn
+              onClick={untilEvent}
+              title={`Считать ходы, пока не случится важное: ${Object.entries(rules)
+                .filter(([k, v]) => k !== 'lossPct' && v)
+                .length} видов событий${rules.lossPct ? `, потери за ход ≥ ${rules.lossPct}%` : ''}. Настроить — в меню «⋯».`}
+            >
+              ⏭ До события
+            </Btn>
             <Btn onClick={() => step(5)} title="Рассчитать пять ходов">
               ▶▶ 5
             </Btn>
             <Btn onClick={toEnd} title="Рассчитать бой до конца">
               До конца
+            </Btn>
+            <Btn onClick={() => setForecastOpen(true)} title="Что дальше? Сотни продолжений боя с этого хода — вероятности исходов и потерь. Если вы только что приняли решения — рядом прогноз без них.">
+              Прогноз
             </Btn>
           </>
         )}
@@ -167,6 +205,10 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
           items={[
             !!undoLabel && { label: `Отменить: ${undoLabel}`, kbd: 'Ctrl+Z', onClick: () => undoBattle(b.id) },
             b.turn > 0 && { label: 'Вернуться к ходу…', onClick: () => rewindBattleDialog(b.id), tip: 'Повторить бой до выбранного хода с теми же бросками и вашими решениями' },
+            { label: 'Ответвить бой…', onClick: () => branchBattleDialog(b.id), tip: 'Копия боя с выбранного хода — сыграть иначе и сравнить; этот бой не меняется' },
+            'sep',
+            !b.finished && { label: 'Прогноз с этого хода…', onClick: () => setForecastOpen(true) },
+            !b.finished && { label: 'Настроить «до события»…', onClick: () => setPauseModal(true) },
             'sep',
             !b.finished && { label: 'Изменить условия и дистанцию…', onClick: () => setCondModal(true) },
             !b.finished && { label: 'Завершить бой сейчас', onClick: () => iv('endBattle', { reason: 'Бой остановлен ГМ' }), tip: 'Подвести итоги на текущем ходу' },
@@ -200,10 +242,19 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
           <span>
             Ход <b>{b.turn}</b> из {b.scenario.maxTurns} · {Math.floor(elapsed / 60)} ч {elapsed % 60} мин
           </span>
-          <span>
-            Дистанция: <b>{band?.name ?? '—'}</b>
-            {!b.finished && b.bandIndex < rs.rangeBands.length - 1 && b.closingProgress > 0 ? ` (сближение ${Math.round(b.closingProgress * 100)}%)` : ''}
-          </span>
+          {b.sectors ? (
+            b.sectors.map((sec) => (
+              <span key={sec.id}>
+                {sec.name}: <b>{rs.rangeBands[sec.bandIndex]?.name ?? '—'}</b>
+                {!b.finished && sec.bandIndex < rs.rangeBands.length - 1 && sec.closingProgress > 0 ? ` (сближение ${Math.round(sec.closingProgress * 100)}%)` : ''}
+              </span>
+            ))
+          ) : (
+            <span>
+              Дистанция: <b>{band?.name ?? '—'}</b>
+              {!b.finished && b.bandIndex < rs.rangeBands.length - 1 && b.closingProgress > 0 ? ` (сближение ${Math.round(b.closingProgress * 100)}%)` : ''}
+            </span>
+          )}
           {b.finished ? (
             <span>{conditions}</span>
           ) : (
@@ -212,7 +263,26 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             </span>
           )}
           {b.finished && <b style={{ color: winnerColor }}>{result.headline}</b>}
+          {b.branchOf && (
+            <span className="faint">
+              ветка боя{' '}
+              <a href="#" onClick={(e) => (e.preventDefault(), openTab('battle', b.branchOf!.battleId))}>
+                «{b.branchOf.name}»
+              </a>{' '}
+              с хода {b.branchOf.turn}
+            </span>
+          )}
         </div>
+        {pauseNote && !b.finished && (
+          <div className="pause-note">
+            <b>Пауза после {b.turn}-го хода{pauseNote.length ? ':' : ''}</b> {pauseNote.length ? pauseNote.slice(0, 5).join('; ') : 'важного не произошло — достигнут предел ходов'}
+            {pauseNote.length > 5 ? ` и ещё ${pauseNote.length - 5}` : ''}.
+            <button type="button" className="link-btn small" onClick={() => setPauseNote(null)} title="Скрыть">
+              {' '}
+              ×
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="battle-body">
@@ -229,7 +299,20 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             </button>
           </div>
           <div className="scroll">
-            {view === 'forces' && <Forces b={b} E={E} result={result} tabKey={tab.key} onElement={setElModal} onFormation={setFmModal} iv={iv} />}
+            {view === 'forces' && (
+              <Forces
+                b={b}
+                E={E}
+                result={result}
+                tabKey={tab.key}
+                onElement={setElModal}
+                onFormation={setFmModal}
+                iv={iv}
+                onEffect={setEffectFor}
+                onStrike={(side, assetId, target) => setStrikeFor({ side, assetId, target })}
+                onGroupEdit={setGroupEdit}
+              />
+            )}
             {view === 'charts' && <Charts b={b} />}
             {view === 'result' && <Result b={b} result={result} onElement={setElModal} />}
           </div>
@@ -239,9 +322,34 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
         </div>
       </div>
 
-      {elModal && <ElementModal b={b} E={E} id={elModal} onClose={() => setElModal(null)} iv={iv} onFocusLog={(x) => (setFocus(x), setElModal(null))} />}
+      {elModal && (
+        <ElementModal
+          b={b}
+          E={E}
+          id={elModal}
+          onClose={() => setElModal(null)}
+          iv={iv}
+          onFocusLog={(x) => (setFocus(x), setElModal(null))}
+          onEffect={(t) => (setElModal(null), setEffectFor(t))}
+          onStrike={(side, t) => (setElModal(null), setStrikeFor({ side, target: t }))}
+        />
+      )}
       {condModal && <ConditionsModal b={b} onClose={() => setCondModal(false)} iv={iv} />}
-      {fmModal && <FormationModal b={b} id={fmModal} onClose={() => setFmModal(null)} iv={iv} />}
+      {fmModal && (
+        <FormationModal
+          b={b}
+          id={fmModal}
+          onClose={() => setFmModal(null)}
+          iv={iv}
+          onEffect={(t) => (setFmModal(null), setEffectFor(t))}
+          onStrike={(side, t) => (setFmModal(null), setStrikeFor({ side, target: t }))}
+        />
+      )}
+      {effectFor && <EffectModal b={b} target={effectFor} onClose={() => setEffectFor(null)} iv={iv} />}
+      {strikeFor && <StrikeModal b={b} side={strikeFor.side} assetId={strikeFor.assetId} target={strikeFor.target} onClose={() => setStrikeFor(null)} iv={iv} />}
+      {pauseModal && <PauseSettingsModal onClose={() => setPauseModal(false)} />}
+      {forecastOpen && <ForecastModal b={b} onClose={() => setForecastOpen(false)} />}
+      {groupEdit && <GroupEditModal b={b} ids={groupEdit} onClose={() => setGroupEdit(null)} iv={iv} />}
     </div>
   );
 }
@@ -409,11 +517,44 @@ function initialFold(b: Battle): string[] {
   return b.formations.filter((f) => depth(f.id) >= 2).map((f) => f.id);
 }
 
+/** Эффекты, которые действуют на элемент сейчас или со следующего хода. */
+function effectsNext(b: Battle, E: EngineContext, el: ElementState) {
+  const next = b.turn + 1;
+  return (b.effects ?? []).filter(
+    (x) =>
+      x.side === el.side &&
+      x.until >= next &&
+      (!x.elementIds || x.elementIds.includes(el.id)) &&
+      (!x.formationId || E.chain(el).some((f) => f.id === x.formationId)),
+  );
+}
+
 const CMD_TIP = 'Командир сейчас. Меняйте по обстановке: удачное решение — выше, ошибка или растерянность — ниже.\nДействует со следующего хода и записывается в журнал.';
 
-function Forces(props: { b: Battle; E: EngineContext; result: BattleResult; tabKey: string; onElement: (id: string) => void; onFormation: (id: string) => void; iv: Iv }) {
-  const { b, E, result } = props;
+function Forces(props: {
+  b: Battle;
+  E: EngineContext;
+  result: BattleResult;
+  tabKey: string;
+  onElement: (id: string) => void;
+  onFormation: (id: string) => void;
+  iv: Iv;
+  onEffect: (t: Target) => void;
+  onStrike: (side: SideId, assetId?: string, target?: Target) => void;
+  onGroupEdit: (ids: string[]) => void;
+}) {
+  const { b, E, result, iv } = props;
   const [details, setDetails] = useTabState(`${props.tabKey}:details`, false);
+  // Групповые решения: отмеченные элементы получают приказ, эффект, удар или правку разом.
+  const [picked, setPicked] = useTabState<string[]>(`${props.tabKey}:picked`, []);
+  const live = new Set(b.elements.filter((x) => x.status === 'active' || x.status === 'pending').map((x) => x.id));
+  const sel = picked.filter((id) => live.has(id));
+  const selSet = new Set(sel);
+  const onSelect = (ids: string[], on: boolean) => setPicked(on ? [...new Set([...sel, ...ids])] : sel.filter((x) => !ids.includes(x)));
+  const selSides = [...new Set(sel.map((id) => E.elements.get(id)!.side))];
+  const oneSide = selSides.length === 1 ? selSides[0] : null;
+  const selLabel = sel.length === 1 ? resolveRefs(`[[e:${sel[0]}]]`, b) : `${sel.length} ${plural(sel.length, 'элемент', 'элемента', 'элементов')}`;
+  const enemySupport = oneSide ? (b.support ?? []).some((a) => a.side !== oneSide && a.left > 0) : false;
   const [folded, setFolded] = useTabState<string[]>(`${props.tabKey}:folded`, initialFold(b));
   const fold = new Set(folded);
   const agg = useMemo(() => aggregate(b, E), [E]);
@@ -434,6 +575,38 @@ function Forces(props: { b: Battle; E: EngineContext; result: BattleResult; tabK
       <Card tight>
         <SideCompare b={b} result={result} />
       </Card>
+      <SupportPanel b={b} iv={iv} onStrike={(side, assetId) => props.onStrike(side, assetId)} onEffect={props.onEffect} />
+      {sel.length > 0 && !b.finished && (
+        <div className="group-bar">
+          <b>Выбрано: {selLabel}</b>
+          <Sel
+            value=""
+            width={150}
+            onChange={(v) => v && iv('setOrder', { elementIds: sel.filter((id) => E.elements.get(id)?.status === 'active'), orderId: v })}
+            options={[{ value: '', label: 'приказ всем…' }, ...b.ruleset.orders.map((o) => ({ value: o.id, label: o.name }))]}
+          />
+          <Btn sm onClick={() => props.onGroupEdit(sel)} title="Мораль, усталость, боезапас… сразу всем выбранным">
+            Изменить…
+          </Btn>
+          {b.ruleset.features.ammo && (
+            <Btn sm onClick={() => iv('resupply', { elementIds: sel, ammo: 25 })}>
+              боезапас +25%
+            </Btn>
+          )}
+          <Btn sm disabled={!oneSide} onClick={() => oneSide && props.onEffect({ side: oneSide, elementIds: sel, label: selLabel })} title={oneSide ? 'Временный эффект на выбранных' : 'Эффект — для элементов одной стороны'}>
+            Эффект…
+          </Btn>
+          {enemySupport && oneSide && (
+            <Btn sm onClick={() => props.onStrike(oneSide === 'A' ? 'B' : 'A', undefined, { side: oneSide, elementIds: sel, label: selLabel })} title="Удар огневой поддержки противника по выбранным">
+              Удар по выбранным…
+            </Btn>
+          )}
+          <span className="grow" />
+          <button type="button" className="link-btn small" onClick={() => setPicked([])}>
+            снять выбор
+          </button>
+        </div>
+      )}
       <div className="row" style={{ justifyContent: 'flex-end', marginBottom: -8, gap: 14 }}>
         {withChildren.length > 2 && (
           <span className="small">
@@ -468,7 +641,18 @@ function Forces(props: { b: Battle; E: EngineContext; result: BattleResult; tabK
               </thead>
               <tbody>
                 {rowsFor(side).map(({ f: fs, depth }) => (
-                  <FormationRows key={fs.id} {...props} fs={fs} depth={depth} details={details} folded={fold.has(fs.id)} onToggle={() => toggle(fs.id)} agg={agg.get(fs.id)} />
+                  <FormationRows
+                    key={fs.id}
+                    {...props}
+                    fs={fs}
+                    depth={depth}
+                    details={details}
+                    folded={fold.has(fs.id)}
+                    onToggle={() => toggle(fs.id)}
+                    agg={agg.get(fs.id)}
+                    selected={selSet}
+                    onSelect={onSelect}
+                  />
                 ))}
               </tbody>
             </table>
@@ -504,10 +688,26 @@ function FormationRows(props: {
   onElement: (id: string) => void;
   onFormation: (id: string) => void;
   iv: Iv;
+  selected: Set<string>;
+  onSelect: (ids: string[], on: boolean) => void;
 }) {
-  const { b, E, fs, depth, details, iv, agg } = props;
+  const { b, E, fs, depth, details, iv, agg, selected, onSelect } = props;
   const f = b.ruleset.features;
   const els = props.folded ? [] : b.elements.filter((x) => x.formationId === fs.id);
+  // Отметка формирования — все его элементы (с подчинёнными), которые ещё в бою или подойдут.
+  const subtree = useMemo(() => {
+    const ids = new Set([fs.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const x of b.formations) if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) (ids.add(x.id), (grew = true));
+    }
+    return b.elements.filter((x) => ids.has(x.formationId) && (x.status === 'active' || x.status === 'pending')).map((x) => x.id);
+  }, [b, fs.id]);
+  const allOn = subtree.length > 0 && subtree.every((id) => selected.has(id));
+  // Участок — только если силы стороны стоят на разных участках (иначе метка ничего не говорит).
+  const spread = !!b.sectors && new Set(b.elements.filter((x) => x.side === fs.side).map((x) => x.sector)).size > 1;
+  const sectorName = (el: ElementState) => (spread ? b.sectors!.find((x) => x.id === el.sector)?.name : undefined);
   const detailCols = details ? 1 + [f.suppression, f.fatigue, f.ammo, f.detection].filter(Boolean).length : 0;
   const orderOptions = b.ruleset.orders.map((o) => ({ value: o.id, label: o.name }));
   const morale = agg && agg.w > 0 ? agg.moraleW / agg.w : 0;
@@ -516,6 +716,9 @@ function FormationRows(props: {
       <tr className={`group${props.folded ? ' folded' : ''}`}>
         <td colSpan={2} style={{ paddingLeft: 4 + depth * 14 }}>
           <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+            {!b.finished && subtree.length > 0 && (
+              <input type="checkbox" className="pick-check" checked={allOn} onChange={(e) => onSelect(subtree, e.target.checked)} title="Отметить всё формирование — для группового решения" />
+            )}
             <button className="fold-btn" onClick={props.onToggle} title={props.folded ? 'Развернуть' : 'Свернуть'}>
               {props.folded ? '▸' : '▾'}
             </button>
@@ -556,11 +759,20 @@ function FormationRows(props: {
         return (
           <tr key={el.id} className={el.status !== 'active' ? 'dim' : ''}>
             <td style={{ paddingLeft: 24 + depth * 14 }}>
+              {!b.finished && (el.status === 'active' || el.status === 'pending') && (
+                <input type="checkbox" className="pick-check" checked={selected.has(el.id)} onChange={(e) => onSelect([el.id], e.target.checked)} title="Отметить — для группового решения" />
+              )}
               <span className={`status-dot ${st.cls}`} data-tip={st.label} />
               <a href="#" onClick={(e) => (e.preventDefault(), props.onElement(el.id))}>
                 {el.name}
               </a>
               {el.isHQ && <span className="faint small"> · штаб</span>}
+              {sectorName(el) && <span className="badge sector-badge">{sectorName(el)}</span>}
+              {effectsNext(b, E, el).length > 0 && (
+                <span className="badge info fx-badge" data-tip={effectsNext(b, E, el).map((x) => `«${x.name}» до ${x.until}-го хода`).join('\n')}>
+                  ◌ {effectsNext(b, E, el).length === 1 ? effectsNext(b, E, el)[0].name : `эффектов: ${effectsNext(b, E, el).length}`}
+                </span>
+              )}
             </td>
             <td>
               {active && E.behavior(el) !== 'rout' ? (
@@ -633,7 +845,25 @@ function StateRow({ label, value, inverse }: { label: string; value: number; inv
   );
 }
 
-function ElementModal({ b, E, id, onClose, iv, onFocusLog }: { b: Battle; E: EngineContext; id: string; onClose: () => void; iv: Iv; onFocusLog: (id: string) => void }) {
+function ElementModal({
+  b,
+  E,
+  id,
+  onClose,
+  iv,
+  onFocusLog,
+  onEffect,
+  onStrike,
+}: {
+  b: Battle;
+  E: EngineContext;
+  id: string;
+  onClose: () => void;
+  iv: Iv;
+  onFocusLog: (id: string) => void;
+  onEffect: (t: Target) => void;
+  onStrike: (side: SideId, t: Target) => void;
+}) {
   const el = b.elements.find((x) => x.id === id);
   const [edit, setEdit] = useState(false);
   const [patch, setPatch] = useState<Record<string, number>>({});
@@ -694,6 +924,16 @@ function ElementModal({ b, E, id, onClose, iv, onFocusLog }: { b: Battle; E: Eng
               Все события в журнале
             </Btn>
             <div className="grow" />
+            {canEdit && (
+              <Btn onClick={() => onEffect({ side: el.side, elementIds: [el.id], label: el.name })} title="Временный эффект на этот элемент: дым, внезапность, растерянность…">
+                Эффект…
+              </Btn>
+            )}
+            {canEdit && (b.support ?? []).some((a) => a.side !== el.side && a.left > 0) && (
+              <Btn onClick={() => onStrike(el.side === 'A' ? 'B' : 'A', { side: el.side, elementIds: [el.id], label: el.name })} title="Удар огневой поддержки противника по этому элементу">
+                Удар…
+              </Btn>
+            )}
             {canEdit && (
               <Btn onClick={() => setEdit(true)} title="Пополнить или списать состав, поправить мораль, боезапас и т. п.">
                 Изменить…
@@ -839,21 +1079,30 @@ function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => void; i
   const rs = b.ruleset;
   const [cond, setCond] = useState<Record<string, string>>({ ...b.conditions });
   const [bandIdx, setBand] = useState(b.bandIndex);
+  // Участки: своя дистанция и свои условия (пусто — как на всём поле).
+  const [secs, setSecs] = useState(() => (b.sectors ?? []).map((x) => ({ id: x.id, name: x.name, band: x.bandIndex, cond: { ...x.conditions } })));
+  const setSec = (i: number, patch: Partial<(typeof secs)[number]>) => setSecs(secs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const apply = () => {
+    if (Object.keys(cond).some((k) => cond[k] !== b.conditions[k])) iv('setConditions', { conditions: cond });
+    if (!b.sectors && bandIdx !== b.bandIndex) iv('setBand', { bandIndex: bandIdx });
+    secs.forEach((x, i) => {
+      const was = b.sectors![i];
+      if (x.band !== was.bandIndex) iv('setBand', { sector: x.id, bandIndex: x.band });
+      const changed: Record<string, string> = {};
+      for (const cat of rs.conditions) if ((x.cond[cat.id] ?? '') !== (was.conditions[cat.id] ?? '')) changed[cat.id] = x.cond[cat.id] ?? '';
+      if (Object.keys(changed).length) iv('setConditions', { sector: x.id, conditions: changed });
+    });
+    onClose();
+  };
   return (
     <Modal
       title="Условия боя"
+      wide={!!b.sectors}
       onClose={onClose}
       footer={
         <>
           <Btn onClick={onClose}>Отмена</Btn>
-          <Btn
-            kind="primary"
-            onClick={() => {
-              if (Object.keys(cond).some((k) => cond[k] !== b.conditions[k])) iv('setConditions', { conditions: cond });
-              if (bandIdx !== b.bandIndex) iv('setBand', { bandIndex: bandIdx });
-              onClose();
-            }}
-          >
+          <Btn kind="primary" onClick={apply}>
             Применить
           </Btn>
         </>
@@ -865,10 +1114,32 @@ function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => void; i
             <Sel value={cond[c.id] ?? ''} onChange={(v) => setCond({ ...cond, [c.id]: v })} options={c.options.map((o) => ({ value: o.id, label: o.name }))} />
           </Field>
         ))}
-        <Field label="Дистанция">
-          <Sel value={bandIdx} onChange={setBand} options={rs.rangeBands.map((x, i) => ({ value: i, label: x.name }))} />
-        </Field>
+        {!b.sectors && (
+          <Field label="Дистанция">
+            <Sel value={bandIdx} onChange={setBand} options={rs.rangeBands.map((x, i) => ({ value: i, label: x.name }))} />
+          </Field>
+        )}
       </div>
+      {secs.length > 0 && (
+        <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+          <div className="small muted">Участки боя: своя дистанция и условия поверх общих</div>
+          {secs.map((x, i) => (
+            <div key={x.id} className="row" style={{ gap: 8 }}>
+              <b style={{ minWidth: 110 }}>{x.name}</b>
+              <Sel value={x.band} onChange={(v) => setSec(i, { band: v })} options={rs.rangeBands.map((r, j) => ({ value: j, label: r.name }))} width={170} />
+              {rs.conditions.map((c) => (
+                <Sel
+                  key={c.id}
+                  value={x.cond[c.id] ?? ''}
+                  onChange={(v) => setSec(i, { cond: { ...x.cond, [c.id]: v } })}
+                  options={[{ value: '', label: `${c.name}: как на всём поле` }, ...c.options.map((o) => ({ value: o.id, label: `${c.name}: ${o.name}` }))]}
+                  width={190}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       <p className="faint small" style={{ marginTop: 10, marginBottom: 0 }}>
         Действует со следующего хода и записывается в журнал.
       </p>
@@ -876,7 +1147,21 @@ function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => void; i
   );
 }
 
-function FormationModal({ b, id, onClose, iv }: { b: Battle; id: string; onClose: () => void; iv: Iv }) {
+function FormationModal({
+  b,
+  id,
+  onClose,
+  iv,
+  onEffect,
+  onStrike,
+}: {
+  b: Battle;
+  id: string;
+  onClose: () => void;
+  iv: Iv;
+  onEffect: (t: Target) => void;
+  onStrike: (side: SideId, t: Target) => void;
+}) {
   const fs = b.formations.find((x) => x.id === id);
   const rs = b.ruleset;
   const [order, setOrder] = useState('');
@@ -890,6 +1175,17 @@ function FormationModal({ b, id, onClose, iv }: { b: Battle; id: string; onClose
       onClose={onClose}
       footer={
         <>
+          {!b.finished && (
+            <Btn onClick={() => onEffect({ side: fs.side, formationId: fs.id, label: fs.name })} title="Временный эффект на всё формирование">
+              Эффект…
+            </Btn>
+          )}
+          {!b.finished && (b.support ?? []).some((a) => a.side !== fs.side && a.left > 0) && (
+            <Btn onClick={() => onStrike(fs.side === 'A' ? 'B' : 'A', { side: fs.side, formationId: fs.id, label: fs.name })} title="Удар огневой поддержки противника по этому формированию">
+              Удар…
+            </Btn>
+          )}
+          <span className="grow" />
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn
             kind="primary"

@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { createBattle, newId, randomSeed, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
 import { Histogram, StackBar } from '../components/Charts';
 import { Crumbs } from '../components/Crumbs';
+import { CompareSection } from '../components/McCompare';
 import { Btn, Card, Field, Info, Menu, Num, Section, fmt1, pressable } from '../components/ui';
 import { useTabState } from '../hooks';
 import { exportText, openTab, putBattle, scenarioForBattle, toast, useApp, type Tab } from '../store';
@@ -143,6 +144,9 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
           Каждый прогон — полный бой без вмешательства ГМ: приказы из сценария, отход и паника — автоматически.
         </p>
       )}
+      <div style={{ marginTop: 16 }}>
+        <CompareSection sc={sc} rs={rs} />
+      </div>
     </div>
   );
 }
