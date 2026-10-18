@@ -43,6 +43,35 @@ const PATCH_LABELS: Record<string, string> = {
   holdFast: '«стоять насмерть»',
 };
 
+type PatchKey = Exclude<keyof ElementPatch, 'comps'>;
+
+/** Записать одно поле правки в элемент; возвращает подпись изменения для журнала. */
+function setField(el: ElementState, key: PatchKey, val: unknown, b: Battle): string {
+  switch (key) {
+    case 'echelon':
+      el.echelon = val as ElementState['echelon'];
+      break;
+    case 'holdFast':
+      el.holdFast = !!val;
+      break;
+    case 'experience':
+      el.experience = clamp(Math.round(Number(val)), 1, Math.max(1, b.ruleset.experienceLevels.length));
+      break;
+    case 'ownCommandLevel':
+      el.ownCommandLevel = clamp(Math.round(Number(val)), 0, Math.max(1, b.ruleset.commandLevels.length));
+      return `командир: ${el.ownCommandLevel ? (b.ruleset.commandLevels[el.ownCommandLevel - 1]?.name ?? el.ownCommandLevel) : 'нет'}`;
+    case 'attackMod':
+      el.attackMod = Math.max(0, Number(val));
+      break;
+    case 'defenseMod':
+      el.defenseMod = Math.max(1, Number(val));
+      break;
+    default:
+      el[key] = clamp(Number(val), 0, 100);
+  }
+  return `${PATCH_LABELS[key] ?? key}: ${typeof val === 'boolean' ? (val ? 'да' : 'нет') : val}`;
+}
+
 export function applyIntervention(b: Battle, iv: { type: InterventionType; payload: Record<string, unknown>; note?: string }, record = true): void {
   if (b.finished && iv.type !== 'endBattle') return;
   const E = new EngineContext(b);
@@ -100,42 +129,23 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       break;
     }
     case 'editElement': {
-      // Несколько элементов сразу (групповое решение): только состояние, без состава.
-      if (Array.isArray(p.elementIds)) {
-        const els = (p.elementIds as string[]).map((id) => E.elements.get(id)).filter((x): x is ElementState => !!x && x.status !== 'destroyed');
-        if (!els.length) return;
-        const patch = { ...((p.patch ?? {}) as ElementPatch), comps: undefined };
-        const changes: string[] = [];
-        for (const [key, val] of Object.entries(patch)) {
-          if (val === undefined) continue;
-          for (const el of els) {
-            if (key === 'echelon' || key === 'holdFast') (el as any)[key] = val;
-            else if (key === 'experience') el.experience = clamp(Math.round(Number(val)), 1, Math.max(1, b.ruleset.experienceLevels.length));
-            else if (key === 'ownCommandLevel') el.ownCommandLevel = clamp(Math.round(Number(val)), 0, Math.max(1, b.ruleset.commandLevels.length));
-            else if (key === 'attackMod' || key === 'defenseMod') (el as any)[key] = Math.max(key === 'defenseMod' ? 1 : 0, Number(val));
-            else (el as any)[key] = clamp(Number(val), 0, 100);
-          }
-          changes.push(`${PATCH_LABELS[key] ?? key}: ${typeof val === 'boolean' ? (val ? 'да' : 'нет') : val}`);
-        }
+      // Один элемент (с составом) или несколько сразу — групповое решение, только состояние.
+      const group = Array.isArray(p.elementIds);
+      const els = (group ? (p.elementIds as string[]) : [p.elementId as string]).map((id) => E.elements.get(id)).filter((x): x is ElementState => !!x && (!group || x.status !== 'destroyed'));
+      if (!els.length) return;
+      const patch = (p.patch ?? {}) as ElementPatch;
+      const changes: string[] = [];
+      for (const [key, val] of Object.entries(patch) as [keyof ElementPatch, unknown][]) {
+        if (key === 'comps' || val === undefined) continue;
+        let label = '';
+        for (const x of els) label = setField(x, key, val, b);
+        changes.push(label);
+      }
+      if (group) {
         E.log({ phase: 'gm', level: 0, refs: els.map((x) => x.id), text: `ГМ изменил ${els.length > 3 ? `${els.length} элементов` : els.map((x) => e(x)).join(', ')}: ${changes.join(', ') || 'без изменений'}${note}.` });
         break;
       }
-      const el = E.elements.get(p.elementId);
-      if (!el) return;
-      const patch = (p.patch ?? {}) as ElementPatch;
-      const changes: string[] = [];
-      for (const [key, val] of Object.entries(patch)) {
-        if (key === 'comps' || val === undefined) continue;
-        if (key === 'echelon' || key === 'holdFast') (el as any)[key] = val;
-        else if (key === 'ownCommandLevel') {
-          el.ownCommandLevel = clamp(Math.round(Number(val)), 0, Math.max(1, b.ruleset.commandLevels.length));
-          changes.push(`командир: ${el.ownCommandLevel ? (b.ruleset.commandLevels[el.ownCommandLevel - 1]?.name ?? el.ownCommandLevel) : 'нет'}`);
-          continue;
-        } else if (key === 'experience') el.experience = clamp(Math.round(Number(val)), 1, Math.max(1, b.ruleset.experienceLevels.length));
-        else if (key === 'attackMod' || key === 'defenseMod') (el as any)[key] = Math.max(key === 'defenseMod' ? 1 : 0, Number(val));
-        else (el as any)[key] = clamp(Number(val), 0, 100);
-        changes.push(`${PATCH_LABELS[key] ?? key}: ${typeof val === 'boolean' ? (val ? 'да' : 'нет') : val}`);
-      }
+      const el = els[0];
       for (const c of patch.comps ?? []) {
         const st = el.comps.find((x) => x.typeId === c.typeId);
         if (!st) continue;
