@@ -151,14 +151,6 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
           </div>
         )}
         <div className="fields">
-          <Field label="Уровень">
-            <input list={`levels-${rs.id}`} value={node.level} placeholder="рота, взвод…" onChange={(e) => un((n) => void (n.level = e.target.value))} />
-            <datalist id={`levels-${rs.id}`}>
-              {rs.unitLevels.map((l) => (
-                <option key={l} value={l} />
-              ))}
-            </datalist>
-          </Field>
           <Field label="Эшелон" hint="Насколько подразделение подставлено под прямой огонь.">
             <Sel
               value={node.echelon ?? ''}
@@ -417,7 +409,7 @@ export function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; tar
   const [from, setFrom] = useState('');
   const items = Object.values(ctx.lib)
     .filter((u) => (!u.rulesetId || u.rulesetId === ctx.rs.id) && canInsertTemplate(ctx, u.id))
-    .filter((u) => !q || `${u.name} ${u.level}`.toLowerCase().includes(q.toLowerCase()))
+    .filter((u) => !q || u.name.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const doInsert = (id: Id | null = pick) => {
     const tpl = id ? ctx.lib[id] : undefined;
@@ -475,10 +467,7 @@ export function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; tar
               onFocus={() => setPick(u.id)}
               {...pressable(() => doInsert(u.id))}
             >
-              <span className="grow">
-                {u.level && <span className="faint">{u.level} · </span>}
-                {u.name}
-              </span>
+              <span className="grow">{u.name}</span>
               <span className="faint small nowrap">
                 {fmt0(s.persCur)} чел.{u.children.length ? ` · подчинённых: ${u.children.length}` : ''}
               </span>

@@ -325,7 +325,7 @@ export function FormationRows(props: {
               href="#"
               className="nowrap"
               onClick={(e) => (e.preventDefault(), props.onFormation(fs.id))}
-              data-tip={`${fs.level}${f.comms ? `\nсвязь ${Math.round(fs.comms)}%` : ''}\nснабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
+              data-tip={`${f.comms ? `связь ${Math.round(fs.comms)}%\n` : ''}снабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
             >
               {fs.name}
             </a>

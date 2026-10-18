@@ -231,7 +231,6 @@ export function makeUniversalRuleset(): Ruleset {
       'Пример набора правил. Классы целей, дистанции, каталог типов, приказы, условия и все коэффициенты можно менять — или создать свой набор для другой эпохи.',
     turnMinutes: 15,
     reconTag: 'разведка',
-    unitLevels: ['группа', 'отделение', 'взвод', 'рота', 'батарея', 'батальон', 'дивизион', 'полк', 'бригада', 'дивизия'],
     features: { ...DEFAULT_FEATURES },
     targetClasses: [
       { id: 'inf', name: 'Живая сила', lethality: 1, description: 'Пехота, расчёты, открыто расположенные люди.' },
@@ -411,7 +410,6 @@ export function makeLinearRuleset(): Ruleset {
       'Пример набора правил для эпохи гладкоствольного оружия: мушкеты, кавалерия, полевая артиллерия. Показывает, как настроить симулятор под другую эпоху.',
     turnMinutes: 20,
     reconTag: 'лёгкая',
-    unitLevels: ['взвод', 'рота', 'эскадрон', 'батарея', 'батальон', 'полк', 'бригада', 'дивизия', 'корпус'],
     targetClasses: [
       { id: 'inf', name: 'Пехота', lethality: 1 },
       { id: 'cav', name: 'Кавалерия', lethality: 1 },
@@ -624,7 +622,8 @@ export function normalizeRuleset(r: Ruleset, compat = false): Ruleset {
   out.modifiers = r.modifiers ?? [];
   // Наборы правил прежних версий: заготовки эффектов — стандартные.
   out.tempEffects = Array.isArray(r.tempEffects) ? r.tempEffects : base.tempEffects;
-  out.unitLevels = Array.isArray(r.unitLevels) ? r.unitLevels : base.unitLevels;
+  // «Уровни подразделений» прежних версий больше не используются.
+  delete (out as { unitLevels?: unknown }).unitLevels;
   out.outcomeLevels = r.outcomeLevels?.length ? r.outcomeLevels : base.outcomeLevels;
   return out;
 }
@@ -674,19 +673,16 @@ export function makeDemoTemplates(): UnitNode[] {
   return [
     newRootUnit('Мотострелковый взвод', {
       id: 'demo-tpl-msv',
-      level: 'взвод',
       commandLevel: null,
       composition: [comp('rifleman', 30), comp('mg', 2), comp('at', 1)],
     }),
     newRootUnit('Мотострелковая рота', {
       id: 'demo-tpl-msr',
-      level: 'рота',
       commandLevel: null,
       composition: [comp('rifleman', 90), comp('mg', 3), comp('at', 3), comp('apc', 10)],
     }),
     newRootUnit('Танковая рота', {
       id: 'demo-tpl-tr',
-      level: 'рота',
       commandLevel: null,
       state: { experience: 3 },
       composition: [comp('tank', 10)],
@@ -721,7 +717,6 @@ function withoutType(u: UnitNode, typeId: string): UnitNode {
 export function makeDemoBattalion(): UnitNode {
   return newRootUnit('1-й мотострелковый батальон (пример)', {
     id: 'demo-bn',
-    level: 'батальон',
     commandLevel: 4,
     comms: 85,
     supply: 80,
@@ -729,7 +724,6 @@ export function makeDemoBattalion(): UnitNode {
     children: [
       newUnit('Штаб батальона', {
         id: 'demo-bn-hq',
-        level: 'штаб',
         echelon: 'rear',
         isHQ: true,
         composition: [comp('rifleman', 20), comp('apc', 2), comp('truck', 4)],
@@ -742,10 +736,9 @@ export function makeDemoBattalion(): UnitNode {
         { id: 'demo-bn-c3', order: 'reserve', echelon: 'rear', notes: 'Резерв командира батальона: введите её в бой сменой приказа.' },
         { rifleman: 84, apc: 9 },
       ),
-      newUnit('Миномётная батарея', { id: 'demo-bn-mort', level: 'батарея', echelon: 'support', composition: [comp('mortar', 6), comp('truck', 6)] }),
+      newUnit('Миномётная батарея', { id: 'demo-bn-mort', echelon: 'support', composition: [comp('mortar', 6), comp('truck', 6)] }),
       newUnit('Разведвзвод', {
         id: 'demo-bn-recon',
-        level: 'взвод',
         order: 'recon',
         state: { experience: 3 },
         composition: [comp('scout', 20), comp('apc', 3)],
@@ -763,18 +756,17 @@ export function makeDemoBattalion(): UnitNode {
 export function makeDemoDefenders(): UnitNode {
   return newRootUnit('Оборонительный узел «Высота 212» (пример)', {
     id: 'demo-def',
-    level: 'усиленная рота',
     commandLevel: 3,
     comms: 70,
     supply: 60,
     order: 'defend',
     children: [
-      newUnit('Командный пункт', { id: 'demo-def-hq', level: 'штаб', echelon: 'rear', isHQ: true, composition: [comp('rifleman', 10)] }),
+      newUnit('Командный пункт', { id: 'demo-def-hq', echelon: 'rear', isHQ: true, composition: [comp('rifleman', 10)] }),
       fromTemplate('demo-tpl-msv', '1-й взвод', { id: 'demo-def-p1', state: { experience: 3 } }, { rifleman: 28 }),
       fromTemplate('demo-tpl-msv', '2-й взвод', { id: 'demo-def-p2' }, { rifleman: 27 }),
       fromTemplate('demo-tpl-msv', '3-й взвод', { id: 'demo-def-p3' }),
-      newUnit('Противотанковый взвод', { id: 'demo-def-at', level: 'взвод', echelon: 'support', composition: [comp('at', 6), comp('truck', 3)] }),
-      newUnit('Миномётный взвод', { id: 'demo-def-mort', level: 'взвод', echelon: 'support', composition: [comp('mortar', 4)] }),
+      newUnit('Противотанковый взвод', { id: 'demo-def-at', echelon: 'support', composition: [comp('at', 6), comp('truck', 3)] }),
+      newUnit('Миномётный взвод', { id: 'demo-def-mort', echelon: 'support', composition: [comp('mortar', 4)] }),
       withoutType(fromTemplate('demo-tpl-msv', 'Резервный взвод', { id: 'demo-def-res', order: 'reserve', echelon: 'rear' }, { rifleman: 26 }), 'at'),
     ],
   });
@@ -785,29 +777,27 @@ export function makeDemoDefenders(): UnitNode {
 /** Шаблоны эпохи линейной тактики: из них собраны бригада и оборона переправы (кирасиры — без шаблона). */
 export function makeLinearTemplates(): UnitNode[] {
   const rs = 'rs-linear';
-  const company = (name: string, typeId: string, n: number) => newUnit(name, { level: 'рота', composition: [comp(typeId, n)] });
+  const company = (name: string, typeId: string, n: number) => newUnit(name, { composition: [comp(typeId, n)] });
   return [
     newRootUnit('Линейный пехотный батальон', {
       id: 'demo-lin-tpl-bn',
-      level: 'батальон',
       rulesetId: rs,
       children: [
         company('Гренадерская рота', 'grenadier', 110),
         company('1-я мушкетёрская рота', 'musketeer', 120),
         company('2-я мушкетёрская рота', 'musketeer', 120),
         company('3-я мушкетёрская рота', 'musketeer', 120),
-        newUnit('Застрельщики', { level: 'взвод', order: 'recon', echelon: 'support', composition: [comp('jaeger', 50)] }),
+        newUnit('Застрельщики', { order: 'recon', echelon: 'support', composition: [comp('jaeger', 50)] }),
       ],
     }),
     newRootUnit('Пешая батарея', {
       id: 'demo-lin-tpl-bat',
-      level: 'батарея',
       rulesetId: rs,
       commandLevel: null,
       echelon: 'support',
       composition: [comp('fieldgun', 8)],
     }),
-    newRootUnit('Гусарский эскадрон', { id: 'demo-lin-tpl-hus', level: 'эскадрон', rulesetId: rs, commandLevel: null, composition: [comp('hussar', 120)] }),
+    newRootUnit('Гусарский эскадрон', { id: 'demo-lin-tpl-hus', rulesetId: rs, commandLevel: null, composition: [comp('hussar', 120)] }),
   ];
 }
 
@@ -824,7 +814,6 @@ function linCopy(id: string, name: string, patch: Partial<UnitNode> = {}): UnitN
 export function makeLinearBrigade(): UnitNode {
   return newRootUnit('Пехотная бригада (пример)', {
     id: 'demo-lin-brig',
-    level: 'бригада',
     rulesetId: 'rs-linear',
     order: 'attack',
     supply: 85,
@@ -845,7 +834,6 @@ export function makeLinearBrigade(): UnitNode {
 export function makeLinearDefenders(): UnitNode {
   return newRootUnit('Оборона переправы (пример)', {
     id: 'demo-lin-def',
-    level: 'полк',
     rulesetId: 'rs-linear',
     order: 'defend',
     supply: 70,
@@ -853,7 +841,6 @@ export function makeLinearDefenders(): UnitNode {
       linCopy('demo-lin-tpl-bn', 'Батальон у переправы', { state: { experience: 3 } }),
       linCopy('demo-lin-tpl-bat', 'Батарея на холме'),
       newUnit('Кирасиры', {
-        level: 'эскадрон',
         order: 'reserve',
         echelon: 'rear',
         state: { experience: 3 },

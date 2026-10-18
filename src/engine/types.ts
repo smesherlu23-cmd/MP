@@ -168,8 +168,6 @@ export interface Ruleset {
   turnMinutes: number;
   /** Тег, отмечающий разведывательные элементы/типы. */
   reconTag: string;
-  /** Уровни подразделений эпохи (подсказки в конструкторе): отделение, взвод, рота… */
-  unitLevels: string[];
   features: Features;
   targetClasses: TargetClass[];
   rangeBands: RangeBand[];
@@ -214,8 +212,8 @@ export type UnitState = Record<StateKey, number>;
 export interface UnitNode {
   id: Id;
   name: string;
-  /** Уровень: отделение, взвод, рота… — свободный текст, подсказки берутся из набора правил. */
-  level: string;
+  /** Подпись уровня из прежних версий («рота»); больше не показывается и не используется — уровень видно из названия. */
+  level?: string;
   /** Собственный состав (может быть пустым у чисто управленческого узла). */
   composition: ComponentEntry[];
   children: UnitNode[];
@@ -471,7 +469,6 @@ export interface ElementState {
   /** Узел подразделения, из которого создан элемент. */
   defId: Id;
   name: string;
-  level: string;
   side: SideId;
   formationId: Id;
   echelon: Echelon;
@@ -528,7 +525,6 @@ export interface FormationState {
   id: Id;
   defId: Id;
   name: string;
-  level: string;
   side: SideId;
   parentId: Id | null;
   commanderName: string;

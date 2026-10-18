@@ -58,7 +58,7 @@ function buildItems(): Item[] {
         id: `u:${ref}:${n.id}`,
         group,
         title: n.name,
-        sub: [n.level, isRoot ? where : `в «${root.name}»${where ? ` · ${where}` : ''}`].filter(Boolean).join(' · '),
+        sub: isRoot ? where : `в «${root.name}»${where ? ` · ${where}` : ''}`,
         top: top && isRoot,
         run: (bg) => openUnit(ref, n.id, bg),
       });

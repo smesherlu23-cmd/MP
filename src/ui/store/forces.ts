@@ -83,15 +83,12 @@ export async function newForceDialog(faction?: string): Promise<Id | undefined> 
   const list = Object.values(s.formations).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const v = await chooseDialog(
     'Новые силы — по какому шаблону?',
-    [
-      ...list.map((t) => ({ value: t.id, label: `${t.level ? `${t.level} · ` : ''}${t.name}` })),
-      { value: '', label: 'Пустое подразделение (собрать вручную)' },
-    ],
+    [...list.map((t) => ({ value: t.id, label: t.name })), { value: '', label: 'Пустое подразделение (собрать вручную)' }],
     'Силы — конкретное подразделение: по шаблону берётся устройство и штат, а состояние и потери у каждого свои. Шаблон потом можно менять — силы обновятся по нему, сохранив потери.',
   );
   if (v === null) return;
   if (v) return createForcesFromTemplate(v, { faction })[0];
-  return addForce(newRootUnit('Новое подразделение', { rulesetId: defaultRulesetId(), level: '', faction }));
+  return addForce(newRootUnit('Новое подразделение', { rulesetId: defaultRulesetId(), faction }));
 }
 
 export function duplicateForce(id: Id): Id | undefined {

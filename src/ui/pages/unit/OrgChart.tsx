@@ -132,12 +132,11 @@ export function OrgBox({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       onClick={() => ctx.setSel(node.id)}
     >
       <div className="org-top">
-        <span className="org-level">{node.level || '\u00a0'}</span>
+        <div className="org-name">{node.name}</div>
         <span className="org-menu" onClick={(e) => e.stopPropagation()}>
           <Menu sm items={nodeActions(ctx, node)} />
         </span>
       </div>
-      <div className="org-name">{node.name}</div>
       <div className="org-stats" data-tip={statsTip(st)}>
         {statsLine(st)}
       </div>
@@ -234,10 +233,9 @@ export function TreeRow({ ctx, node, depth }: { ctx: Ctx; node: UnitNode; depth:
           {node.children.length ? (folded ? '▸' : '▾') : ''}
         </span>
         {risk && <span className={`status-dot ${risk.cls}`} data-tip={`Риск паники и отхода: ${risk.label}`} />}
-        <span className="unit-name" title={node.level ? `${node.level} · ${node.name}` : node.name}>
+        <span className="unit-name" title={node.name}>
           {node.name}
         </span>
-        {node.level && <span className="unit-level">{node.level}</span>}
         <NodeBadges ctx={ctx} node={node} compact />
         <span className="grow" />
         <span className="faint small nowrap" data-tip={statsTip(st)}>

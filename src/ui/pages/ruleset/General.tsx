@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { COEFFICIENT_GROUPS, COEFFICIENTS, FEATURE_LABELS, newId, normalizeRuleset, type Features, type Ruleset } from '../../../engine';
 import { EffectsEditor } from '../../components/EffectsEditor';
-import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Tags, Txt } from '../../components/ui';
+import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Txt } from '../../components/ui';
 import { confirmDialog, replaceRuleset, toast, useApp } from '../../store';
 import type { Upd } from './common';
 
@@ -42,14 +42,6 @@ export function General({ r, upd }: { r: Ruleset; upd: Upd }) {
         </Field>
         <Field label="Тег разведки" hint="Элементы и типы с этим тегом — лучшие наблюдатели, как при приказе «разведка».">
           <Txt value={r.reconTag} onChange={(v) => upd((d) => void (d.reconTag = v))} />
-        </Field>
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <Field
-          label="Уровни подразделений"
-          hint="Подсказки для поля «Уровень» в конструкторе, от младшего к старшему. «Добавить подчинённое» предлагает уровень на ступень ниже."
-        >
-          <Tags value={r.unitLevels} onChange={(v) => upd((d) => void (d.unitLevels = v))} placeholder="отделение, взвод, рота…" />
         </Field>
       </div>
       <div style={{ marginTop: 12 }}>

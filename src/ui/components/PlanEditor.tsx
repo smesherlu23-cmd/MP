@@ -70,8 +70,7 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   const sideNodes = (side: SideId) => {
     const sd = sc.sides.find((x) => x.id === side);
     const out: { value: string; label: string }[] = [];
-    for (const f of sd?.formations ?? [])
-      walkUnits(f, (n, _p, depth) => void out.push({ value: n.id, label: `${'  '.repeat(depth)}${n.name}${n.level ? ` · ${n.level}` : ''}` }));
+    for (const f of sd?.formations ?? []) walkUnits(f, (n, _p, depth) => void out.push({ value: n.id, label: `${'  '.repeat(depth)}${n.name}` }));
     return out;
   };
   const sideName = (id?: SideId) => sc.sides.find((x) => x.id === id)?.name ?? '';

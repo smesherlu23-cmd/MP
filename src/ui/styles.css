@@ -1916,17 +1916,19 @@ select.eff-add:hover {
   box-shadow: 0 0 0 2px var(--info);
 }
 .org-top {
-  display: flex;
-  align-items: center;
   min-height: 18px;
 }
-.org-level {
-  flex: 1;
-  font-size: 11px;
-  color: var(--faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Меню — в углу поверх карточки: название занимает всю ширину. */
+.org-top .org-menu {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  margin: 0;
+  background: var(--panel2);
+  border-radius: 5px;
+}
+.org-name {
+  hyphens: auto;
 }
 .org-menu {
   visibility: hidden;
@@ -2020,15 +2022,6 @@ select.eff-add:hover {
   white-space: nowrap;
 }
 /* уровень сжимается первым — имя важнее */
-.unit-level {
-  flex: 0 1000 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--faint);
-  font-size: 11.5px;
-}
 .unit-row .badge,
 .unit-row .status-dot {
   flex-shrink: 0;

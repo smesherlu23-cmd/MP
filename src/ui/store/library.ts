@@ -166,7 +166,7 @@ export function defaultRulesetId(): Id | undefined {
 }
 
 export function createFormation(rulesetId?: Id): Id {
-  return addFormation(newRootUnit('Новое подразделение', { rulesetId: rulesetId ?? defaultRulesetId(), level: '' }));
+  return addFormation(newRootUnit('Новое подразделение', { rulesetId: rulesetId ?? defaultRulesetId() }));
 }
 
 export function duplicateFormation(id: Id): Id | undefined {

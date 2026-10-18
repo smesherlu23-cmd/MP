@@ -112,10 +112,7 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
             {canOpen ? (isOpen ? '▾' : '▸') : ''}
           </button>
           <Check value={!!pick} onChange={(v) => !taken && toggle(root, n.id, v)}>
-            <span className="pick-name">
-              {n.level && <span className="faint">{n.level} · </span>}
-              {n.name}
-            </span>
+            <span className="pick-name">{n.name}</span>
           </Check>
           <span className="grow" />
           {taken && <span className="badge">уже в сценарии</span>}

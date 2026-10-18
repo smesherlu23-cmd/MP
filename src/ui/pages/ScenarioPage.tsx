@@ -344,7 +344,6 @@ function SideTree(props: {
               onChange={(e) => onToggle(n.id, e.target.checked)}
             />
           )}
-          {n.level && <span className="faint">{n.level}</span>}
           <span className="side-node-name">{n.name}</span>
           {n.transfer ? (
             <span className="badge info" data-tip={`Передано из «${n.transfer.fromName}» — вернуть можно в «Силах»`}>

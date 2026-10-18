@@ -89,8 +89,6 @@ export function riskOf(state: Resolved['state'], rs: Ruleset): { label: string; 
   return { label: 'низкий', cls: 'good' };
 }
 
-export const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-
 /** Сохранить подразделение (поддерево) как самостоятельный шаблон: только устройство и штат. */
 export function saveAsTemplate(node: UnitNode, rs: Ruleset) {
   const c = toTemplate(cloneUnit(node));
@@ -141,11 +139,15 @@ export function canInsertTemplate(ctx: Ctx, templateId: Id): boolean {
   return templateId !== host && !containsTemplate(tpl, host);
 }
 
+/** Новое подчинённое: название — следующее по номеру за последним («2-й взвод» → «3-й взвод»), иначе «Подразделение N». */
 export function addChild(ctx: Ctx, node: UnitNode) {
-  const levels = ctx.rs.unitLevels;
-  const li = levels.indexOf(node.level);
-  const childLevel = li > 0 ? levels[li - 1] : '';
-  const ch = newUnit(`${cap(childLevel) || 'Подразделение'} ${node.children.length + 1}`, { level: childLevel });
+  const last = node.children[node.children.length - 1];
+  const taken = new Set(node.children.map((c) => c.name));
+  const numbered = !!last && /^\d|\s\d+$/.test(last.name.trim());
+  let k = 1;
+  const name = () => (numbered ? nextName(last!.name, k) : `Подразделение ${node.children.length + k}`);
+  while (taken.has(name()) && k < 500) k++;
+  const ch = newUnit(name());
   ctx.upd((d) => void findUnit(d, node.id)!.children.push(ch));
   ctx.setSel(ch.id);
 }

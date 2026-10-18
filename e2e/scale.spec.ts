@@ -7,14 +7,14 @@ import { openApp } from './helpers';
 
 function army(name: string, regiments: number, battalions: number, companies: number, order: string): UnitNode {
   const rs = makeUniversalRuleset();
-  const platoon = makeDemoTemplates().find((t) => t.level === 'взвод')!;
-  const root = newRootUnit(name, { level: 'дивизия', order, rulesetId: rs.id });
+  const platoon = makeDemoTemplates().find((t) => t.name === 'Мотострелковый взвод')!;
+  const root = newRootUnit(name, { order, rulesetId: rs.id });
   for (let r = 0; r < regiments; r++) {
-    const reg = newUnit(`${r + 1}-й полк`, { level: 'полк' });
+    const reg = newUnit(`${r + 1}-й полк`);
     for (let b = 0; b < battalions; b++) {
-      const bn = newUnit(`${b + 1}-й батальон`, { level: 'батальон' });
+      const bn = newUnit(`${b + 1}-й батальон`);
       for (let c = 0; c < companies; c++) {
-        const co = newUnit(`${c + 1}-я рота`, { level: 'рота' });
+        const co = newUnit(`${c + 1}-я рота`);
         for (let p = 0; p < 3; p++) co.children.push(instantiate(platoon, { name: `${p + 1}-й взвод` }));
         bn.children.push(co);
       }

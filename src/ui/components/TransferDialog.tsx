@@ -47,10 +47,7 @@ export function TransferDialog({ nodeId, onDone, onClose }: { nodeId: Id; onDone
           </button>
           <label className="check">
             <input type="radio" name="transfer-target" checked={pick === n.id} disabled={inside || same} onChange={() => setPick(n.id)} />
-            <span className="pick-name">
-              {n.level && <span className="faint">{n.level} · </span>}
-              {n.name}
-            </span>
+            <span className="pick-name">{n.name}</span>
           </label>
           <span className="grow" />
           {inside && <span className="faint small">{n.id === nodeId ? 'передаётся' : 'в её составе'}</span>}

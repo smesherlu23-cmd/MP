@@ -38,6 +38,7 @@ test('шаблон без приказа и состояния; силы по ш
   const errors = await openApp(page);
   await openFromNav(page, 'Мотострелковая рота');
   await expect(page.locator('.field .label', { hasText: /^Приказ/ })).toHaveCount(0);
+  await expect(page.locator('.field .label', { hasText: /^Уровень/ })).toHaveCount(0);
   await expect(page.locator('.card-head', { hasText: 'Состояние' })).toHaveCount(0);
   await expect(page.locator('.comp-table th', { hasText: 'В строю' })).toHaveCount(0);
 

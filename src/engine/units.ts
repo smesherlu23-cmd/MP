@@ -43,7 +43,6 @@ export function newUnit(name = 'Новое подразделение', patch: P
   return {
     id: uid('u'),
     name,
-    level: '',
     composition: [],
     children: [],
     commanderName: '',
@@ -67,7 +66,7 @@ export function newUnit(name = 'Новое подразделение', patch: P
  * поэтому такое подразделение можно и вести в бой самостоятельно, и вставлять в другие — тогда оно наследует их параметры.
  */
 export function newRootUnit(name = 'Новое подразделение', patch: Partial<UnitNode> = {}): UnitNode {
-  return newUnit(name, { level: 'батальон', commandLevel: 3, ...patch });
+  return newUnit(name, { commandLevel: 3, ...patch });
 }
 
 // ------------------------------------------------------------------ обход и поиск
@@ -252,8 +251,9 @@ export function sideUnits(side: Pick<SideDef, 'formations' | 'excluded' | 'parti
 
 /** Отпечаток «устройства» подразделения: всё, что переносится из шаблона в копии. Названия и состояние не входят. */
 export function unitHash(node: UnitNode): string {
+  // Подпись уровня прежних версий остаётся в отпечатке, чтобы копии не помечались изменёнными.
   const proj = (n: UnitNode): unknown => [
-    n.level,
+    n.level ?? '',
     n.composition.map((c) => [c.typeId, c.authorized]),
     n.commandLevel,
     n.order,
@@ -431,7 +431,9 @@ export function migrateUnit(raw: unknown, isRoot = true): UnitNode {
   n.children = Array.isArray(x.children) ? x.children.map((c: unknown) => migrateUnit(c, false)) : [];
   n.state = x.state && typeof x.state === 'object' ? x.state : {};
   n.tags = Array.isArray(x.tags) ? x.tags : [];
-  n.level = x.level ?? '';
+  // Подпись уровня прежних версий сохраняется только ради отпечатка копий; в программе её нет.
+  if (typeof x.level === 'string' && x.level) n.level = x.level;
+  else delete n.level;
   n.commanderName = x.commanderName ?? '';
   n.attackMod = x.attackMod ?? 100;
   n.defenseMod = x.defenseMod ?? 100;
@@ -444,7 +446,6 @@ function migrateLegacyElement(e: Record<string, any>): UnitNode {
   return newUnit(e.name ?? 'Элемент', {
     id: e.id,
     srcNodeId: e.sourceId,
-    level: e.role ?? '',
     composition: Array.isArray(e.composition) ? e.composition : [],
     order: e.order ?? null,
     echelon: e.echelon ?? null,
@@ -461,7 +462,6 @@ function migrateLegacyElement(e: Record<string, any>): UnitNode {
 function migrateLegacyFormation(f: Record<string, any>, isRoot: boolean): UnitNode {
   const n = newUnit(f.name ?? 'Подразделение', {
     id: f.id,
-    level: f.kind ?? '',
     commanderName: f.commanderName ?? '',
     commandLevel: typeof f.commandLevel === 'number' ? f.commandLevel : null,
     comms: f.comms ?? null,

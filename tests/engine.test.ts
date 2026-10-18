@@ -516,7 +516,7 @@ describe('бой', () => {
   });
 
   it('обновление копии из шаблона: устройство из шаблона, потери и названия копии сохраняются', () => {
-    const tpl = newRootUnit('Взвод', { level: 'взвод', composition: rifles(30), children: [newUnit('Отделение', { composition: rifles(10) })] });
+    const tpl = newRootUnit('Взвод', { composition: rifles(30), children: [newUnit('Отделение', { composition: rifles(10) })] });
     const copy = instantiate(tpl, { name: '1-й взвод' });
     copy.composition[0].current = 22; // потери
     copy.children[0].name = '1-е отделение';
@@ -541,8 +541,8 @@ describe('бой', () => {
   });
 
   it('вложенные шаблоны: рота из взводов обновляется по цепочке', () => {
-    const vzvod = newRootUnit('Взвод', { level: 'взвод', composition: rifles(30) });
-    const rota = newRootUnit('Рота', { level: 'рота', children: [instantiate(vzvod, { name: '1-й взвод' }), instantiate(vzvod, { name: '2-й взвод' })] });
+    const vzvod = newRootUnit('Взвод', { composition: rifles(30) });
+    const rota = newRootUnit('Рота', { children: [instantiate(vzvod, { name: '1-й взвод' }), instantiate(vzvod, { name: '2-й взвод' })] });
     const bn = newRootUnit('Батальон', { children: [instantiate(rota, { name: '1-я рота' })] });
     vzvod.composition = rifles(35);
     expect(isOutdated(rota.children[0], vzvod)).toBe(true);
@@ -627,7 +627,8 @@ describe('бой', () => {
       tags: [],
     };
     const u = migrateUnit(legacy);
-    expect(u.level).toBe('батальон');
+    // Уровня («вид» формирования) больше нет — он виден из названия.
+    expect(u.level).toBeUndefined();
     expect(u.comms).toBe(70);
     expect(u.children.map((c) => c.name)).toEqual(['Рота', 'Группа']);
     expect(u.children[0].state.morale).toBe(65);
