@@ -87,7 +87,13 @@ test('узкое окно: вкладки сжимаются, лишние — �
   await page.locator('.nav-item', { hasText: 'Шаблоны' }).first().click();
   const items = page.locator('.sidebar .side-item');
   const n = await items.count();
-  for (let i = 0; i < n; i++) await items.nth(i).click();
+  // Щелчок открывает вкладку-просмотр (она заменяется следующей), двойной щелчок — обычную вкладку.
+  await items.nth(0).click();
+  await items.nth(1).click();
+  await expect(page.locator('.tab')).toHaveCount(2);
+  await expect(page.locator('.tab.preview')).toHaveCount(1);
+  for (let i = 0; i < n; i++) await items.nth(i).dblclick();
+  await expect(page.locator('.tab.preview')).toHaveCount(0);
   const more = page.locator('.tabs-more .btn');
   await expect(more).toBeVisible();
   // Кнопки справа не перекрывают полосу вкладок.
@@ -95,7 +101,8 @@ test('узкое окно: вкладки сжимаются, лишние — �
   const right = (await page.locator('.topbar-right').boundingBox())!;
   expect(tabs.x + tabs.width).toBeLessThanOrEqual(right.x + 1);
   await more.click();
-  await expect(page.locator('.menu-pop .menu-item')).toHaveCount(n + 1);
+  // Все вкладки и «Закрыть все, кроме закреплённых».
+  await expect(page.locator('.menu-pop .menu-item')).toHaveCount(n + 2);
   await page.locator('.menu-pop .menu-item', { hasText: 'Главная' }).click();
   await expect(page.locator('.tab.active .tab-title')).toHaveText('Главная');
   expect(errors).toEqual([]);

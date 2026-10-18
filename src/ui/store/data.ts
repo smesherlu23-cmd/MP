@@ -16,9 +16,11 @@ import {
   makeLinearTemplates,
   makeUniversalRuleset,
   walkUnits,
+  findUnit,
   newId,
   normalizeRuleset,
   recalibrateRuleset,
+  scenarioToHours,
   extractForces,
   rehashCopies,
   toTemplate,
@@ -88,10 +90,13 @@ export async function initApp() {
     localStorage.setItem('warsim-initialized', '1');
     localStorage.setItem(MODEL_FLAG, '1');
     localStorage.setItem(CALIBRATION_FLAG, '1');
+    localStorage.setItem(HOLDFAST_FLAG, '1');
   } else {
     await addLinearExample();
     await migrateToForces();
     recalibrate();
+    scenariosToHours();
+    holdFastToScenarios();
   }
   if (!Object.keys(get().rulesets).length) {
     // Без набора правил программа бесполезна — создаём пустой.
@@ -203,6 +208,81 @@ export function recalibrate() {
       `Модель боя откалибрована: в наборах ${names.join(', ')} обновлены «Мораль за 1% потерь» и «Порог отхода (потери)» — там, где их не меняли. Начатые бои идут по своим прежним правилам.`,
       'info',
     );
+}
+
+/** «Стоять насмерть» перенесён из шаблонов и сил в сценарий. */
+export const HOLDFAST_FLAG = 'warsim-holdfast-scenario';
+
+/**
+ * Один раз: отметки «стоять насмерть» у сил переносятся в сценарии, где эти силы воюют (у той же части),
+ * а у сил и шаблонов снимаются; копии шаблонов остаются актуальными.
+ */
+export function holdFastToScenarios() {
+  if (localStorage.getItem(HOLDFAST_FLAG)) return;
+  const s = get();
+  const marked = new Set<Id>();
+  const clearIn = (root: UnitNode) => {
+    let hit = false;
+    walkUnits(root, (n) => {
+      if (!n.holdFast) return;
+      marked.add(n.id);
+      n.holdFast = false;
+      hit = true;
+    });
+    return hit;
+  };
+  const before = new Map(Object.values(s.formations).map((t) => [t.id, unitHash(t)]));
+  const templates = Object.fromEntries(Object.values(s.formations).map((t) => [t.id, clone(t)]));
+  const tplHit = Object.values(templates).filter(clearIn).length > 0;
+  const forces = Object.fromEntries(Object.values(s.forces).map((f) => [f.id, clone(f)]));
+  for (const f of Object.values(forces)) clearIn(f);
+  if (tplHit) {
+    rehashCopies(Object.values(templates), before, templates);
+    rehashCopies(Object.values(forces), before, templates);
+  }
+  const scenarios: Scenario[] = [];
+  if (marked.size)
+    for (const sc of Object.values(s.scenarios)) {
+      const copy = clone(sc);
+      let hit = false;
+      for (const sd of copy.sides) {
+        const hold = new Set(sd.holdFast ?? []);
+        for (const ref of sd.units ?? []) {
+          const f = s.forces[ref.forceId];
+          const part = f && findUnit(f, ref.nodeId ?? f.id);
+          if (part) walkUnits(part, (n) => void (marked.has(n.id) && hold.add(n.id)));
+        }
+        if (hold.size !== (sd.holdFast?.length ?? 0)) {
+          sd.holdFast = [...hold];
+          hit = true;
+        }
+      }
+      if (hit) scenarios.push(copy);
+    }
+  // Сохраняется всё, что изменилось, — в том числе копии, у которых обновился отпечаток шаблона.
+  const changedT = Object.values(templates).filter((t) => JSON.stringify(t) !== JSON.stringify(s.formations[t.id]));
+  const changedF = Object.values(forces).filter((f) => JSON.stringify(f) !== JSON.stringify(s.forces[f.id]));
+  set((st) => ({
+    formations: { ...st.formations, ...Object.fromEntries(changedT.map((t) => [t.id, t])) },
+    forces: { ...st.forces, ...Object.fromEntries(changedF.map((f) => [f.id, f])) },
+    scenarios: { ...st.scenarios, ...Object.fromEntries(scenarios.map((x) => [x.id, x])) },
+  }));
+  for (const t of changedT) scheduleSave('formations', t.id, () => get().formations[t.id]);
+  for (const f of changedF) scheduleSave('forces', f.id, () => get().forces[f.id]);
+  for (const x of scenarios) scheduleSave('scenarios', x.id, () => get().scenarios[x.id]);
+  localStorage.setItem(HOLDFAST_FLAG, '1');
+}
+
+/** Сценарии прежней версии (лимит в ходах) — на часы: длительность боя и «удержать позицию». */
+export function scenariosToHours() {
+  const s = get();
+  for (const sc of Object.values(s.scenarios)) {
+    const rs = s.rulesets[sc.rulesetId];
+    if (sc.hours !== undefined || !rs) continue;
+    const next = scenarioToHours(sc, rs);
+    set((st) => ({ scenarios: { ...st.scenarios, [sc.id]: next } }));
+    scheduleSave('scenarios', sc.id, () => get().scenarios[sc.id]);
+  }
 }
 
 export const linearUnits = () => [...makeLinearTemplates(), makeLinearBrigade(), makeLinearDefenders()];
@@ -382,6 +462,7 @@ export async function importFile() {
     toast(`Импортирован бой «${b.name}».`, 'good');
   } else if (data?.sides && data?.rulesetId) {
     let sc = migrateScenario(data as Scenario);
+    if (s.rulesets[sc.rulesetId]) sc = scenarioToHours(sc, s.rulesets[sc.rulesetId]);
     if (s.scenarios[sc.id]) {
       sc.id = newId('sc');
       sc.name = `${sc.name} (импорт)`;

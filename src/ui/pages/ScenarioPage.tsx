@@ -8,7 +8,13 @@ import {
   createBattle,
   findUnit,
   forceRefIssues,
+  fmtDuration,
+  hoursFor,
+  maxHours,
   nodeSectors,
+  scenarioHours,
+  scenarioToHours,
+  turnsFor,
   newId,
   newObjective,
   partOf,
@@ -83,7 +89,8 @@ export async function startBattle(sc: Scenario, rs: Ruleset) {
   openTab('battle', b.id);
 }
 
-const DEFAULT_OBJECTIVE_VALUE: Record<ObjectiveType, (maxTurns: number) => number> = {
+/** Значение задачи по умолчанию; full — вся длительность боя (в часах, у сценария прежней версии — в ходах). */
+const DEFAULT_OBJECTIVE_VALUE: Record<ObjectiveType, (full: number) => number> = {
   hold: (t) => t,
   take: () => 0,
   inflict: () => 20,
@@ -91,6 +98,17 @@ const DEFAULT_OBJECTIVE_VALUE: Record<ObjectiveType, (maxTurns: number) => numbe
   recon: () => 50,
   noRout: () => 0,
 };
+
+/** «16 ходов по 15 мин»; если часы не делятся на ходы ровно — сколько на деле. */
+function durationHint(sc: Scenario, rs: Ruleset): string {
+  const h = scenarioHours(sc, rs);
+  const turns = turnsFor(h, rs);
+  const real = hoursFor(turns, rs);
+  return (
+    `${turns} ${plural(turns, 'ход', 'хода', 'ходов')} по ${rs.turnMinutes} мин${Math.abs(real - h) > 1e-6 ? ` — на деле ${fmtDuration(real)}` : ''}. ` +
+    'ГМ задаёт время боя, а ходов в нём столько, сколько укладывается при длине хода набора правил; сменится длина хода — подстроится и число ходов.'
+  );
+}
 
 export function ScenarioPage({ tab }: { tab: Tab }) {
   const st = useApp();
@@ -112,6 +130,8 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
     const nr = st.rulesets[v];
     upd((d) => {
       d.rulesetId = v;
+      // Длительность — в часах: ходов станет столько, сколько их в эти часы при длине хода нового набора.
+      if (d.hours !== undefined) d.maxTurns = turnsFor(d.hours, nr);
       d.conditions = {};
       for (const cat of nr.conditions) d.conditions[cat.id] = cat.options[0]?.id ?? '';
       d.startBand = nr.rangeBands[0]?.id ?? '';
@@ -207,9 +227,29 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
                 />
               </Field>
             )}
-            <Field label="Лимит ходов" hint={rs ? `≈ ${fmt1((sc.maxTurns * rs.turnMinutes) / 60)} ч боя` : undefined}>
-              <Num value={sc.maxTurns} onChange={(v) => upd((d) => void (d.maxTurns = v))} min={1} max={500} integer width="100%" />
-            </Field>
+            {rs ? (
+              <Field label="Длительность боя, ч" hint={durationHint(sc, rs)}>
+                <Num
+                  value={scenarioHours(sc, rs)}
+                  onChange={(v) =>
+                    upd((d) => {
+                      // Сценарий прежней версии (в ходах) сначала переводится на часы — вместе с «удержать позицию».
+                      Object.assign(d, scenarioToHours(d, rs));
+                      d.hours = v;
+                      d.maxTurns = turnsFor(v, rs);
+                    })
+                  }
+                  min={Math.min(0.25, rs.turnMinutes / 60)}
+                  max={maxHours(rs)}
+                  step={0.5}
+                  width="100%"
+                />
+              </Field>
+            ) : (
+              <Field label="Лимит ходов">
+                <Num value={sc.maxTurns} onChange={(v) => upd((d) => void (d.maxTurns = v))} min={1} max={1000} integer width="100%" />
+              </Field>
+            )}
             <Field label="Набор правил">
               <Sel value={sc.rulesetId} onChange={changeRuleset} options={Object.values(st.rulesets).map((r) => ({ value: r.id, label: r.name }))} />
             </Field>
@@ -256,17 +296,20 @@ function SideTree(props: {
   /** Неполный состав частей в этом бою. */
   partial?: Record<string, PartialLimit>;
   onPartial?: (n: UnitNode) => void;
+  /** «Стоять насмерть» в этом бою (узлы; действует и на подчинённых). */
+  hold?: Set<string>;
+  onHold?: (id: string, on: boolean) => void;
 }) {
-  const { root, refId, rs, arrivals, excluded, onToggle, orders: setOrders, onOrder, sc, sectorOf, onSector, partial, onPartial } = props;
+  const { root, refId, rs, arrivals, excluded, onToggle, orders: setOrders, onOrder, sc, sectorOf, onSector, partial, onPartial, hold, onHold } = props;
   const stats = computeStats(root, rs);
   const LIMIT = 150;
-  const rows: { n: UnitNode; depth: number; off: boolean; inherited: boolean }[] = [];
-  const walk = (n: UnitNode, depth: number, parentOff: boolean) => {
+  const rows: { n: UnitNode; depth: number; off: boolean; inherited: boolean; holdUp: boolean }[] = [];
+  const walk = (n: UnitNode, depth: number, parentOff: boolean, parentHold: boolean) => {
     const own = !!excluded?.has(n.id);
-    if (depth > 0) rows.push({ n, depth, off: own || parentOff, inherited: parentOff });
-    n.children.forEach((c) => walk(c, depth + 1, own || parentOff));
+    if (depth > 0) rows.push({ n, depth, off: own || parentOff, inherited: parentOff, holdUp: parentHold });
+    n.children.forEach((c) => walk(c, depth + 1, own || parentOff, parentHold || !!hold?.has(n.id)));
   };
-  walk(root, 0, false);
+  walk(root, 0, false, false);
   return (
     <div className="side-tree">
       {onToggle && (
@@ -274,7 +317,7 @@ function SideTree(props: {
           Галочка — часть участвует в этом бою. Снимите, чтобы воевать без неё. Щелчок по численности — в бой идёт только часть состава.
         </div>
       )}
-      {rows.slice(0, LIMIT).map(({ n, depth, off, inherited }) => (
+      {rows.slice(0, LIMIT).map(({ n, depth, off, inherited, holdUp }) => (
         <div
           key={n.id}
           className={`side-node${off ? ' off' : ''}`}
@@ -303,13 +346,20 @@ function SideTree(props: {
           )}
           {n.level && <span className="faint">{n.level}</span>}
           <span className="side-node-name">{n.name}</span>
-          {n.attachedFrom !== undefined && <span className="badge info">придано</span>}
+          {n.transfer ? (
+            <span className="badge info" data-tip={`Передано из «${n.transfer.fromName}» — вернуть можно в «Силах»`}>
+              передано
+            </span>
+          ) : (
+            n.attachedFrom !== undefined && <span className="badge info">придано</span>
+          )}
           {arrivals?.has(n.id) && (
             <span className="badge warn" data-tip="Подкрепление по плану боя">
               {arrivals.get(n.id) === 'cond' ? 'подойдёт по условию' : `с ${arrivals.get(n.id)}-го хода`}
             </span>
           )}
           <span className="grow" />
+          {onHold && !off && <HoldToggle on={!!hold?.has(n.id)} inherited={holdUp} onChange={(v) => onHold(n.id, v)} />}
           {sc && onSector && !off && <SectorSelect sc={sc} mini value={sectorOf?.[n.id]} onChange={(v) => onSector(n.id, v)} />}
           {onOrder && !off && (
             <select
@@ -425,6 +475,15 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
       else delete d.sectorOf[id];
       if (!Object.keys(d.sectorOf).length) delete d.sectorOf;
     });
+  const holdSet = new Set(side.holdFast ?? []);
+  const setHold = (id: string, on: boolean) =>
+    upd((d) => {
+      const set = new Set(d.holdFast ?? []);
+      if (on) set.add(id);
+      else set.delete(id);
+      if (set.size) d.holdFast = [...set];
+      else delete d.holdFast;
+    });
   const setPartial = (id: string, lim: PartialLimit | undefined) =>
     upd((d) => {
       d.partial ??= {};
@@ -528,6 +587,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
             )}
             <PartialButton node={node} lim={side.partial?.[root]} rs={rs} onOpen={() => setPartialOf(node)} />
           </div>
+          <HoldToggle on={holdSet.has(root)} onChange={(v) => setHold(root, v)} />
           {!attachedTo && (
             <Sel
               value={side.orders?.[root] ?? ''}
@@ -581,6 +641,8 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
             onSector={setSector}
             partial={side.partial}
             onPartial={setPartialOf}
+            hold={holdSet}
+            onHold={setHold}
           />
         )}
       </div>
@@ -661,7 +723,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
                   onChange={(v) =>
                     upd((d) => {
                       d.objectives[oi].type = v;
-                      d.objectives[oi].value = DEFAULT_OBJECTIVE_VALUE[v](sc.maxTurns);
+                      d.objectives[oi].value = DEFAULT_OBJECTIVE_VALUE[v](sc.hours ?? sc.maxTurns);
                     })
                   }
                   options={OBJECTIVE_TYPES.map((t) => ({ value: t, label: OBJECTIVE_LABELS[t] }))}
@@ -672,8 +734,14 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
                   value={o.value}
                   onChange={(v) => upd((d) => void (d.objectives[oi].value = v))}
                   min={0}
+                  step={o.type === 'hold' && sc.hours !== undefined ? 0.5 : 1}
                   width={78}
-                  suffix={o.type === 'hold' ? 'ход' : '%'}
+                  suffix={o.type !== 'hold' ? '%' : sc.hours !== undefined ? 'ч' : 'ход'}
+                  title={
+                    o.type === 'hold' && sc.hours !== undefined
+                      ? `Сколько удерживать позицию: ${fmtDuration(o.value)} (${turnsFor(o.value, rs)}-й ход)`
+                      : undefined
+                  }
                 />
               )}
               <span className="faint small" data-tip="Вес задачи в итоговой оценке">
@@ -685,7 +753,11 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
               </Btn>
             </div>
           ))}
-          <Btn sm kind="ghost" onClick={() => upd((d) => void d.objectives.push(newObjective(i === 0 ? 'take' : 'hold', i === 0 ? 0 : sc.maxTurns, 1)))}>
+          <Btn
+            sm
+            kind="ghost"
+            onClick={() => upd((d) => void d.objectives.push(newObjective(i === 0 ? 'take' : 'hold', i === 0 ? 0 : (sc.hours ?? sc.maxTurns), 1)))}
+          >
             + задача
           </Btn>
         </div>
@@ -704,6 +776,31 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
         />
       )}
     </div>
+  );
+}
+
+/** «Стоять насмерть» на этот бой — у подразделения на стороне и у его частей (действует и на подчинённых). */
+function HoldToggle({ on, inherited, onChange }: { on: boolean; inherited?: boolean; onChange: (v: boolean) => void }) {
+  const tip = inherited
+    ? 'Стоит насмерть вместе со старшим подразделением'
+    : on
+      ? 'Стоять насмерть: не отходит добровольно, паникует вдвое реже — вместе с подчинёнными. Щелчок — снять.'
+      : 'Приказать стоять насмерть в этом бою: не отходить добровольно, паника вдвое реже — вместе с подчинёнными.';
+  return (
+    <button
+      type="button"
+      className={`hold-toggle${on || inherited ? ' on' : ''}`}
+      disabled={inherited}
+      aria-pressed={on || inherited}
+      data-tip={tip}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!on);
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      насмерть
+    </button>
   );
 }
 

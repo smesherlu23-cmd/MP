@@ -45,10 +45,16 @@ export function NodeBadges({ ctx, node, compact }: { ctx: Ctx; node: UnitNode; c
   return (
     <>
       {node.isHQ && <span className="badge warn">штаб</span>}
-      {node.attachedFrom !== undefined && (
-        <span className="badge info" data-tip={node.attachedFrom ? `Придано из: ${node.attachedFrom}` : 'Придано'}>
-          придано
+      {node.transfer ? (
+        <span className="badge info" data-tip={`Передано из «${node.transfer.fromName}» — вернуть: меню подразделения`}>
+          передано
         </span>
+      ) : (
+        node.attachedFrom !== undefined && (
+          <span className="badge info" data-tip={node.attachedFrom ? `Придано из: ${node.attachedFrom}` : 'Придано'}>
+            придано
+          </span>
+        )
       )}
       {tpl && !isLibRoot && (
         <span className={`badge${outdated ? ' bad' : ''}`} data-tip={outdated ? `Шаблон «${tpl.name}» изменён — можно обновить` : `Из шаблона «${tpl.name}»`}>

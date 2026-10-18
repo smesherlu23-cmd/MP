@@ -1,6 +1,7 @@
 // Варианты сценария для массового моделирования: перебор одного параметра — «как исход зависит от X».
 
 import { clone } from './defaults';
+import { scenarioTurns } from './duration';
 import type { Id, Ruleset, Scenario, SideId, UnitNode } from './types';
 import { findUnit } from './units';
 
@@ -97,7 +98,7 @@ export function sweepVariants(sc: Scenario, rs: Ruleset, p: SweepParam): Variant
       const ev = sc.events?.find((x) => x.id === p.eventId);
       if (!ev) return [];
       const from = Math.max(1, Math.round(p.from ?? 1));
-      const to = Math.min(Math.max(from, Math.round(p.to ?? sc.maxTurns)), from + 29);
+      const to = Math.min(Math.max(from, Math.round(p.to ?? scenarioTurns(sc, rs))), from + 29);
       for (let t = from; t <= to; t++) make(`ход ${t}`, (d) => void (d.events!.find((x) => x.id === ev.id)!.turn = t));
       make('без события', (d) => void (d.events = d.events!.filter((x) => x.id !== ev.id)));
       break;

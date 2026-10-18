@@ -1,4 +1,4 @@
-import { resolveScenario, sideUnits, summarizeUnits } from '../../engine';
+import { fmtDuration, resolveScenario, sideUnits, summarizeUnits } from '../../engine';
 import { Link } from '../components/Link';
 import { openPalette } from '../components/Palette';
 import { Btn, Card, fmt0 } from '../components/ui';
@@ -96,7 +96,7 @@ export function HomePage() {
         <Card title="Продолжить" className="home-continue">
           <div className="home-list">
             {unfinished.map((b) => {
-              const sc = s.scenarios[b.scenarioId];
+              const tm = b.turnMinutes;
               return (
                 <div key={b.id} className="row">
                   <span className="home-icon">⚔</span>
@@ -106,7 +106,8 @@ export function HomePage() {
                     </Link>
                     <div className="faint small">
                       ход {b.turn}
-                      {sc ? ` из ${sc.maxTurns}` : ''} · {fmtWhen(b.updatedAt)}
+                      {b.maxTurns ? ` из ${b.maxTurns}` : ''}
+                      {tm && b.maxTurns ? ` (${fmtDuration((b.turn * tm) / 60)} из ${fmtDuration((b.maxTurns * tm) / 60)})` : ''} · {fmtWhen(b.updatedAt)}
                     </div>
                   </div>
                   <Btn sm kind="primary" onClick={() => openTab('battle', b.id)} title="Открыть бой и продолжить с текущего хода">

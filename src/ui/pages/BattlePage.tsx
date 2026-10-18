@@ -5,6 +5,7 @@ import {
   EngineContext,
   applyIntervention,
   computeResult,
+  fmtDuration,
   formatReport,
   formatSideReport,
   lastBattleAction,
@@ -245,7 +246,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
         />
         <div className="meta" style={{ width: '100%' }}>
           <span>
-            Ход <b>{b.turn}</b> из {b.scenario.maxTurns} · {Math.floor(elapsed / 60)} ч {elapsed % 60} мин
+            Ход <b>{b.turn}</b> из {b.scenario.maxTurns} · {fmtDuration(elapsed / 60)} из {fmtDuration((b.scenario.maxTurns * rs.turnMinutes) / 60)}
           </span>
           {b.sectors ? (
             b.sectors.map((sec) => (

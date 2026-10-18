@@ -14,6 +14,12 @@ export interface Tab {
   kind: TabKind;
   ref?: string;
   sub?: string;
+  /** Просмотр: следующий объект, открытый из навигатора или поиска, заменит эту вкладку (пока с ней не начали работать). */
+  preview?: boolean;
+  /** Закреплена: слева, не закрывается сама и не заменяется. */
+  pinned?: boolean;
+  /** Когда вкладкой пользовались в последний раз (для закрытия давно не используемых). */
+  used?: number;
 }
 
 export interface Settings {
@@ -28,6 +34,8 @@ export interface Settings {
   pauseRules?: PauseRules;
   /** Прогонов в прогнозе боя. */
   forecastRuns?: number;
+  /** Сколько вкладок держать открытыми (давно не используемые закрываются сами); 0 — без предела. */
+  maxTabs?: number;
 }
 
 export interface Toast {
@@ -370,20 +378,81 @@ export function tabExists(t: Tab): boolean {
   }
 }
 
-export function openTab(kind: TabKind, ref?: string, opts: { background?: boolean; sub?: string } = {}) {
+export const DEFAULT_MAX_TABS = 12;
+
+/** Закреплённые — первыми, остальные в прежнем порядке. */
+const orderTabs = (tabs: Tab[]) => [...tabs.filter((t) => t.pinned), ...tabs.filter((t) => !t.pinned)];
+
+let trimNoticeShown = false;
+
+/** Вкладок больше предела — закрыть давно не используемые (не закреплённые и не keep). */
+function trimTabs(tabs: Tab[], keep: string, max: number): Tab[] {
+  if (max <= 0 || tabs.length <= max) return tabs;
+  const out = [...tabs];
+  const victims = out.filter((t) => !t.pinned && t.key !== keep).sort((a, b) => (a.preview === b.preview ? (a.used ?? 0) - (b.used ?? 0) : a.preview ? -1 : 1));
+  let closed = 0;
+  while (out.length > max && victims.length) {
+    const v = victims.shift()!;
+    out.splice(out.indexOf(v), 1);
+    closed++;
+  }
+  if (closed && !trimNoticeShown) {
+    trimNoticeShown = true;
+    queueMicrotask(() =>
+      toast(
+        `Открыто больше ${max} вкладок — давно не используемые закрываются сами. Нужную можно закрепить (правый щелчок по вкладке); предел — в Настройках.`,
+      ),
+    );
+  }
+  return out;
+}
+
+/**
+ * Открыть вкладку. preview — из навигатора и поиска: новый объект занимает место вкладки-просмотра
+ * (а не добавляет ещё одну), пока с ней не начали работать. Уже открытая вкладка просто становится активной.
+ */
+export function openTab(kind: TabKind, ref?: string, opts: { background?: boolean; sub?: string; preview?: boolean } = {}) {
   const key = tabKey(kind, ref);
   set((s) => {
+    const now = Date.now();
+    const preview = !!opts.preview && !opts.background;
     const exists = s.tabs.find((t) => t.key === key);
-    let tabs = s.tabs;
-    if (!exists) {
-      const idx = s.tabs.findIndex((t) => t.key === s.active);
+    let tabs: Tab[];
+    if (exists) {
+      tabs = s.tabs.map((t) => (t.key === key ? { ...t, sub: opts.sub ?? t.sub, preview: t.preview && preview ? true : undefined, used: now } : t));
+    } else {
+      const tab: Tab = { key, kind, ref, sub: opts.sub, used: now, ...(preview ? { preview: true } : {}) };
       tabs = [...s.tabs];
-      tabs.splice(idx + 1, 0, { key, kind, ref, sub: opts.sub });
-    } else if (opts.sub) {
-      tabs = s.tabs.map((t) => (t.key === key ? { ...t, sub: opts.sub } : t));
+      const pi = preview ? tabs.findIndex((t) => t.preview) : -1;
+      if (pi >= 0) tabs[pi] = tab;
+      else tabs.splice(tabs.findIndex((t) => t.key === s.active) + 1, 0, tab);
+      tabs = trimTabs(orderTabs(tabs), opts.background ? s.active : key, s.settings.maxTabs ?? DEFAULT_MAX_TABS);
     }
     return { tabs, active: opts.background ? s.active : key };
   });
+}
+
+/** Вкладка-просмотр становится обычной (с ней начали работать). */
+export function keepTab(key: string) {
+  if (!get().tabs.some((t) => t.key === key && t.preview)) return;
+  set((s) => ({ tabs: s.tabs.map((t) => (t.key === key ? { ...t, preview: undefined } : t)) }));
+}
+
+export function pinTab(key: string, pinned: boolean) {
+  set((s) => ({ tabs: orderTabs(s.tabs.map((t) => (t.key === key ? { ...t, pinned: pinned || undefined, preview: undefined } : t))) }));
+}
+
+/** Закрыть другие вкладки (кроме закреплённых); right — только справа от этой. */
+export function closeOtherTabs(key: string, right = false) {
+  const tabs = get().tabs;
+  const i = tabs.findIndex((t) => t.key === key);
+  closeTabsWhere((t) => !t.pinned && t.key !== key && (!right || tabs.indexOf(t) > i));
+  activateTab(key);
+}
+
+/** Закрыть все вкладки, кроме закреплённых. */
+export function closeAllTabs() {
+  closeTabsWhere((t) => !t.pinned);
 }
 
 export function closeTab(key: string) {
@@ -403,7 +472,7 @@ export function closeTabsWhere(pred: (t: Tab) => boolean) {
 }
 
 export function activateTab(key: string) {
-  set({ active: key });
+  set((s) => ({ active: key, tabs: s.tabs.map((t) => (t.key === key ? { ...t, used: Date.now() } : t)) }));
 }
 
 export function setTabSub(key: string, sub: string) {

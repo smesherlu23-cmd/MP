@@ -7,6 +7,7 @@ import {
   SWEEP_LABELS,
   randomSeed,
   runManyAsync,
+  scenarioTurns,
   sweepVariants,
   walkUnits,
   type MonteCarloResult,
@@ -117,7 +118,14 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
               <Sel
                 value={p.kind}
                 onChange={(v) =>
-                  setP({ kind: v, side: p.side ?? 'A', category: rs.conditions[0]?.id, eventId: sc.events?.[0]?.id, from: 1, to: Math.min(sc.maxTurns, 12) })
+                  setP({
+                    kind: v,
+                    side: p.side ?? 'A',
+                    category: rs.conditions[0]?.id,
+                    eventId: sc.events?.[0]?.id,
+                    from: 1,
+                    to: Math.min(scenarioTurns(sc, rs), 12),
+                  })
                 }
                 options={(Object.keys(SWEEP_LABELS) as SweepKind[]).map((k) => ({ value: k, label: SWEEP_LABELS[k] }))}
                 width={220}
@@ -170,14 +178,21 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                   />
                 </Field>
                 <Field label="С хода">
-                  <Num value={p.from ?? 1} onChange={(v) => setP({ ...p, from: Math.max(1, Math.round(v)) })} min={1} max={sc.maxTurns} integer width={70} />
+                  <Num
+                    value={p.from ?? 1}
+                    onChange={(v) => setP({ ...p, from: Math.max(1, Math.round(v)) })}
+                    min={1}
+                    max={scenarioTurns(sc, rs)}
+                    integer
+                    width={70}
+                  />
                 </Field>
                 <Field label="по ход">
                   <Num
-                    value={p.to ?? sc.maxTurns}
+                    value={p.to ?? scenarioTurns(sc, rs)}
                     onChange={(v) => setP({ ...p, to: Math.max(1, Math.round(v)) })}
                     min={1}
-                    max={sc.maxTurns}
+                    max={scenarioTurns(sc, rs)}
                     integer
                     width={70}
                   />

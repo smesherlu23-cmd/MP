@@ -40,7 +40,7 @@ function duel(attack: number, defend: number, fortification: string, patch: Part
   sc.sides[1].formations = [rifles('Оборона', defend, 'defend')];
   sc.sides[1].fortification = fortification;
   sc.startBand = 'medium';
-  sc.maxTurns = 24;
+  sc.hours = 6;
   return { ...sc, ...patch };
 }
 
@@ -63,7 +63,7 @@ describe('баланс', () => {
   }, 120_000);
 
   it('перестрелка на месте: втрое большая сила не выбивает противника почти без потерь', () => {
-    const sc = duel(100, 300, 'none', { maxTurns: 12 });
+    const sc = duel(100, 300, 'none', { hours: 3 });
     sc.sides[0].formations = [rifles('Малая', 100, 'defend')];
     let small = 0;
     let big = 0;

@@ -1,5 +1,6 @@
 // Проверка сценария и подразделений на ошибки до начала боя.
 
+import { fmtDuration, scenarioHours, scenarioTurns } from './duration';
 import { EVENT_KIND_LABELS } from './labels';
 import type { Id, Ruleset, Scenario, SideDef, UnitNode } from './types';
 import { sideUnits, walkUnits } from './units';
@@ -74,7 +75,8 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
   for (const ev of sc.events ?? []) {
     const at = `План боя, ${ev.trigger ? 'по условию' : `ход ${ev.turn}`}: «${EVENT_KIND_LABELS[ev.kind] ?? ev.kind}»`;
     if (ev.turn < 1) issues.push({ level: 'warning', text: `${at} — ход должен быть не меньше 1.` });
-    if (ev.turn > sc.maxTurns) issues.push({ level: 'warning', text: `${at} — позже лимита ходов (${sc.maxTurns}), не наступит.` });
+    if (ev.turn > scenarioTurns(sc, rs))
+      issues.push({ level: 'warning', text: `${at} — позже конца боя (${scenarioTurns(sc, rs)}-й ход — ${fmtDuration(scenarioHours(sc, rs))}), не наступит.` });
     if (ev.trigger) {
       const tr = ev.trigger;
       if (tr.nodeId && !nodes.get(tr.side)?.has(tr.nodeId))

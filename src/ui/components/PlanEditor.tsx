@@ -5,7 +5,10 @@
 import {
   EVENT_KIND_LABELS,
   TRIGGER_LABELS,
+  fmtDuration,
+  hoursFor,
   newId,
+  scenarioTurns,
   walkUnits,
   type EventTrigger,
   type Ruleset,
@@ -53,7 +56,7 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
       const ev: ScenarioEvent = {
         id: newId('ev'),
         kind,
-        turn: Math.min(sc.maxTurns, last + 2 || 3),
+        turn: Math.min(scenarioTurns(sc, rs), last + 2 || 3),
         side: kind === 'conditions' ? undefined : 'A',
         chance: 100,
       };
@@ -99,6 +102,9 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                 width={60}
                 title={tr ? 'Раньше этого хода событие не наступит, даже если условие выполнено' : 'Ход, в начале которого событие наступает'}
               />
+              <span className="faint small nowrap" title={`Ход — ${rs.turnMinutes} мин; ${ev.turn}-й ход начинается через столько времени от начала боя`}>
+                {ev.turn > 1 ? `+${fmtDuration(hoursFor(ev.turn - 1, rs))}` : 'начало боя'}
+              </span>
               <Sel
                 value={ev.kind}
                 onChange={(v) =>

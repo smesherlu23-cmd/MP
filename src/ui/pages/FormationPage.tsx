@@ -23,7 +23,7 @@ import { Link } from '../components/Link';
 import { TypeMapModal } from '../components/RulesetTransfer';
 import { ForceHistory, ReplenishModal, RestModal } from '../components/ForceCampaign';
 import { Card, Info, Menu, Seg } from '../components/ui';
-import { useTabState } from '../hooks';
+import { openUnit, useTabState } from '../hooks';
 import {
   defaultRulesetId,
   deleteFormation,
@@ -61,6 +61,7 @@ import {
 } from './unit/model';
 import { EmptyStart, OrgChart, TreeList } from './unit/OrgChart';
 import { InsertDialog, NodeEditor } from './unit/NodeEditor';
+import { TransferDialog } from '../components/TransferDialog';
 import { SummaryCard } from './unit/Summary';
 
 export function FormationPage({ tab }: { tab: Tab }) {
@@ -71,6 +72,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
   const [view, setView] = useTabState<'chart' | 'list'>('unit-view', 'chart');
   const [collapsedArr, setCollapsed] = useTabState<string[]>(`${tab.key}:collapsed`, res ? initialCollapsed(res.f) : []);
   const [insert, setInsert] = useState<{ id: Id; attach: boolean } | null>(null);
+  const [transfer, setTransfer] = useState<Id | null>(null);
   const [drop, setDrop] = useState<{ id: Id; pos: DropPos } | null>(null);
   const [typeMap, setTypeMap] = useState<{ to: Id; ids: Id[] } | null>(null);
   const [between, setBetween] = useState<'rest' | 'replenish' | null>(null);
@@ -120,6 +122,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
       setCollapsed([...collapsedArr.filter((x) => x !== id), id]);
     },
     openInsert: (id, attach) => setInsert({ id, attach }),
+    openTransfer: isLib ? undefined : setTransfer,
     drop,
     setDrop,
     onDrop: (e, targetId, posIn) => {
@@ -359,6 +362,17 @@ export function FormationPage({ tab }: { tab: Tab }) {
         </div>
       )}
       {insert && <InsertDialog ctx={ctx} targetId={insert.id} attach={insert.attach} onClose={() => setInsert(null)} />}
+      {transfer && (
+        <TransferDialog
+          nodeId={transfer}
+          onClose={() => setTransfer(null)}
+          onDone={(forceId) => {
+            // Часть ушла в другие силы — открыть её там; внутри тех же сил — выбрать старшего.
+            if (`force:${forceId}` !== ref) openUnit(`force:${forceId}`, transfer);
+            else setSel(transfer);
+          }}
+        />
+      )}
       {!isLib && <ForceHistory force={root} />}
       {between === 'rest' && <RestModal force={root} rs={rs} onClose={() => setBetween(null)} />}
       {between === 'replenish' && <ReplenishModal force={root} rs={rs} onClose={() => setBetween(null)} />}

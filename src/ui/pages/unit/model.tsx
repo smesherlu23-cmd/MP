@@ -19,7 +19,7 @@ import {
   type UnitNode,
 } from '../../../engine';
 import { fmt0, type MenuItem } from '../../components/ui';
-import { addFormation, containsTemplate, historyStep, promptDialog, toast, toastUndoable, updateCopy } from '../../store';
+import { addFormation, containsTemplate, historyStep, promptDialog, returnPart, toast, toastUndoable, updateCopy } from '../../store';
 
 export const DND_NODE = 'application/x-warsim-unit';
 
@@ -120,6 +120,8 @@ export interface Ctx {
   collapsed: Set<Id>;
   toggle: (id: Id) => void;
   openInsert: (targetId: Id, attach: boolean) => void;
+  /** Силы: передать часть в другое подразделение (окно выбора). */
+  openTransfer?: (nodeId: Id) => void;
   drop: { id: Id; pos: DropPos } | null;
   setDrop: (d: { id: Id; pos: DropPos } | null) => void;
   onDrop: (e: React.DragEvent, targetId: Id, pos: DropPos) => void;
@@ -186,8 +188,23 @@ export function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false
   return [
     { label: 'Добавить подчинённое', kbd: 'Ins', onClick: () => addChild(ctx, node) },
     { label: 'Вставить из шаблонов…', onClick: () => ctx.openInsert(node.id, false), tip: 'Готовый шаблон: взвод, роту, батарею…' },
-    { label: 'Придать из шаблонов…', onClick: () => ctx.openInsert(node.id, true), tip: 'То же, но с отметкой «придано»' },
+    ctx.isLib && { label: 'Придать из шаблонов…', onClick: () => ctx.openInsert(node.id, true), tip: 'То же, но с отметкой «придано»' },
     'sep',
+    !ctx.isLib &&
+      !!ctx.openTransfer && {
+        label: isRoot ? 'Передать целиком в другое подразделение…' : 'Передать в другое подразделение…',
+        tip: 'Временно: со всем составом, потерями и состоянием; вернуть — «Вернуть…»',
+        onClick: () => ctx.openTransfer!(node.id),
+      },
+    !ctx.isLib &&
+      !!node.transfer && {
+        label: `Вернуть в «${node.transfer.fromName}»`,
+        tip: node.transfer.parentId ? 'На прежнее место у прежнего старшего' : 'Снова самостоятельные силы',
+        onClick: () => {
+          if (parent) ctx.setSel(parent.id);
+          returnPart(node.id);
+        },
+      },
     !isRoot && {
       label: 'Размножить…',
       tip: 'Сделать несколько одинаковых подразделений с номерами по порядку',

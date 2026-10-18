@@ -14,6 +14,9 @@ export interface BattleMeta {
   scenarioId: string;
   seed: string;
   turn: number;
+  /** Ходов в бою и минут на ход — чтобы показать, сколько времени боя прошло. */
+  maxTurns?: number;
+  turnMinutes?: number;
   finished: boolean;
   headline?: string;
   updatedAt?: string;
@@ -88,6 +91,8 @@ export function battleMeta(b: Battle | BattleMeta): BattleMeta {
     scenarioId: x.scenarioId,
     seed: x.seed,
     turn: x.turn,
+    maxTurns: x.scenario?.maxTurns ?? (b as BattleMeta).maxTurns,
+    turnMinutes: x.ruleset?.turnMinutes ?? (b as BattleMeta).turnMinutes,
     finished: x.finished,
     headline: x.result?.headline ?? (b as BattleMeta).headline,
     updatedAt: x.updatedAt,

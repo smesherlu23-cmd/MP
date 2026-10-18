@@ -19,7 +19,7 @@ import {
 } from '../../../engine';
 import { Link } from '../../components/Link';
 import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, Tags, fmt0, pressable } from '../../components/ui';
-import { instantiateLibrary, updateCopy } from '../../store';
+import { instantiateLibrary, returnPart, updateCopy } from '../../store';
 import { type Ctx, canInsertTemplate, nodeActions } from './model';
 
 export function InheritRange(props: {
@@ -111,7 +111,7 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
         }
         actions={<Menu sm items={nodeActions(ctx, node)} />}
       >
-        {((tpl && !isLibRoot) || node.attachedFrom !== undefined) && (
+        {((tpl && !isLibRoot) || node.attachedFrom !== undefined || node.transfer) && (
           <div className="meta" style={{ marginBottom: 10 }}>
             {tpl && !isLibRoot && (
               <span>
@@ -130,17 +130,24 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
                 )}
               </span>
             )}
-            {node.attachedFrom !== undefined && (
-              <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-                придано из
-                <input
-                  value={node.attachedFrom}
-                  placeholder="откуда (необязательно)"
-                  onChange={(e) => un((n) => void (n.attachedFrom = e.target.value))}
-                  style={{ minHeight: 24, width: 200 }}
-                />
+            {node.transfer && (
+              <span>
+                передано из «{node.transfer.fromName}»{' '}
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const p = findParent(ctx.root, node.id);
+                    if (p) ctx.setSel(p.id);
+                    returnPart(node.id);
+                  }}
+                  title={node.transfer.parentId ? 'Вернуть на прежнее место у прежнего старшего' : 'Снова самостоятельные силы'}
+                >
+                  вернуть
+                </a>
               </span>
             )}
+            {node.attachedFrom !== undefined && !node.transfer && <span>придано{node.attachedFrom ? ` из: ${node.attachedFrom}` : ''}</span>}
           </div>
         )}
         <div className="fields">
@@ -167,14 +174,6 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
           <Check value={node.isHQ} onChange={(v) => un((n) => void (n.isHQ = v))} title="Потеря штаба лишает старшее подразделение командира и ухудшает связь">
             Штаб
           </Check>
-          <Check value={node.holdFast} onChange={(v) => un((n) => void (n.holdFast = v))} title="Не отходит добровольно; шанс паники вдвое ниже">
-            Стоять насмерть
-          </Check>
-          {!isRoot && node.attachedFrom === undefined && (
-            <Check value={false} onChange={() => un((n) => void (n.attachedFrom = ''))} title="Отметить как приданное подразделение">
-              Придано
-            </Check>
-          )}
         </div>
       </Card>
 

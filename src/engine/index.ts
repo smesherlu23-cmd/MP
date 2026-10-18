@@ -31,3 +31,4 @@ export * from './forces';
 export * from './control';
 export * from './variants';
 export * from './transfer';
+export * from './duration';

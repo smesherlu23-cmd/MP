@@ -56,6 +56,12 @@ test('бой: групповой приказ, эффект на выбранн�
 test('сценарий: участки боя, событие по условию и удар по плану', async ({ page }) => {
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
+  // Длительность — в часах; ходов столько, сколько их укладывается при длине хода набора правил.
+  const hours = page.locator('.field', { hasText: 'Длительность боя, ч' }).locator('input');
+  await expect(hours).toHaveValue('4');
+  await hours.fill('2');
+  await hours.blur();
+  await expect(page.locator('.field', { hasText: 'Длительность боя, ч' }).locator('.hint-icon')).toHaveAttribute('data-tip', /8 ходов по 15 мин/);
   // Ширина фронта: общая — в «Обстановке»; с участками — у каждого участка.
   const width = page.locator('.field', { hasText: 'Ширина фронта, м' }).locator('input');
   await width.fill('800');
@@ -84,6 +90,8 @@ test('сценарий: участки боя, событие по услови�
   await expect(page.locator('.page')).not.toContainText('нет сил стороны');
 
   await startBattle(page);
+  await expect(page.locator('.battle-head .meta')).toContainText('из 8');
+  await expect(page.locator('.battle-head .meta')).toContainText('0 мин из 2 ч');
   await expect(page.locator('.battle-head .meta')).toContainText('Участок 2:');
   await expect(page.locator('.battle-head .meta')).toContainText('Средняя');
   await page.getByRole('button', { name: '▶ Ход' }).click();

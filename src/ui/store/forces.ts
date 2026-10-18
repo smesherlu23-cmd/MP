@@ -12,12 +12,32 @@ import {
   scenarioForceIds,
   resolveScenario,
   nextName,
+  locateNode,
+  relinkScenario,
+  returnUnit,
+  transferUnit,
+  walkUnits,
+  type ForcesPatch,
   type UnitNode,
   type Id,
   type Scenario,
 } from '../../engine';
 import { storage } from '../storage';
-import { chooseDialog, closeTabsWhere, confirmDialog, flushSave, get, historyStep, openTab, record, scheduleSave, set, toastUndoable } from './core';
+import {
+  chooseDialog,
+  closeTabsWhere,
+  confirmDialog,
+  flushSave,
+  get,
+  historyStep,
+  openTab,
+  record,
+  scheduleSave,
+  set,
+  tabExists,
+  toast,
+  toastUndoable,
+} from './core';
 import { defaultRulesetId } from './library';
 
 export function updateForce(id: Id, fn: (f: UnitNode) => void) {
@@ -91,7 +111,15 @@ export async function deleteForce(id: Id) {
   const f = get().forces[id];
   if (!f) return;
   const used = forceUsage(id);
-  const text = used.length ? `Оно участвует в сценариях: ${used.map((x) => `«${x.name}»`).join(', ')} — там его не станет.` : undefined;
+  let foreign = 0;
+  walkUnits(f, (n) => void (n !== f && n.transfer && foreign++));
+  const text =
+    [
+      used.length ? `Оно участвует в сценариях: ${used.map((x) => `«${x.name}»`).join(', ')} — там его не станет.` : '',
+      foreign ? `Внутри — переданные из других подразделений части (${foreign}): они удалятся вместе с ним. Чтобы сохранить, сначала верните их.` : '',
+    ]
+      .filter(Boolean)
+      .join('\n') || undefined;
   if (!(await confirmDialog(`Удалить силы «${f.name}»?`, text, 'Удалить', true))) return;
   await flushSave('forces', id);
   historyStep(`удаление сил «${f.name}»`);
@@ -104,6 +132,63 @@ export async function deleteForce(id: Id) {
   toastUndoable(`Силы «${f.name}» удалены (они в корзине).`);
   await storage.remove('forces', id);
   closeTabsWhere((t) => t.kind === 'formation' && t.ref === `force:${id}`);
+}
+
+// ------------------------------------------------------------------ передача частей между подразделениями
+
+/** Передача или возврат частей: силы и ссылки сценариев меняются одним шагом (Ctrl+Z отменяет). */
+function applyForcesPatch(patch: ForcesPatch, label: string) {
+  historyStep(label);
+  const now = new Date().toISOString();
+  for (const [id, f] of Object.entries(patch)) record('forces', id, f ? (get().forces[id] ? 'edit' : 'add') : 'delete');
+  set((s) => {
+    const forces = { ...s.forces };
+    for (const [id, f] of Object.entries(patch)) {
+      if (f) forces[id] = { ...f, updatedAt: now };
+      else delete forces[id];
+    }
+    return { forces };
+  });
+  for (const [id, f] of Object.entries(patch)) {
+    if (f) scheduleSave('forces', id, () => get().forces[id], 0);
+    else void storage.remove('forces', id);
+  }
+  // Сценарии ссылаются на части по месту: перенесённая часть ищется там, где она теперь.
+  for (const sc of Object.values(get().scenarios)) {
+    const re = relinkScenario(sc, get().forces);
+    if (re) updateScenario(sc.id, (d) => void (d.sides = re.sides));
+  }
+  closeTabsWhere((t) => !tabExists(t));
+}
+
+/** Временно передать часть сил (или силы целиком) в другое подразделение. Возвращает силы, куда передано. */
+export function transferPart(nodeId: Id, targetId: Id): Id | null {
+  const forces = get().forces;
+  const what = locateNode(forces, nodeId)?.node;
+  const to = locateNode(forces, targetId);
+  const p = transferUnit(forces, nodeId, targetId);
+  if (typeof p === 'string' || !what || !to) {
+    toast(typeof p === 'string' ? p : 'Подразделение не найдено.', 'bad');
+    return null;
+  }
+  applyForcesPatch(p, `передача «${what.name}» в «${to.node.name}»`);
+  toastUndoable(`«${what.name}» передано в «${to.node.name}». Вернуть — «Вернуть…» в меню подразделения.`);
+  return to.force.id;
+}
+
+/** Вернуть переданную часть на прежнее место. Возвращает силы, куда вернулась часть. */
+export function returnPart(nodeId: Id): Id | null {
+  const forces = get().forces;
+  const what = locateNode(forces, nodeId)?.node;
+  const p = returnUnit(forces, nodeId);
+  if (typeof p === 'string' || !what?.transfer) {
+    toast(typeof p === 'string' ? p : 'Подразделение не найдено.', 'bad');
+    return null;
+  }
+  applyForcesPatch(p, `возврат «${what.name}»`);
+  const home = locateNode(get().forces, nodeId)?.force;
+  toastUndoable(home?.id === nodeId ? `«${what.name}» снова самостоятельные силы.` : `«${what.name}» возвращено в «${what.transfer.fromName}».`);
+  return home?.id ?? null;
 }
 
 /** Сценарий, готовый к бою: стороны собраны из текущих сил. */

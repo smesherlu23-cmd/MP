@@ -60,7 +60,7 @@ export function Navigator() {
   const row = (
     key: string,
     name: string,
-    onOpen: (bg: boolean) => void,
+    onOpen: (o: { background?: boolean; preview?: boolean }) => void,
     opts: { sub?: string; active?: boolean; dragLib?: string; dragForce?: string } = {},
   ) => (
     <div
@@ -82,9 +82,11 @@ export function Navigator() {
         else return;
         e.dataTransfer.effectAllowed = 'copy';
       }}
-      onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}
-      onAuxClick={(e) => e.button === 1 && onOpen(true)}
-      {...pressable((e) => onOpen(e.ctrlKey || e.metaKey))}
+      // Щелчок — просмотр (заменяет прежний просмотр, вкладки не копятся); двойной щелчок или Enter — обычная вкладка.
+      onClick={(e) => onOpen(e.ctrlKey || e.metaKey ? { background: true } : { preview: true })}
+      onDoubleClick={() => onOpen({})}
+      onAuxClick={(e) => e.button === 1 && onOpen({ background: true })}
+      {...pressable((e) => onOpen({ background: e.ctrlKey || e.metaKey }))}
     >
       <span>{name}</span>
       {opts.sub && <span className="sub">{opts.sub}</span>}
@@ -114,7 +116,7 @@ export function Navigator() {
       .filter((x) => match(x.name))
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
       .map((x) =>
-        row(x.id, x.name, (bg) => openTab('scenario', x.id, { background: bg }), {
+        row(x.id, x.name, (o) => openTab('scenario', x.id, o), {
           sub: battlesBy.get(x.id) ? `боёв: ${battlesBy.get(x.id)}` : undefined,
           active:
             (activeTab?.kind === 'scenario' || activeTab?.kind === 'montecarlo') && activeTab.ref === x.id ? true : !!activeTab?.ref?.startsWith(`sc:${x.id}:`),
@@ -128,7 +130,7 @@ export function Navigator() {
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     const rsIds = [...new Set(units.map((u) => u.rulesetId ?? ''))];
     const item = (x: (typeof units)[number]) =>
-      row(x.id, x.name, (bg) => openTab('formation', `lib:${x.id}`, { background: bg }), {
+      row(x.id, x.name, (o) => openTab('formation', `lib:${x.id}`, o), {
         sub: x.level,
         active: isOpen('formation', `lib:${x.id}`),
         dragLib: x.id,
@@ -145,7 +147,7 @@ export function Navigator() {
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     const factions = [...new Set(units.map((u) => u.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
     const item = (x: (typeof units)[number]) =>
-      row(x.id, x.name, (bg) => openTab('formation', `force:${x.id}`, { background: bg }), {
+      row(x.id, x.name, (o) => openTab('formation', `force:${x.id}`, o), {
         sub: x.level,
         active: isOpen('formation', `force:${x.id}`),
         dragForce: x.id,
@@ -169,7 +171,7 @@ export function Navigator() {
       return group(
         scName,
         items.map((b) =>
-          row(b.id, b.name.startsWith(`${scName} · `) ? b.name.slice(scName.length + 3) : b.name, (bg) => openTab('battle', b.id, { background: bg }), {
+          row(b.id, b.name.startsWith(`${scName} · `) ? b.name.slice(scName.length + 3) : b.name, (o) => openTab('battle', b.id, o), {
             sub: b.finished ? (b.headline ?? 'итог') : `ход ${b.turn}`,
             active: isOpen('battle', b.id),
           }),
@@ -187,7 +189,7 @@ export function Navigator() {
     list = Object.values(s.rulesets)
       .filter((x) => match(x.name))
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-      .map((x) => row(x.id, x.name, (bg) => openTab('ruleset', x.id, { background: bg }), { active: isOpen('ruleset', x.id) }));
+      .map((x) => row(x.id, x.name, (o) => openTab('ruleset', x.id, o), { active: isOpen('ruleset', x.id) }));
     empty = q ? 'Ничего не найдено' : 'Наборов правил нет.';
   }
   const hasItems = Array.isArray(list) ? list.some(Boolean) : !!list;

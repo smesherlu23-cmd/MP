@@ -2,6 +2,7 @@
 // ГМ может скопировать, переименовать или удалить их в программе.
 
 import { COEFFICIENT_DEFAULTS, COMPAT_NEUTRAL, DEFAULT_FEATURES, RECALIBRATED } from './coefficients';
+import { turnsFor } from './duration';
 import { instantiate, newRootUnit, newUnit, walkUnits } from './units';
 import type { ComponentType, EffectDef, Id, LevelDef, Objective, OrderDef, Ruleset, Scenario, SideDef, UnitNode } from './types';
 
@@ -657,7 +658,8 @@ export function newScenario(rs: Ruleset, name = 'Новый сценарий', s
     rulesetId: rs.id,
     conditions,
     startBand: rs.rangeBands[0]?.id ?? '',
-    maxTurns: 20,
+    hours: 4,
+    maxTurns: turnsFor(4, rs),
     seed,
     sides: [newSide('A', rs), newSide('B', rs)],
   };
@@ -870,14 +872,15 @@ export function makeLinearScenario(): Scenario {
     'Пехотная бригада с батареей и гусарами штурмует переправу, которую держит батальон за полевыми укреплениями при батарее; кирасиры обороны — в резерве. ' +
     'Ход — 20 минут, бой открывается артиллерийской дистанцией. По плану боя второй гусарский эскадрон вводится на 8-м ходу, а кирасиры около 9-го хода контратакуют (не всегда — вероятность 60%); ГМ может ввести резервы и раньше сменой приказа.';
   sc.conditions = { terrain: 'hills', time: 'day', weather: 'clear' };
-  sc.maxTurns = 16;
+  sc.hours = 6;
+  sc.maxTurns = turnsFor(sc.hours, rs);
   sc.sides[0].name = 'Синие';
   sc.sides[0].formations = [instantiate(makeLinearBrigade())];
   sc.sides[0].objectives = [newObjective('take', 0, 2), newObjective('preserve', 30, 1)];
   sc.sides[1].name = 'Красные';
   sc.sides[1].formations = [instantiate(makeLinearDefenders())];
   sc.sides[1].fortification = 'earthworks';
-  sc.sides[1].objectives = [newObjective('hold', 12, 2), newObjective('inflict', 20, 1)];
+  sc.sides[1].objectives = [newObjective('hold', 4, 2), newObjective('inflict', 20, 1)];
   // План боя: резервы вводятся по ходам — и в бою, и в массовых прогонах.
   const node = (side: 0 | 1, name: string) => {
     let id = '';
@@ -907,7 +910,8 @@ export function makeDemoScenario(): Scenario {
     'Мотострелковый батальон с приданной танковой ротой атакует подготовленный оборонительный узел усиленной роты с рубежа атаки (средняя дистанция). Сумерки, холмы. 3-я рота — в резерве комбата: ГМ может ввести её в бой между ходами (смена приказа), иначе она вступит, только если первая линия выбудет.';
   sc.conditions = { terrain: 'hills', time: 'twilight', weather: 'clear' };
   sc.startBand = 'medium';
-  sc.maxTurns = 16;
+  sc.hours = 4;
+  sc.maxTurns = turnsFor(sc.hours, rs);
   sc.sides[0].name = 'Синие';
   sc.sides[0].formations = [instantiate(makeDemoBattalion())];
   sc.sides[0].intel = 'partial';
@@ -918,6 +922,6 @@ export function makeDemoScenario(): Scenario {
   sc.sides[1].formations = [instantiate(makeDemoDefenders())];
   sc.sides[1].fortification = 'prepared';
   sc.sides[1].intel = 'partial';
-  sc.sides[1].objectives = [newObjective('hold', 12, 2), newObjective('inflict', 20, 1)];
+  sc.sides[1].objectives = [newObjective('hold', 3, 2), newObjective('inflict', 20, 1)];
   return sc;
 }

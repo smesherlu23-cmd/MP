@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { create } from 'zustand';
 
 export function Btn(props: {
   children?: ReactNode;
@@ -319,33 +320,87 @@ export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefine
       {pos &&
         createPortal(
           <div ref={pop} className="menu-pop" role="menu" style={{ top: pos.top, right: pos.right }}>
-            {items.map((it, i) =>
-              it === 'sep' ? (
-                i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? (
-                  <hr key={i} className="menu-sep" />
-                ) : null
-              ) : (
-                <button
-                  key={i}
-                  type="button"
-                  role="menuitem"
-                  className={`menu-item${it.danger ? ' danger' : ''}`}
-                  disabled={it.disabled}
-                  data-tip={it.tip}
-                  onClick={() => {
-                    close(true);
-                    it.onClick();
-                  }}
-                >
-                  {it.label}
-                  {it.kbd && <span className="kbd">{it.kbd}</span>}
-                </button>
-              ),
-            )}
+            <MenuItems items={items} onPick={() => close(true)} />
           </div>,
           document.body,
         )}
     </>
+  );
+}
+
+function MenuItems({ items, onPick }: { items: (MenuItem | 'sep')[]; onPick: () => void }) {
+  return (
+    <>
+      {items.map((it, i) =>
+        it === 'sep' ? (
+          i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? (
+            <hr key={i} className="menu-sep" />
+          ) : null
+        ) : (
+          <button
+            key={i}
+            type="button"
+            role="menuitem"
+            className={`menu-item${it.danger ? ' danger' : ''}`}
+            disabled={it.disabled}
+            data-tip={it.tip}
+            onClick={() => {
+              onPick();
+              it.onClick();
+            }}
+          >
+            {it.label}
+            {it.kbd && <span className="kbd">{it.kbd}</span>}
+          </button>
+        ),
+      )}
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ контекстное меню (правый щелчок)
+
+const useContextMenu = create<{ at: { x: number; y: number } | null; items: (MenuItem | 'sep')[] }>(() => ({ at: null, items: [] }));
+const closeContextMenu = () => useContextMenu.setState({ at: null });
+
+/** Открыть меню у указателя мыши (правый щелчок). */
+export function openContextMenu(e: React.MouseEvent, items: (MenuItem | 'sep' | false | null | undefined)[]) {
+  e.preventDefault();
+  e.stopPropagation();
+  useContextMenu.setState({ at: { x: e.clientX, y: e.clientY }, items: items.filter(Boolean) as (MenuItem | 'sep')[] });
+}
+
+export function ContextMenuHost() {
+  const { at, items } = useContextMenu();
+  const pop = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!at) return;
+    pop.current?.querySelector<HTMLButtonElement>('.menu-item:not(:disabled)')?.focus();
+    const onDown = (e: MouseEvent) => !(e.target as Element).closest?.('.menu-pop') && closeContextMenu();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Tab') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeContextMenu();
+      } else arrowNav(e, pop.current, '.menu-item');
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', closeContextMenu);
+    window.addEventListener('blur', closeContextMenu);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', closeContextMenu);
+      window.removeEventListener('blur', closeContextMenu);
+    };
+  }, [at]);
+  if (!at) return null;
+  return createPortal(
+    <div ref={pop} className="menu-pop" role="menu" style={{ top: at.y, left: Math.max(8, Math.min(at.x, window.innerWidth - 260)) }}>
+      <MenuItems items={items} onPick={closeContextMenu} />
+    </div>,
+    document.body,
   );
 }
 

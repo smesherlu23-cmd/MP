@@ -2,7 +2,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import { makeDemoBattalion, makeDemoScenario } from '../src/engine';
-import { openApp, openFromNav, startBattle } from './helpers';
+import { menu, openApp, openFromNav, startBattle } from './helpers';
 
 const blueStart = async (page: Page) =>
   Number((await page.locator('.tbl.compare tr', { hasText: 'Личный состав' }).locator('td').nth(1).locator('b').first().textContent())!.replace(/\s/g, ''));
@@ -88,5 +88,30 @@ test('данные прежней версии: копии в сценарии �
   await expect(blue.locator('.side-node', { hasText: '3-я мотострелковая рота' }).locator('select')).toHaveValue('reserve');
   await openFromNav(page, 'Старый батальон');
   await expect(page.locator('.card-head', { hasText: 'Состояние' })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('часть сил передаётся в другое подразделение и возвращается на место', async ({ page }) => {
+  const errors = await openApp(page);
+  await openFromNav(page, '1-й мотострелковый батальон');
+  const tank = page.locator('.org-box', { hasText: 'Танковая рота' });
+  await tank.click();
+  await expect(page.locator('.field', { hasText: 'Стоять насмерть' })).toHaveCount(0);
+  await expect(page.getByText('Придано', { exact: true })).toHaveCount(0);
+  await tank.locator('.org-menu button').click();
+  await menu(page, 'Передать в другое подразделение');
+  const modal = page.locator('.modal');
+  await modal.locator('.pick-row', { hasText: 'Оборонительный узел' }).locator('input[type=radio]').check();
+  await modal.getByRole('button', { name: 'Передать' }).click();
+  // Открылись силы, куда передано: рота там с отметкой «передано».
+  await expect(page.locator('.tab.active .tab-title')).toContainText('Оборонительный узел');
+  const moved = page.locator('.org-box', { hasText: 'Танковая рота' });
+  await expect(moved.locator('.badge', { hasText: 'передано' })).toHaveCount(1);
+  await moved.locator('.org-menu button').click();
+  await menu(page, 'Вернуть в «1-й мотострелковый батальон');
+  await expect(page.locator('.org-box', { hasText: 'Танковая рота' })).toHaveCount(0);
+  await openFromNav(page, '1-й мотострелковый батальон');
+  await expect(page.locator('.org-box', { hasText: 'Танковая рота' }).locator('.badge', { hasText: 'передано' })).toHaveCount(0);
+  await expect(page.locator('.org-box', { hasText: 'Танковая рота' })).toHaveCount(1);
   expect(errors).toEqual([]);
 });

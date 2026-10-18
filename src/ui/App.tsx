@@ -12,12 +12,16 @@ import { SettingsPage } from './pages/SettingsPage';
 import { Navigator } from './components/Navigator';
 import { Palette, openPalette } from './components/Palette';
 import { goBack, goForward, useNav } from './nav';
-import { Btn, Menu } from './components/ui';
+import { Btn, ContextMenuHost, Menu, openContextMenu } from './components/ui';
 import { desktop } from './storage';
 import {
   activateTab,
   alertDialog,
+  closeAllTabs,
+  closeOtherTabs,
   closeTab,
+  keepTab,
+  pinTab,
   dismissToast,
   importFile,
   moveTab,
@@ -123,11 +127,15 @@ function Tabs({ tabs, active }: { tabs: Tab[]; active?: string }) {
             sm
             label={`▾ ${tabs.length}`}
             title="Все открытые вкладки"
-            items={tabs.map((t) => ({
-              label: `${tabIcon(t)} ${tabTitle(t, s, battles)}`,
-              onClick: () => activateTab(t.key),
-              kbd: t.key === active ? '●' : undefined,
-            }))}
+            items={[
+              ...tabs.map((t) => ({
+                label: `${t.pinned ? '⊙ ' : ''}${tabIcon(t)} ${tabTitle(t, s, battles)}`,
+                onClick: () => activateTab(t.key),
+                kbd: t.key === active ? '●' : undefined,
+              })),
+              'sep' as const,
+              { label: 'Закрыть все, кроме закреплённых', onClick: closeAllTabs },
+            ]}
           />
         </div>
       )}
@@ -137,10 +145,34 @@ function Tabs({ tabs, active }: { tabs: Tab[]; active?: string }) {
 
 function TabItem({ t, active }: { t: Tab; active: boolean }) {
   const title = useTabTitle(t);
+  const tabs = useApp((s) => s.tabs);
+  const i = tabs.findIndex((x) => x.key === t.key);
   return (
     <div
-      className={`tab${active ? ' active' : ''}`}
-      title={title}
+      className={`tab${active ? ' active' : ''}${t.preview ? ' preview' : ''}${t.pinned ? ' pinned' : ''}`}
+      title={
+        t.preview
+          ? `${title}\nПросмотр: следующий объект из навигатора откроется на месте этой вкладки. Начните работать с ней или дважды щёлкните — останется.`
+          : t.pinned
+            ? `${title}\nЗакреплена — правый щелчок, чтобы открепить`
+            : title
+      }
+      onDoubleClick={() => keepTab(t.key)}
+      onContextMenu={(e) =>
+        openContextMenu(e, [
+          t.preview && { label: 'Оставить открытой', onClick: () => keepTab(t.key), tip: 'Не заменять следующим объектом из навигатора' },
+          { label: t.pinned ? 'Открепить' : 'Закрепить', onClick: () => pinTab(t.key, !t.pinned), tip: 'Закреплённые — слева, не закрываются сами' },
+          'sep',
+          { label: 'Закрыть', kbd: 'Ctrl+W', onClick: () => closeTab(t.key) },
+          { label: 'Закрыть другие', onClick: () => closeOtherTabs(t.key), disabled: tabs.every((x) => x.key === t.key || x.pinned) },
+          {
+            label: 'Закрыть вкладки справа',
+            onClick: () => closeOtherTabs(t.key, true),
+            disabled: !tabs.slice(i + 1).some((x) => !x.pinned),
+          },
+          { label: 'Закрыть все, кроме закреплённых', onClick: closeAllTabs },
+        ])
+      }
       draggable
       onDragStart={(e) => e.dataTransfer.setData('text/tab', t.key)}
       onDragOver={(e) => e.preventDefault()}
@@ -158,17 +190,23 @@ function TabItem({ t, active }: { t: Tab; active: boolean }) {
     >
       <span className="tab-icon">{tabIcon(t)}</span>
       <span className="tab-title">{title}</span>
-      <button
-        type="button"
-        className="tab-close"
-        title="Закрыть (Ctrl+W)"
-        onClick={(e) => {
-          e.stopPropagation();
-          closeTab(t.key);
-        }}
-      >
-        ×
-      </button>
+      {t.pinned ? (
+        <span className="tab-pin" title="Закреплена">
+          ⊙
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="tab-close"
+          title="Закрыть (Ctrl+W)"
+          onClick={(e) => {
+            e.stopPropagation();
+            closeTab(t.key);
+          }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }
@@ -409,11 +447,20 @@ export function App() {
         </div>
       </header>
       <Navigator />
-      <main className="content">{active && <Page key={active.key} t={active} />}</main>
+      <main
+        className="content"
+        // Вкладка-просмотр остаётся открытой, как только с ней начали работать: правка, кнопка, выбор.
+        // После события — чтобы не мешать самому вводу.
+        onInputCapture={() => active?.preview && setTimeout(() => keepTab(active.key))}
+        onClickCapture={(e) => active?.preview && (e.target as Element).closest('button, select, [role=menuitem]') && setTimeout(() => keepTab(active.key))}
+      >
+        {active && <Page key={active.key} t={active} />}
+      </main>
       <DialogHost />
       <Palette />
       <Toasts />
       <TooltipHost />
+      <ContextMenuHost />
     </div>
   );
 }

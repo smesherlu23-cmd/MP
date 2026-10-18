@@ -2,6 +2,7 @@
 
 import { EngineContext, clamp, s } from './context';
 import { clone, defaultCommandLevel, normalizeRuleset, SCHEMA_VERSION } from './defaults';
+import { scenarioInTurns } from './duration';
 import { plural } from './labels';
 import { defaultObjectives } from './outcome';
 import { Rng } from './rng';
@@ -40,7 +41,9 @@ export interface CreateOptions {
 
 export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateOptions = {}): Battle {
   const rs = opts.shareInputs ? ruleset : normalizeRuleset(clone(ruleset), opts.compat);
-  const sc = opts.shareInputs ? scenario : clone(scenario);
+  // ГМ задаёт длительность в часах; бой идёт ходами — в бою сценарий хранится уже в ходах.
+  const inTurns = scenarioInTurns(scenario, rs);
+  const sc = opts.shareInputs ? inTurns : clone(inTurns);
   const seed = opts.seed ?? sc.seed ?? 'seed';
   const rng = Rng.fromSeed(seed);
   const b: Battle = {
@@ -124,8 +127,11 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
      * Узел с подчинёнными (и любой корень) становится формированием — звеном управления.
      * Узел с собственным составом становится элементом — тем, что стреляет и несёт потери.
      */
-    const addNode = (node: UnitNode, parentF: FormationState | null, parentRes: Resolved, parentSector: Id | undefined) => {
+    // «Стоять насмерть» задаётся в сценарии у подразделения и действует на всех его подчинённых.
+    const holdIds = new Set(sd.holdFast ?? []);
+    const addNode = (node: UnitNode, parentF: FormationState | null, parentRes: Resolved, parentSector: Id | undefined, parentHold = false) => {
       const res = resolveChild(node, parentRes);
+      const hold = parentHold || holdIds.has(node.id);
       const own = sd.sectorOf?.[node.id];
       const sector = own && sectorIds.has(own) ? own : parentSector;
       const order = res.order && orderIds.has(res.order) ? res.order : (parentF?.orderId ?? defaultOrder);
@@ -163,6 +169,7 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
           warnings,
         );
         if (b.sectors) el.sector = sector ?? b.sectors[0].id;
+        if (hold) el.holdFast = true;
         if (!withKids) {
           // Связь и снабжение у подразделения без подчинённых (своего командира у него нет — им командует формирование).
           el.comms = node.comms;
@@ -172,7 +179,7 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       } else if (!node.children.length) {
         warnings.push(`подразделение «${node.name}» без состава и подчинённых — в бою не участвует.`);
       }
-      for (const ch of node.children) addNode(ch, f, res, sector);
+      for (const ch of node.children) addNode(ch, f, res, sector, hold);
     };
     // Части, исключённые из этого боя (в сценарии), не создаются вовсе; при неполном составе — только выделенные.
     for (const f of sd.formations) {

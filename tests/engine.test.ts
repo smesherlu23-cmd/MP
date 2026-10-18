@@ -65,6 +65,14 @@ import {
   orderChance,
   recalibrateRuleset,
   limitComposition,
+  transferUnit,
+  returnUnit,
+  findUnit,
+  relinkScenario,
+  locateNode,
+  scenarioInTurns,
+  scenarioToHours,
+  turnsFor,
   type Battle,
   type UnitNode,
   type Ruleset,
@@ -302,7 +310,7 @@ describe('бой', () => {
   });
 
   it('малые группы (2–3 бойца): потери целые, численность не уходит в минус', () => {
-    const s = duel(rs, infantry('Дозор', 3), infantry('Секрет', 2, 'defend'), { startBand: 'close', maxTurns: 30 });
+    const s = duel(rs, infantry('Дозор', 3), infantry('Секрет', 2, 'defend'), { startBand: 'close', hours: 7.5 });
     for (let i = 0; i < 30; i++) {
       const b = createBattle(s, rs, { seed: `small-${i}`, silent: true });
       runToEnd(b);
@@ -365,7 +373,7 @@ describe('бой', () => {
   it('укрепления снижают потери обороняющихся (по 60 прогонам)', () => {
     const a = infantry('Атака', 120);
     const d = infantry('Оборона', 60, 'defend');
-    const base = duel(rs, a, d, { maxTurns: 10 });
+    const base = duel(rs, a, d, { hours: 2.5 });
     const fortified = clone(base);
     fortified.sides[1].fortification = 'fortified';
     const m1 = runMany(base, rs, 60, 'f').metrics.find((m) => m.key === 'B.personnelLossPct')!.stats.mean;
@@ -374,7 +382,7 @@ describe('бой', () => {
   });
 
   it('зеркальный бой примерно равновесен', () => {
-    const s = duel(rs, infantry('Левые', 100, 'defend'), infantry('Правые', 100, 'defend'), { maxTurns: 12 });
+    const s = duel(rs, infantry('Левые', 100, 'defend'), infantry('Правые', 100, 'defend'), { hours: 3 });
     const r = runMany(s, rs, 200, 'mirror');
     expect(Math.abs(r.winA - r.winB)).toBeLessThan(20);
     expect(r.winA + r.winB + r.draw).toBeCloseTo(100, 5);
@@ -400,7 +408,7 @@ describe('бой', () => {
       order: 'defend',
       children: [newUnit('Застава', { composition: rifles(5) }), newUnit('Резерв', { order: 'reserve', echelon: 'rear', composition: rifles(30) })],
     });
-    const s = duel(rs, infantry('Атака', 150), d, { startBand: 'close', maxTurns: 25 });
+    const s = duel(rs, infantry('Атака', 150), d, { startBand: 'close', hours: 6.25 });
     let committed = 0;
     for (let i = 0; i < 10; i++) {
       const b = createBattle(s, rs, { seed: `res-${i}` });
@@ -1167,5 +1175,101 @@ describe('неполный состав в бою (малые операции)'
     const newIdOf = forces[0].id;
     expect(newIdOf).not.toBe(own.id);
     expect(scenario.sides[0].partial).toEqual({ [newIdOf]: { rifleman: 2 } });
+  });
+});
+
+describe('часы боя, «стоять насмерть» в сценарии, передача частей', () => {
+  const rs = makeUniversalRuleset();
+  const split = (src = makeDemoScenario()) => {
+    const { scenario, forces } = extractForces(src, new Set(), () => newId('u'));
+    return { scenario, forces: Object.fromEntries(forces.map((f) => [f.id, f])) as Record<string, UnitNode> };
+  };
+
+  it('длительность в часах: ходов — по длине хода набора правил; «удержать позицию» — тоже в часах', () => {
+    const sc = makeDemoScenario();
+    expect(sc.hours).toBe(4);
+    const b = createBattle(sc, rs, { seed: 'H1' });
+    expect(b.scenario.maxTurns).toBe(16);
+    expect(b.scenario.hours).toBeUndefined();
+    expect(b.scenario.sides[1].objectives.find((o) => o.type === 'hold')!.value).toBe(12);
+    // Ход вдвое длиннее — ходов вдвое меньше, время то же.
+    const slow = { ...clone(rs), turnMinutes: 30 };
+    expect(createBattle(sc, slow, { seed: 'H1' }).scenario.maxTurns).toBe(8);
+    expect(turnsFor(4, slow)).toBe(8);
+    // Сценарий прежней версии (в ходах) переводится на часы без изменения расчёта.
+    const old = { ...clone(sc), maxTurns: 10 };
+    delete old.hours;
+    old.sides[1].objectives = [{ ...old.sides[1].objectives[0], value: 6 }];
+    const conv = scenarioToHours(old, rs);
+    expect(conv.hours).toBe(2.5);
+    expect(conv.sides[1].objectives[0].value).toBe(1.5);
+    expect(scenarioInTurns(conv, rs).maxTurns).toBe(10);
+    expect(scenarioInTurns(conv, rs).sides[1].objectives[0].value).toBe(6);
+    // Повтор боя — по снимку в ходах, так же.
+    runToEnd(b);
+    expect(strip(replayBattle(b, { toEnd: true }))).toBe(strip(b));
+  });
+
+  it('«стоять насмерть» задаётся в сценарии и действует на подчинённых; из старых копий — переносится', () => {
+    const sc = makeDemoScenario();
+    const def = sc.sides[1].formations[0];
+    sc.sides[1].holdFast = [def.id];
+    const b = createBattle(sc, rs, { seed: 'HF' });
+    expect(b.elements.filter((x) => x.side === 'B').every((x) => x.holdFast)).toBe(true);
+    expect(b.elements.filter((x) => x.side === 'A').some((x) => x.holdFast)).toBe(false);
+    // Старый сценарий с отметкой у подразделения: при переводе на силы отметка — в сценарии, у сил её нет.
+    const old = makeDemoScenario();
+    const p1 = old.sides[1].formations[0].children.find((c) => c.name === '1-й взвод')!;
+    p1.holdFast = true;
+    const { scenario, forces } = split(old);
+    expect(scenario.sides[1].holdFast).toEqual([p1.id]);
+    walkUnits(forces[old.sides[1].formations[0].id], (n) => expect(n.holdFast).toBe(false));
+    const c = createBattle(resolveScenario(scenario, forces), rs, { seed: 'HF' });
+    expect(c.elements.find((x) => x.defId === p1.id)!.holdFast).toBe(true);
+  });
+
+  it('передача части в другое подразделение и возврат на место; ссылки сценария следуют за частью', () => {
+    const { scenario, forces } = split();
+    const bn = Object.values(forces).find((f) => f.name.includes('батальон'))!;
+    const def = Object.values(forces).find((f) => f.id !== bn.id)!;
+    const tank = bn.children.find((c) => c.name.includes('Танковая'))!;
+    const at = bn.children.indexOf(tank);
+    // Танковую роту — обороне.
+    const p = transferUnit(forces, tank.id, def.id);
+    if (typeof p === 'string') throw new Error(p);
+    const after = { ...forces, ...(p as Record<string, UnitNode>) };
+    expect(findUnit(after[bn.id], tank.id)).toBeNull();
+    const moved = findUnit(after[def.id], tank.id)!;
+    expect(moved.transfer).toMatchObject({ forceId: bn.id, parentId: bn.id, index: at, fromName: bn.name });
+    expect(typeof transferUnit(after, def.id, findUnit(after[def.id], tank.id)!.id)).toBe('string');
+    // Сценарий, где танковая рота была отдельной частью стороны, ссылается на новое место.
+    const sc2 = clone(scenario);
+    sc2.sides[0].units = [{ forceId: bn.id, nodeId: tank.id }];
+    const re = relinkScenario(sc2, after)!;
+    expect(re.sides[0].units).toEqual([{ forceId: def.id, nodeId: tank.id }]);
+    // Возврат: на прежнее место у прежнего старшего.
+    const r = returnUnit(after, tank.id);
+    if (typeof r === 'string') throw new Error(r);
+    const back = { ...after, ...(r as Record<string, UnitNode>) };
+    expect(back[bn.id].children[at].id).toBe(tank.id);
+    expect(back[bn.id].children[at].transfer).toBeUndefined();
+    expect(findUnit(back[def.id], tank.id)).toBeNull();
+    expect(relinkScenario(re, back)!.sides[0].units).toEqual([{ forceId: bn.id, nodeId: tank.id }]);
+    expect(returnUnit(back, tank.id)).toContain('никуда не передавалось');
+  });
+
+  it('силы целиком: переданы — больше не самостоятельны; возврат — снова отдельные силы', () => {
+    const { forces } = split();
+    const [a, b] = Object.values(forces);
+    const p = transferUnit(forces, a.id, b.id) as Record<string, UnitNode | null>;
+    expect(p[a.id]).toBeNull();
+    const after: Record<string, UnitNode> = {};
+    for (const [id, f] of Object.entries({ ...forces, ...p })) if (f) after[id] = f;
+    expect(after[a.id]).toBeUndefined();
+    expect(locateNode(after, a.id)!.force.id).toBe(b.id);
+    const r = returnUnit(after, a.id) as Record<string, UnitNode | null>;
+    expect(r[a.id]!.id).toBe(a.id);
+    expect(r[a.id]!.transfer).toBeUndefined();
+    expect(findUnit(r[b.id]!, a.id)).toBeNull();
   });
 });

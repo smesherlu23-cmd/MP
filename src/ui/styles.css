@@ -3074,3 +3074,52 @@ button.partial-stats:focus-visible {
 .partial-table td {
   vertical-align: middle;
 }
+button.hold-toggle {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  padding: 0 7px;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--faint);
+  cursor: pointer;
+  white-space: nowrap;
+}
+button.hold-toggle:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--muted);
+}
+button.hold-toggle.on {
+  border: 1px solid transparent;
+  background: var(--accent-soft);
+  color: var(--warn);
+  font-weight: 600;
+}
+button.hold-toggle:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+/* В структуре стороны переключатель виден при наведении (или если включён). */
+.side-node button.hold-toggle:not(.on) {
+  visibility: hidden;
+}
+.side-node:hover button.hold-toggle,
+.side-node button.hold-toggle:focus-visible {
+  visibility: visible;
+}
+/* Вкладка-просмотр: следующий объект из навигатора откроется на её месте. */
+.tab.preview .tab-title {
+  font-style: italic;
+}
+/* Закреплённые вкладки — слева, уже, без крестика. */
+.tab.pinned {
+  flex: 0 1 150px;
+  min-width: 70px;
+  box-shadow: inset 0 -2px 0 var(--accent-soft);
+}
+.tab .tab-pin {
+  font-size: 11px;
+  opacity: 0.6;
+  padding: 0 4px;
+}

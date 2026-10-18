@@ -7,13 +7,30 @@ import { COEFFICIENT_DEFAULTS } from './coefficients';
 import { plural } from './labels';
 import { STATE_KEYS } from './types';
 import type { Battle, ComponentType, ElementState, ForceRecord, Id, Ruleset, Scenario, SideDef, SideUnitRef, UnitNode, UnitState } from './types';
-import { cloneDeep, instantiate, pathTo, type Resolved, resolveChild, ROOT_COMMS, ROOT_RESOLVED, ROOT_STATE, ROOT_SUPPLY, unitHash, walkUnits } from './units';
+import {
+  cloneDeep,
+  findParent,
+  findUnit,
+  instantiate,
+  pathTo,
+  removeUnit,
+  type Resolved,
+  resolveChild,
+  ROOT_COMMS,
+  ROOT_RESOLVED,
+  ROOT_STATE,
+  ROOT_SUPPLY,
+  unitHash,
+  walkUnits,
+} from './units';
 import type { Issue } from './validate';
 
 /** Убрать из дерева всё, что относится к конкретным силам или бою: приказы, состояние, некомплект. */
 function stripInPlace(root: UnitNode) {
   walkUnits(root, (n) => {
     n.order = null;
+    // «Стоять насмерть» — решение на бой, оно задаётся в сценарии.
+    n.holdFast = false;
     n.state = {};
     n.comms = null;
     n.supply = null;
@@ -144,6 +161,7 @@ export function extractForces(sc: Scenario, taken: Set<Id>, newId: () => Id): { 
     const remap = new Map<Id, Id>();
     const units: SideUnitRef[] = [];
     const orders: Record<Id, Id> = { ...(sd.orders ?? {}) };
+    const hold = new Set<Id>();
     for (const copy of sd.formations) {
       const force = cloneDeep(copy);
       let clash = false;
@@ -158,6 +176,9 @@ export function extractForces(sc: Scenario, taken: Set<Id>, newId: () => Id): { 
         taken.add(n.id);
         if (n.order) orders[n.id] = n.order;
         n.order = null;
+        // «Стоять насмерть» — решение на бой: из подразделения — в сценарий.
+        if (n.holdFast) hold.add(n.id);
+        n.holdFast = false;
       });
       force.rulesetId = sc.rulesetId;
       force.faction = sd.name;
@@ -170,6 +191,7 @@ export function extractForces(sc: Scenario, taken: Set<Id>, newId: () => Id): { 
       if (sd.commanders) sd.commanders = Object.fromEntries(Object.entries(sd.commanders).map(([k, v]) => [map(k), v]));
       if (sd.excluded) sd.excluded = sd.excluded.map(map);
       if (sd.partial) sd.partial = Object.fromEntries(Object.entries(sd.partial).map(([k, v]) => [map(k), v]));
+      if (sd.holdFast) sd.holdFast = sd.holdFast.map(map);
       if (sd.sectorOf) sd.sectorOf = Object.fromEntries(Object.entries(sd.sectorOf).map(([k, v]) => [map(k), v]));
       for (const ev of out.events ?? []) {
         if (ev.side === sd.id && ev.nodeId) ev.nodeId = map(ev.nodeId);
@@ -180,17 +202,29 @@ export function extractForces(sc: Scenario, taken: Set<Id>, newId: () => Id): { 
     }
     sd.units = units;
     sd.orders = orders;
+    const holdAll = new Set([...(sd.holdFast ?? []), ...hold]);
+    if (holdAll.size) sd.holdFast = [...holdAll];
     sd.formations = [];
   });
   return { scenario: out, forces };
 }
 
-/** Силы, участвовавшие в бою (id). Для боёв до появления сил — по корням сторон, если такие силы есть. */
+/**
+ * Силы, участвовавшие в бою (id). Для боёв до появления сил — по корням сторон, если такие силы есть.
+ * Часть, переданная после боя в другое подразделение, — в тех силах, где она сейчас.
+ */
 export function battleForceIds(b: Battle, forces: Record<Id, UnitNode>): Id[] {
   const ids = new Set<Id>();
   for (const sd of b.scenario.sides) {
     if (sd.units) sd.units.forEach((u) => ids.add(u.forceId));
     else sd.formations.forEach((f) => forces[f.id] && ids.add(f.id));
+  }
+  const defIds = new Set(b.elements.map((e) => e.defId));
+  for (const f of Object.values(forces)) {
+    if (ids.has(f.id)) continue;
+    let hit = false;
+    walkUnits(f, (n) => void (defIds.has(n.id) && (hit = true)));
+    if (hit) ids.add(f.id);
   }
   return [...ids].filter((id) => forces[id]);
 }
@@ -390,4 +424,116 @@ export function rehashCopies(copies: UnitNode[], before: Map<Id, string>, templa
       const t = n.templateId ? templates[n.templateId] : undefined;
       if (t && n.templateHash && n.templateHash === before.get(t.id)) n.templateHash = unitHash(t);
     });
+}
+
+// ------------------------------------------------------------------ передача частей между подразделениями
+
+/** Где сейчас узел: в каких силах (null — нигде). */
+export function locateNode(forces: Record<Id, UnitNode>, nodeId: Id): { force: UnitNode; node: UnitNode } | null {
+  for (const f of Object.values(forces)) {
+    const node = findUnit(f, nodeId);
+    if (node) return { force: f, node };
+  }
+  return null;
+}
+
+/** Изменённые силы: новая версия; null — силы больше не самостоятельны (переданы целиком в другие). */
+export type ForcesPatch = Record<Id, UnitNode | null>;
+
+/** «2-я рота · 1-й мотострелковый батальон» — откуда передана часть. */
+function placeName(force: UnitNode, parent: UnitNode | null): string {
+  if (!parent) return force.name;
+  return parent.id === force.id ? force.name : `${parent.name} · ${force.name}`;
+}
+
+/**
+ * Временно передать часть сил (или силы целиком) в другое подразделение: узел со всеми подчинёнными
+ * переносится под target и помнит, откуда он (вернуть — returnUnit). Идентификаторы узлов не меняются.
+ * Повторная передача не меняет исходного места. Ошибка — строка.
+ */
+export function transferUnit(forces: Record<Id, UnitNode>, nodeId: Id, targetId: Id, at = new Date().toISOString()): ForcesPatch | string {
+  const from = locateNode(forces, nodeId);
+  const to = locateNode(forces, targetId);
+  if (!from || !to) return 'Подразделение не найдено.';
+  if (findUnit(from.node, targetId)) return 'Нельзя передать подразделение в его же подчинённое.';
+  const isRoot = from.force.id === nodeId;
+  const parent = isRoot ? null : findParent(from.force, nodeId);
+  if (parent?.id === targetId) return 'Подразделение уже подчинено этому.';
+  const out: ForcesPatch = {};
+  const src = cloneDeep(from.force);
+  const dst = to.force.id === from.force.id ? src : cloneDeep(to.force);
+  let moved: UnitNode;
+  let index = 0;
+  if (isRoot) {
+    moved = src;
+    out[src.id] = null;
+  } else {
+    const p = findParent(src, nodeId)!;
+    index = p.children.findIndex((c) => c.id === nodeId);
+    moved = p.children.splice(index, 1)[0];
+    out[src.id] = src;
+  }
+  moved.transfer ??= { forceId: from.force.id, parentId: parent?.id ?? null, index, fromName: placeName(from.force, parent), at };
+  findUnit(dst, targetId)!.children.push(moved);
+  out[dst.id] = dst;
+  return out;
+}
+
+/**
+ * Вернуть переданную часть на место: под прежнего старшего (где бы он сейчас ни был) или снова
+ * самостоятельными силами. Если прежнего старшего уже нет — в прежние силы, если нет и их — отдельными силами.
+ */
+export function returnUnit(forces: Record<Id, UnitNode>, nodeId: Id): ForcesPatch | string {
+  const here = locateNode(forces, nodeId);
+  if (!here) return 'Подразделение не найдено.';
+  const t = here.node.transfer;
+  if (!t) return 'Подразделение никуда не передавалось — возвращать некуда.';
+  if (here.force.id === nodeId) return 'Это самостоятельные силы.';
+  const out: ForcesPatch = {};
+  const cur = cloneDeep(here.force);
+  const moved = removeUnit(cur.children, nodeId)!;
+  delete moved.transfer;
+  out[cur.id] = cur;
+  const now = (id: Id) => (id in out ? out[id] : forces[id]) ?? null;
+  const all = (): Record<Id, UnitNode> => {
+    const m: Record<Id, UnitNode> = {};
+    for (const id of new Set([...Object.keys(forces), ...Object.keys(out)])) {
+      const f = now(id);
+      if (f) m[id] = f;
+    }
+    return m;
+  };
+  const home = t.parentId !== null ? (locateNode(all(), t.parentId) ?? (now(t.forceId) ? { force: now(t.forceId)!, node: now(t.forceId)! } : null)) : null;
+  if (!home || forces[moved.id]) {
+    // Снова самостоятельные силы (или прежнего места больше нет).
+    out[moved.id] = moved;
+    return out;
+  }
+  const host = home.force.id in out ? out[home.force.id]! : cloneDeep(home.force);
+  const parent = findUnit(host, home.node.id)!;
+  parent.children.splice(Math.min(t.index, parent.children.length), 0, moved);
+  out[host.id] = host;
+  return out;
+}
+
+/** Ссылки сценария на силы — туда, где части сейчас (после передачи или возврата). null — ничего не изменилось. */
+export function relinkScenario(sc: Scenario, forces: Record<Id, UnitNode>): Scenario | null {
+  let changed = false;
+  const sides = sc.sides.map((sd) => {
+    if (!sd.units) return sd;
+    const units = sd.units.map((u) => {
+      const id = u.nodeId ?? u.forceId;
+      const f = forces[u.forceId];
+      if (f && findUnit(f, id)) return u;
+      const at = locateNode(forces, id);
+      if (!at) return u;
+      changed = true;
+      const ref: SideUnitRef = { ...u, forceId: at.force.id };
+      if (id === at.force.id) delete ref.nodeId;
+      else ref.nodeId = id;
+      return ref;
+    });
+    return { ...sd, units };
+  });
+  return changed ? { ...sc, sides: sides as Scenario['sides'] } : null;
 }
