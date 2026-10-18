@@ -100,3 +100,31 @@ test('узкое окно: вкладки сжимаются, лишние — �
   await expect(page.locator('.tab.active .tab-title')).toHaveText('Главная');
   expect(errors).toEqual([]);
 });
+
+test('неполный состав: из взвода в бой идут трое, остальные остаются в силах', async ({ page }) => {
+  const errors = await openApp(page);
+  await openFromNav(page, 'атака на высоту');
+  const red = page.locator('.side-card').nth(1);
+  await red.locator('.side-unit').first().locator('.side-fold').click();
+  const row = red.locator('.side-node', { hasText: '1-й взвод' });
+  await row.locator('.partial-stats').click();
+  const modal = page.locator('.modal');
+  await expect(modal).toContainText('Кто идёт в бой — «1-й взвод»');
+  const typeRow = (name: string) => modal.locator('tr', { hasText: name });
+  await typeRow('Стрелок').locator('input').fill('3');
+  await typeRow('Стрелок').locator('input').blur();
+  for (const name of ['Пулемёт', 'Противотанк']) {
+    const r = typeRow(name);
+    if (await r.count()) await r.getByRole('button', { name: '0' }).click();
+  }
+  await expect(modal).toContainText('В бою: 3 из');
+  await modal.getByRole('button', { name: 'Готово' }).click();
+  await expect(row.locator('.partial-btn')).toContainText('в бою 3 из');
+  await expect(red.locator('.side-unit').first()).toContainText('неполный состав: 1 часть');
+
+  await startBattle(page);
+  const forces = page.locator('.tbl.forces').nth(1);
+  await expect(forces.locator('tr', { hasText: '1-й взвод' }).locator('td.num').first()).toHaveText('3/3');
+  await expect(page.locator('.battle-log')).toContainText('В бою не весь состав');
+  expect(errors).toEqual([]);
+});

@@ -6,8 +6,8 @@
 import { COEFFICIENT_DEFAULTS } from './coefficients';
 import { plural } from './labels';
 import { STATE_KEYS } from './types';
-import type { Battle, ComponentType, ElementState, ForceRecord, Id, Ruleset, Scenario, SideDef, SideUnitRef, UnitNode } from './types';
-import { cloneDeep, instantiate, pathTo, resolveChild, ROOT_COMMS, ROOT_RESOLVED, ROOT_STATE, ROOT_SUPPLY, unitHash, walkUnits } from './units';
+import type { Battle, ComponentType, ElementState, ForceRecord, Id, Ruleset, Scenario, SideDef, SideUnitRef, UnitNode, UnitState } from './types';
+import { cloneDeep, instantiate, pathTo, type Resolved, resolveChild, ROOT_COMMS, ROOT_RESOLVED, ROOT_STATE, ROOT_SUPPLY, unitHash, walkUnits } from './units';
 import type { Issue } from './validate';
 
 /** Убрать из дерева всё, что относится к конкретным силам или бою: приказы, состояние, некомплект. */
@@ -169,6 +169,7 @@ export function extractForces(sc: Scenario, taken: Set<Id>, newId: () => Id): { 
     if (remap.size) {
       if (sd.commanders) sd.commanders = Object.fromEntries(Object.entries(sd.commanders).map(([k, v]) => [map(k), v]));
       if (sd.excluded) sd.excluded = sd.excluded.map(map);
+      if (sd.partial) sd.partial = Object.fromEntries(Object.entries(sd.partial).map(([k, v]) => [map(k), v]));
       if (sd.sectorOf) sd.sectorOf = Object.fromEntries(Object.entries(sd.sectorOf).map(([k, v]) => [map(k), v]));
       for (const ev of out.events ?? []) {
         if (ev.side === sd.id && ev.nodeId) ev.nodeId = map(ev.nodeId);
@@ -205,6 +206,7 @@ export interface ForceChange {
 /**
  * Записать итоги боя в силы: потери вычитаются из текущей численности (раненые и повреждённая
  * техника — в «раненые / в ремонте»), состояние (мораль, усталость, боезапас…) — как в конце боя.
+ * Если в бою был не весь состав узла, состояние меняется на долю участвовавших: оставшиеся в бою не были.
  * Возвращает новые версии сил и сводку изменений; шаблоны не затрагиваются.
  */
 export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { updated: UnitNode[]; changes: ForceChange[] } {
@@ -215,15 +217,37 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
   const at = new Date().toISOString();
   const maxExp = Math.max(1, b.ruleset.experienceLevels.length);
   const every = Math.max(0, Math.round(coef(b.ruleset, 'expGainBattles')));
+  const partial = new Set(b.scenario.sides.flatMap((sd) => Object.keys(sd.partial ?? {})));
+  const men = (typeId: Id, n: number) => {
+    const t = types.get(typeId);
+    return t?.kind === 'personnel' ? n : n * (t?.crew ?? 0);
+  };
   for (const id of battleForceIds(b, forces)) {
     const f = cloneDeep(forces[id]);
     let personnel = 0;
     let equipment = 0;
     let side: ElementState['side'] | undefined;
+    // Состояние узлов до боя (с наследованием) — для узлов, где в бою был не весь состав.
+    const before = new Map<Id, UnitState>();
+    if (partial.size) {
+      const visit = (n: UnitNode, parent: Resolved) => {
+        const r = resolveChild(n, parent);
+        before.set(n.id, r.state);
+        for (const c of n.children) visit(c, r);
+      };
+      visit(f, ROOT_RESOLVED);
+    }
     walkUnits(f, (n) => {
       const el = byNode.get(n.id);
       if (!el || el.status === 'pending') return;
       side ??= el.side;
+      // Доля участвовавших (по людям, включая экипажи) — до вычета потерь.
+      let share = 1;
+      if (partial.has(n.id)) {
+        const all = n.composition.reduce((a, c) => a + men(c.typeId, Math.max(0, c.current)), 0);
+        const took = el.comps.reduce((a, c) => a + men(c.typeId, c.start), 0);
+        if (all > 0) share = Math.min(1, took / all);
+      }
       for (const c of n.composition) {
         const s = el.comps.find((x) => x.typeId === c.typeId);
         if (!s) continue;
@@ -237,7 +261,10 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
         if (back) c.recoverable = (c.recoverable ?? 0) + back;
         if (t?.kind !== 'personnel') equipment += lost;
       }
-      for (const k of STATE_KEYS) n.state[k] = Math.round(el[k]);
+      for (const k of STATE_KEYS) {
+        const was = before.get(n.id)?.[k];
+        n.state[k] = Math.round(share >= 1 || was === undefined ? el[k] : was + (el[k] - was) * share);
+      }
     });
     const r = b.result;
     const outcome = r ? (!r.winner || r.winner === side ? r.outcomeName : `${r.outcomeName} противника`) : undefined;

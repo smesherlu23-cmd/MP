@@ -64,6 +64,7 @@ import {
   frontage,
   orderChance,
   recalibrateRuleset,
+  limitComposition,
   type Battle,
   type UnitNode,
   type Ruleset,
@@ -1113,5 +1114,58 @@ describe('ширина фронта, удача стороны, доведени
     expect(r.coefficients.moralePerLossPct).toBe(1.5);
     expect(r.coefficients.retreatLossPct).toBe(45);
     expect(recalibrateRuleset(r)).toEqual([]);
+  });
+});
+
+describe('неполный состав в бою (малые операции)', () => {
+  const rs = makeUniversalRuleset();
+  const squad = () => newRootUnit('Отделение', { composition: [...rifles(9), { typeId: 'mg', authorized: 1, current: 1 }], state: { morale: 80 } });
+
+  it('из состава в бой идёт только выделенное: по типам, вплоть до одного; остальное не меняется', () => {
+    const comp = squad().composition;
+    expect(limitComposition(comp, { rifleman: 3, mg: 0 })).toEqual([{ typeId: 'rifleman', authorized: 3, current: 3 }]);
+    expect(limitComposition(comp, { rifleman: 1 })).toEqual([{ typeId: 'rifleman', authorized: 1, current: 1 }, comp[1]]);
+    // Не меньше, чем в строю, — весь состав как есть.
+    expect(limitComposition(comp, { rifleman: 20 })).toBe(comp);
+    const u = squad();
+    expect(withoutExcluded(u, [], { [u.id]: { rifleman: 0, mg: 0 } })).toBeNull();
+    // Из батареи не выделено никого — её в бою нет; само подразделение не меняется.
+    const bn = makeDemoBattalion();
+    const bat = bn.children.find((c) => c.name.includes('Миномётная'))!;
+    const pruned = withoutExcluded(bn, [], { [bat.id]: { mortar: 0, truck: 0 } })!;
+    expect(pruned.children.some((c) => c.id === bat.id)).toBe(false);
+    expect(bn.children.some((c) => c.id === bat.id)).toBe(true);
+  });
+
+  it('бой идёт с выделенными, итоги ложатся на всё подразделение сил; состояние — на долю участвовавших', () => {
+    const own = squad();
+    const sc = duel(rs, own, infantry('Дозор', 3, 'defend'));
+    sc.sides[0].partial = { [own.id]: { rifleman: 3, mg: 0 } };
+    expect(summarizeUnits(sideUnits(sc.sides[0]), rs).persCur).toBe(3);
+    const { scenario, forces } = extractForces(sc, new Set(), () => newId('u'));
+    const map = Object.fromEntries(forces.map((f) => [f.id, f])) as Record<string, UnitNode>;
+    const b = createBattle(resolveScenario(scenario, map), rs, { seed: 'P1' });
+    const el = b.elements.find((x) => x.side === 'A')!;
+    expect(el.startPersonnel).toBe(3);
+    expect(el.comps.map((c) => c.typeId)).toEqual(['rifleman']);
+    expect(b.log.some((e) => e.phase === 'setup' && e.text.includes('Стрелок 3 из 9'))).toBe(true);
+    runToEnd(b);
+    const lost = el.comps[0].start - el.comps[0].current;
+    const f = applyBattleToForces(b, map).updated.find((x) => x.id === own.id)!;
+    expect(f.composition.find((c) => c.typeId === 'rifleman')!.current).toBe(9 - lost);
+    expect(f.composition.find((c) => c.typeId === 'mg')!.current).toBe(1);
+    // Доля участвовавших — по людям с расчётами: 3 стрелка из 9 стрелков и расчёта пулемёта.
+    const crew = rs.componentTypes.find((t) => t.id === 'mg')!.crew;
+    expect(f.state.morale).toBe(Math.round(80 + (el.morale - 80) * (3 / (9 + crew))));
+  });
+
+  it('импорт сценария с занятыми идентификаторами: неполный состав следует за новыми', () => {
+    const own = squad();
+    const sc = duel(rs, own, infantry('Б', 3, 'defend'));
+    sc.sides[0].partial = { [own.id]: { rifleman: 2 } };
+    const { scenario, forces } = extractForces(sc, new Set([own.id]), () => newId('u'));
+    const newIdOf = forces[0].id;
+    expect(newIdOf).not.toBe(own.id);
+    expect(scenario.sides[0].partial).toEqual({ [newIdOf]: { rifleman: 2 } });
   });
 });

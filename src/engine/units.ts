@@ -201,18 +201,53 @@ export function extractPart(root: UnitNode, nodeId: Id): UnitNode | null {
   return c;
 }
 
-/** Подразделение без исключённых из боя частей (вместе с их подчинёнными). null — исключено целиком. */
-export function withoutExcluded(root: UnitNode, excluded?: Iterable<Id>): UnitNode | null {
+/**
+ * Состав узла, выделенный в бой: по типам из limit — не больше заданного (штат выделенной группы — её
+ * численность), остальные типы — как есть. Тип, из которого не выделено никого, в состав не входит.
+ */
+export function limitComposition(composition: ComponentEntry[], limit: Record<Id, number> | undefined): ComponentEntry[] {
+  if (!limit) return composition;
+  const total = new Map<Id, number>();
+  for (const c of composition) total.set(c.typeId, (total.get(c.typeId) ?? 0) + Math.max(0, c.current));
+  const left = new Map<Id, number>();
+  for (const [typeId, v] of Object.entries(limit)) if ((total.get(typeId) ?? 0) > v) left.set(typeId, Math.max(0, Math.floor(v)));
+  if (!left.size) return composition;
+  const out: ComponentEntry[] = [];
+  for (const c of composition) {
+    const rest = left.get(c.typeId);
+    if (rest === undefined) {
+      out.push(c);
+      continue;
+    }
+    const take = Math.min(Math.max(0, c.current), rest);
+    left.set(c.typeId, rest - take);
+    if (take > 0) out.push({ typeId: c.typeId, authorized: take, current: take });
+  }
+  return out;
+}
+
+/**
+ * Подразделение так, как оно вступает в бой: без исключённых частей (вместе с их подчинёнными) и с
+ * неполным составом, если он задан. null — не участвует целиком.
+ */
+export function withoutExcluded(root: UnitNode, excluded?: Iterable<Id>, partial?: SideDef['partial']): UnitNode | null {
   const ex = new Set(excluded ?? []);
-  if (!ex.size) return root;
-  if (ex.has(root.id)) return null;
-  const prune = (n: UnitNode): UnitNode => ({ ...n, children: n.children.filter((c) => !ex.has(c.id)).map(prune) });
+  const lim = partial && Object.keys(partial).length ? partial : undefined;
+  if (!ex.size && !lim) return root;
+  const prune = (n: UnitNode): UnitNode | null => {
+    if (ex.has(n.id)) return null;
+    const children = n.children.map(prune).filter((c): c is UnitNode => !!c);
+    const composition = limitComposition(n.composition, lim?.[n.id]);
+    // Из узла в бой не выделено никого и подчинённых в бою нет — узел не участвует.
+    if (n.composition.length && !composition.length && !children.length) return null;
+    return { ...n, children, composition };
+  };
   return prune(root);
 }
 
-/** Подразделения стороны сценария так, как они вступают в бой: без исключённых частей. */
-export function sideUnits(side: Pick<SideDef, 'formations' | 'excluded'>): UnitNode[] {
-  return side.formations.map((f) => withoutExcluded(f, side.excluded)).filter((f): f is UnitNode => !!f);
+/** Подразделения стороны сценария так, как они вступают в бой: без исключённых частей, с неполным составом. */
+export function sideUnits(side: Pick<SideDef, 'formations' | 'excluded' | 'partial'>): UnitNode[] {
+  return side.formations.map((f) => withoutExcluded(f, side.excluded, side.partial)).filter((f): f is UnitNode => !!f);
 }
 
 /** Отпечаток «устройства» подразделения: всё, что переносится из шаблона в копии. Названия и состояние не входят. */

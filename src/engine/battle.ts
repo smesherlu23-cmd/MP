@@ -6,7 +6,7 @@ import { plural } from './labels';
 import { defaultObjectives } from './outcome';
 import { Rng } from './rng';
 import type { Battle, CompState, ElementState, FormationState, Id, Ruleset, Scenario, SideId, SideState, UnitNode } from './types';
-import { migrateUnit, resolveChild, ROOT_RESOLVED, withoutExcluded, type Resolved } from './units';
+import { limitComposition, migrateUnit, resolveChild, ROOT_RESOLVED, withoutExcluded, type Resolved } from './units';
 import { phaseChecks } from './phases/checks';
 import { SIDES, elementsOfNode } from './phases/common';
 import { phaseDetection } from './phases/detection';
@@ -174,9 +174,9 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       }
       for (const ch of node.children) addNode(ch, f, res, sector);
     };
-    // Части, исключённые из этого боя (в сценарии), не создаются вовсе.
+    // Части, исключённые из этого боя (в сценарии), не создаются вовсе; при неполном составе — только выделенные.
     for (const f of sd.formations) {
-      const u = withoutExcluded(migrateUnit(f), sd.excluded);
+      const u = withoutExcluded(migrateUnit(f), sd.excluded, sd.partial);
       if (u) addNode(u, null, ROOT_RESOLVED, undefined);
     }
   }
@@ -236,6 +236,8 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       level: 0,
       text: `Огневая поддержка: ${b.support.map((a) => `${b.sides[a.side].name} — «${a.name}» (${a.count} × ${rs.componentTypes.find((t) => t.id === a.typeId)?.name ?? a.typeId}, ударов: ${a.left})`).join('; ')}.`,
     });
+  const partial = partialNotes(sc, rs);
+  if (partial.length) E.log({ phase: 'setup', level: 0, text: `В бою не весь состав: ${partial.join('; ')}.` });
   for (const side of SIDES) {
     const els = E.sideElements(side);
     const pers = els.reduce((a, x) => a + x.startPersonnel, 0);
@@ -265,6 +267,33 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
   snapshot(E);
   E.commit();
   return b;
+}
+
+/** Узлы с неполным составом в этом бою — для вводной записи журнала: «стрелок 3 из 7». */
+function partialNotes(sc: Scenario, rs: Ruleset): string[] {
+  const out: string[] = [];
+  const count = (list: UnitNode['composition'], typeId: Id) => list.filter((c) => c.typeId === typeId).reduce((a, c) => a + Math.max(0, c.current), 0);
+  for (const sd of sc.sides) {
+    const partial = sd.partial;
+    if (!partial) continue;
+    const ex = new Set(sd.excluded ?? []);
+    const visit = (n: UnitNode) => {
+      if (ex.has(n.id)) return;
+      const lim = partial[n.id];
+      if (lim) {
+        const used = limitComposition(n.composition, lim);
+        const parts = Object.keys(lim).flatMap((typeId) => {
+          const cur = count(n.composition, typeId);
+          const take = count(used, typeId);
+          return take < cur ? [`${rs.componentTypes.find((t) => t.id === typeId)?.name ?? typeId} ${take} из ${cur}`] : [];
+        });
+        if (parts.length) out.push(`${sd.name}, «${n.name}» — ${parts.join(', ')}`);
+      }
+      n.children.forEach(visit);
+    };
+    sd.formations.forEach(visit);
+  }
+  return out;
 }
 
 function makeElement(

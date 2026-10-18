@@ -32,6 +32,7 @@ import { effectsText } from '../components/EffectsEditor';
 import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
 import { AddUnitsModal } from '../components/AddUnits';
+import { PartialButton, type PartialLimit, PartialModal, partialCount } from '../components/PartialStrength';
 import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
 import { SectorSelect, SectorsEditor } from '../components/SectorsEditor';
 import { SideSupport } from '../components/SupportEditor';
@@ -252,8 +253,11 @@ function SideTree(props: {
   sc?: Scenario;
   sectorOf?: Record<string, string>;
   onSector?: (id: string, sectorId: string) => void;
+  /** Неполный состав частей в этом бою. */
+  partial?: Record<string, PartialLimit>;
+  onPartial?: (n: UnitNode) => void;
 }) {
-  const { root, refId, rs, arrivals, excluded, onToggle, orders: setOrders, onOrder, sc, sectorOf, onSector } = props;
+  const { root, refId, rs, arrivals, excluded, onToggle, orders: setOrders, onOrder, sc, sectorOf, onSector, partial, onPartial } = props;
   const stats = computeStats(root, rs);
   const LIMIT = 150;
   const rows: { n: UnitNode; depth: number; off: boolean; inherited: boolean }[] = [];
@@ -267,7 +271,7 @@ function SideTree(props: {
     <div className="side-tree">
       {onToggle && (
         <div className="faint small" style={{ padding: '2px 4px 4px' }}>
-          Галочка — часть участвует в этом бою. Снимите, чтобы воевать без неё.
+          Галочка — часть участвует в этом бою. Снимите, чтобы воевать без неё. Щелчок по численности — в бой идёт только часть состава.
         </div>
       )}
       {rows.slice(0, LIMIT).map(({ n, depth, off, inherited }) => (
@@ -324,9 +328,20 @@ function SideTree(props: {
               ))}
             </select>
           )}
-          <span className="faint small nowrap" data-tip={statsTip(stats.get(n.id))}>
-            {statsLine(stats.get(n.id))}
-          </span>
+          {onPartial && !off ? (
+            <PartialButton
+              node={n}
+              lim={partial?.[n.id]}
+              rs={rs}
+              onOpen={() => onPartial(n)}
+              text={statsLine(stats.get(n.id))}
+              tip={statsTip(stats.get(n.id))}
+            />
+          ) : (
+            <span className="faint small nowrap" data-tip={statsTip(stats.get(n.id))}>
+              {statsLine(stats.get(n.id))}
+            </span>
+          )}
         </div>
       ))}
       {rows.length > LIMIT && (
@@ -345,6 +360,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
   const upd = (fn: (s: Scenario['sides'][number]) => void) => updateScenario(sc.id, (d) => fn(d.sides[i]));
   const [over, setOver] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [partialOf, setPartialOf] = useState<UnitNode | null>(null);
   const excludedSet = new Set(side.excluded ?? []);
   const scRef = `sc:${sc.id}`;
   const defaultOrderName = rs.orders.find((o) => o.behavior === 'defend')?.name ?? 'Оборона';
@@ -409,6 +425,13 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
       else delete d.sectorOf[id];
       if (!Object.keys(d.sectorOf).length) delete d.sectorOf;
     });
+  const setPartial = (id: string, lim: PartialLimit | undefined) =>
+    upd((d) => {
+      d.partial ??= {};
+      if (lim) d.partial[id] = lim;
+      else delete d.partial[id];
+      if (!Object.keys(d.partial).length) delete d.partial;
+    });
   const remove = (ri: number, name: string) => {
     historyStep(`удаление «${name}» из сценария`);
     upd((d) => void d.units?.splice(ri, 1));
@@ -436,10 +459,13 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
         </div>
       );
     const root = rootOf(r);
-    const pruned = withoutExcluded(node, side.excluded);
+    const pruned = withoutExcluded(node, side.excluded, side.partial);
     const s = summarizeUnits(pruned ? [pruned] : [], rs);
     const isOpen = openIds.includes(`${ri}:${root}`);
     const out = countExcluded(node, excludedSet);
+    // Части (ниже самого подразделения), у которых в бою не весь состав.
+    let partN = 0;
+    walkUnits(node, (n) => void (n !== node && side.partial?.[n.id] && partialCount(n, side.partial[n.id], rs).partial && partN++));
     const part = !!r.nodeId && r.nodeId !== r.forceId;
     return (
       <div key={`${ri}:${root}`} style={attachedTo ? { marginLeft: 22 } : undefined}>
@@ -495,6 +521,12 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
                 без {out} {out === 1 ? 'части' : 'частей'}
               </span>
             )}
+            {partN > 0 && (
+              <span className="badge warn" data-tip="У части подразделений в бою не весь состав — раскройте ▸, чтобы изменить">
+                неполный состав: {partN} {plural(partN, 'часть', 'части', 'частей')}
+              </span>
+            )}
+            <PartialButton node={node} lim={side.partial?.[root]} rs={rs} onOpen={() => setPartialOf(node)} />
           </div>
           {!attachedTo && (
             <Sel
@@ -547,6 +579,8 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
             sc={sc}
             sectorOf={side.sectorOf}
             onSector={setSector}
+            partial={side.partial}
+            onPartial={setPartialOf}
           />
         )}
       </div>
@@ -660,6 +694,15 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
         <SideSupport sc={sc} i={i} rs={rs} />
       </div>
       {adding && <AddUnitsModal sc={sc} side={i} rs={rs} onClose={() => setAdding(false)} />}
+      {partialOf && (
+        <PartialModal
+          node={partialOf}
+          lim={side.partial?.[partialOf.id]}
+          rs={rs}
+          onChange={(lim) => setPartial(partialOf.id, lim)}
+          onClose={() => setPartialOf(null)}
+        />
+      )}
     </div>
   );
 }
