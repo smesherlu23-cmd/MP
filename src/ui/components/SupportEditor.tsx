@@ -32,7 +32,7 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
   return (
     <div>
       <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-        <button className="sec-toggle" onClick={() => setOpen(!open)}>
+        <button type="button" className="sec-toggle" onClick={() => setOpen(!open)}>
           <span className="chev">{open ? '▾' : '▸'}</span>
           <h4>Огневая поддержка</h4>
         </button>

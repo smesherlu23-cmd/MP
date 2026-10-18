@@ -1,6 +1,6 @@
 // Снабжение (подвоз боезапаса и топлива, износ, закрепление) и усталость.
 
-import { EngineContext, clamp, e } from '../context';
+import { type EngineContext, clamp, e } from '../context';
 import type { Factor } from '../types';
 
 // ------------------------------------------------------------------ снабжение и усталость

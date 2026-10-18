@@ -76,7 +76,7 @@ export function RulesetPage({ tab }: { tab: Tab }) {
       <div className="split" style={{ gridTemplateColumns: '190px minmax(0, 1fr)' }}>
         <nav className="vnav">
           {SECTIONS.map((x) => (
-            <button key={x.id} className={sub === x.id ? 'on' : ''} onClick={() => setTabSub(tab.key, x.id)}>
+            <button type="button" key={x.id} className={sub === x.id ? 'on' : ''} onClick={() => setTabSub(tab.key, x.id)}>
               <span>{x.label}</span>
               {x.count && <span className="faint">{x.count(r)}</span>}
             </button>
@@ -1151,6 +1151,7 @@ function CoefficientsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
 }
 
 function JsonSection({ r }: { r: Ruleset }) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: исходный JSON — при открытии набора; правки в поле не перезаписываются
   const initial = useMemo(() => JSON.stringify(r, null, 2), [r.id]);
   const [text, setText] = useState(initial);
   const [err, setErr] = useState('');

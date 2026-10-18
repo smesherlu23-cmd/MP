@@ -174,6 +174,7 @@ function SummaryRow({ s, b, open, onToggle, onElement }: { s: Summary; b: Battle
   const color = s.side ? b.sides[s.side].color : undefined;
   return (
     <>
+      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: роль button и фокус — из pressable() */}
       <div
         className={`log-entry log-sum sev-${s.pers || s.equip.size || s.down ? 'bad' : 'info'}`}
         onClick={onToggle}
@@ -257,6 +258,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
     return m;
   }, [b]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: бой меняется на месте: пересчёт по длине журнала и ревизии боя
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
     const out: { e: LogEntry; i: number }[] = [];
@@ -285,6 +287,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
 
   // Сохранённый бой хранится без подробностей: при запросе «Всё» они восстанавливаются повтором боя.
   const [restoring, setRestoring] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: restoring в зависимостях перезапускал бы эффект и отменял собственный таймер
   useEffect(() => {
     if (level < 2 || !b.logTrimmed || restoring) return;
     setRestoring(true);
@@ -313,6 +316,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
     setOpen(n);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: прокрутка к концу журнала при новых записях
   useEffect(() => {
     const el = listRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
@@ -332,7 +336,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
             { value: '2', label: 'Всё', title: 'Всё, включая огонь каждого элемента и обнаружение' },
           ]}
         />
-        <button className={`btn sm${showFilters || filtersActive ? ' active' : ''}`} onClick={() => setShowFilters(!showFilters)} title="Фильтры по стороне, фазе и тексту">
+        <button type="button" className={`btn sm${showFilters || filtersActive ? ' active' : ''}`} onClick={() => setShowFilters(!showFilters)} title="Фильтры по стороне, фазе и тексту">
           Фильтр{filtersActive ? ' •' : ''}
         </button>
       </div>
@@ -352,7 +356,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
               <input type="search" placeholder="Поиск…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1, minWidth: 90 }} />
               <div className="row" style={{ gap: 3, width: '100%' }}>
                 {PHASES.map((p) => (
-                  <button
+                  <button type="button"
                     key={p.id}
                     className={`chip${phases.includes(p.id) ? ' accent' : ''}`}
                     style={{ cursor: 'pointer' }}
@@ -379,7 +383,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
             </>
           )}
           {props.focus && (
-            <button className="chip accent" style={{ cursor: 'pointer' }} onClick={props.onClearFocus} title="Снять фильтр по элементу">
+            <button type="button" className="chip accent" style={{ cursor: 'pointer' }} onClick={props.onClearFocus} title="Снять фильтр по элементу">
               только: {b.elements.find((x) => x.id === props.focus)?.name} ×
             </button>
           )}
@@ -395,7 +399,7 @@ export function LogView(props: { b: Battle; tabKey: string; defaultLevel: 0 | 1 
       >
         {filtered.length > shown.length && (
           <div className="center" style={{ padding: 8 }}>
-            <button className="btn sm" onClick={() => setLimit(limit + 2000)}>
+            <button type="button" className="btn sm" onClick={() => setLimit(limit + 2000)}>
               Показать более ранние записи ({filtered.length - shown.length})
             </button>
           </div>

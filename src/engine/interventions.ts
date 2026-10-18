@@ -84,7 +84,7 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       const ids: string[] = p.elementIds ?? [];
       for (const id of ids) {
         const el = E.elements.get(id);
-        if (!el || el.status !== 'active') continue;
+        if (el?.status !== 'active') continue;
         el.orderId = order.id;
         if (order.behavior !== 'retreat' && order.behavior !== 'rout') el.exitTurns = 0;
       }
@@ -174,7 +174,7 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       const ids: string[] = p.elementIds ?? [];
       for (const id of ids) {
         const el = E.elements.get(id);
-        if (!el || el.status !== 'active') continue;
+        if (el?.status !== 'active') continue;
         if (typeof p.ammo === 'number') el.ammo = clamp(el.ammo + p.ammo, 0, 100);
         if (typeof p.fuel === 'number') el.fuel = clamp(el.fuel + p.fuel, 0, 100);
         if (typeof p.equipment === 'number') el.equipment = clamp(el.equipment + p.equipment, 0, 100);

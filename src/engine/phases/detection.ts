@@ -1,6 +1,6 @@
 // Обнаружение противника.
 
-import { EngineContext, clamp, e, s } from '../context';
+import { type EngineContext, clamp, e, s } from '../context';
 import type { ElementState, Factor } from '../types';
 import { SIDES } from './common';
 

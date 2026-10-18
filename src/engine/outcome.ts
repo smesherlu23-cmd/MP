@@ -1,6 +1,6 @@
 // Итоги боя: потери, боеспособность, организация, снабжение, выполнение задач и исход.
 
-import { EngineContext, lerp } from './context';
+import { type EngineContext, lerp } from './context';
 import { newObjective } from './defaults';
 import { OBJECTIVE_SHORT } from './labels';
 import type {

@@ -509,7 +509,7 @@ export class EngineContext {
       side: entry.side,
       refs: entry.refs,
       text: entry.text,
-      factors: entry.factors && entry.factors.length ? entry.factors : undefined,
+      factors: entry.factors?.length ? entry.factors : undefined,
       level: entry.level ?? 1,
       ...(entry.data ? { data: entry.data } : {}),
     });

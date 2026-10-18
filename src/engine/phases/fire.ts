@@ -1,6 +1,6 @@
 // Огонь: распределение по целям, потери, подавление; удары огневой поддержки вне поля боя.
 
-import { EngineContext, clamp, e, fm, lerp, round1, s } from '../context';
+import { type EngineContext, clamp, e, fm, lerp, round1, s } from '../context';
 import { plural } from '../labels';
 import type { ElementState, Factor, Id, SideId, StrikeOrder } from '../types';
 import { subtreeIds } from './common';

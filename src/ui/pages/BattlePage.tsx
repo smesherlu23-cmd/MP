@@ -77,6 +77,7 @@ export function BattlePage({ tab }: { tab: Tab }) {
   const b = useBattles((s) => s.battles[id]);
   const rev = useBattles((s) => s.rev[id] ?? 0);
   const [missing, setMissing] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: бой загружается один раз на вкладку
   useEffect(() => {
     if (!b) loadBattle(id).then((x) => !x && setMissing(true));
   }, [id]);
@@ -99,7 +100,9 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
   const [pauseNote, setPauseNote] = useState<string[] | null>(null);
   const rules = usePauseRules();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: бой меняется на месте: контекст пересоздаётся по ревизии
   const E = useMemo(() => new EngineContext(b), [b, rev]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: итог зависит от контекста, а он пересоздаётся с каждой ревизией боя
   const result: BattleResult = useMemo(() => b.result ?? computeResult(E), [E]);
   const rs = b.ruleset;
   const band = rs.rangeBands[b.bandIndex];
@@ -288,13 +291,13 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
       <div className="battle-body">
         <div className="battle-main">
           <div className="subtabs">
-            <button className={view === 'forces' ? 'on' : ''} onClick={() => setView('forces')}>
+            <button type="button" className={view === 'forces' ? 'on' : ''} onClick={() => setView('forces')}>
               Силы
             </button>
-            <button className={view === 'result' ? 'on' : ''} onClick={() => setView('result')}>
+            <button type="button" className={view === 'result' ? 'on' : ''} onClick={() => setView('result')}>
               {b.finished ? 'Итоги' : 'Оценка'}
             </button>
-            <button className={view === 'charts' ? 'on' : ''} onClick={() => setView('charts')}>
+            <button type="button" className={view === 'charts' ? 'on' : ''} onClick={() => setView('charts')}>
               Графики
             </button>
           </div>
@@ -557,6 +560,7 @@ function Forces(props: {
   const enemySupport = oneSide ? (b.support ?? []).some((a) => a.side !== oneSide && a.left > 0) : false;
   const [folded, setFolded] = useTabState<string[]>(`${props.tabKey}:folded`, initialFold(b));
   const fold = new Set(folded);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: сводка зависит от контекста, а он пересоздаётся с каждой ревизией боя
   const agg = useMemo(() => aggregate(b, E), [E]);
   const toggle = (id: string) => setFolded(fold.has(id) ? folded.filter((x) => x !== id) : [...folded, id]);
   const withChildren = b.formations.filter((f) => b.formations.some((x) => x.parentId === f.id) || b.elements.some((x) => x.formationId === f.id));
@@ -719,7 +723,7 @@ function FormationRows(props: {
             {!b.finished && subtree.length > 0 && (
               <input type="checkbox" className="pick-check" checked={allOn} onChange={(e) => onSelect(subtree, e.target.checked)} title="Отметить всё формирование — для группового решения" />
             )}
-            <button className="fold-btn" onClick={props.onToggle} title={props.folded ? 'Развернуть' : 'Свернуть'}>
+            <button type="button" className="fold-btn" onClick={props.onToggle} title={props.folded ? 'Развернуть' : 'Свернуть'}>
               {props.folded ? '▸' : '▾'}
             </button>
             <a

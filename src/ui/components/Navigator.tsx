@@ -9,7 +9,7 @@ import { createFormation, createScenario, deleteBattles, newForceDialog, newRule
 
 function NavItem(props: { icon: string; label: string; count?: number; selected?: boolean; here?: boolean; onClick: () => void; title?: string }) {
   return (
-    <button className={`nav-item${props.selected ? ' selected' : ''}${props.here ? ' here' : ''}`} onClick={props.onClick} title={props.title}>
+    <button type="button" className={`nav-item${props.selected ? ' selected' : ''}${props.here ? ' here' : ''}`} onClick={props.onClick} title={props.title}>
       <span className="nav-icon">{props.icon}</span>
       <span className="grow">{props.label}</span>
       {props.count !== undefined && <span className="nav-count">{props.count}</span>}
@@ -73,7 +73,7 @@ export function Navigator() {
         <div className="nav-group-title">
           <span className="grow">{title}</span>
           {onDelete && (
-            <button className="nav-group-del" onClick={onDelete} title={deleteTitle}>
+            <button type="button" className="nav-group-del" onClick={onDelete} title={deleteTitle}>
               ×
             </button>
           )}
@@ -157,7 +157,7 @@ export function Navigator() {
       <div className="nav-panel">
         <div className="nav-panel-head">{meta.label}</div>
         {meta.create && (
-          <button className="nav-create" onClick={create}>
+          <button type="button" className="nav-create" onClick={create}>
             + {meta.create}
           </button>
         )}

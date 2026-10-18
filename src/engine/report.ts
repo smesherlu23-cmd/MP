@@ -62,7 +62,7 @@ function sideBlock(r: SideResult): string[] {
     for (const f of r.formations) {
       const ind = '  '.repeat(f.depth + 1);
       lines.push(`${ind}▸ ${f.name}`);
-      lines.push(...unitBlock(f, ind + '  '));
+      lines.push(...unitBlock(f, `${ind}  `));
     }
   }
   return lines;

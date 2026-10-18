@@ -1,6 +1,6 @@
 // Проверки конца хода: выход из боя, уничтожение, паника, отход, штабы, распад, резервы, удержание.
 
-import { EngineContext, clamp, e, fm, round1, s } from '../context';
+import { type EngineContext, clamp, e, fm, round1, s } from '../context';
 import type { Behavior, ElementState, Factor, FormationState, SideId } from '../types';
 import { SIDES, subtreeIds } from './common';
 

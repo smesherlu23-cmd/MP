@@ -1,6 +1,6 @@
 // Движение: сближение по участкам, топливо, поломки на марше.
 
-import { EngineContext, e, round1, s } from '../context';
+import { type EngineContext, e, round1, s } from '../context';
 import type { ElementState, Id, SideId } from '../types';
 import { SIDES } from './common';
 

@@ -120,7 +120,7 @@ export function statsLine(s: NodeStats | undefined): string {
 }
 
 export function statsTip(s: NodeStats | undefined): string | undefined {
-  if (!s || !s.equipList.size) return undefined;
+  if (!s?.equipList.size) return undefined;
   return [...s.equipList.entries()].map(([k, v]) => `${k}: ${v}`).join('\n');
 }
 
@@ -661,15 +661,15 @@ function EmptyStart({ ctx }: { ctx: Ctx }) {
     <div className="empty-start">
       <div className="empty-start-title">Подразделение пока пустое. С чего начать?</div>
       <div className="empty-start-actions">
-        <button onClick={() => addChild(ctx, ctx.root)}>
+        <button type="button" onClick={() => addChild(ctx, ctx.root)}>
           <b>+ Подчинённое</b>
           <span>взводы, отделения, расчёты — любая глубина</span>
         </button>
-        <button onClick={() => ctx.openInsert(ctx.root.id, false)} disabled={!hasLib}>
+        <button type="button" onClick={() => ctx.openInsert(ctx.root.id, false)} disabled={!hasLib}>
           <b>Вставить из шаблонов</b>
           <span>{hasLib ? 'готовые взводы, роты, батареи' : 'подходящих шаблонов пока нет'}</span>
         </button>
-        <button onClick={focusComposition}>
+        <button type="button" onClick={focusComposition}>
           <b>Свой состав</b>
           <span>люди, оружие и техника самого подразделения — для небольшого отряда этого достаточно</span>
         </button>
@@ -722,6 +722,7 @@ function OrgChart({ ctx }: { ctx: Ctx }) {
   const zoomRef = useRef(1);
   zoomRef.current = zoom;
   // Широкая схема уменьшается, чтобы помещаться по ширине (не мельче 70%), дальше — прокрутка.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: масштаб подгоняется при смене подразделения и свёртывании ветвей
   useLayoutEffect(() => {
     const box = ref.current;
     const el = org.current;
@@ -737,6 +738,7 @@ function OrgChart({ ctx }: { ctx: Ctx }) {
     return () => ro.disconnect();
   }, [ctx.root, ctx.collapsed.size]);
   // При открытии и смене выбора — показать выбранный блок (по умолчанию корень в центре).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: прокрутка к выделенному при смене выделения и масштаба
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -804,7 +806,7 @@ function OrgNode({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
     <li>
       <OrgBox ctx={ctx} node={node} />
       {node.children.length > 0 && (
-        <button className="org-fold" onClick={() => ctx.toggle(node.id)} title={folded ? 'Развернуть' : 'Свернуть'}>
+        <button type="button" className="org-fold" onClick={() => ctx.toggle(node.id)} title={folded ? 'Развернуть' : 'Свернуть'}>
           {folded ? `▸ ${node.children.length}` : '▾'}
         </button>
       )}
@@ -833,6 +835,7 @@ function OrgNode({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
 
 function TreeList({ ctx }: { ctx: Ctx }) {
   const ref = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: прокрутка к выделенной строке при смене выделения
   useLayoutEffect(() => {
     ref.current?.querySelector('.unit-row.sel')?.scrollIntoView({ block: 'nearest' });
   }, [ctx.sel]);

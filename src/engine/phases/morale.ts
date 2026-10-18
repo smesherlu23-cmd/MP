@@ -1,6 +1,6 @@
 // Мораль, слаженность и снятие подавления в конце хода.
 
-import { EngineContext, clamp, e, lerp, round1 } from '../context';
+import { type EngineContext, clamp, e, lerp, round1 } from '../context';
 import type { Factor, SideId } from '../types';
 
 // ------------------------------------------------------------------ мораль

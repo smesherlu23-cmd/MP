@@ -1,6 +1,6 @@
 // Инициатива: какая сторона стреляет первой.
 
-import { EngineContext, lerp, round1, s } from '../context';
+import { type EngineContext, lerp, round1, s } from '../context';
 import type { Factor, SideId } from '../types';
 import { SIDES } from './common';
 

@@ -1595,6 +1595,7 @@ h4 {
 }
 .menu-sep {
   height: 1px;
+  border: none;
   background: var(--border);
   margin: 4px 2px;
 }

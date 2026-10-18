@@ -94,6 +94,7 @@ export function ForecastModal({ b, onClose }: { b: Battle; onClose: () => void }
   const [running, setRunning] = useState(false);
   const closed = useRef(false);
   const decisions = b.interventions.filter((x) => x.turn === b.turn);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: бой меняется на месте: решения хода определяются числом вмешательств и ходом
   const base = useMemo(() => (decisions.length ? withoutCurrentDecisions(b) : null), [b, b.interventions.length, b.turn]);
   const run = async () => {
     setRunning(true);
@@ -108,6 +109,7 @@ export function ForecastModal({ b, onClose }: { b: Battle; onClose: () => void }
     setRes({ now, without });
     setRunning(false);
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: прогноз считается один раз при открытии окна; дальше — кнопкой «Пересчитать»
   useEffect(() => {
     void run();
     return () => void (closed.current = true);

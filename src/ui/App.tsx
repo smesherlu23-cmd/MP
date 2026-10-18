@@ -96,6 +96,7 @@ function Tabs({ tabs, active }: { tabs: Tab[]; active?: string }) {
   const [overflow, setOverflow] = useState(false);
   const s = useApp();
   const battles = useBattles((x) => x.battles);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: размеры полосы вкладок пересчитываются, когда меняется число вкладок
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -105,6 +106,7 @@ function Tabs({ tabs, active }: { tabs: Tab[]; active?: string }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [tabs.length]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: прокрутка к активной вкладке при её смене и при изменении полосы
   useEffect(() => {
     ref.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [active, tabs.length, overflow]);
@@ -152,7 +154,7 @@ function TabItem({ t, active }: { t: Tab; active: boolean }) {
     >
       <span className="tab-icon">{tabIcon(t)}</span>
       <span className="tab-title">{title}</span>
-      <button
+      <button type="button"
         className="tab-close"
         title="Закрыть (Ctrl+W)"
         onClick={(e) => {
@@ -243,7 +245,7 @@ function Toasts() {
         <div key={t.id} className={`toast ${t.kind}`}>
           <span>{t.text}</span>
           {t.action && (
-            <button
+            <button type="button"
               className="toast-action"
               onClick={() => {
                 dismissToast(t.id);
@@ -360,16 +362,16 @@ export function App() {
           ☰ WARSIM
         </div>
         <div className="nav-arrows">
-          <button disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
+          <button type="button" disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
             ‹
           </button>
-          <button disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
+          <button type="button" disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
             ›
           </button>
         </div>
         <Tabs tabs={s.tabs} active={active?.key} />
         <div className="topbar-right">
-          <button className="find-btn" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
+          <button type="button" className="find-btn" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
             <span>Найти…</span>
             <span className="kbd">Ctrl+K</span>
           </button>

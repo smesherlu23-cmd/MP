@@ -414,7 +414,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
           onDrop={(e) => onRowDrop(e, root)}
           data-tip="Перетащите на другое подразделение стороны, чтобы придать его на этот бой; на другую сторону — чтобы перевести"
         >
-          <button
+          <button type="button"
             className="side-fold"
             disabled={!node.children.length}
             onClick={() => setOpenIds(isOpen ? openIds.filter((y) => y !== `${ri}:${root}`) : [...openIds, `${ri}:${root}`])}
@@ -619,17 +619,17 @@ function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset })
   for (const c of list) counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
   const def = defaultCommandLevel(rs);
   const set = side.commanders ?? {};
-  const valueOf = (id: string) => (id in set ? set[id] : def);
+  const levelOf = (id: string) => (id in set ? set[id] : def);
   const levelName = (v: number) => (v <= 0 ? 'без командира' : (rs.commandLevels[v - 1]?.name ?? ''));
-  const changed = list.filter((c) => valueOf(c.id) !== def);
+  const changed = list.filter((c) => levelOf(c.id) !== def);
   const summary = changed.length
-    ? changed.map((c) => `${c.name}: ${levelName(valueOf(c.id))}`.toLowerCase()).join(', ')
+    ? changed.map((c) => `${c.name}: ${levelName(levelOf(c.id))}`.toLowerCase()).join(', ')
     : `${list.length === 1 ? 'командир' : `все ${list.length}`} — ${levelName(def).toLowerCase() || 'обычные'}`;
   const upd = (fn: (d: Scenario['sides'][number]) => void) => updateScenario(sc.id, (d) => fn(d.sides[i]));
   return (
     <div>
       <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-        <button className="sec-toggle" onClick={() => setOpen(!open)}>
+        <button type="button" className="sec-toggle" onClick={() => setOpen(!open)}>
           <span className="chev">{open ? '▾' : '▸'}</span>
           <h4>Командиры в начале боя</h4>
         </button>
@@ -649,7 +649,7 @@ function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset })
               <CommanderSelect
                 levels={rs.commandLevels}
                 allowNone
-                value={valueOf(c.id)}
+                value={levelOf(c.id)}
                 onChange={(v) =>
                   upd((d) => {
                     d.commanders = { ...(d.commanders ?? {}) };

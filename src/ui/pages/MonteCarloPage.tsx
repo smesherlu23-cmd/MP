@@ -274,6 +274,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
     const [side, k] = key.split('.') as [SideId, string];
     return (x.sides[side] as unknown as Record<string, number>)[k];
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: val — чистая функция
   const rows = useMemo(() => [...r.runs].sort((a, b) => (val(a, sort.key) > val(b, sort.key) ? 1 : -1) * sort.dir), [r, sort]);
   const th = (key: string, label: string, color?: string) => (
     <th className="num" style={{ cursor: 'pointer', color }} onClick={() => setSort({ key, dir: sort.key === key ? ((-sort.dir) as 1 | -1) : -1 })}>
@@ -368,7 +369,7 @@ function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): stri
     }
     lines.push(row.map(q).join(';'));
   }
-  return '﻿' + lines.join('\n');
+  return `﻿${lines.join('\n')}`;
 }
 
 function summaryText(r: MonteCarloResult, name: string): string {

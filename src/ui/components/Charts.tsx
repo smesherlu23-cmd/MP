@@ -16,7 +16,7 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] 
 
 function niceMax(v: number): number {
   if (v <= 0) return 1;
-  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  const p = 10 ** Math.floor(Math.log10(v));
   for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * p) return m * p;
   return 10 * p;
 }
@@ -42,7 +42,7 @@ export function LineChart(props: { series: Series[]; labels?: (string | number)[
   const xStep = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((width - pad.l) / 50))));
   return (
     <div ref={ref}>
-      <svg className="chart" width={width} height={h}>
+      <svg className="chart" width={width} height={h} role="img" aria-label={`График: ${props.series.map((x) => x.name).join(", ")}`}>
         {ticks.map((t) => (
           <g key={t}>
             <line className="grid-line" x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} />
@@ -113,7 +113,7 @@ export function Histogram(props: { series: { name: string; color: string; values
   const y = (c: number) => pad.t + (1 - c / top) * (h - pad.t - pad.b);
   return (
     <div ref={ref}>
-      <svg className="chart" width={width} height={h}>
+      <svg className="chart" width={width} height={h} role="img" aria-label={`График: ${props.series.map((x) => x.name).join(", ")}`}>
         {[0, 0.5, 1].map((t) => (
           <g key={t}>
             <line className="grid-line" x1={pad.l} x2={width - pad.r} y1={y(t * top)} y2={y(t * top)} />

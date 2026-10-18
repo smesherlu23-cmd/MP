@@ -1,6 +1,6 @@
 // Снимок хода для графиков и окончание боя.
 
-import { EngineContext, lerp } from '../context';
+import { type EngineContext, lerp } from '../context';
 import { computeResult } from '../outcome';
 import type { Battle, ElementState, SideId, SideSnapshot } from '../types';
 import { SIDES, elementsOfNode } from './common';

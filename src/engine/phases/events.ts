@@ -1,6 +1,6 @@
 // План боя: события сценария по ходам и по условию (подход, приказ, условия, удар, эффект).
 
-import { EngineContext, e, fm, s } from '../context';
+import { type EngineContext, e, fm, s } from '../context';
 import { plural } from '../labels';
 import type { Battle, ElementState, EventTrigger, Scenario, ScenarioEvent } from '../types';
 import { elementsOfNode } from './common';

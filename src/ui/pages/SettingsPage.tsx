@@ -21,6 +21,7 @@ export function SettingsPage() {
   }, [refresh]);
   // Удаление в другой вкладке тоже должно появиться в корзине.
   const libSize = useApp((x) => Object.keys(x.rulesets).length + Object.keys(x.formations).length + Object.keys(x.forces).length + Object.keys(x.scenarios).length + Object.keys(x.battleIndex).length);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: сведения о папке обновляются при изменении данных
   useEffect(refresh, [libSize, refresh]);
   return (
     <div className="page">

@@ -18,6 +18,7 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
   const [all, setAll] = useState(false);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [picks, setPicks] = useState<Map<string, { rootId: Id; nodeId: Id; count: number }>>(new Map());
+  // biome-ignore lint/correctness/useExhaustiveDependencies: кэш численности сбрасывается при смене набора правил
   const cache = useMemo(() => new WeakMap<UnitNode, number>(), [rs]);
   const persOf = (n: UnitNode) => {
     let v = cache.get(n);

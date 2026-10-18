@@ -134,7 +134,9 @@ function PaletteBody() {
   const list = useMemo(() => search(items, q), [items, q]);
   const ordered = useMemo(() => (q.trim() ? list : [...list].sort((a, b) => GROUP_ORDER.indexOf(a.group) - GROUP_ORDER.indexOf(b.group))), [list, q]);
   const box = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: при новом запросе выделение — на первый пункт
   useEffect(() => setCur(0), [q]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: прокрутка к выделенному пункту при его смене
   useEffect(() => {
     box.current?.querySelector('.pal-item.cur')?.scrollIntoView({ block: 'nearest' });
   }, [cur]);

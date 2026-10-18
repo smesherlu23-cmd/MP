@@ -265,7 +265,7 @@ function describe(e: HistEntry): string {
 function commitPending() {
   const e = pendingEntry;
   pendingEntry = null;
-  if (!e || !e.items.size) return;
+  if (!e?.items.size) return;
   if (!e.label) e.label = describe(e);
   undoStack.push(e);
   if (undoStack.length > HIST_LIMIT) undoStack.shift();

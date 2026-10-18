@@ -68,6 +68,7 @@ export function Num(props: {
   const fmt = (v: number | null | undefined) => (v === null || v === undefined || Number.isNaN(v) ? '' : String(Math.round(v * 10000) / 10000));
   const [text, setText] = useState(fmt(props.value));
   const focused = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fmt — чистая функция; текст обновляется только при смене значения
   useEffect(() => {
     if (!focused.current) setText(fmt(props.value));
   }, [props.value]);
@@ -215,6 +216,7 @@ export function Field(props: { label: ReactNode; hint?: string; children: ReactN
 /** Значок «?» с подсказкой (видна при наведении и при переходе на значок клавишей Tab). */
 export function Info({ text }: { text: string }) {
   return (
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: значок фокусируется, чтобы подсказка показывалась и при переходе клавишей Tab
     <span className="hint-icon" data-tip={text} tabIndex={0} role="note" aria-label={text}>
       ?
     </span>
@@ -243,6 +245,7 @@ export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefine
     setPos(null);
     if (refocus) btn.current?.focus();
   };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: подписки — на время, пока меню открыто; close не зависит от состояния
   useEffect(() => {
     if (!pos) return;
     // Фокус — на первый доступный пункт: дальше работают стрелки.
@@ -297,7 +300,7 @@ export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefine
           <div ref={pop} className="menu-pop" role="menu" style={{ top: pos.top, right: pos.right }}>
             {items.map((it, i) =>
               it === 'sep' ? (
-                i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? <div key={i} className="menu-sep" role="separator" /> : null
+                i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? <hr key={i} className="menu-sep" /> : null
               ) : (
                 <button
                   key={i}
@@ -359,6 +362,7 @@ export function Section(props: {
       <div className="card-head" onClick={toggle}>
         <span className="chev">{isOpen ? '▾' : '▸'}</span>
         <h3>
+          {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: роль button и фокус — из pressable() */}
           <span {...pressable(toggle)} aria-expanded={isOpen}>
             {props.title}
           </span>
@@ -399,7 +403,7 @@ export function Tags(props: { value: string[]; onChange: (v: string[]) => void; 
       {props.value.map((t) => (
         <span key={t} className="chip">
           {t}
-          <button title="Убрать" onClick={() => props.onChange(props.value.filter((x) => x !== t))}>
+          <button type="button" title="Убрать" onClick={() => props.onChange(props.value.filter((x) => x !== t))}>
             ×
           </button>
         </span>
@@ -433,7 +437,7 @@ export function Seg<T extends string>(props: { value: T; onChange: (v: T) => voi
   return (
     <div className="seg">
       {props.options.map((o) => (
-        <button key={o.value} className={o.value === props.value ? 'on' : ''} title={o.title} onClick={() => props.onChange(o.value)}>
+        <button type="button" key={o.value} className={o.value === props.value ? 'on' : ''} title={o.title} onClick={() => props.onChange(o.value)}>
           {o.label}
         </button>
       ))}
