@@ -30,10 +30,11 @@ import { LogView, RichText } from '../components/LogView';
 import { Btn, Card, Check, Field, Menu, Meter, Modal, Num, Section, Sel, fmt0, pct, pressable } from '../components/ui';
 import { useTabState } from '../hooks';
 import { nextBattleName } from './ScenarioPage';
-import { saveResultsAsNew, updateLibraryFromBattle, updateScenarioFromBattle } from '../postBattle';
+import { applyResultsToForces, battleForces } from '../postBattle';
 import {
   deleteBattle,
   ensureFullLog,
+  fmtDate,
   exportJson,
   exportText,
   forgetBattleRedo,
@@ -972,8 +973,6 @@ function Charts({ b }: { b: Battle }) {
 // ------------------------------------------------------------------ итоги
 
 function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onElement: (id: string) => void }) {
-  const lib = useApp((s) => s.formations);
-  const linked = b.scenario.sides.some((s) => s.formations.some((f) => f.templateId && lib[f.templateId]));
   const keyEvents = b.log.filter((x) => x.level === 0 && x.phase !== 'turn' && x.phase !== 'setup' && x.phase !== 'end');
   return (
     <div className="stack">
@@ -986,6 +985,7 @@ function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onE
           {b.finished ? `${result.endReason}. ` : ''}Ходов: {result.turns}.
         </div>
         <div className="result-why">{explainResult(result)}</div>
+        {b.finished && <ForcesCard b={b} />}
         {b.finished && (
           <div className="row" style={{ marginTop: 10 }}>
             <span className="muted small">Скопировать:</span>
@@ -1060,18 +1060,38 @@ function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onE
           </div>
         </Section>
       )}
-      {b.finished && (
-        <Section id="battle-transfer" title="Перенести результаты в подразделения" summary="для кампании">
-          <p className="muted small">Потери, раненые, повреждённая техника, мораль, усталость и снабжение записываются в подразделения.</p>
-          <div className="row">
-            <Btn onClick={() => saveResultsAsNew(b)}>Сохранить как новые</Btn>
-            <Btn onClick={() => updateLibraryFromBattle(b)} disabled={!linked} title={linked ? '' : 'Подразделения боя не связаны с библиотекой'}>
-              Обновить библиотеку
-            </Btn>
-            <Btn onClick={() => updateScenarioFromBattle(b)}>Обновить сценарий</Btn>
-          </div>
-        </Section>
-      )}
+
+    </div>
+  );
+}
+
+/** Итоги боя — в силы сторон: в конкретные подразделения, а не в шаблоны. */
+function ForcesCard({ b }: { b: Battle }) {
+  useApp((s) => s.forces);
+  const list = battleForces(b);
+  if (!list.length)
+    return (
+      <div className="note" style={{ marginTop: 12 }}>
+        Подразделения этого боя не связаны с «Силами» (бой начат до их появления или силы удалены) — записать итоги некуда.
+      </div>
+    );
+  return (
+    <div className={`note forces-note${b.appliedToForces ? ' done' : ''}`} style={{ marginTop: 12 }}>
+      <div className="grow">
+        {b.appliedToForces ? (
+          <>
+            <b>Итоги записаны в силы</b> {fmtDate(b.appliedToForces)}: {list.map((f) => f.name).join(', ')}.
+          </>
+        ) : (
+          <>
+            <b>Записать итоги в силы?</b> Потери, раненые и техника в ремонте, мораль, усталость и боезапас лягут на подразделения, участвовавшие в бою:{' '}
+            {list.map((f) => f.name).join(', ')}. Следующий бой с ними начнётся уже с этими потерями; шаблоны не меняются.
+          </>
+        )}
+      </div>
+      <Btn kind={b.appliedToForces ? undefined : 'primary'} onClick={() => void applyResultsToForces(b)}>
+        {b.appliedToForces ? 'Записать ещё раз…' : 'Записать итоги в силы'}
+      </Btn>
     </div>
   );
 }

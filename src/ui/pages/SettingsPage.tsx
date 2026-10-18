@@ -20,7 +20,7 @@ export function SettingsPage() {
     refresh();
   }, [refresh]);
   // Удаление в другой вкладке тоже должно появиться в корзине.
-  const libSize = useApp((x) => Object.keys(x.rulesets).length + Object.keys(x.formations).length + Object.keys(x.scenarios).length + Object.keys(x.battleIndex).length);
+  const libSize = useApp((x) => Object.keys(x.rulesets).length + Object.keys(x.formations).length + Object.keys(x.forces).length + Object.keys(x.scenarios).length + Object.keys(x.battleIndex).length);
   useEffect(refresh, [libSize, refresh]);
   return (
     <div className="page">
@@ -94,7 +94,7 @@ export function SettingsPage() {
             )}
             <Field
               label="Резервные копии"
-              hint="Наборы правил, подразделения и сценарии копируются при запуске и раз в час, если что-то изменилось (бои не копируются — они воспроизводятся из сценария). Хранятся 10 последних копий и по одной за 14 последних дней."
+              hint="Наборы правил, шаблоны, силы и сценарии копируются при запуске и раз в час, если что-то изменилось (бои не копируются — они воспроизводятся из сценария). Хранятся 10 последних копий и по одной за 14 последних дней."
             >
               <div className="row">
                 <span className="muted">{backups.length ? `последняя — ${fmtDate(backups[0].createdAt)} · всего ${backups.length}` : 'копий пока нет'}</span>
@@ -164,7 +164,7 @@ const KIND_LABEL: Record<BackupInfo['kind'], string> = {
 };
 
 const countsText = (c: Record<string, number>) =>
-  [`наборов правил ${c.rulesets ?? 0}`, `подразделений ${c.formations ?? 0}`, `сценариев ${c.scenarios ?? 0}`].join(' · ');
+  [`наборов правил ${c.rulesets ?? 0}`, `шаблонов ${c.formations ?? 0}`, `сил ${c.forces ?? 0}`, `сценариев ${c.scenarios ?? 0}`].join(' · ');
 
 function BackupsModal({ list, onClose }: { list: BackupInfo[]; onClose: () => void }) {
   return (
@@ -178,7 +178,7 @@ function BackupsModal({ list, onClose }: { list: BackupInfo[]; onClose: () => vo
         </>
       }
     >
-      <p className="muted small">Копия заменит наборы правил, подразделения и сценарии своими версиями; созданное позже копии останется.</p>
+      <p className="muted small">Копия заменит наборы правил, шаблоны, силы и сценарии своими версиями; созданное позже копии останется.</p>
       <div className="data-list">
         {list.map((b) => (
           <div key={b.id} className="data-row">
@@ -198,7 +198,7 @@ function BackupsModal({ list, onClose }: { list: BackupInfo[]; onClose: () => vo
   );
 }
 
-const COL_TITLE: Record<TrashItem['col'], string> = { rulesets: 'Наборы правил', formations: 'Подразделения', scenarios: 'Сценарии', battles: 'Бои' };
+const COL_TITLE: Record<TrashItem['col'], string> = { rulesets: 'Наборы правил', formations: 'Шаблоны', forces: 'Силы', scenarios: 'Сценарии', battles: 'Бои' };
 
 function TrashModal({ list, onChange, onClose }: { list: TrashItem[]; onChange: () => void; onClose: () => void }) {
   const back = async (items: TrashItem[]) => {

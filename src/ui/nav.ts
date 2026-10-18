@@ -5,19 +5,20 @@ import { openTab, resolveFormation, updateSettings, useApp, type NavSection, typ
 
 export const SECTIONS: { id: NavSection; label: string; icon: string; create: string }[] = [
   { id: 'scenarios', label: 'Сценарии', icon: '◈', create: 'Новый сценарий' },
-  { id: 'units', label: 'Подразделения', icon: '▦', create: 'Новое подразделение' },
+  { id: 'forces', label: 'Силы', icon: '⚑', create: 'Новые силы' },
+  { id: 'units', label: 'Шаблоны', icon: '▦', create: 'Новый шаблон' },
   { id: 'battles', label: 'Бои', icon: '⚔', create: '' },
   { id: 'rulesets', label: 'Наборы правил', icon: '§', create: 'Новый набор правил' },
 ];
 
-/** Раздел, к которому относится вкладка (подразделение сценария — к сценариям). */
+/** Раздел, к которому относится вкладка: «lib:» — шаблоны, «force:» — силы. */
 export function sectionOf(t: Pick<Tab, 'kind' | 'ref'> | undefined): NavSection | null {
   switch (t?.kind) {
     case 'scenario':
     case 'montecarlo':
       return 'scenarios';
     case 'formation':
-      return t.ref?.startsWith('sc:') ? 'scenarios' : 'units';
+      return t.ref?.startsWith('force:') ? 'forces' : 'units';
     case 'battle':
       return 'battles';
     case 'ruleset':

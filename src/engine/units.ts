@@ -240,7 +240,7 @@ export function unitHash(node: UnitNode): string {
 }
 
 /**
- * Вставить подразделение библиотеки как копию: копия помнит шаблон и узлы шаблона,
+ * Создать копию шаблона: копия помнит шаблон и узлы шаблона,
  * чтобы позже её можно было обновить. Состояние корня шаблона переносится явно.
  */
 export function instantiate(template: UnitNode, opts: { attachedFrom?: string; name?: string } = {}): UnitNode {

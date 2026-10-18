@@ -45,7 +45,7 @@ async function loadDivisions(page: Page) {
 test('дивизия: схема и список удобны на 157 подразделениях', async ({ page }) => {
   const errors = await openApp(page);
   await loadDivisions(page);
-  await page.locator('.nav-item', { hasText: 'Подразделения' }).click();
+  await page.locator('.nav-item', { hasText: 'Шаблоны' }).click();
   await page.locator('.side-item', { hasText: '1-я дивизия' }).click();
   // с третьего уровня свёрнуто: дивизия, 3 полка, 9 батальонов
   await expect(page.locator('.org-box')).toHaveCount(13);

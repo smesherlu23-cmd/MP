@@ -1,4 +1,4 @@
-// Состояние программы: библиотека (наборы правил, подразделения, сценарии, бои), вкладки-«окна»,
+// Состояние программы: данные (наборы правил, шаблоны, силы, сценарии, бои), вкладки-«окна»,
 // настройки, уведомления и диалоги. Изменения автоматически сохраняются в хранилище.
 
 import { produce } from 'immer';
@@ -29,6 +29,14 @@ import {
   normalizeRuleset,
   randomSeed,
   restoreBattleLog,
+  extractForces,
+  forceFromTemplate,
+  rehashCopies,
+  scenarioForceIds,
+  resolveScenario,
+  nextName,
+  toTemplate,
+  unitHash,
   rewindBattle,
   trimBattleForStorage,
   undoBattleAction,
@@ -82,7 +90,10 @@ export interface Dialog {
 interface AppState {
   loaded: boolean;
   rulesets: Record<Id, Ruleset>;
+  /** Шаблоны: устройство и штат подразделений (без приказов и состояния). */
   formations: Record<Id, UnitNode>;
+  /** Силы: конкретные подразделения по шаблонам — со своим состоянием и потерями. */
+  forces: Record<Id, UnitNode>;
   scenarios: Record<Id, Scenario>;
   battleIndex: Record<Id, BattleMeta>;
   tabs: Tab[];
@@ -93,7 +104,7 @@ interface AppState {
   saving: number;
 }
 
-export type NavSection = 'scenarios' | 'units' | 'battles' | 'rulesets';
+export type NavSection = 'scenarios' | 'forces' | 'units' | 'battles' | 'rulesets';
 
 const DEFAULT_SETTINGS: Settings = { theme: 'dark', logLevel: 1, mcRuns: 200, sidebar: true, density: 'normal', navSection: 'scenarios' };
 
@@ -110,6 +121,7 @@ export const useApp = create<AppState>(() => ({
   loaded: false,
   rulesets: {},
   formations: {},
+  forces: {},
   scenarios: {},
   battleIndex: {},
   tabs: [{ key: 'home', kind: 'home' }],
@@ -201,7 +213,7 @@ export async function flushSaves() {
 // Изменения одного тика объединяются в один шаг; непрерывный ввод текста (и движение ползунка)
 // в одном объекте — тоже. Клики, перетаскивания и команды всегда отдельные шаги.
 
-type Col = 'rulesets' | 'formations' | 'scenarios';
+type Col = 'rulesets' | 'formations' | 'forces' | 'scenarios';
 type Op = 'edit' | 'add' | 'delete' | 'custom';
 
 interface HistEntry {
@@ -227,7 +239,7 @@ function syncHistory() {
   useHistory.setState({ undo: undoStack[undoStack.length - 1]?.label ?? null, redo: redoStack[redoStack.length - 1]?.label ?? null });
 }
 
-const NOUN: Record<Col, string> = { rulesets: 'набор правил', formations: 'подразделение', scenarios: 'сценарий' };
+const NOUN: Record<Col, string> = { rulesets: 'набор правил', formations: 'шаблон', forces: 'силы', scenarios: 'сценарий' };
 
 function splitKey(key: string): [Col, Id] {
   const i = key.indexOf(':');
@@ -288,7 +300,7 @@ export function historyStep(label: string) {
 function applyEntry(e: HistEntry): HistEntry {
   const inv: HistEntry = { items: new Map(), op: e.op, label: e.label, at: 0 };
   set((s) => {
-    const next = { rulesets: { ...s.rulesets }, formations: { ...s.formations }, scenarios: { ...s.scenarios } } as Record<Col, Record<Id, unknown>>;
+    const next = { rulesets: { ...s.rulesets }, formations: { ...s.formations }, forces: { ...s.forces }, scenarios: { ...s.scenarios } } as Record<Col, Record<Id, unknown>>;
     for (const [key, val] of e.items) {
       const [col, id] = splitKey(key);
       inv.items.set(key, s[col][id]);
@@ -349,9 +361,10 @@ export function toastUndoable(text: string, kind: Toast['kind'] = 'info') {
 // ------------------------------------------------------------------ загрузка
 
 export async function initApp() {
-  const [rs, fs, sc, bt] = await Promise.all([
+  const [rs, fs, fc, sc, bt] = await Promise.all([
     storage.list('rulesets'),
     storage.list('formations'),
+    storage.list('forces'),
     storage.list('scenarios'),
     storage.list('battles'),
   ]);
@@ -373,15 +386,20 @@ export async function initApp() {
   const rulesets = take('rulesets', rs, (r: Ruleset) => normalizeRuleset(r));
   // Старые файлы («формирование + элементы») переводятся в дерево подразделений при загрузке.
   const formations = take('formations', fs, (f: UnitNode) => migrateUnit(f));
+  const forces = take('forces', fc, (f: UnitNode) => migrateUnit(f));
   const scenarios = take('scenarios', sc, (x: Scenario) => migrateScenario(x));
   const battleIndex = take('battles', bt, (b: BattleMeta) => b);
 
   const firstRun = !Object.keys(rulesets).length && !localStorage.getItem('warsim-initialized');
-  set({ rulesets, formations, scenarios, battleIndex });
+  set({ rulesets, formations, forces, scenarios, battleIndex });
   if (firstRun) {
     await installExamples();
     localStorage.setItem('warsim-initialized', '1');
-  } else await addLinearExample();
+    localStorage.setItem(MODEL_FLAG, '1');
+  } else {
+    await addLinearExample();
+    await migrateToForces();
+  }
   if (!Object.keys(get().rulesets).length) {
     // Без набора правил программа бесполезна — создаём пустой.
     const r = makeBlankRuleset('Мой набор правил');
@@ -400,7 +418,7 @@ export async function initApp() {
   setInterval(() => void flushSaves().then(() => storage.backup('auto')).catch(() => null), 3600e3);
 }
 
-const COL_LABEL: Record<string, string> = { rulesets: 'Наборы правил', formations: 'Подразделения', scenarios: 'Сценарии', battles: 'Бои' };
+const COL_LABEL: Record<string, string> = { rulesets: 'Наборы правил', formations: 'Шаблоны', forces: 'Силы', scenarios: 'Сценарии', battles: 'Бои' };
 
 async function reportProblems(list: string[]) {
   const last = (await storage.backups().catch(() => []))[0];
@@ -416,7 +434,7 @@ export const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { 
 
 // ------------------------------------------------------------------ корзина и резервные копии
 
-/** Вернуть объекты из корзины в библиотеку. */
+/** Вернуть объекты из корзины. */
 export async function restoreFromTrash(items: Pick<TrashItem, 'col' | 'key'>[]): Promise<number> {
   let n = 0;
   for (const it of items) {
@@ -426,7 +444,7 @@ export async function restoreFromTrash(items: Pick<TrashItem, 'col' | 'key'>[]):
       if (it.col === 'battles') set((s) => ({ battleIndex: { ...s.battleIndex, [data.id!]: battleMeta(data as Battle) } }));
       else {
         const col = it.col as Col;
-        const fix = col === 'rulesets' ? normalizeRuleset : col === 'formations' ? migrateUnit : migrateScenario;
+        const fix = col === 'rulesets' ? normalizeRuleset : col === 'formations' || col === 'forces' ? migrateUnit : migrateScenario;
         set((s) => ({ [col]: { ...s[col], [data.id!]: fix(data as never) } }) as Partial<AppState>);
       }
       n++;
@@ -438,11 +456,11 @@ export async function restoreFromTrash(items: Pick<TrashItem, 'col' | 'key'>[]):
   return n;
 }
 
-/** Вернуть наборы правил, подразделения и сценарии из резервной копии (с перезапуском окна). */
+/** Вернуть наборы правил, шаблоны, силы и сценарии из резервной копии (с перезапуском окна). */
 export async function restoreBackup(id: string, label: string) {
   const ok = await confirmDialog(
     `Восстановить данные из копии от ${label}?`,
-    'Наборы правил, подразделения и сценарии из копии заменят текущие версии; созданное позже копии останется. Бои не затрагиваются.\nТекущее состояние перед этим само сохранится в отдельную копию — восстановление можно отменить, вернувшись к ней.',
+    'Наборы правил, шаблоны, силы и сценарии из копии заменят текущие версии; созданное позже копии останется. Бои не затрагиваются.\nТекущее состояние перед этим само сохранится в отдельную копию — восстановление можно отменить, вернувшись к ней.',
     'Восстановить',
   );
   if (!ok) return;
@@ -462,23 +480,105 @@ export function migrateScenario(sc: Scenario): Scenario {
 
 const linearUnits = () => [...makeLinearTemplates(), makeLinearBrigade(), makeLinearDefenders()];
 
+/** Модель «шаблоны + силы» введена: шаблоны очищены, подразделения сценариев перенесены в силы. */
+const MODEL_FLAG = 'warsim-model-forces';
+
+/** Примеры: шаблоны (чертежи) отдельно, силы сторон — отдельно; сценарии ссылаются на силы. */
+function exampleScenario(sc: Scenario, rootIds: [string, string], templates: Record<Id, UnitNode>, before: Map<Id, string>) {
+  sc.sides.forEach((sd, i) => sd.formations[0] && (sd.formations[0].id = rootIds[i]));
+  rehashCopies(sc.sides.flatMap((sd) => sd.formations), before, templates);
+  return extractForces(sc, new Set(), () => newId('u'));
+}
+
 export async function installExamples() {
   const universal = makeUniversalRuleset();
   const linear = makeLinearRuleset();
-  const units = [...makeDemoTemplates(), makeDemoBattalion(), makeDemoDefenders()].map((u) => ({ ...u, rulesetId: universal.id }));
-  await putExamples([universal, linear], [...units, ...linearUnits()], [makeDemoScenario(), makeLinearScenario()]);
+  const named = (u: UnitNode, name: string) => ({ ...u, name });
+  const raw = [
+    ...[...makeDemoTemplates(), named(makeDemoBattalion(), 'Мотострелковый батальон (пример)'), named(makeDemoDefenders(), 'Оборонительный узел усиленной роты (пример)')].map((u) => ({
+      ...u,
+      rulesetId: universal.id,
+    })),
+    ...linearUnits(),
+  ];
+  const before = new Map(raw.map((t) => [t.id, unitHash(t)]));
+  const templates = Object.fromEntries(raw.map((t) => [t.id, toTemplate(t)]));
+  rehashCopies(Object.values(templates), before, templates);
+  const a = exampleScenario(makeDemoScenario(), ['force-demo-bn', 'force-demo-def'], templates, before);
+  const b = exampleScenario(makeLinearScenario(), ['force-lin-brig', 'force-lin-def'], templates, before);
+  await putExamples([universal, linear], Object.values(templates), [a.scenario, b.scenario], [...a.forces, ...b.forces]);
   localStorage.setItem('warsim-examples-linear', '1');
 }
 
-async function putExamples(rs: Ruleset[], units: UnitNode[], scs: Scenario[]) {
+async function putExamples(rs: Ruleset[], units: UnitNode[], scs: Scenario[], forces: UnitNode[] = []) {
   set((s) => ({
     rulesets: { ...s.rulesets, ...Object.fromEntries(rs.map((r) => [r.id, r])) },
     formations: { ...s.formations, ...Object.fromEntries(units.map((u) => [u.id, u])) },
+    forces: { ...s.forces, ...Object.fromEntries(forces.map((u) => [u.id, u])) },
     scenarios: { ...s.scenarios, ...Object.fromEntries(scs.map((x) => [x.id, x])) },
   }));
   for (const r of rs) await storage.save('rulesets', r.id, r);
   for (const f of units) await storage.save('formations', f.id, f);
+  for (const f of forces) await storage.save('forces', f.id, f);
   for (const x of scs) await storage.save('scenarios', x.id, x);
+}
+
+/**
+ * Переход на «шаблоны + силы». Один раз: шаблоны очищаются от приказов и состояния (актуальные копии
+ * остаются актуальными), подразделения с потерями сохраняются ещё и как силы. Всегда: сценарий со
+ * старыми копиями подразделений (в том числе импортированный) переводится на силы.
+ */
+async function migrateToForces() {
+  const s = get();
+  const first = !localStorage.getItem(MODEL_FLAG);
+  let templates = s.formations;
+  const extraForces: UnitNode[] = [];
+  const before = new Map(Object.values(s.formations).map((t) => [t.id, unitHash(t)]));
+  if (first) {
+    templates = Object.fromEntries(Object.values(s.formations).map((t) => [t.id, toTemplate(t)]));
+    rehashCopies(Object.values(templates), before, templates);
+    // Шаблон (бывшее подразделение библиотеки) с потерями — это, по сути, уже конкретные силы: сохраняем и их.
+    for (const t of Object.values(s.formations)) {
+      if (t.id.startsWith('demo-')) continue;
+      let hurt = false;
+      walkUnits(t, (n) => n.composition.forEach((c) => (c.current < c.authorized || (c.recoverable ?? 0) > 0) && (hurt = true)));
+      if (!hurt) continue;
+      const f = cloneUnit(t);
+      walkUnits(f, (n) => void (n.order = null));
+      f.templateId = t.id;
+      f.templateHash = unitHash(templates[t.id]);
+      extraForces.push(f);
+    }
+  }
+  const taken = new Set<Id>();
+  for (const f of Object.values(s.forces)) walkUnits(f, (n) => void taken.add(n.id));
+  const forces: UnitNode[] = [...extraForces];
+  const scenarios: Scenario[] = [];
+  for (const sc of Object.values(s.scenarios)) {
+    if (sc.sides.every((sd) => sd.units)) continue;
+    const copy = clone(sc);
+    if (first) rehashCopies(copy.sides.flatMap((sd) => sd.formations), before, templates);
+    const r = extractForces(copy, taken, () => newId('u'));
+    forces.push(...r.forces);
+    scenarios.push(r.scenario);
+  }
+  const changedTemplates = first ? Object.values(templates).filter((t) => JSON.stringify(t) !== JSON.stringify(s.formations[t.id])) : [];
+  set((st) => ({
+    formations: first ? templates : st.formations,
+    forces: { ...st.forces, ...Object.fromEntries(forces.map((f) => [f.id, f])) },
+    scenarios: { ...st.scenarios, ...Object.fromEntries(scenarios.map((x) => [x.id, x])) },
+  }));
+  for (const t of changedTemplates) await storage.save('formations', t.id, t);
+  for (const f of forces) await storage.save('forces', f.id, f);
+  for (const x of scenarios) await storage.save('scenarios', x.id, x);
+  localStorage.setItem(MODEL_FLAG, '1');
+  if (first && (forces.length || changedTemplates.length))
+    queueMicrotask(() =>
+      toast(
+        `Подразделения теперь делятся на «Шаблоны» (устройство и штат) и «Силы» (конкретные подразделения с потерями). Подразделения сценариев перенесены в «Силы»: ${forces.length}.`,
+        'info',
+      ),
+    );
 }
 
 /** Пример боя для «Линейной тактики» появился позже остальных — добавляется один раз тем, у кого этот набор уже есть. */
@@ -654,32 +754,25 @@ export async function deleteRuleset(id: Id) {
 
 // ------------------------------------------------------------------ подразделения
 
-/** ref: «lib:<id>» — библиотека; «sc:<scenarioId>:<formationId>» — копия в сценарии. */
-export function resolveFormation(ref: string): { f: UnitNode; rulesetId?: Id; scenario?: Scenario; sideIndex?: number } | null {
+/** Ссылка вкладки конструктора: «lib:id» — шаблон, «force:id» — силы. */
+export function resolveFormation(ref: string): { f: UnitNode; rulesetId?: Id; kind: 'template' | 'force' } | null {
   const s = get();
-  const [scope, a, b] = ref.split(':');
+  const [scope, a] = ref.split(':');
   if (scope === 'lib') {
     const f = s.formations[a];
-    return f ? { f, rulesetId: f.rulesetId } : null;
+    return f ? { f, rulesetId: f.rulesetId, kind: 'template' } : null;
   }
-  const sc = s.scenarios[a];
-  if (!sc) return null;
-  for (let i = 0; i < 2; i++) {
-    const f = sc.sides[i].formations.find((x) => x.id === b);
-    if (f) return { f, rulesetId: sc.rulesetId, scenario: sc, sideIndex: i };
+  if (scope === 'force') {
+    const f = s.forces[a];
+    return f ? { f, rulesetId: f.rulesetId, kind: 'force' } : null;
   }
   return null;
 }
 
 export function updateFormationRef(ref: string, fn: (f: UnitNode) => void) {
-  const [scope, a, b] = ref.split(':');
+  const [scope, a] = ref.split(':');
   if (scope === 'lib') return updateFormation(a, fn);
-  updateScenario(a, (sc) => {
-    for (const side of sc.sides) {
-      const f = side.formations.find((x) => x.id === b);
-      if (f) fn(f);
-    }
-  });
+  if (scope === 'force') return updateForce(a, fn);
 }
 
 export function updateFormation(id: Id, fn: (f: UnitNode) => void) {
@@ -742,16 +835,106 @@ export function duplicateFormation(id: Id): Id | undefined {
 export async function deleteFormation(id: Id) {
   const f = get().formations[id];
   if (!f) return;
-  if (!(await confirmDialog(`Удалить подразделение «${f.name}» из библиотеки?`, 'Копии в сценариях останутся.', 'Удалить', true))) return;
+  if (!(await confirmDialog(`Удалить шаблон «${f.name}»?`, 'Силы, созданные по нему, останутся — просто перестанут обновляться по шаблону.', 'Удалить', true))) return;
   await flushSave('formations', id);
   record('formations', id, 'delete');
   set((s) => {
     const { [id]: _, ...rest } = s.formations;
     return { formations: rest };
   });
-  toastUndoable(`Подразделение «${f.name}» удалено (оно в корзине).`);
+  toastUndoable(`Шаблон «${f.name}» удалён (он в корзине).`);
   await storage.remove('formations', id);
   closeTabsWhere((t) => t.kind === 'formation' && t.ref === `lib:${id}`);
+}
+
+// ------------------------------------------------------------------ силы
+
+export function updateForce(id: Id, fn: (f: UnitNode) => void) {
+  if (get().forces[id]) record('forces', id, 'edit');
+  set((s) => {
+    if (!s.forces[id]) return {};
+    const next = produce(s.forces[id], (d) => {
+      fn(d);
+      d.updatedAt = new Date().toISOString();
+    });
+    return { forces: { ...s.forces, [id]: next } };
+  });
+  scheduleSave('forces', id, () => get().forces[id]);
+}
+
+export function addForce(f: UnitNode, open = true): Id {
+  record('forces', f.id, 'add');
+  set((s) => ({ forces: { ...s.forces, [f.id]: { ...f, updatedAt: new Date().toISOString() } } }));
+  scheduleSave('forces', f.id, () => get().forces[f.id], 0);
+  if (open) openTab('formation', `force:${f.id}`);
+  return f.id;
+}
+
+/** Силы по шаблону (×count, с номерами по порядку). */
+export function createForcesFromTemplate(templateId: Id, opts: { count?: number; faction?: string; name?: string; open?: boolean } = {}): Id[] {
+  const tpl = get().formations[templateId];
+  if (!tpl) return [];
+  const n = Math.max(1, Math.min(50, opts.count ?? 1));
+  const base = opts.name ?? tpl.name.replace(/ \(пример\)$/, '');
+  const ids: Id[] = [];
+  if (n > 1) historyStep(`создание сил по шаблону «${tpl.name}»`);
+  for (let k = 0; k < n; k++) {
+    const f = forceFromTemplate(tpl, { name: k ? nextName(base, k) : base, faction: opts.faction });
+    ids.push(addForce(f, false));
+  }
+  if (opts.open !== false && ids.length === 1) openTab('formation', `force:${ids[0]}`);
+  return ids;
+}
+
+/** Новые силы: по шаблону (как обычно) или пустое подразделение. */
+export async function newForceDialog(faction?: string): Promise<Id | undefined> {
+  const s = get();
+  const list = Object.values(s.formations).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const v = await chooseDialog(
+    'Новые силы — по какому шаблону?',
+    [...list.map((t) => ({ value: t.id, label: `${t.level ? `${t.level} · ` : ''}${t.name}` })), { value: '', label: 'Пустое подразделение (собрать вручную)' }],
+    'Силы — конкретное подразделение: по шаблону берётся устройство и штат, а состояние и потери у каждого свои. Шаблон потом можно менять — силы обновятся по нему, сохранив потери.',
+  );
+  if (v === null) return;
+  if (v) return createForcesFromTemplate(v, { faction })[0];
+  return addForce(newRootUnit('Новое подразделение', { rulesetId: defaultRulesetId(), level: '', faction }));
+}
+
+export function duplicateForce(id: Id): Id | undefined {
+  const f = get().forces[id];
+  if (!f) return;
+  const c = cloneUnit(f);
+  c.name = `${f.name} (копия)`;
+  return addForce(c);
+}
+
+/** Сценарии, где участвует это подразделение сил. */
+export function forceUsage(id: Id): Scenario[] {
+  return Object.values(get().scenarios).filter((sc) => scenarioForceIds(sc).has(id));
+}
+
+export async function deleteForce(id: Id) {
+  const f = get().forces[id];
+  if (!f) return;
+  const used = forceUsage(id);
+  const text = used.length ? `Оно участвует в сценариях: ${used.map((x) => `«${x.name}»`).join(', ')} — там его не станет.` : undefined;
+  if (!(await confirmDialog(`Удалить силы «${f.name}»?`, text, 'Удалить', true))) return;
+  await flushSave('forces', id);
+  historyStep(`удаление сил «${f.name}»`);
+  record('forces', id, 'delete');
+  set((s) => {
+    const { [id]: _, ...rest } = s.forces;
+    return { forces: rest };
+  });
+  for (const sc of used) updateScenario(sc.id, (d) => d.sides.forEach((sd) => (sd.units = (sd.units ?? []).filter((u) => u.forceId !== id))));
+  toastUndoable(`Силы «${f.name}» удалены (они в корзине).`);
+  await storage.remove('forces', id);
+  closeTabsWhere((t) => t.kind === 'formation' && t.ref === `force:${id}`);
+}
+
+/** Сценарий, готовый к бою: стороны собраны из текущих сил. */
+export function scenarioForBattle(sc: Scenario): Scenario {
+  return resolveScenario(sc, get().forces);
 }
 
 // ------------------------------------------------------------------ сценарии
@@ -780,7 +963,10 @@ export function addScenario(sc: Scenario, open = true): Id {
 export function createScenario(rulesetId?: Id): Id {
   const s = get();
   const rs = s.rulesets[rulesetId ?? defaultRulesetId() ?? ''] ?? Object.values(s.rulesets)[0];
-  return addScenario(newScenario(rs, 'Новый сценарий', randomSeed()));
+  const sc = newScenario(rs, 'Новый сценарий', randomSeed());
+  // Стороны нового сценария ссылаются на силы.
+  sc.sides.forEach((sd) => (sd.units = []));
+  return addScenario(sc);
 }
 
 export function duplicateScenario(id: Id): Id | undefined {
@@ -986,22 +1172,36 @@ export async function importFile() {
     openTab('battle', b.id);
     toast(`Импортирован бой «${b.name}».`, 'good');
   } else if (data?.sides && data?.rulesetId) {
-    const sc = data as Scenario;
+    let sc = migrateScenario(data as Scenario);
     if (s.scenarios[sc.id]) {
       sc.id = newId('sc');
       sc.name = `${sc.name} (импорт)`;
     }
-    addScenario(migrateScenario(sc));
+    // Файл сценария несёт свои подразделения — они становятся силами, сценарий ссылается на них.
+    let n = 0;
+    if (sc.sides.some((sd) => !sd.units)) {
+      const taken = new Set<Id>();
+      for (const f of Object.values(s.forces)) walkUnits(f, (x) => void taken.add(x.id));
+      const r = extractForces(sc, taken, () => newId('u'));
+      historyStep(`импорт сценария «${sc.name}»`);
+      for (const f of r.forces) addForce(f, false);
+      n = r.forces.length;
+      sc = r.scenario;
+    }
+    addScenario(sc);
     if (!s.rulesets[sc.rulesetId]) toast('Набор правил сценария не найден — выберите другой в сценарии.', 'bad');
-    else toast(`Импортирован сценарий «${sc.name}».`, 'good');
+    else toast(`Импортирован сценарий «${sc.name}»${n ? `, в «Силы» добавлено подразделений: ${n}` : ''}.`, 'good');
   } else if ((data?.elements && data?.subunits) || (data?.children && data?.composition)) {
     const f = migrateUnit(data);
-    if (s.formations[f.id]) {
+    // С принадлежностью — это силы (конкретное подразделение), без неё — шаблон.
+    const asForce = typeof data.faction === 'string';
+    if ((asForce ? s.forces : s.formations)[f.id]) {
       f.id = newId('fm');
       f.name = `${f.name} (импорт)`;
     }
-    addFormation(f);
-    toast(`Импортировано подразделение «${f.name}».`, 'good');
+    if (asForce) addForce(f);
+    else addFormation(toTemplate(f));
+    toast(`Импортировано: ${asForce ? 'силы' : 'шаблон'} «${f.name}».`, 'good');
   } else {
     toast('Не удалось распознать содержимое файла.', 'bad');
   }
@@ -1009,7 +1209,7 @@ export async function importFile() {
 
 // ------------------------------------------------------------------ шаблоны
 
-/** Все копии подразделения библиотеки: в библиотеке и в сценариях. */
+/** Все копии шаблона: в других шаблонах и в силах. */
 export function templateUsages(templateId: Id): { ref: string; owner: string; nodeId: Id; outdated: boolean }[] {
   const s = get();
   const tpl = s.formations[templateId];
@@ -1019,7 +1219,7 @@ export function templateUsages(templateId: Id): { ref: string; owner: string; no
       if (n.templateId === templateId && n.id !== templateId) out.push({ ref, owner, nodeId: n.id, outdated: isOutdated(n, tpl) });
     });
   for (const f of Object.values(s.formations)) if (f.id !== templateId) scan(f, `lib:${f.id}`, f.name);
-  for (const sc of Object.values(s.scenarios)) for (const sd of sc.sides) for (const f of sd.formations) scan(f, `sc:${sc.id}:${f.id}`, sc.name);
+  for (const f of Object.values(s.forces)) scan(f, `force:${f.id}`, f.name);
   return out;
 }
 
@@ -1050,7 +1250,7 @@ export function updateAllCopies(templateId: Id): number {
   return list.length;
 }
 
-/** Копия подразделения библиотеки для вставки. */
+/** Копия шаблона для вставки. */
 export function instantiateLibrary(id: Id, opts: { attachedFrom?: string; name?: string } = {}): UnitNode | null {
   const tpl = get().formations[id];
   return tpl ? instantiate(tpl, opts) : null;

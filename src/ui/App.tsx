@@ -46,6 +46,9 @@ const ICONS: Record<TabKind, string> = {
   library: '▤',
 };
 
+/** Значок вкладки: силы и шаблоны открываются в одном конструкторе, но различаются. */
+const tabIcon = (t: Tab) => (t.kind === 'formation' && t.ref?.startsWith('force:') ? '⚑' : ICONS[t.kind]);
+
 function useTabTitle(t: Tab): string {
   const s = useApp();
   const battles = useBattles((x) => x.battles);
@@ -70,7 +73,7 @@ function tabTitle(t: Tab, s: ReturnType<typeof useApp.getState>, battles: Return
       return `Прогоны: ${s.scenarios[t.ref!]?.name ?? ''}`;
     case 'formation': {
       const r = resolveFormation(t.ref!);
-      return r ? `${r.f.name}${r.scenario ? ' (сценарий)' : ''}` : 'Подразделение';
+      return r ? r.f.name : r === null && t.ref?.startsWith('force:') ? 'Силы' : 'Шаблон';
     }
     case 'battle': {
       const b = battles[t.ref!];
@@ -118,7 +121,7 @@ function Tabs({ tabs, active }: { tabs: Tab[]; active?: string }) {
             sm
             label={`▾ ${tabs.length}`}
             title="Все открытые вкладки"
-            items={tabs.map((t) => ({ label: `${ICONS[t.kind]} ${tabTitle(t, s, battles)}`, onClick: () => activateTab(t.key), kbd: t.key === active ? '●' : undefined }))}
+            items={tabs.map((t) => ({ label: `${tabIcon(t)} ${tabTitle(t, s, battles)}`, onClick: () => activateTab(t.key), kbd: t.key === active ? '●' : undefined }))}
           />
         </div>
       )}
@@ -147,7 +150,7 @@ function TabItem({ t, active }: { t: Tab; active: boolean }) {
       }}
       onClick={() => activateTab(t.key)}
     >
-      <span className="tab-icon">{ICONS[t.kind]}</span>
+      <span className="tab-icon">{tabIcon(t)}</span>
       <span className="tab-title">{title}</span>
       <button
         className="tab-close"

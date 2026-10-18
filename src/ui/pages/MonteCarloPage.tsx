@@ -7,7 +7,7 @@ import { Histogram, StackBar } from '../components/Charts';
 import { Crumbs } from '../components/Crumbs';
 import { Btn, Card, Field, Info, Menu, Num, Section, fmt1, pressable } from '../components/ui';
 import { useTabState } from '../hooks';
-import { exportText, openTab, putBattle, toast, useApp, type Tab } from '../store';
+import { exportText, openTab, putBattle, scenarioForBattle, toast, useApp, type Tab } from '../store';
 
 interface McState {
   runs: Record<string, { running: boolean; done: number; n: number; result?: MonteCarloResult; at?: string; cancel?: boolean }>;
@@ -33,8 +33,9 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
   const start = async () => {
     setRun(sc.id, { running: true, done: 0, n, cancel: false });
     try {
+      // Прогоны — по текущему состоянию сил сторон.
       const res = await runManyAsync(
-        sc,
+        scenarioForBattle(sc),
         rs,
         n,
         randomSeed(),
@@ -280,7 +281,7 @@ function RunsTable({ r, scId, colors }: { r: MonteCarloResult; scId: string; col
     const st = useApp.getState();
     const sc = st.scenarios[scId];
     const rs = st.rulesets[sc.rulesetId];
-    const b = createBattle(sc, rs, { seed: x.seed, id: newId('bt'), name: `${sc.name} · прогон ${x.index + 1}` });
+    const b = createBattle(scenarioForBattle(sc), rs, { seed: x.seed, id: newId('bt'), name: `${sc.name} · прогон ${x.index + 1}` });
     if (toEnd) runToEnd(b);
     putBattle(b);
     openTab('battle', b.id);

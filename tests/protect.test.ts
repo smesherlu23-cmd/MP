@@ -72,7 +72,7 @@ describe('файлы данных', () => {
     await store.save('rulesets', 'rs-1', { id: 'rs-1', name: 'Правила', v: 1 });
     await store.save('battles', 'b-1', { id: 'b-1', name: 'Бой' });
     const first = await store.backup('auto', new Date(2026, 0, 1, 10));
-    expect(first?.counts).toEqual({ rulesets: 1, formations: 0, scenarios: 0 });
+    expect(first?.counts).toEqual({ rulesets: 1, formations: 0, forces: 0, scenarios: 0 });
     expect(await exists(`backups/${first!.id}/battles`)).toBe(false);
     expect(await store.backup('auto')).toBeNull();
     expect((await store.backup('manual'))?.unchanged).toBe(true);
@@ -88,7 +88,7 @@ describe('файлы данных', () => {
     // Состояние до восстановления сохранено отдельной копией.
     const list = await store.backups();
     expect(list[0].kind).toBe('restore');
-    expect(list[0].counts).toEqual({ rulesets: 0, formations: 0, scenarios: 1 });
+    expect(list[0].counts).toEqual({ rulesets: 0, formations: 0, forces: 0, scenarios: 1 });
   });
 
   it('хранятся 10 последних автоматических копий и по одной за прошлые дни', async () => {

@@ -1,5 +1,5 @@
 // Главный процесс Electron: окно программы и работа с файлами данных.
-// Данные — JSON-файлы в папке: rulesets/, formations/, scenarios/, battles/; резервные копии,
+// Данные — JSON-файлы в папке: rulesets/, formations/ (шаблоны), forces/ (силы), scenarios/, battles/; резервные копии,
 // корзина и повреждённые файлы — в backups/, trash/, damaged/ (см. protect.ts).
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';

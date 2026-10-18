@@ -1,9 +1,9 @@
-// Конструктор подразделений: структура войск в виде оргсхемы или списка (с перетаскиванием),
-// редактор выбранного подразделения, вставка из библиотеки (шаблоны), придание.
+// Конструктор подразделений — один для шаблонов и сил. Шаблон: устройство и штат (без приказов и
+// состояния). Силы: конкретное подразделение по шаблону — со своим состоянием, потерями, принадлежностью.
+// Оргсхема или список (с перетаскиванием), редактор выбранного узла, вставка из шаблонов, придание.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  BEHAVIOR_LABELS,
   ECHELON_LABELS,
   KIND_LABELS,
   ROOT_RESOLVED,
@@ -20,6 +20,7 @@ import {
   removeUnit,
   resolveTree,
   summarizeUnits,
+  toTemplate,
   validateUnit,
   walkUnits,
   type ComponentKind,
@@ -28,7 +29,6 @@ import {
   type Id,
   type Resolved,
   type Ruleset,
-  type Scenario,
   type StateKey,
   type UnitNode,
 } from '../../engine';
@@ -54,13 +54,19 @@ import {
   updateAllCopies,
   updateCopy,
   updateFormationRef,
-  updateScenario,
   useApp,
+  createForcesFromTemplate,
+  deleteForce,
+  duplicateForce,
+  forceUsage,
   type Tab,
 } from '../store';
 
 export const DND_NODE = 'application/x-warsim-unit';
+/** Перетаскивание шаблона из навигатора. */
 export const DND_LIB = 'application/x-warsim-lib';
+/** Перетаскивание сил из навигатора (на сторону сценария). */
+export const DND_FORCE = 'application/x-warsim-force';
 
 // ------------------------------------------------------------------ сводки по поддеревьям
 
@@ -124,16 +130,16 @@ export function riskOf(state: Resolved['state'], rs: Ruleset): { label: string; 
 
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
-/** Сохранить подразделение (поддерево) в библиотеку как самостоятельный шаблон. */
-function saveToLibrary(node: UnitNode, rs: Ruleset) {
-  const c = cloneUnit(node);
+/** Сохранить подразделение (поддерево) как самостоятельный шаблон: только устройство и штат. */
+function saveAsTemplate(node: UnitNode, rs: Ruleset) {
+  const c = toTemplate(cloneUnit(node));
   delete c.templateId;
   delete c.templateHash;
   delete c.srcNodeId;
   delete c.attachedFrom;
   c.rulesetId = rs.id;
   addFormation(c, false);
-  toast(`«${c.name}» сохранено в библиотеку — его можно вставлять в другие подразделения.`, 'good');
+  toast(`«${c.name}» сохранено как шаблон — по нему можно создавать силы и вставлять его в другие шаблоны.`, 'good');
 }
 
 // ------------------------------------------------------------------ контекст страницы
@@ -142,10 +148,9 @@ interface Ctx {
   root: UnitNode;
   rs: Ruleset;
   ref: string;
+  /** true — шаблон (устройство и штат), false — силы (конкретное подразделение с состоянием). */
   isLib: boolean;
   lib: Record<Id, UnitNode>;
-  scenario?: Scenario;
-  sideIndex?: number;
   upd: (fn: (root: UnitNode) => void) => void;
   sel: Id;
   setSel: (id: Id) => void;
@@ -159,7 +164,7 @@ interface Ctx {
   onDrop: (e: React.DragEvent, targetId: Id, pos: DropPos) => void;
 }
 
-/** Подразделение библиотеки, которое сейчас редактируется (или из которого скопировано). */
+/** Шаблон, который сейчас редактируется (или по которому созданы силы). */
 function hostLibraryId(ctx: Ctx): Id | undefined {
   return ctx.isLib ? ctx.root.id : ctx.root.templateId;
 }
@@ -219,8 +224,8 @@ function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false)[] {
   const un = (fn: (n: UnitNode) => void) => ctx.upd((d) => fn(findUnit(d, node.id)!));
   return [
     { label: 'Добавить подчинённое', kbd: 'Ins', onClick: () => addChild(ctx, node) },
-    { label: 'Вставить из библиотеки…', onClick: () => ctx.openInsert(node.id, false), tip: 'Готовое подразделение из библиотеки как шаблон: взвод, роту, батарею…' },
-    { label: 'Придать из библиотеки…', onClick: () => ctx.openInsert(node.id, true), tip: 'То же, но с отметкой «придано»' },
+    { label: 'Вставить из шаблонов…', onClick: () => ctx.openInsert(node.id, false), tip: 'Готовый шаблон: взвод, роту, батарею…' },
+    { label: 'Придать из шаблонов…', onClick: () => ctx.openInsert(node.id, true), tip: 'То же, но с отметкой «придано»' },
     'sep',
     !isRoot && {
       label: 'Размножить…',
@@ -245,7 +250,7 @@ function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false)[] {
     !isRoot && { label: 'Раньше в списке', disabled: idx <= 0, onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx - 1].id, 'before', true)) },
     !isRoot && { label: 'Позже в списке', disabled: !parent || idx >= parent.children.length - 1, onClick: () => ctx.upd((d) => void moveUnit([d], node.id, parent!.children[idx + 1].id, 'after', true)) },
     'sep',
-    { label: 'Сохранить в библиотеку', tip: 'Чтобы вставлять это подразделение в другие как шаблон', onClick: () => saveToLibrary(node, ctx.rs) },
+    { label: 'Сохранить как шаблон', tip: 'Устройство и штат этого подразделения — отдельным шаблоном', onClick: () => saveAsTemplate(node, ctx.rs) },
     !!tpl && outdated && { label: 'Обновить из шаблона', onClick: () => updateCopy(ctx.ref, node.id), tip: `Шаблон «${tpl.name}» изменён после вставки` },
     !!node.templateId &&
       !(ctx.isLib && isRoot) && {
@@ -258,25 +263,6 @@ function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false)[] {
           }),
       },
     !isRoot && node.attachedFrom !== undefined && { label: 'Снять отметку «придано»', onClick: () => un((n) => void delete n.attachedFrom) },
-    !isRoot &&
-      !ctx.isLib && {
-        label: node.attachedFrom !== undefined ? 'Отделить (снова самостоятельное)' : 'Выделить в самостоятельное',
-        tip: 'Станет отдельным подразделением этой стороны сценария',
-        onClick: () => {
-          const sc = ctx.scenario!;
-          updateScenario(sc.id, (d) => {
-            const side = d.sides[ctx.sideIndex!];
-            const root = side.formations.find((f) => f.id === ctx.root.id);
-            if (!root) return;
-            const x = removeUnit(root.children, node.id);
-            if (!x) return;
-            delete x.attachedFrom;
-            side.formations.push(x);
-          });
-          ctx.setSel(ctx.root.id);
-          toast(`«${node.name}» — теперь самостоятельное подразделение стороны.`, 'good');
-        },
-      },
     'sep',
     !isRoot && {
       label: 'Удалить',
@@ -415,8 +401,6 @@ export function FormationPage({ tab }: { tab: Tab }) {
     ref,
     isLib,
     lib: st.formations,
-    scenario: res.scenario,
-    sideIndex: res.sideIndex,
     upd: (fn) => updateFormationRef(ref, fn),
     sel: selValid,
     setSel,
@@ -473,16 +457,13 @@ export function FormationPage({ tab }: { tab: Tab }) {
   const tpl = root.templateId ? st.formations[root.templateId] : undefined;
   const usages = isLib ? templateUsages(root.id) : [];
   const outdatedUsages = usages.filter((u) => u.outdated).length;
+  const forceCopies = usages.filter((u) => u.ref.startsWith('force:')).length;
+  const scenariosUsing = isLib ? [] : forceUsage(root.id);
+  const factions = [...new Set(Object.values(st.forces).map((f) => f.faction?.trim()).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, 'ru'));
 
   return (
     <div className="page">
-      <Crumbs
-        items={
-          isLib
-            ? [{ label: 'Подразделения', section: 'units' }]
-            : [{ label: 'Сценарии', section: 'scenarios' }, { label: res.scenario!.name, open: ['scenario', res.scenario!.id] }, { label: res.scenario!.sides[res.sideIndex!].name }]
-        }
-      />
+      <Crumbs items={isLib ? [{ label: 'Шаблоны', section: 'units' }] : [{ label: 'Силы', section: 'forces' }, ...(root.faction ? [{ label: root.faction }] : [])]} />
       <div className="page-head">
         <input className="title-input" value={root.name} onChange={(e) => ctx.upd((d) => void (d.name = e.target.value))} />
         <Seg
@@ -499,59 +480,95 @@ export function FormationPage({ tab }: { tab: Tab }) {
             'sep',
             ...(isLib
               ? [
-                  { label: 'Дублировать', onClick: () => duplicateFormation(root.id) },
-                  { label: 'Сохранить в файл…', onClick: () => exportJson('formation', root.name, root) },
+                  {
+                    label: 'Создать силы по шаблону…',
+                    tip: 'Конкретные подразделения с этим устройством и штатом — у каждого будут свои потери',
+                    onClick: async () => {
+                      const v = await promptDialog('Сколько подразделений сил создать?', '1', `По шаблону «${root.name}». Названия — с номерами по порядку; их можно поменять.`);
+                      const n = Math.round(Number(v));
+                      if (!v || !Number.isFinite(n) || n < 1) return;
+                      const ids = createForcesFromTemplate(root.id, { count: n, open: n === 1 });
+                      if (n > 1) toast(`Создано сил: ${ids.length} — они в разделе «Силы».`, 'good');
+                    },
+                  },
+                  { label: 'Дублировать шаблон', onClick: () => duplicateFormation(root.id) },
+                  { label: 'Сохранить в файл…', onClick: () => exportJson('template', root.name, root) },
                   'sep' as const,
-                  { label: 'Удалить из библиотеки', danger: true, onClick: () => deleteFormation(root.id) },
+                  { label: 'Удалить шаблон', danger: true, onClick: () => deleteFormation(root.id) },
                 ]
               : [
-                  !!tpl && { label: `Открыть в библиотеке «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
-                  { label: 'Сохранить в библиотеку', onClick: () => saveToLibrary(root, rs) },
+                  !!tpl && { label: `Открыть шаблон «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
+                  { label: 'Сохранить как шаблон', onClick: () => saveAsTemplate(root, rs) },
+                  { label: 'Дублировать', onClick: () => duplicateForce(root.id) },
+                  { label: 'Сохранить в файл…', onClick: () => exportJson('force', root.name, { ...root, faction: root.faction ?? '' }) },
+                  'sep' as const,
+                  { label: 'Удалить силы', danger: true, onClick: () => deleteForce(root.id) },
                 ]),
           ]}
         />
       </div>
 
       <div className="meta" style={{ marginTop: -8, marginBottom: 14 }}>
-        {isLib ? (
+        <span>
+          набор правил:{' '}
+          <select className="inline-select" value={rs.id} onChange={(e) => changeRuleset(e.target.value)} title="По какому набору правил считается это подразделение: каталог типов, уровни">
+            {Object.values(st.rulesets).map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </span>
+        {!isLib && (
           <span>
-            набор правил:{' '}
-            <select className="inline-select" value={rs.id} onChange={(e) => changeRuleset(e.target.value)} title="По какому набору правил считается это подразделение: каталог типов, приказы, уровни">
-              {Object.values(st.rulesets).map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
+            принадлежность:{' '}
+            <input
+              className="inline-input"
+              list="force-factions"
+              value={root.faction ?? ''}
+              placeholder="чьи это силы"
+              onChange={(e) => ctx.upd((d) => void (d.faction = e.target.value || undefined))}
+              title="Армия, сторона, фракция — для порядка в списке сил"
+            />
+            <datalist id="force-factions">
+              {factions.map((f) => (
+                <option key={f} value={f} />
               ))}
-            </select>
-          </span>
-        ) : (
-          <span>
-            набор правил сценария:{' '}
-            <Link kind="ruleset" refId={rs.id}>
-              {rs.name}
-            </Link>
+            </datalist>
           </span>
         )}
         {!isLib && tpl && (
           <span>
-            из библиотеки:{' '}
+            по шаблону{' '}
             <Link kind="formation" refId={`lib:${tpl.id}`}>
               {tpl.name}
             </Link>
             {isOutdated(root, tpl) && (
               <>
                 {' '}
-                — <span className="warn">изменено в библиотеке</span>{' '}
-                <a href="#" onClick={(e) => (e.preventDefault(), updateCopy(ref, root.id))}>
+                — <span className="warn">шаблон изменён</span>{' '}
+                <a href="#" onClick={(e) => (e.preventDefault(), updateCopy(ref, root.id))} title="Устройство и штат — из шаблона; названия, потери и состояние сил сохраняются">
                   обновить
                 </a>
               </>
             )}
           </span>
         )}
+        {!isLib && (
+          <span data-tip={scenariosUsing.map((x) => x.name).join('\n') || undefined}>
+            {scenariosUsing.length ? (
+              <>
+                в сценариях: <b>{scenariosUsing.length}</b>
+              </>
+            ) : (
+              <span className="faint">ни в одном сценарии</span>
+            )}
+          </span>
+        )}
         {isLib && usages.length > 0 && (
           <span data-tip={[...new Set(usages.map((u) => u.owner))].join('\n')}>
-            копий в других подразделениях и сценариях: <b>{usages.length}</b>
+            по шаблону создано сил: <b>{forceCopies}</b>
+            {usages.length > forceCopies ? `, в других шаблонах: ${usages.length - forceCopies}` : ''}
             {outdatedUsages > 0 && (
               <>
                 {' '}
@@ -582,7 +599,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
           </Card>
           <div className="grid align-start" style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(260px, 1fr)' }}>
             <NodeEditor key={sel.id} ctx={ctx} node={sel} />
-            <SummaryCard node={sel} rs={rs} resolved={resolved} />
+            <SummaryCard node={sel} rs={rs} resolved={resolved} template={isLib} />
           </div>
         </div>
       ) : (
@@ -591,7 +608,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
             <Card tight>
               <TreeList ctx={ctx} />
             </Card>
-            <SummaryCard node={sel} rs={rs} resolved={resolved} />
+            <SummaryCard node={sel} rs={rs} resolved={resolved} template={isLib} />
           </div>
           <NodeEditor key={sel.id} ctx={ctx} node={sel} />
         </div>
@@ -622,8 +639,8 @@ function EmptyStart({ ctx }: { ctx: Ctx }) {
           <span>взводы, отделения, расчёты — любая глубина</span>
         </button>
         <button onClick={() => ctx.openInsert(ctx.root.id, false)} disabled={!hasLib}>
-          <b>Вставить из библиотеки</b>
-          <span>{hasLib ? 'готовые взводы, роты, батареи как шаблоны' : 'в библиотеке пока нет подходящих подразделений'}</span>
+          <b>Вставить из шаблонов</b>
+          <span>{hasLib ? 'готовые взводы, роты, батареи' : 'подходящих шаблонов пока нет'}</span>
         </button>
         <button onClick={focusComposition}>
           <b>Свой состав</b>
@@ -717,7 +734,6 @@ function OrgChart({ ctx }: { ctx: Ctx }) {
 function OrgBox({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
   const st = ctx.stats.get(node.id);
   const isRoot = node.id === ctx.root.id;
-  const order = node.order ? ctx.rs.orders.find((o) => o.id === node.order)?.name : undefined;
   const isDrop = ctx.drop?.id === node.id;
   return (
     <div
@@ -743,7 +759,7 @@ function OrgBox({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       <div className="org-name">{node.name}</div>
       <div className="org-stats" data-tip={statsTip(st)}>
         {statsLine(st)}
-        {order ? ` · ${order}` : ''}
+
       </div>
       <div className="org-badges">
         <NodeBadges ctx={ctx} node={node} />
@@ -886,7 +902,8 @@ function FireTable({ fire, rs }: { fire: Record<string, Record<string, number>>;
   );
 }
 
-function SummaryCard({ node, rs, resolved }: { node: UnitNode; rs: Ruleset; resolved: Map<Id, Resolved> }) {
+/** Сводка узла с подчинёнными; у шаблона — только штат (состояния у него нет). */
+function SummaryCard({ node, rs, resolved, template }: { node: UnitNode; rs: Ruleset; resolved: Map<Id, Resolved>; template: boolean }) {
   const s = summarizeUnits([node], rs, resolved);
   const shortage = s.persAuth > 0 ? (1 - s.persCur / s.persAuth) * 100 : 0;
   return (
@@ -894,16 +911,22 @@ function SummaryCard({ node, rs, resolved }: { node: UnitNode; rs: Ruleset; reso
       <Card title={node.children.length ? 'Сводка с подчинёнными' : 'Сводка'}>
         <div className="stat-row">
           <div className="stat">
-            <span className="k">Личный состав</span>
+            <span className="k">{template ? 'По штату' : 'Личный состав'}</span>
             <span className="v">
-              {fmt0(s.persCur)} <small>из {fmt0(s.persAuth)}</small>
+              {template ? (
+                fmt0(s.persAuth)
+              ) : (
+                <>
+                  {fmt0(s.persCur)} <small>из {fmt0(s.persAuth)}</small>
+                </>
+              )}
             </span>
           </div>
           <div className="stat" data-tip="Сумма очков боевой ценности всех единиц">
             <span className="k">Ценность</span>
             <span className="v">{fmt0(s.value)}</span>
           </div>
-          {rs.features.morale && s.combatUnits > 0 && (
+          {!template && rs.features.morale && s.combatUnits > 0 && (
             <div className="stat">
               <span className="k">Мораль</span>
               <span className="v">{Math.round(s.morale)}</span>
@@ -913,8 +936,8 @@ function SummaryCard({ node, rs, resolved }: { node: UnitNode; rs: Ruleset; reso
         <div className="faint small row" style={{ marginTop: 4, gap: 4 }}>
           в бою — элементов: {s.combatUnits}
           <Info text="Каждое подразделение с собственным составом сражается в бою как отдельный элемент: стреляет, несёт потери, может отступить." />
-          {shortage >= 1 ? ` · некомплект ${fmt1(shortage)}%` : ''}
-          {s.recoverable ? ` · раненых ${s.recoverable}` : ''}
+          {!template && shortage >= 1 ? ` · некомплект ${fmt1(shortage)}%` : ''}
+          {!template && s.recoverable ? ` · раненых ${s.recoverable}` : ''}
         </div>
         {s.equip.length > 0 && (
           <table className="tbl compact" style={{ marginTop: 10 }}>
@@ -923,8 +946,14 @@ function SummaryCard({ node, rs, resolved }: { node: UnitNode; rs: Ruleset; reso
                 <tr key={q.id}>
                   <td>{q.name}</td>
                   <td className="num nowrap">
-                    {q.cur} <span className="faint">из {q.auth}</span>
-                    {q.rec ? <span className="faint"> (+{q.rec} в ремонте)</span> : null}
+                    {template ? (
+                      q.auth
+                    ) : (
+                      <>
+                        {q.cur} <span className="faint">из {q.auth}</span>
+                        {q.rec ? <span className="faint"> (+{q.rec} в ремонте)</span> : null}
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -977,7 +1006,6 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       else n.state[k] = v;
     });
   const inheritText = isRoot ? 'по умолчанию' : 'как у старшего';
-  const orderName = (id: Id | null) => (id ? (rs.orders.find((o) => o.id === id)?.name ?? id) : (rs.orders.find((o) => o.behavior === 'defend')?.name ?? 'Оборона'));
   const expName = (lv: number) => `${lv}. ${rs.experienceLevels[lv - 1]?.name ?? ''}`;
   const types = new Map(rs.componentTypes.map((t) => [t.id, t]));
   let ownCur = 0;
@@ -989,7 +1017,7 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
     ownCur += c.current * crew;
     ownAuth += c.authorized * crew;
   }
-  const showRecoverable = node.composition.some((c) => (c.recoverable ?? 0) > 0);
+  const showRecoverable = !ctx.isLib && node.composition.some((c) => (c.recoverable ?? 0) > 0);
   const stateKeys = (['morale', 'cohesion', 'readiness', 'fatigue', 'ammo', 'fuel', 'equipment', 'vehicleCondition'] as StateKey[]).filter(
     (k) => (ft as unknown as Record<string, boolean>)[k] !== false,
   );
@@ -1054,13 +1082,6 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
               ))}
             </datalist>
           </Field>
-          <Field label="Приказ">
-            <Sel
-              value={node.order ?? ''}
-              onChange={(v) => un((n) => void (n.order = v || null))}
-              options={[{ value: '', label: `${orderName(pr.order)} (${inheritText})` }, ...rs.orders.map((o) => ({ value: o.id, label: o.name, title: BEHAVIOR_LABELS[o.behavior] }))]}
-            />
-          </Field>
           <Field label="Эшелон" hint="Насколько подразделение подставлено под прямой огонь.">
             <Sel
               value={node.echelon ?? ''}
@@ -1092,16 +1113,19 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
           </>
         }
         actions={
-          node.composition.length > 0 && (
+          node.composition.length > 0 &&
+          (ctx.isLib ? (
+            <span className="muted small">по штату {fmt0(ownAuth)} чел.</span>
+          ) : (
             <span className="row" style={{ gap: 8 }}>
               <span className="muted small">
                 {fmt0(ownCur)} из {fmt0(ownAuth)} чел.
               </span>
-              <Btn sm kind="ghost" onClick={() => un((n) => n.composition.forEach((c) => (c.current = c.authorized)))}>
+              <Btn sm kind="ghost" onClick={() => un((n) => n.composition.forEach((c) => (c.current = c.authorized)))} title="Пополнить до штата">
                 До штата
               </Btn>
             </span>
-          )
+          ))
         }
         tight
       >
@@ -1112,7 +1136,7 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
                 <tr>
                   <th>Тип</th>
                   <th className="num">Штат</th>
-                  <th className="num">В строю</th>
+                  {!ctx.isLib && <th className="num">В строю</th>}
                   {showRecoverable && (
                     <th className="num" data-tip="Раненые (люди) или техника в ремонте — могут вернуться в строй">
                       Ран./ремонт
@@ -1128,11 +1152,25 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
                       <Sel value={c.typeId} onChange={(v) => un((n) => void (n.composition[i].typeId = v))} options={rs.componentTypes.map((tt) => ({ value: tt.id, label: tt.name }))} />
                     </td>
                     <td className="num">
-                      <Num value={c.authorized} onChange={(v) => un((n) => void (n.composition[i].authorized = v))} min={0} integer width={80} />
+                      <Num
+                        value={c.authorized}
+                        onChange={(v) =>
+                          un((n) => {
+                            n.composition[i].authorized = v;
+                            // В шаблоне только штат: «в строю» всегда по штату.
+                            if (ctx.isLib) n.composition[i].current = v;
+                          })
+                        }
+                        min={0}
+                        integer
+                        width={80}
+                      />
                     </td>
-                    <td className="num">
-                      <Num value={c.current} onChange={(v) => un((n) => void (n.composition[i].current = v))} min={0} integer width={80} />
-                    </td>
+                    {!ctx.isLib && (
+                      <td className="num">
+                        <Num value={c.current} onChange={(v) => un((n) => void (n.composition[i].current = v))} min={0} integer width={80} />
+                      </td>
+                    )}
                     {showRecoverable && (
                       <td className="num nowrap">
                         {c.recoverable ? (
@@ -1204,6 +1242,7 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
         </div>
       </Card>
 
+      {!ctx.isLib && (
       <Section
         id="unit-state"
         title={
@@ -1247,6 +1286,7 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
           />
         </div>
       </Section>
+      )}
 
       <Section
         id="unit-extra"
@@ -1272,7 +1312,7 @@ function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
   );
 }
 
-// ------------------------------------------------------------------ вставка из библиотеки
+// ------------------------------------------------------------------ вставка из шаблонов
 
 function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; targetId: Id; attach: boolean; onClose: () => void }) {
   const target = findUnit(ctx.root, targetId);
@@ -1321,7 +1361,7 @@ function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; targetId: 
         </>
       }
     >
-      <input type="search" autoFocus placeholder="Поиск по библиотеке…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
+      <input type="search" autoFocus placeholder="Поиск по шаблонам…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
       <div className="insert-list">
         {items.map((u) => {
           const s = summarizeUnits([u], ctx.rs);
@@ -1344,10 +1384,10 @@ function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; targetId: 
             </div>
           );
         })}
-        {!items.length && <div className="empty">Подходящих подразделений в библиотеке нет. Соберите взвод или роту и сохраните в библиотеку через меню «⋯».</div>}
+        {!items.length && <div className="empty">Подходящих шаблонов нет. Соберите взвод или роту и сохраните как шаблон через меню «⋯».</div>}
       </div>
       <p className="faint small" style={{ marginBottom: 0 }}>
-        Копия помнит свой шаблон: если позже изменить шаблон в библиотеке, копию можно обновить, не теряя её потерь и состояния.
+        Копия помнит свой шаблон: если позже изменить шаблон, копию можно обновить, не теряя её потерь и состояния.
       </p>
     </Modal>
   );

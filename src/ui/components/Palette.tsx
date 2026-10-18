@@ -62,21 +62,20 @@ function buildItems(): Item[] {
     items.push({ id: `mc:${sc.id}`, group: 'Сценарии', title: `Прогоны: ${sc.name}`, run: (bg) => openTab('montecarlo', sc.id, { background: bg }) });
   }
 
-  const units = (root: UnitNode, ref: string, where: string, top: boolean) =>
+  const units = (root: UnitNode, ref: string, where: string, top: boolean, group: string) =>
     walkUnits(root, (n) => {
       const isRoot = n.id === root.id;
       items.push({
         id: `u:${ref}:${n.id}`,
-        group: 'Подразделения',
+        group,
         title: n.name,
         sub: [n.level, isRoot ? where : `в «${root.name}»${where ? ` · ${where}` : ''}`].filter(Boolean).join(' · '),
         top: top && isRoot,
         run: (bg) => openUnit(ref, n.id, bg),
       });
     });
-  for (const f of Object.values(s.formations).sort(byName)) units(f, `lib:${f.id}`, 'библиотека', true);
-  for (const sc of Object.values(s.scenarios))
-    sc.sides.forEach((side, i) => side.formations.forEach((f) => units(f, `sc:${sc.id}:${f.id}`, `сценарий «${sc.name}», ${side.name || (i ? 'сторона Б' : 'сторона А')}`, false)));
+  for (const f of Object.values(s.forces).sort(byName)) units(f, `force:${f.id}`, f.faction ? `силы · ${f.faction}` : 'силы', true, 'Силы');
+  for (const f of Object.values(s.formations).sort(byName)) units(f, `lib:${f.id}`, 'шаблон', true, 'Шаблоны');
 
   for (const r of Object.values(s.rulesets).sort(byName)) {
     items.push({ id: `rs:${r.id}`, group: 'Наборы правил', title: r.name, top: true, run: (bg) => openTab('ruleset', r.id, { background: bg }) });

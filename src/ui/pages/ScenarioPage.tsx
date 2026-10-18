@@ -1,15 +1,18 @@
 // Сценарий: условия боя, стороны, их подразделения, укрепления, разведданные и задачи.
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   OBJECTIVE_HAS_VALUE,
   OBJECTIVE_LABELS,
   OBJECTIVE_TYPES,
   createBattle,
+  findUnit,
+  forceRefIssues,
   newId,
-  newRootUnit,
   newObjective,
+  partOf,
   randomSeed,
+  resolveScenario,
   summarizeUnits,
   defaultCommandLevel,
   plural,
@@ -17,9 +20,11 @@ import {
   validateScenario,
   walkUnits,
   withoutExcluded,
+  type Id,
   type ObjectiveType,
   type Ruleset,
   type Scenario,
+  type SideUnitRef,
   type UnitNode,
 } from '../../engine';
 import { effectsText } from '../components/EffectsEditor';
@@ -27,11 +32,25 @@ import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
 import { AddUnitsModal } from '../components/AddUnits';
 import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
-import { Link } from '../components/Link';
-import { Area, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable } from '../components/ui';
+import { Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
-import { confirmDialog, deleteScenario, duplicateScenario, exportJson, historyStep, instantiateLibrary, openTab, putBattle, toast, toastUndoable, updateScenario, useApp, type Tab } from '../store';
-import { DND_LIB, DND_NODE, computeStats, statsLine, statsTip } from './FormationPage';
+import {
+  confirmDialog,
+  createForcesFromTemplate,
+  deleteScenario,
+  duplicateScenario,
+  exportJson,
+  historyStep,
+  openTab,
+  putBattle,
+  scenarioForBattle,
+  toast,
+  toastUndoable,
+  updateScenario,
+  useApp,
+  type Tab,
+} from '../store';
+import { DND_FORCE, DND_LIB, DND_NODE, computeStats, statsLine, statsTip } from './FormationPage';
 
 /** Название нового боя: «Сценарий · бой N» (N — следующий номер для этого сценария). */
 export function nextBattleName(sc: Scenario): string {
@@ -43,12 +62,18 @@ export function nextBattleName(sc: Scenario): string {
   return `${sc.name} · бой ${n + 1}`;
 }
 
-/** Новый бой по сценарию — каждый раз со своей случайностью. */
+/** Замечания к сценарию: ссылки на силы и сам собранный из сил сценарий. */
+export function scenarioIssues(sc: Scenario, rs: Ruleset | undefined) {
+  const forces = useApp.getState().forces;
+  return [...forceRefIssues(sc, forces), ...validateScenario(resolveScenario(sc, forces), rs)];
+}
+
+/** Новый бой по сценарию — каждый раз со своей случайностью; стороны собираются из текущих сил. */
 export async function startBattle(sc: Scenario, rs: Ruleset) {
-  const issues = validateScenario(sc, rs);
+  const issues = scenarioIssues(sc, rs);
   const errors = issues.filter((x) => x.level === 'error');
   if (errors.length && !(await confirmDialog('В сценарии есть ошибки', `${errors.map((x) => `• ${x.text}`).join('\n')}\n\nВсё равно начать бой?`, 'Начать'))) return;
-  const b = createBattle(sc, rs, { seed: randomSeed(), id: newId('bt'), name: nextBattleName(sc) });
+  const b = createBattle(scenarioForBattle(sc), rs, { seed: randomSeed(), id: newId('bt'), name: nextBattleName(sc) });
   putBattle(b);
   openTab('battle', b.id);
 }
@@ -68,7 +93,9 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
   if (!sc) return <div className="empty">Сценарий не найден.</div>;
   const rs = st.rulesets[sc.rulesetId];
   const upd = (fn: (s: Scenario) => void) => updateScenario(sc.id, fn);
-  const issues = validateScenario(sc, rs);
+  // Стороны хранят ссылки на силы; для сводок, плана и проверок — сценарий, собранный из сил.
+  const rsc = resolveScenario(sc, st.forces);
+  const issues = scenarioIssues(sc, rs);
   const errors = issues.filter((x) => x.level === 'error');
   const warnings = issues.filter((x) => x.level === 'warning');
 
@@ -103,7 +130,15 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
         <Menu
           items={[
             { label: 'Дублировать', onClick: () => duplicateScenario(sc.id) },
-            { label: 'Сохранить в файл…', onClick: () => exportJson('scenario', sc.name, sc) },
+            {
+              label: 'Сохранить в файл…',
+              tip: 'Вместе с подразделениями сторон — чтобы сценарий можно было открыть у другого ГМ',
+              onClick: () => {
+                // В файл — стороны с самими подразделениями (как в бою): при импорте они станут силами.
+                const r = scenarioForBattle(sc);
+                exportJson('scenario', sc.name, { ...r, sides: r.sides.map(({ units: _, orders: __, ...sd }) => sd) });
+              },
+            },
             'sep',
             { label: 'Удалить сценарий', danger: true, onClick: () => deleteScenario(sc.id) },
           ]}
@@ -144,23 +179,20 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
               <Sel value={sc.rulesetId} onChange={changeRuleset} options={Object.values(st.rulesets).map((r) => ({ value: r.id, label: r.name }))} />
             </Field>
           </div>
-          <div style={{ marginTop: 12 }}>
-            <Area value={sc.description ?? ''} onChange={(v) => upd((d) => void (d.description = v))} rows={2} placeholder="Вводная (необязательно)" />
-          </div>
         </Card>
 
         {rs ? (
           <div className="grid two">
             {[0, 1].map((i) => (
-              <SideEditor key={i} sc={sc} i={i} rs={rs} />
+              <SideEditor key={i} sc={sc} rsc={rsc} i={i} rs={rs} />
             ))}
           </div>
         ) : (
           <div className="note bad">Набор правил сценария не найден — выберите другой.</div>
         )}
 
-        {rs && <PlanEditor sc={sc} rs={rs} />}
-        {rs && <ForceRatio sc={sc} rs={rs} />}
+        {rs && <PlanEditor sc={rsc} rs={rs} />}
+        {rs && <ForceRatio sc={rsc} rs={rs} />}
       </div>
     </div>
   );
@@ -177,10 +209,12 @@ function SideTree(props: {
   arrivals?: Map<string, number>;
   excluded?: Set<string>;
   onToggle?: (id: string, on: boolean) => void;
+  /** Приказы частей на этот бой (сценарий). */
+  orders?: Record<string, string>;
+  onOrder?: (id: string, orderId: string) => void;
 }) {
-  const { root, refId, rs, arrivals, excluded, onToggle } = props;
+  const { root, refId, rs, arrivals, excluded, onToggle, orders: setOrders, onOrder } = props;
   const stats = computeStats(root, rs);
-  const orders = new Map(rs.orders.map((o) => [o.id, o.name]));
   const LIMIT = 150;
   const rows: { n: UnitNode; depth: number; off: boolean; inherited: boolean }[] = [];
   const walk = (n: UnitNode, depth: number, parentOff: boolean) => {
@@ -217,8 +251,24 @@ function SideTree(props: {
           <span className="side-node-name">{n.name}</span>
           {n.attachedFrom !== undefined && <span className="badge info">придано</span>}
           {arrivals?.has(n.id) && <span className="badge warn" data-tip="Подкрепление по плану боя">с {arrivals.get(n.id)}-го хода</span>}
-          {n.order && <span className="badge">{orders.get(n.order) ?? n.order}</span>}
           <span className="grow" />
+          {onOrder && !off && (
+            <select
+              className="order-mini"
+              value={setOrders?.[n.id] ?? ''}
+              title="Приказ этой части на этот бой"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              onChange={(e) => onOrder(n.id, e.target.value)}
+            >
+              <option value="">как у старшего</option>
+              {rs.orders.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          )}
           <span className="faint small nowrap" data-tip={statsTip(stats.get(n.id))}>
             {statsLine(stats.get(n.id))}
           </span>
@@ -229,8 +279,10 @@ function SideTree(props: {
   );
 }
 
-function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
+function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number; rs: Ruleset }) {
+  const forces = useApp((s) => s.forces);
   const side = sc.sides[i];
+  const refs = side.units ?? [];
   const upd = (fn: (s: Scenario['sides'][number]) => void) => updateScenario(sc.id, (d) => fn(d.sides[i]));
   const [over, setOver] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -238,58 +290,190 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
   const scRef = `sc:${sc.id}`;
   const defaultOrderName = rs.orders.find((o) => o.behavior === 'defend')?.name ?? 'Оборона';
   const [openIds, setOpenIds] = useTabState<string[]>(`sc-tree:${sc.id}`, []);
-  const accepts = (e: React.DragEvent) => e.dataTransfer.types.includes(DND_LIB) || e.dataTransfer.types.includes(DND_NODE);
-  const dragged = (e: React.DragEvent): { id: string; side: number } | null => {
+  const rootOf = (r: SideUnitRef) => r.nodeId ?? r.forceId;
+  const accepts = (e: React.DragEvent) => [DND_FORCE, DND_LIB, DND_NODE].some((t) => e.dataTransfer.types.includes(t));
+  const dragged = (e: React.DragEvent): { side: number; index: number } | null => {
     const raw = e.dataTransfer.getData(DND_NODE);
     if (!raw) return null;
-    const x = JSON.parse(raw) as { ref: string; id: string; side?: number };
-    return x.ref === scRef && typeof x.side === 'number' ? { id: x.id, side: x.side } : null;
+    const x = JSON.parse(raw) as { ref: string; side?: number; index?: number };
+    return x.ref === scRef && typeof x.side === 'number' && typeof x.index === 'number' ? { side: x.side, index: x.index } : null;
   };
-  /** Бросили на подразделение — придать ему. */
-  const onRowDrop = (e: React.DragEvent, targetId: string) => {
+  /** Силы из перетаскивания: готовые — как есть, шаблон — новые силы с принадлежностью этой стороны. */
+  const forceFromDrop = (e: React.DragEvent): Id | null => {
+    const fid = e.dataTransfer.getData(DND_FORCE);
+    if (fid) return fid;
+    const tid = e.dataTransfer.getData(DND_LIB);
+    return tid ? (createForcesFromTemplate(tid, { faction: side.name, open: false })[0] ?? null) : null;
+  };
+  /** Бросили на подразделение стороны — придать ему на этот бой. */
+  const onRowDrop = (e: React.DragEvent, targetNodeId: Id) => {
     e.preventDefault();
     e.stopPropagation();
     setOver(null);
-    const libId = e.dataTransfer.getData(DND_LIB);
-    if (libId) {
-      const c = instantiateLibrary(libId, { attachedFrom: '' });
-      if (c) upd((d) => void d.formations.find((f) => f.id === targetId)?.children.push(c));
-      if (c) toast(`«${c.name}» придано.`, 'good');
+    const fid = forceFromDrop(e);
+    if (fid) {
+      upd((d) => void (d.units ??= []).push({ forceId: fid, attachTo: targetNodeId }));
+      toast(`«${forces[fid]?.name ?? 'Подразделение'}» придано на этот бой.`, 'good');
       return;
     }
     const x = dragged(e);
-    if (!x || x.id === targetId) return;
-    let name = '';
+    if (!x) return;
     updateScenario(sc.id, (d) => {
-      const from = d.sides[x.side].formations;
-      const k = from.findIndex((f) => f.id === x.id);
-      const target = d.sides[i].formations.find((f) => f.id === targetId);
-      if (k < 0 || !target) return;
-      const [u] = from.splice(k, 1);
-      u.attachedFrom = u.attachedFrom ?? '';
-      name = u.name;
-      target.children.push(u);
+      const from = d.sides[x.side].units ?? [];
+      const u = from[x.index];
+      if (!u || (u.nodeId ?? u.forceId) === targetNodeId) return;
+      from.splice(x.index, 1);
+      (d.sides[i].units ??= []).push({ ...u, attachTo: targetNodeId });
     });
-    if (name) toast(`«${name}» придано подразделению. Отделить можно в его меню «⋯».`, 'good');
+    toast('Придано на этот бой. Отделить — кнопкой «отделить» у подразделения.', 'good');
   };
-  /** Бросили на список стороны — добавить копию из библиотеки или перевести с другой стороны. */
+  /** Бросили на список стороны — добавить силы или перевести с другой стороны. */
   const onListDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setOver(null);
-    const libId = e.dataTransfer.getData(DND_LIB);
-    if (libId) {
-      const c = instantiateLibrary(libId);
-      if (c) upd((d) => void d.formations.push(c));
+    const fid = forceFromDrop(e);
+    if (fid) {
+      upd((d) => void (d.units ??= []).push({ forceId: fid }));
       return;
     }
     const x = dragged(e);
     if (!x || x.side === i) return;
     updateScenario(sc.id, (d) => {
-      const from = d.sides[x.side].formations;
-      const k = from.findIndex((f) => f.id === x.id);
-      if (k >= 0) d.sides[i].formations.push(from.splice(k, 1)[0]);
+      const [u] = (d.sides[x.side].units ?? []).splice(x.index, 1);
+      if (u) (d.sides[i].units ??= []).push({ forceId: u.forceId, nodeId: u.nodeId });
     });
   };
+  const remove = (ri: number, name: string) => {
+    historyStep(`удаление «${name}» из сценария`);
+    upd((d) => void d.units?.splice(ri, 1));
+    toastUndoable(`«${name}» убрано из сценария (в «Силах» осталось).`);
+  };
+
+  // Подразделения стороны для показа: часть сил — как в бою; приданные — под теми, кому приданы.
+  const rows = refs.map((r, ri) => {
+    const f = forces[r.forceId];
+    return { r, ri, node: f ? partOf(f, rootOf(r)) : null };
+  });
+  const hostOf = (x: (typeof rows)[number]) => (x.r.attachTo ? rows.find((y) => y !== x && y.node && findUnit(y.node, x.r.attachTo!)) : undefined);
+  const top = rows.filter((x) => !hostOf(x));
+  const live = sideUnits(rsc.sides[i]);
+
+  const unitRow = (x: (typeof rows)[number], attachedTo?: string) => {
+    const { r, ri, node } = x;
+    if (!node)
+      return (
+        <div key={`${ri}`} className="side-unit missing">
+          <span className="grow bad">Подразделение сил удалено или его часть больше не существует</span>
+          <Btn sm kind="ghost" icon title="Убрать со стороны" onClick={() => upd((d) => void d.units?.splice(ri, 1))}>
+            ×
+          </Btn>
+        </div>
+      );
+    const root = rootOf(r);
+    const pruned = withoutExcluded(node, side.excluded);
+    const s = summarizeUnits(pruned ? [pruned] : [], rs);
+    const isOpen = openIds.includes(`${ri}:${root}`);
+    const out = countExcluded(node, excludedSet);
+    const part = !!r.nodeId && r.nodeId !== r.forceId;
+    return (
+      <div key={`${ri}:${root}`} style={attachedTo ? { marginLeft: 22 } : undefined}>
+        <div
+          className={`side-unit${over === `${ri}` ? ' drop-inside' : ''}`}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(DND_NODE, JSON.stringify({ ref: scRef, side: i, index: ri }));
+            e.dataTransfer.effectAllowed = 'move';
+          }}
+          onDragOver={(e) => {
+            if (!accepts(e)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (over !== `${ri}`) setOver(`${ri}`);
+          }}
+          onDrop={(e) => onRowDrop(e, root)}
+          data-tip="Перетащите на другое подразделение стороны, чтобы придать его на этот бой; на другую сторону — чтобы перевести"
+        >
+          <button
+            className="side-fold"
+            disabled={!node.children.length}
+            onClick={() => setOpenIds(isOpen ? openIds.filter((y) => y !== `${ri}:${root}`) : [...openIds, `${ri}:${root}`])}
+            title={node.children.length ? (isOpen ? 'Скрыть структуру' : 'Структура: какие части участвуют и их приказы на этот бой') : undefined}
+          >
+            {node.children.length ? (isOpen ? '▾' : '▸') : ''}
+          </button>
+          <div className="grow" style={{ minWidth: 0 }}>
+            <a href="#" onClick={(e) => (e.preventDefault(), openUnit(`force:${r.forceId}`, root, e.ctrlKey || e.metaKey))} title="Открыть в «Силах»: состояние, потери, состав">
+              {node.name}
+            </a>
+            <span className="faint small" data-tip={s.equip.length ? s.equip.map((q) => `${q.name}: ${q.cur}`).join('\n') : undefined}>
+              {' '}
+              · {fmt0(s.persCur)} чел.
+            </span>
+            {part && <span className="badge" data-tip="В бою только эта часть подразделения сил">часть</span>}
+            {attachedTo && (
+              <span className="badge info" data-tip={`На этот бой придано «${attachedTo}»`}>
+                придано
+              </span>
+            )}
+            {out > 0 && (
+              <span className="badge warn" data-tip="Часть подразделения в этом бою не участвует — раскройте ▸, чтобы изменить">
+                без {out} {out === 1 ? 'части' : 'частей'}
+              </span>
+            )}
+          </div>
+          {!attachedTo && (
+            <Sel
+              value={side.orders?.[root] ?? ''}
+              width={130}
+              onChange={(v) =>
+                upd((d) => {
+                  d.orders ??= {};
+                  if (v) d.orders[root] = v;
+                  else delete d.orders[root];
+                })
+              }
+              options={[{ value: '', label: `${defaultOrderName} (по умолч.)` }, ...rs.orders.map((o) => ({ value: o.id, label: o.name }))]}
+              title="Приказ на этот бой (подчинённые — так же, если им не задан свой)"
+            />
+          )}
+          {attachedTo && (
+            <Btn sm kind="ghost" title="Снова самостоятельное подразделение стороны" onClick={() => upd((d) => void delete d.units![ri].attachTo)}>
+              отделить
+            </Btn>
+          )}
+          <Btn sm kind="ghost" icon title="Убрать из сценария (в «Силах» останется)" onClick={() => remove(ri, node.name)}>
+            ×
+          </Btn>
+        </div>
+        {isOpen && (
+          <SideTree
+            root={node}
+            refId={`force:${r.forceId}`}
+            rs={rs}
+            arrivals={arrivalsOf(sc)}
+            excluded={excludedSet}
+            onToggle={(id, on) =>
+              upd((d) => {
+                const set = new Set(d.excluded ?? []);
+                if (on) set.delete(id);
+                else set.add(id);
+                d.excluded = [...set];
+              })
+            }
+            orders={side.orders ?? {}}
+            onOrder={(id, v) =>
+              upd((d) => {
+                d.orders ??= {};
+                if (v) d.orders[id] = v;
+                else delete d.orders[id];
+              })
+            }
+          />
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="card side-card" style={{ ['--side' as string]: side.color }}>
       <div className="card-head">
@@ -307,119 +491,21 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
           onDragLeave={(e) => e.currentTarget === e.target && setOver(null)}
           onDrop={onListDrop}
         >
-          {side.formations.map((f, fi) => {
-            const live = withoutExcluded(f, side.excluded);
-            const s = summarizeUnits(live ? [live] : [], rs);
-            const attached = f.children.filter((c) => c.attachedFrom !== undefined);
-            const isOpen = openIds.includes(f.id);
-            const out = countExcluded(f, excludedSet);
-            return (
-              <div key={f.id}>
-                <div
-                  className={`side-unit${over === f.id ? ' drop-inside' : ''}`}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(DND_NODE, JSON.stringify({ ref: scRef, id: f.id, side: i }));
-                    e.dataTransfer.effectAllowed = 'move';
-                  }}
-                  onDragOver={(e) => {
-                    if (!accepts(e)) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (over !== f.id) setOver(f.id);
-                  }}
-                  onDrop={(e) => onRowDrop(e, f.id)}
-                  data-tip="Перетащите на другое подразделение, чтобы придать его; на другую сторону — чтобы перевести"
-                >
-                  <button
-                    className="side-fold"
-                    disabled={!f.children.length}
-                    onClick={() => setOpenIds(isOpen ? openIds.filter((x) => x !== f.id) : [...openIds, f.id])}
-                    title={f.children.length ? (isOpen ? 'Скрыть структуру' : 'Показать структуру и выбрать, какие части участвуют в бою') : undefined}
-                  >
-                    {f.children.length ? (isOpen ? '▾' : '▸') : ''}
-                  </button>
-                  <div className="grow" style={{ minWidth: 0 }}>
-                    <Link kind="formation" refId={`sc:${sc.id}:${f.id}`}>
-                      {f.name}
-                    </Link>
-                    <span className="faint small" data-tip={s.equip.length ? s.equip.map((q) => `${q.name}: ${q.cur}`).join('\n') : undefined}>
-                      {' '}
-                      · {fmt0(s.persCur)} чел.
-                    </span>
-                    {attached.length > 0 && (
-                      <span className="faint small" data-tip={attached.map((c) => c.name).join('\n')}>
-                        {' '}
-                        · придано: {attached.length}
-                      </span>
-                    )}
-                    {out > 0 && (
-                      <span className="badge warn" data-tip="Часть подразделения в этом бою не участвует — раскройте ▸, чтобы изменить">
-                        без {out} {out === 1 ? 'части' : 'частей'}
-                      </span>
-                    )}
-                  </div>
-                  <Sel
-                    value={f.order ?? ''}
-                    width={130}
-                    onChange={(v) => upd((d) => void (d.formations[fi].order = v || null))}
-                    options={[{ value: '', label: `${defaultOrderName} (по умолч.)` }, ...rs.orders.map((o) => ({ value: o.id, label: o.name }))]}
-                    title="Приказ подразделению"
-                  />
-                  <Btn
-                    sm
-                    kind="ghost"
-                    icon
-                    title="Убрать из сценария"
-                    onClick={() => {
-                      historyStep(`удаление «${f.name}» из сценария`);
-                      upd((d) => void d.formations.splice(fi, 1));
-                      toastUndoable(`«${f.name}» убрано из сценария.`);
-                    }}
-                  >
-                    ×
-                  </Btn>
-                </div>
-                {isOpen && (
-                  <SideTree
-                    root={f}
-                    refId={`sc:${sc.id}:${f.id}`}
-                    rs={rs}
-                    arrivals={arrivalsOf(sc)}
-                    excluded={excludedSet}
-                    onToggle={(id, on) =>
-                      upd((d) => {
-                        const set = new Set(d.excluded ?? []);
-                        if (on) set.delete(id);
-                        else set.add(id);
-                        d.excluded = [...set];
-                      })
-                    }
-                  />
-                )}
-              </div>
-            );
-          })}
-          {!side.formations.length && <div className="muted" style={{ padding: '6px 4px' }}>Нет подразделений — добавьте ниже или перетащите из навигатора слева</div>}
-          {side.formations.length > 1 && (
+          {top.map((x) => (
+            <Fragment key={`${x.ri}`}>
+              {unitRow(x)}
+              {rows.filter((y) => hostOf(y) === x).map((y) => unitRow(y, x.node?.name))}
+            </Fragment>
+          ))}
+          {!refs.length && <div className="muted" style={{ padding: '6px 4px' }}>Нет подразделений — добавьте ниже или перетащите из «Сил» (или шаблон) в навигаторе слева</div>}
+          {refs.length > 1 && (
             <div className="faint small" style={{ padding: '4px 4px 0' }}>
-              Всего на стороне: {side.formations.length} {plural(side.formations.length, 'подразделение', 'подразделения', 'подразделений')}, {fmt0(summarizeUnits(sideUnits(side), rs).persCur)} чел.
+              Всего на стороне: {refs.length} {plural(refs.length, 'подразделение', 'подразделения', 'подразделений')}, {fmt0(summarizeUnits(live, rs).persCur)} чел.
             </div>
           )}
           <div className="row" style={{ marginTop: 6, gap: 6 }}>
-            <Btn onClick={() => setAdding(true)} title="Несколько подразделений сразу, копии ×N, целиком или отдельные части. В сценарий добавляется копия — библиотека не меняется.">
-              + Добавить подразделения…
-            </Btn>
-            <span className="grow" />
-            <Btn
-              kind="ghost"
-              onClick={() => {
-                const f = newRootUnit('Новое подразделение', { order: i === 0 ? 'attack' : 'defend', level: '' });
-                upd((d) => void d.formations.push(f));
-                openTab('formation', `sc:${sc.id}:${f.id}`);
-              }}
-            >
-              + Новое
+            <Btn onClick={() => setAdding(true)} title="Готовые силы (целиком или части) или новые силы по шаблону. Потери боя потом записываются в силы.">
+              + Добавить на сторону…
             </Btn>
           </div>
         </div>
@@ -471,7 +557,7 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
           </Btn>
         </div>
 
-        {rs.features.command && <SideCommanders sc={sc} i={i} rs={rs} />}
+        {rs.features.command && <SideCommanders sc={rsc} i={i} rs={rs} />}
       </div>
       {adding && <AddUnitsModal sc={sc} side={i} rs={rs} onClose={() => setAdding(false)} />}
     </div>

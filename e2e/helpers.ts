@@ -17,17 +17,21 @@ const SECTION_OF: [string, string][] = [
   ['бой у переправы', 'Сценарии'],
   ['Универсальный', 'Наборы правил'],
   ['Линейная', 'Наборы правил'],
+  // Силы примеров (конкретные подразделения); остальное — шаблоны.
+  ['1-й мотострелковый батальон', 'Силы'],
+  ['1-й мотостр', 'Силы'],
+  ['Оборонительный узел «Высота', 'Силы'],
 ];
 
 /** Пункт навигатора: сначала выбирается нужный раздел, потом объект в его списке. */
-export async function navItem(page: Page, text: string): Promise<Locator> {
-  const sec = SECTION_OF.find(([t]) => text.includes(t))?.[1] ?? 'Подразделения';
+export async function navItem(page: Page, text: string, section?: string): Promise<Locator> {
+  const sec = section ?? SECTION_OF.find(([t]) => text.includes(t))?.[1] ?? 'Шаблоны';
   await page.locator('.nav-item', { hasText: sec }).first().click();
   return page.locator('.sidebar .side-item', { hasText: text }).first();
 }
 
-export async function openFromNav(page: Page, text: string) {
-  await (await navItem(page, text)).click();
+export async function openFromNav(page: Page, text: string, section?: string) {
+  await (await navItem(page, text, section)).click();
 }
 
 /** Пункт открытого меню «⋯». */

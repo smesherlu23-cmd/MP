@@ -24,7 +24,7 @@ test('шаблон: вставка ×3 с номерами и обновлени
   await openFromNav(page, 'Мотострелковая рота');
   await page.locator('.org-box').first().click();
   await page.locator('.org-box').first().locator('.org-menu button').click();
-  await menu(page, 'Вставить из библиотеки');
+  await menu(page, 'Вставить из шаблонов');
   await page.locator('.insert-item', { hasText: 'Мотострелковый взвод' }).click();
   const cnt = page.locator('.modal-foot input').first();
   await cnt.fill('3');
@@ -37,7 +37,12 @@ test('шаблон: вставка ×3 с номерами и обновлени
   await expect(page.locator('.badge', { hasText: 'шаблон ⟳' })).toHaveCount(3);
   await openFromNav(page, 'Мотострелковая рота');
   await page.locator('.meta a', { hasText: 'обновить все' }).click();
+  // Роты обновлены; изменился и шаблон батальона (в нём те же роты) — силы предлагают обновиться и по нему.
   await openFromNav(page, '1-й мотострелковый батальон');
+  await expect(page.locator('.org-box')).toHaveCount(17);
+  const meta = page.locator('.page > .meta').first();
+  await expect(meta).toContainText('шаблон изменён');
+  await meta.locator('a', { hasText: 'обновить' }).click();
   await expect(page.locator('.badge', { hasText: 'шаблон ⟳' })).toHaveCount(0);
   await expect(page.locator('.org-box')).toHaveCount(17);
   expect(errors).toEqual([]);
@@ -55,13 +60,15 @@ test('перетаскивание в схеме, из навигатора и �
   await dnd(page, await navItem(page, 'Танковая рота'), page.locator('.unit-row').first());
   await expect(page.locator('.unit-row', { hasText: 'Танковая рота' })).toHaveCount(2);
 
+  // Шаблон, брошенный на сторону, — новые силы; брошенные на подразделение — приданы ему на этот бой.
   await openFromNav(page, 'атака на высоту');
   const side = page.locator('.side-card').first();
   await dnd(page, await navItem(page, 'Танковая рота'), side.locator('.side-drop'));
   await expect(side.locator('.side-unit')).toHaveCount(2);
   await dnd(page, side.locator('.side-unit').nth(1), side.locator('.side-unit').nth(0));
-  await expect(side.locator('.side-unit')).toHaveCount(1);
-  await expect(side.getByText('придано: 2')).toHaveCount(1);
+  await expect(side.locator('.side-unit .badge', { hasText: 'придано' })).toHaveCount(1);
+  await page.locator('.nav-item', { hasText: 'Силы' }).first().click();
+  await expect(page.locator('.sidebar .side-item', { hasText: 'Танковая рота' })).toHaveCount(1);
 
   await page.getByRole('button', { name: /Начать бой/ }).click();
   await page.getByRole('button', { name: 'До конца' }).click();
@@ -71,7 +78,7 @@ test('перетаскивание в схеме, из навигатора и �
 
 test('пустое подразделение: подсказка, набор правил и его смена', async ({ page }) => {
   const errors = await openApp(page);
-  await page.locator('.nav-item', { hasText: 'Подразделения' }).click();
+  await page.locator('.nav-item', { hasText: 'Шаблоны' }).click();
   await page.locator('.nav-create').click();
   await expect(page.locator('.empty-start')).toBeVisible();
   await expect(page.locator('.inline-select')).toHaveValue('rs-universal');

@@ -10,9 +10,9 @@ import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-export const COLLECTIONS = ['rulesets', 'formations', 'scenarios', 'battles'];
-/** Бои в копии не входят: они большие и воспроизводятся из сценария. */
-export const BACKED_UP = ['rulesets', 'formations', 'scenarios'];
+export const COLLECTIONS = ['rulesets', 'formations', 'forces', 'scenarios', 'battles'];
+/** Бои в копии не входят: они большие и воспроизводятся из сценария. Силы входят: в них потери после боёв. */
+export const BACKED_UP = ['rulesets', 'formations', 'forces', 'scenarios'];
 export const KEEP_BACKUPS = 10;
 export const KEEP_DAILY = 14;
 export const TRASH_DAYS = 30;

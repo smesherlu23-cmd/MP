@@ -1,8 +1,8 @@
-import { sideUnits, summarizeUnits } from '../../engine';
+import { resolveScenario, sideUnits, summarizeUnits } from '../../engine';
 import { Link } from '../components/Link';
 import { openPalette } from '../components/Palette';
 import { Btn, Card, fmt0 } from '../components/ui';
-import { createFormation, createScenario, openTab, updateSettings, useApp, type TabKind } from '../store';
+import { createScenario, newForceDialog, openTab, updateSettings, useApp, type TabKind } from '../store';
 import { startBattle } from './ScenarioPage';
 
 /** «сегодня, 14:20» / «вчера, 9:05» / «17 окт.» */
@@ -38,7 +38,8 @@ export function HomePage() {
   // Недавно изменённое — только то, что правили (у примеров после установки даты изменения нет).
   const recent: Recent[] = [
     ...Object.values(s.scenarios).map((x) => ({ key: `sc:${x.id}`, kind: 'scenario' as TabKind, ref: x.id, icon: '◈', what: 'сценарий', name: x.name, at: x.updatedAt ?? '' })),
-    ...Object.values(s.formations).map((x) => ({ key: `fm:${x.id}`, kind: 'formation' as TabKind, ref: `lib:${x.id}`, icon: '▦', what: 'подразделение', name: x.name, at: x.updatedAt ?? '' })),
+    ...Object.values(s.forces).map((x) => ({ key: `fc:${x.id}`, kind: 'formation' as TabKind, ref: `force:${x.id}`, icon: '⚑', what: 'силы', name: x.name, at: x.updatedAt ?? '' })),
+    ...Object.values(s.formations).map((x) => ({ key: `fm:${x.id}`, kind: 'formation' as TabKind, ref: `lib:${x.id}`, icon: '▦', what: 'шаблон', name: x.name, at: x.updatedAt ?? '' })),
     ...Object.values(s.rulesets).map((x) => ({ key: `rs:${x.id}`, kind: 'ruleset' as TabKind, ref: x.id, icon: '§', what: 'набор правил', name: x.name, at: x.updatedAt ?? '' })),
   ]
     .filter((x) => x.at)
@@ -54,7 +55,9 @@ export function HomePage() {
         <Btn kind="primary" onClick={() => createScenario()}>
           + Сценарий
         </Btn>
-        <Btn onClick={() => createFormation()}>+ Подразделение</Btn>
+        <Btn onClick={() => void newForceDialog()} title="Конкретное подразделение по шаблону">
+          + Силы
+        </Btn>
       </div>
 
       {unfinished.length > 0 && (
@@ -92,13 +95,16 @@ export function HomePage() {
               «▶ Начать бой»: ход за ходом видно, кто по кому стреляет и почему.
             </li>
             <li>
-              Посмотрите{' '}
               <a href="#" onClick={(e) => (e.preventDefault(), updateSettings({ navSection: 'units' }))}>
-                подразделения
+                Шаблоны
               </a>{' '}
-              — из них собираются стороны: от отделения до дивизии.
+              — устройство и штат подразделений (от отделения до дивизии);{' '}
+              <a href="#" onClick={(e) => (e.preventDefault(), updateSettings({ navSection: 'forces' }))}>
+                силы
+              </a>{' '}
+              — конкретные подразделения по шаблонам: потери боёв записываются в них.
             </li>
-            <li>Создайте свой сценарий кнопкой «+ Сценарий» и добавьте на стороны нужные подразделения или их части.</li>
+            <li>Создайте свой сценарий кнопкой «+ Сценарий» и поставьте на стороны силы или их части.</li>
           </ol>
         </Card>
       )}
@@ -109,7 +115,7 @@ export function HomePage() {
             <div className="home-list">
               {scenarios.map((x) => {
                 const rs = s.rulesets[x.rulesetId];
-                const forces = rs ? x.sides.map((sd) => fmt0(summarizeUnits(sideUnits(sd), rs).persCur)).join(' : ') : '';
+                const forces = rs ? resolveScenario(x, s.forces).sides.map((sd) => fmt0(summarizeUnits(sideUnits(sd), rs).persCur)).join(' : ') : '';
                 return (
                   <div key={x.id} className="row">
                     <Link kind="scenario" refId={x.id} className="grow">

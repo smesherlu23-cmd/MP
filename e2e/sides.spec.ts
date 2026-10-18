@@ -3,35 +3,44 @@
 import { expect, test } from '@playwright/test';
 import { openApp, openFromNav, startBattle } from './helpers';
 
-test('на сторону — несколько подразделений и отдельные части; лишние части не воюют', async ({ page }) => {
+test('на сторону — силы целиком и частями, новые силы из шаблона; лишние части не воюют', async ({ page }) => {
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
   const blue = page.locator('.side-card').first();
-  await blue.getByRole('button', { name: '+ Добавить подразделения…' }).click();
+  const red = page.locator('.side-card').nth(1);
+  // Вместо батальона целиком — только его 2-я рота.
+  await blue.locator('.side-unit').first().locator('button[title^="Убрать из сценария"]').click();
+  await blue.getByRole('button', { name: '+ Добавить на сторону…' }).click();
   const modal = page.locator('.modal');
-  // Другие наборы правил скрыты, пока их не попросили.
-  await expect(modal.locator('.pick-row', { hasText: 'Гусарский эскадрон' })).toHaveCount(0);
+  await expect(modal.locator('.pick-row', { hasText: 'Оборонительный узел' }).first()).toContainText('уже в сценарии');
+  await expect(modal.locator('.pick-row', { hasText: 'Пехотная бригада' })).toHaveCount(0);
   await modal.locator('.pick-row', { hasText: '1-й мотострелковый батальон' }).locator('.side-fold').click();
-  const company = modal.locator('.pick-row', { hasText: '2-я мотострелковая рота' });
-  await company.locator('input[type=checkbox]').check();
-  await company.locator('input[type=text], input:not([type])').last().fill('2');
-  await company.locator('input[type=text], input:not([type])').last().blur();
-  await modal.locator('.pick-row', { hasText: 'Мотострелковый взвод' }).locator('input[type=checkbox]').check();
-  await expect(modal.getByRole('button', { name: 'Добавить (3)' })).toBeVisible();
-  await modal.getByRole('button', { name: 'Добавить (3)' }).click();
-  await expect(blue.locator('.side-unit')).toHaveCount(4);
-  await expect(blue).toContainText('Всего на стороне: 4 подразделения');
+  await modal.locator('.pick-row', { hasText: '2-я мотострелковая рота' }).locator('input[type=checkbox]').check();
+  await modal.getByRole('button', { name: 'Добавить (1)' }).click();
+  await expect(blue.locator('.side-unit', { hasText: '2-я мотострелковая рота · 1-й мотострелковый батальон' }).locator('.badge', { hasText: 'часть' })).toHaveCount(1);
 
-  // Без 3-й роты: галочка в структуре батальона.
-  await blue.locator('.side-unit').first().locator('.side-fold').click();
-  await blue.locator('.side-node', { hasText: '3-я мотострелковая рота' }).locator('input[type=checkbox]').uncheck();
-  await expect(blue.locator('.side-unit').first()).toContainText('без 1 части');
+  // Новые силы по шаблону ×2 — сразу на сторону и в «Силы».
+  await blue.getByRole('button', { name: '+ Добавить на сторону…' }).click();
+  await modal.locator('.seg button', { hasText: 'Новые из шаблона' }).click();
+  const platoon = modal.locator('.pick-row', { hasText: 'Мотострелковый взвод' });
+  await platoon.locator('input[type=checkbox]').check();
+  await platoon.locator('input:not([type=checkbox])').last().fill('2');
+  await platoon.locator('input:not([type=checkbox])').last().blur();
+  await modal.getByRole('button', { name: 'Добавить (2)' }).click();
+  await expect(blue.locator('.side-unit')).toHaveCount(3);
+  await expect(blue).toContainText('Всего на стороне: 3 подразделения');
+
+  // У Красных — без 3-го взвода.
+  await red.locator('.side-unit').first().locator('.side-fold').click();
+  await red.locator('.side-node', { hasText: '3-й взвод' }).locator('input[type=checkbox]').uncheck();
+  await expect(red.locator('.side-unit').first()).toContainText('без 1 части');
 
   await startBattle(page);
-  const forces = page.locator('.tbl.forces').first();
-  await expect(forces).toContainText('2-я мотострелковая рота · 1-й мотострелковый батальон');
-  await expect(forces).toContainText('Мотострелковый взвод');
-  await expect(forces).not.toContainText('3-я мотострелковая рота');
+  const forces = page.locator('.tbl.forces');
+  await expect(forces.first()).toContainText('2-я мотострелковая рота · 1-й мотострелковый батальон');
+  await expect(forces.first()).toContainText('Мотострелковый взвод 2');
+  await expect(forces.first()).not.toContainText('3-я мотострелковая рота');
+  await expect(forces.nth(1)).not.toContainText('3-й взвод');
   expect(errors).toEqual([]);
 });
 
@@ -73,7 +82,7 @@ test('главная: «продолжить» незавершённый бой
 test('узкое окно: вкладки сжимаются, лишние — в списке «▾»', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 700 });
   const errors = await openApp(page);
-  await page.locator('.nav-item', { hasText: 'Подразделения' }).first().click();
+  await page.locator('.nav-item', { hasText: 'Шаблоны' }).first().click();
   const items = page.locator('.sidebar .side-item');
   const n = await items.count();
   for (let i = 0; i < n; i++) await items.nth(i).click();

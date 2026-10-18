@@ -2876,3 +2876,44 @@ button.link-btn:hover {
 .pick-name {
   white-space: nowrap;
 }
+
+/* Поле прямо в строке сведений (принадлежность сил) */
+.inline-input {
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--border2);
+  border-radius: 0;
+  padding: 0 2px;
+  min-height: 0;
+  height: auto;
+  width: 150px;
+}
+.inline-input:focus {
+  border-bottom-color: var(--accent);
+  outline: none;
+}
+.pick-row.taken {
+  opacity: 0.55;
+}
+/* Приказ части на этот бой (структура стороны в сценарии) */
+select.order-mini {
+  min-height: 22px;
+  height: 22px;
+  padding: 0 4px;
+  font-size: 12px;
+  width: 128px;
+  flex-shrink: 0;
+}
+
+/* Итоги боя — в силы */
+.forces-note {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-left: 3px solid var(--accent);
+}
+.forces-note.done {
+  border-left-color: var(--good);
+}

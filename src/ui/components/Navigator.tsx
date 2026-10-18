@@ -4,8 +4,8 @@
 import { useRef, useState } from 'react';
 import { arrowNav, pressable } from './ui';
 import { SECTIONS, sectionOf } from '../nav';
-import { DND_LIB } from '../pages/FormationPage';
-import { createFormation, createScenario, deleteBattles, newRulesetDialog, openTab, updateSettings, useApp, type NavSection, type TabKind } from '../store';
+import { DND_FORCE, DND_LIB } from '../pages/FormationPage';
+import { createFormation, createScenario, deleteBattles, newForceDialog, newRulesetDialog, openTab, updateSettings, useApp, type NavSection, type TabKind } from '../store';
 
 function NavItem(props: { icon: string; label: string; count?: number; selected?: boolean; here?: boolean; onClick: () => void; title?: string }) {
   return (
@@ -28,24 +28,35 @@ export function Navigator() {
   const match = (name: string) => !q || name.toLowerCase().includes(q);
   const counts: Record<NavSection, number> = {
     scenarios: Object.keys(s.scenarios).length,
+    forces: Object.keys(s.forces).length,
     units: Object.keys(s.formations).length,
     battles: Object.keys(s.battleIndex).length,
     rulesets: Object.keys(s.rulesets).length,
   };
   const meta = SECTIONS.find((x) => x.id === sec)!;
-  const create = () => (sec === 'scenarios' ? createScenario() : sec === 'units' ? createFormation() : sec === 'rulesets' ? void newRulesetDialog() : undefined);
+  const create = () =>
+    sec === 'scenarios' ? createScenario() : sec === 'forces' ? void newForceDialog() : sec === 'units' ? createFormation() : sec === 'rulesets' ? void newRulesetDialog() : undefined;
   const isOpen = (kind: TabKind, ref: string) =>
     activeTab?.ref === ref && activeTab.kind === kind;
 
-  const row = (key: string, name: string, onOpen: (bg: boolean) => void, opts: { sub?: string; active?: boolean; dragLib?: string } = {}) => (
+  const row = (key: string, name: string, onOpen: (bg: boolean) => void, opts: { sub?: string; active?: boolean; dragLib?: string; dragForce?: string } = {}) => (
     <div
       key={key}
       className={`side-item${opts.active ? ' active' : ''}`}
-      title={opts.dragLib ? `${name}\nМожно перетащить в структуру подразделения или на сторону сценария` : opts.sub ? `${name}\n${opts.sub}` : name}
-      draggable={!!opts.dragLib}
+      title={
+        opts.dragLib
+          ? `${name}\nМожно перетащить в структуру шаблона или сил`
+          : opts.dragForce
+            ? `${name}\nМожно перетащить на сторону сценария`
+            : opts.sub
+              ? `${name}\n${opts.sub}`
+              : name
+      }
+      draggable={!!(opts.dragLib || opts.dragForce)}
       onDragStart={(e) => {
-        if (!opts.dragLib) return;
-        e.dataTransfer.setData(DND_LIB, opts.dragLib);
+        if (opts.dragLib) e.dataTransfer.setData(DND_LIB, opts.dragLib);
+        else if (opts.dragForce) e.dataTransfer.setData(DND_FORCE, opts.dragForce);
+        else return;
         e.dataTransfer.effectAllowed = 'copy';
       }}
       onClick={(e) => onOpen(e.ctrlKey || e.metaKey)}
@@ -95,7 +106,16 @@ export function Navigator() {
     const item = (x: (typeof units)[number]) => row(x.id, x.name, (bg) => openTab('formation', `lib:${x.id}`, { background: bg }), { sub: x.level, active: isOpen('formation', `lib:${x.id}`), dragLib: x.id });
     // Подразделения разных наборов правил — отдельными группами: видно, к какому набору относится каждое.
     list = rsIds.length > 1 ? rsIds.map((id) => group(s.rulesets[id]?.name ?? 'Без набора правил', units.filter((u) => (u.rulesetId ?? '') === id).map(item))) : units.map(item);
-    empty = q ? 'Ничего не найдено' : 'Библиотека пуста. Здесь хранятся подразделения-шаблоны: из них собираются более крупные и стороны сценариев.';
+    empty = q ? 'Ничего не найдено' : 'Шаблонов нет. Шаблон — устройство и штат подразделения: по нему создаются силы, из шаблонов собираются и более крупные.';
+  } else if (sec === 'forces') {
+    const units = Object.values(s.forces)
+      .filter((x) => match(x.name) || match(x.faction ?? ''))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    const factions = [...new Set(units.map((u) => u.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
+    const item = (x: (typeof units)[number]) => row(x.id, x.name, (bg) => openTab('formation', `force:${x.id}`, { background: bg }), { sub: x.level, active: isOpen('formation', `force:${x.id}`), dragForce: x.id });
+    // Силы — по принадлежности: чьи это войска.
+    list = factions.length > 1 ? factions.map((f) => group(f || 'Без принадлежности', units.filter((u) => (u.faction?.trim() || '') === f).map(item))) : units.map(item);
+    empty = q ? 'Ничего не найдено' : 'Сил пока нет. Силы — конкретные подразделения, созданные по шаблонам: у каждого своё состояние и свои потери после боёв.';
   } else if (sec === 'battles') {
     const battles = Object.values(s.battleIndex)
       .filter((x) => match(x.name))

@@ -6,6 +6,14 @@ import {
   createBattle,
   defaultCommandLevel,
   displayNames,
+  applyBattleToForces,
+  extractForces,
+  forceFromTemplate,
+  forceRefIssues,
+  partOf,
+  resolveScenario,
+  toTemplate,
+  newId,
   extractPart,
   explainResult,
   formatReport,
@@ -676,5 +684,74 @@ describe('стороны: несколько подразделений и ча�
     // Исключить всё — ошибка проверки сценария.
     sc.sides[0].excluded = [bn.id];
     expect(validateScenario(sc, rs).some((x) => x.level === 'error' && x.text.includes('исключены'))).toBe(true);
+  });
+});
+
+describe('шаблоны и силы', () => {
+  const rs = makeUniversalRuleset();
+  const split = (src = makeDemoScenario()) => {
+    const { scenario, forces } = extractForces(src, new Set(), () => newId('u'));
+    return { scenario, forces: Object.fromEntries(forces.map((f) => [f.id, f])) as Record<string, UnitNode> };
+  };
+
+  it('сценарий на ссылках к силам даёт тот же бой, что и с копиями', () => {
+    const src = makeDemoScenario();
+    const { scenario, forces } = split(src);
+    expect(scenario.sides.every((sd) => sd.units?.length === 1 && sd.formations.length === 0)).toBe(true);
+    // Приказы переехали из подразделений в сценарий.
+    expect(Object.values(scenario.sides[0].orders ?? {})).toContain('reserve');
+    walkUnits(Object.values(forces)[0], (n) => expect(n.order).toBeNull());
+    const a = createBattle(src, rs, { seed: 'F' });
+    const b = createBattle(resolveScenario(scenario, forces), rs, { seed: 'F' });
+    runToEnd(a);
+    runToEnd(b);
+    expect(strip(b)).toEqual(strip(a));
+  });
+
+  it('итоги боя ложатся на силы, шаблон не меняется; следующий бой — с потерями', () => {
+    const { scenario, forces } = split();
+    const tplBefore = JSON.stringify(makeDemoBattalion());
+    const b = createBattle(resolveScenario(scenario, forces), rs, { seed: 'F2' });
+    runToEnd(b);
+    const { updated, changes } = applyBattleToForces(b, forces);
+    expect(updated).toHaveLength(2);
+    expect(changes.find((c) => c.forceId === scenario.sides[0].units![0].forceId)!.personnel).toBe(b.result!.sides.A.personnel.losses);
+    const next = { ...forces, ...Object.fromEntries(updated.map((f) => [f.id, f])) };
+    const b2 = createBattle(resolveScenario(scenario, next), rs, { seed: 'F3' });
+    const start = (x: Battle) => x.elements.filter((e) => e.side === 'A').reduce((s, e) => s + e.startPersonnel, 0);
+    // Экипажи потерянной техники уходят вместе с ней — численность падает не меньше, чем на потери людей.
+    expect(start(b2)).toBeLessThanOrEqual(start(b) - b.result!.sides.A.personnel.losses);
+    expect(start(b2)).toBeLessThan(start(b));
+    expect(JSON.stringify(makeDemoBattalion())).toBe(tplBefore);
+  });
+
+  it('часть сил: те же идентификаторы, наследованное записано; дубли и удалённое — ошибки', () => {
+    const { scenario, forces } = split();
+    const force = Object.values(forces)[0];
+    const co = force.children.find((c) => c.name.includes('2-я'))!;
+    const part = partOf(force, co.id)!;
+    expect(part.id).toBe(co.id);
+    expect(part.name).toContain(force.name);
+    expect(forceRefIssues(scenario, forces)).toHaveLength(0);
+    scenario.sides[1].units!.push({ forceId: force.id, nodeId: co.id });
+    expect(forceRefIssues(scenario, forces).some((x) => x.level === 'error' && x.text.includes('дважды'))).toBe(true);
+    scenario.sides[1].units!.pop();
+    scenario.sides[1].units!.push({ forceId: 'нет-такого' });
+    expect(forceRefIssues(scenario, forces).some((x) => x.text.includes('удалено'))).toBe(true);
+  });
+
+  it('шаблон — только устройство и штат; силы по шаблону — полный штат и связь с шаблоном', () => {
+    const bn = makeDemoBattalion();
+    const tpl = toTemplate(bn);
+    walkUnits(tpl, (n) => {
+      expect(n.order).toBeNull();
+      expect(n.state).toEqual({});
+      n.composition.forEach((c) => expect(c.current).toBe(c.authorized));
+    });
+    const f = forceFromTemplate({ ...tpl, rulesetId: rs.id }, { faction: 'Синие' });
+    expect(f.templateId).toBe(tpl.id);
+    expect(f.faction).toBe('Синие');
+    expect(f.rulesetId).toBe(rs.id);
+    expect(f.id).not.toBe(tpl.id);
   });
 });

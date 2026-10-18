@@ -32,7 +32,7 @@ test('удаление без подтверждения, «Отменить» �
   await openFromNav(page, 'атака на высоту');
   const units = page.locator('.side-unit');
   const n = await units.count();
-  await units.first().locator('button[title="Убрать из сценария"]').click();
+  await units.first().locator('button[title^="Убрать из сценария"]').click();
   await expect(units).toHaveCount(n - 1);
   await page.keyboard.press('Control+z');
   await expect(units).toHaveCount(n);

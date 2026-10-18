@@ -5,7 +5,8 @@
 
 import type { Battle } from '../engine';
 
-export type Collection = 'rulesets' | 'formations' | 'scenarios' | 'battles';
+/** formations — шаблоны (имя папки осталось от прежних версий), forces — силы. */
+export type Collection = 'rulesets' | 'formations' | 'forces' | 'scenarios' | 'battles';
 
 export interface BattleMeta {
   id: string;
@@ -94,8 +95,8 @@ export function battleMeta(b: Battle | BattleMeta): BattleMeta {
 }
 
 const PREFIX = 'warsim:';
-const COLS: Collection[] = ['rulesets', 'formations', 'scenarios', 'battles'];
-const BACKED_UP: Collection[] = ['rulesets', 'formations', 'scenarios'];
+const COLS: Collection[] = ['rulesets', 'formations', 'forces', 'scenarios', 'battles'];
+const BACKED_UP: Collection[] = ['rulesets', 'formations', 'forces', 'scenarios'];
 const TRASH_DAYS = 30;
 /** В браузере место ограничено — копий меньше, чем в программе. */
 const BROWSER_BACKUPS = 5;

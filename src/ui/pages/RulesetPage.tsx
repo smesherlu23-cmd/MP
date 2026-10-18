@@ -218,7 +218,7 @@ function typeUsage(typeId: string): number {
       if (u.composition.some((c) => c.typeId === typeId)) n++;
     });
   Object.values(s.formations).forEach(walk);
-  Object.values(s.scenarios).forEach((sc) => sc.sides.forEach((sd) => sd.formations.forEach(walk)));
+  Object.values(s.forces).forEach(walk);
   return n;
 }
 

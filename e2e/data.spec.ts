@@ -123,7 +123,7 @@ test('пример «Линейной тактики»: бой у перепра
   await startBattle(page);
   await page.getByRole('button', { name: '▶ Ход' }).click();
   await expect(page.locator('.log-turn').first()).toContainText('Ход 1');
-  await page.locator('.nav-item', { hasText: 'Подразделения' }).first().click();
+  await page.locator('.nav-item', { hasText: 'Шаблоны' }).first().click();
   await expect(page.locator('.sidebar .nav-group-title', { hasText: 'Линейная тактика' })).toHaveCount(1);
   expect(errors).toEqual([]);
 });
