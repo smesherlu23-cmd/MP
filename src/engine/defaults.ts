@@ -2,7 +2,7 @@
 // ГМ может скопировать, переименовать или удалить их в программе.
 
 import { COEFFICIENT_DEFAULTS, DEFAULT_FEATURES } from './coefficients';
-import { instantiate, newRootUnit, newUnit } from './units';
+import { instantiate, newRootUnit, newUnit, walkUnits } from './units';
 import type {
   ComponentType,
   Id,
@@ -582,7 +582,7 @@ export function makeLinearScenario(): Scenario {
   sc.id = 'sc-demo-linear';
   sc.description =
     'Пехотная бригада с батареей и гусарами штурмует переправу, которую держит батальон за полевыми укреплениями при батарее; кирасиры обороны — в резерве. ' +
-    'Ход — 20 минут, бой открывается артиллерийской дистанцией. Гусар второго эскадрона и кирасир ГМ вводит сменой приказа.';
+    'Ход — 20 минут, бой открывается артиллерийской дистанцией. По плану боя второй гусарский эскадрон вводится на 8-м ходу, а кирасиры около 9-го хода контратакуют (не всегда — вероятность 60%); ГМ может ввести резервы и раньше сменой приказа.';
   sc.conditions = { terrain: 'hills', time: 'day', weather: 'clear' };
   sc.maxTurns = 16;
   sc.sides[0].name = 'Синие';
@@ -592,6 +592,16 @@ export function makeLinearScenario(): Scenario {
   sc.sides[1].formations = [instantiate(makeLinearDefenders())];
   sc.sides[1].fortification = 'earthworks';
   sc.sides[1].objectives = [newObjective('hold', 12, 2), newObjective('inflict', 20, 1)];
+  // План боя: резервы вводятся по ходам — и в бою, и в массовых прогонах.
+  const node = (side: 0 | 1, name: string) => {
+    let id = '';
+    for (const f of sc.sides[side].formations) walkUnits(f, (n) => void (n.name === name && (id = n.id)));
+    return id;
+  };
+  sc.events = [
+    { id: 'ev-lin-hussars', kind: 'order', turn: 8, side: 'A', nodeId: node(0, '2-й гусарский эскадрон'), orderId: 'attack', note: 'резерв бригады вводится в бой' },
+    { id: 'ev-lin-cuir', kind: 'order', turn: 9, spread: 1, chance: 60, side: 'B', nodeId: node(1, 'Кирасиры'), orderId: 'attack', note: 'контратака кирасир' },
+  ];
   return sc;
 }
 

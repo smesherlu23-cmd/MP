@@ -175,6 +175,16 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       E.log({ phase: 'gm', level: 0, text: `ГМ: дистанция установлена — «${b.ruleset.rangeBands[i].name}»${note}.` });
       break;
     }
+    case 'arrive': {
+      // ГМ вводит подкрепление раньше плана.
+      const ids: string[] = p.elementIds ?? [];
+      const els = ids.map((id) => E.elements.get(id)).filter((x): x is ElementState => !!x && x.status === 'pending');
+      if (!els.length) return;
+      for (const el of els) el.status = 'active';
+      E.invalidate();
+      E.log({ phase: 'gm', level: 0, side: els[0].side, refs: els.map((x) => x.id), text: `ГМ: подкрепление вводится в бой раньше плана — ${els.length > 3 ? `${els.length} элементов` : els.map((x) => e(x)).join(', ')}${note}.` });
+      break;
+    }
     case 'endBattle': {
       if (record) b.interventions.push({ turn: b.turn, type: iv.type, payload: iv.payload, note: iv.note });
       finish(E, (p.reason as string) || 'Бой остановлен ГМ');
@@ -201,6 +211,63 @@ export function replayBattle(src: Battle, opts: { seed?: string; withInterventio
     stepTurn(b);
   }
   return b;
+}
+
+// ------------------------------------------------------------------ откат
+
+export const INTERVENTION_LABELS: Record<InterventionType, string> = {
+  setOrder: 'смена приказа',
+  editElement: 'правка элемента',
+  setFormation: 'изменение формирования',
+  resupply: 'снабжение',
+  setConditions: 'смена условий',
+  setBand: 'смена дистанции',
+  endBattle: 'завершение боя',
+  arrive: 'ввод подкрепления',
+};
+
+/** Что отменит «Отменить» в бою: вмешательство ГМ, сделанное после последнего хода, или сам последний ход. */
+export function lastBattleAction(b: Battle): { kind: 'intervention'; label: string } | { kind: 'turn'; turn: number } | null {
+  const last = b.interventions[b.interventions.length - 1];
+  if (last && last.turn === b.turn) return { kind: 'intervention', label: INTERVENTION_LABELS[last.type] ?? last.type };
+  return b.turn > 0 ? { kind: 'turn', turn: b.turn } : null;
+}
+
+/** Журнал до конца хода turn — без вмешательств ГМ и итога этого хода (их откат и убирает). */
+function printUpTo(b: Battle, turn: number): string {
+  return b.log
+    .filter((e) => e.level <= 1 && e.phase !== 'setup' && (e.turn < turn || (e.turn === turn && e.phase !== 'gm' && e.phase !== 'end')))
+    .map((e) => `${e.turn}|${e.phase}|${e.text}`)
+    .join('\n');
+}
+
+/**
+ * Бой, отмотанный назад повтором с теми же бросками: состояние после хода toTurn, с решениями ГМ,
+ * сделанными до этого момента (из вмешательств самого хода toTurn остаются первые keepAtTurn).
+ * Тот же идентификатор и название. null — повтор разошёлся с боем (он сохранён другой версией программы).
+ */
+export function rewindBattle(src: Battle, toTurn: number, keepAtTurn = Infinity): Battle | null {
+  const target = Math.max(0, Math.min(src.turn, toTurn));
+  const ivs = [...src.interventions.filter((x) => x.turn < target), ...src.interventions.filter((x) => x.turn === target).slice(0, keepAtTurn)];
+  const b = createBattle(src.scenario, src.ruleset, { seed: src.seed, name: src.name, id: src.id });
+  let guard = 0;
+  while (!b.finished && guard++ < 1000) {
+    for (const iv of ivs.filter((x) => x.turn === b.turn)) applyIntervention(b, iv, true);
+    if (b.finished || b.turn >= target) break;
+    stepTurn(b);
+  }
+  if (b.turn !== target || printUpTo(b, target) !== printUpTo(src, target)) return null;
+  b.createdAt = src.createdAt;
+  b.updatedAt = new Date().toISOString();
+  return b;
+}
+
+/** Отменить последнее действие в бою (вмешательство ГМ или ход). */
+export function undoBattleAction(b: Battle): Battle | null {
+  const a = lastBattleAction(b);
+  if (!a) return null;
+  if (a.kind === 'turn') return rewindBattle(b, b.turn - 1);
+  return rewindBattle(b, b.turn, b.interventions.filter((x) => x.turn === b.turn).length - 1);
 }
 
 // ------------------------------------------------------------------ хранение журнала

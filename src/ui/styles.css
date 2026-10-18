@@ -348,9 +348,14 @@ a:hover,
   color: var(--faint);
   font-size: 11px;
   margin-left: auto;
-  flex-shrink: 0;
+  /* подпись (например, длинный итог боя) не вытесняет название — сокращается сама */
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .side-item > span:first-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2736,4 +2741,47 @@ tr[tabindex]:focus-visible {
 }
 .tree-node:focus-within .tn-actions {
   display: flex;
+}
+
+/* Итог боя: что решило исход */
+.result-why {
+  margin-top: 6px;
+  max-width: 900px;
+  line-height: 1.45;
+}
+
+/* Кнопка-ссылка внутри строки таблицы */
+button.link-btn {
+  background: none;
+  border: none;
+  padding: 0 0 0 6px;
+  color: var(--link);
+  cursor: pointer;
+  font: inherit;
+}
+button.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* План боя (сценарий) */
+.plan-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--panel2);
+}
+.plan-main,
+.plan-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.plan-extra {
+  margin-top: 6px;
+}
+.plan-label {
+  color: var(--muted);
+  font-size: 12px;
 }

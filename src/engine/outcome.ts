@@ -56,15 +56,18 @@ function lossValuePct(E: EngineContext, els: ElementState[]) {
 }
 
 function holdingAtEnd(E: EngineContext, side: SideId) {
-  const els = E.sideElements(side);
+  const els = E.sideElements(side).filter((x) => x.status !== 'pending');
   return fightingValue(E, els) >= startValue(els) * E.k.holdMinShare && startValue(els) > 0;
 }
+
+/** Силы стороны, участвующие в бою: не подошедшие подкрепления в задачах не считаются. */
+const present = (E: EngineContext, side: SideId) => E.sideElements(side).filter((x) => x.status !== 'pending');
 
 function scoreObjective(E: EngineContext, side: SideId, o: Objective): ObjectiveResult {
   const b = E.b;
   const enemy = E.enemyOf(side);
-  const own = E.sideElements(side);
-  const foe = E.sideElements(enemy);
+  const own = present(E, side);
+  const foe = present(E, enemy);
   const label = o.label?.trim() || OBJECTIVE_SHORT[o.type](o.value);
   let score = 0;
   let explanation = '';
@@ -79,7 +82,9 @@ function scoreObjective(E: EngineContext, side: SideId, o: Objective): Objective
         explanation = enemyOut ? 'Позиция удержана: атакующий выбыл из боя.' : `Позиция удерживалась ${held} ход. из ${need}.`;
       } else {
         score = Math.min(1, held / need) * (lost ? 0.6 : 1);
-        explanation = lost ? `Позиция оставлена на ${lost}-м ходу (удерживалась ${held} из ${need}).` : `Бой закончился раньше: удерживалась ${held} из ${need} ход.`;
+        explanation = lost
+          ? `Позиция оставлена на ${lost}-м ходу, до этого удерживалась ${held} ход. из ${need}; оставленная позиция засчитывается не больше чем на 60%.`
+          : `Бой закончился раньше: удерживалась ${held} из ${need} ход.`;
       }
       break;
     }
@@ -144,8 +149,13 @@ function summarize(E: EngineContext, els: ElementState[]): UnitSummary {
   let fuel = 0;
   let fuelW = 0;
   let equip = 0;
-  const status = { active: 0, withdrawn: 0, routed: 0, destroyed: 0, retreating: 0, routing: 0 };
+  const status = { active: 0, pending: 0, withdrawn: 0, routed: 0, destroyed: 0, retreating: 0, routing: 0 };
   for (const el of els) {
+    // Не подошедшее подкрепление в бою не участвовало — только счётчик.
+    if (el.status === 'pending') {
+      status.pending++;
+      continue;
+    }
     personnel.authorized += el.authorizedPersonnel;
     personnel.start += el.startPersonnel;
     for (const c of el.comps) {
@@ -247,7 +257,7 @@ export function computeResult(E: EngineContext): BattleResult {
       for (const ch of b.formations.filter((x) => x.parentId === fid)) walk(ch.id, depth + 1);
     };
     for (const f of b.formations.filter((x) => x.side === side && !x.parentId)) walk(f.id, 0);
-    const foe = E.sideElements(E.enemyOf(side));
+    const foe = present(E, E.enemyOf(side));
     const foeTotal = startValue(foe);
     sides[side] = {
       ...summarize(E, els),
@@ -278,6 +288,38 @@ export function computeResult(E: EngineContext): BattleResult {
     sides,
     keyEvents,
   };
+}
+
+/**
+ * Коротко — что решило исход: главная выполненная задача победителя и главный недобор проигравшего.
+ * Если победитель потерял больше, об этом сказано прямо: исход решают задачи, а не только потери.
+ */
+export function explainResult(r: BattleResult): string {
+  const p = (v: number) => `${Math.round(v * 100)}%`;
+  const A = r.sides.A;
+  const B = r.sides.B;
+  if (!r.winner) {
+    if (!A.objectives.length && !B.objectives.length) return 'У сторон нет задач — исход не определён.';
+    return `Задачи выполнены примерно поровну: «${A.name}» — ${p(A.score)}, «${B.name}» — ${p(B.score)}.`;
+  }
+  const win = r.sides[r.winner];
+  const lose = r.sides[r.winner === 'A' ? 'B' : 'A'];
+  const by = (list: ObjectiveResult[], f: (o: ObjectiveResult) => number) => [...list].sort((x, y) => f(y) - f(x))[0];
+  const best = by(win.objectives, (o) => Math.max(0, o.objective.weight) * o.score);
+  const worst = by(lose.objectives, (o) => Math.max(0, o.objective.weight) * (1 - o.score));
+  // «Позиция удерживалась 12 ход. из 12.» → «позиция удерживалась 12 ход. из 12»
+  const line = (side: SideResult, o: ObjectiveResult) => {
+    const why = o.explanation ? `, ${o.explanation.charAt(0).toLowerCase()}${o.explanation.slice(1).replace(/\.$/, '')}` : '';
+    return `«${side.name}»: «${o.label.replace(/\.$/, '')}» — ${p(o.score)}${why}.`;
+  };
+  const parts: string[] = ['Решило.'];
+  if (best) parts.push(line(win, best));
+  if (worst && worst.score < 1) parts.push(line(lose, worst));
+  else if (lose.objectives.length) parts.push(`«${lose.name}» выполнили задачи на ${p(lose.score)}.`);
+  let text = parts.join(' ');
+  if (win.valueLossPct > lose.valueLossPct + 5)
+    text += ` Потери у «${win.name}» больше (${Math.round(win.valueLossPct)}% против ${Math.round(lose.valueLossPct)}% боевой ценности), но исход решают задачи сторон.`;
+  return text;
 }
 
 /** Итог «на текущий момент» для незавершённого боя (не меняет состояние). */

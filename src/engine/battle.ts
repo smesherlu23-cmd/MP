@@ -153,6 +153,14 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
   for (const side of SIDES) {
     if (!b.sides[side].objectives.length) b.sides[side].objectives = defaultObjectives(E, side, sc.maxTurns);
   }
+  // План боя: подкрепления до подхода вне боя; ход события с разбросом выпадает сразу.
+  for (const ev of sc.events ?? []) {
+    if (ev.kind === 'arrive' && ev.side && ev.nodeId) for (const el of elementsOfNode(b, ev.side, ev.nodeId)) el.status = 'pending';
+    if (ev.spread && ev.spread > 0) {
+      const off = Math.floor(E.rng.next() * (2 * ev.spread + 1)) - ev.spread;
+      (b.eventTurns ??= {})[ev.id] = Math.max(1, ev.turn + off);
+    }
+  }
 
   // Вводная запись журнала
   const condText = rs.conditions
@@ -170,7 +178,11 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
       side,
       text: `${s(side)}: ${els.length} ${plural(els.length, 'элемент', 'элемента', 'элементов')}, ${pers} чел. Укрепления: ${fort}. Разведданные: ${intel}.`,
     });
+    const later = els.filter((x) => x.status === 'pending');
+    if (later.length)
+      E.log({ phase: 'setup', level: 0, side, text: `${s(side)}: из них подойдут позже (подкрепления) — ${later.length} ${plural(later.length, 'элемент', 'элемента', 'элементов')}, ${later.reduce((a, x) => a + x.startPersonnel, 0)} чел.` });
   }
+  if (sc.events?.length) E.log({ phase: 'setup', level: 0, text: `План боя: ${sc.events.length} ${plural(sc.events.length, 'событие', 'события', 'событий')} по ходам.` });
   for (const w of warnings) E.log({ phase: 'setup', level: 0, severity: 'bad', text: `Внимание: ${w}` });
   if (!b.elements.some((x) => x.side === 'A') || !b.elements.some((x) => x.side === 'B')) {
     E.log({ phase: 'setup', level: 0, severity: 'critical', text: 'У одной из сторон нет сил — бой невозможен.' });
@@ -272,6 +284,7 @@ export function stepTurn(b: Battle): void {
   const t0 = (b.turn - 1) * b.ruleset.turnMinutes;
   E.log({ phase: 'turn', level: 0, text: `Ход ${b.turn} · ${fmtTime(t0)} · ${E.band?.name ?? '—'}` });
 
+  phaseEvents(E);
   phaseDetection(E);
   const ini = phaseInitiative(E);
   phaseFire(E, ini);
@@ -284,6 +297,86 @@ export function stepTurn(b: Battle): void {
   checkEnd(E);
   E.commit();
   b.updatedAt = new Date().toISOString();
+}
+
+/** Элементы узла стороны: самого подразделения и всех его подчинённых. */
+export function elementsOfNode(b: Battle, side: SideId, nodeId: Id): ElementState[] {
+  const f = b.formations.find((x) => x.side === side && x.defId === nodeId);
+  if (!f) return b.elements.filter((x) => x.side === side && x.defId === nodeId);
+  const ids = new Set([f.id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const x of b.formations) if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) (ids.add(x.id), (grew = true));
+  }
+  return b.elements.filter((x) => ids.has(x.formationId));
+}
+
+/** Ход, на который по плану подходит не подошедшее ещё подкрепление (null — не по плану). */
+export function arrivalTurn(b: Battle, el: ElementState): number | null {
+  for (const ev of b.scenario.events ?? [])
+    if (ev.kind === 'arrive' && ev.side === el.side && ev.nodeId && elementsOfNode(b, el.side, ev.nodeId).includes(el)) return b.eventTurns?.[ev.id] ?? ev.turn;
+  return null;
+}
+
+/** План боя: события сценария, выпавшие на этот ход (до обнаружения и огня). */
+function phaseEvents(E: EngineContext) {
+  const { b, rng } = E;
+  for (const ev of b.scenario.events ?? []) {
+    if ((b.eventTurns?.[ev.id] ?? ev.turn) !== b.turn) continue;
+    const chance = ev.chance ?? 100;
+    const happens = chance >= 100 || rng.chance(Math.max(0, chance) / 100);
+    const note = ev.note ? ` (${ev.note})` : '';
+    const side = ev.side;
+    const els = side && ev.nodeId ? elementsOfNode(b, side, ev.nodeId) : [];
+    const who = () => {
+      const f = b.formations.find((x) => x.side === side && x.defId === ev.nodeId);
+      return f ? fm(f) : els.length ? e(els[0]) : '?';
+    };
+    if (ev.kind === 'arrive') {
+      const late = els.filter((x) => x.status === 'pending');
+      if (!late.length) continue;
+      if (!happens) {
+        E.log({ phase: 'plan', level: 0, side, severity: 'bad', refs: late.map((x) => x.id), text: `${who()}: подкрепление не подошло${note}.` });
+        continue;
+      }
+      for (const el of late) el.status = 'active';
+      E.invalidate();
+      const pers = late.reduce((a, x) => a + E.personnel(x), 0);
+      E.log({ phase: 'plan', level: 0, side, severity: 'good', refs: late.map((x) => x.id), text: `Подходят подкрепления: ${who()} — ${pers} чел.${note}` });
+    } else if (ev.kind === 'order') {
+      const order = E.orders.get(ev.orderId ?? '');
+      const act = els.filter((x) => x.status === 'active' || x.status === 'pending');
+      if (!order || !act.length) continue;
+      if (!happens) {
+        E.log({ phase: 'plan', level: 1, side, text: `По плану ${who()} должно было получить приказ «${order.name}», но этого не произошло${note}.` });
+        continue;
+      }
+      for (const el of act) {
+        el.orderId = order.id;
+        if (order.behavior !== 'retreat' && order.behavior !== 'rout') el.exitTurns = 0;
+        E.invalidate(el);
+      }
+      E.log({ phase: 'plan', level: 0, side, refs: act.map((x) => x.id), text: `По плану: ${who()} — приказ «${order.name}»${note}.` });
+    } else if (ev.kind === 'conditions') {
+      const changes: string[] = [];
+      for (const [cat, opt] of Object.entries(ev.conditions ?? {})) {
+        const c = b.ruleset.conditions.find((x) => x.id === cat);
+        const o = c?.options.find((x) => x.id === opt);
+        if (!c || !o || b.conditions[cat] === opt) continue;
+        changes.push(`${c.name.toLowerCase()}: ${o.name}`);
+        if (happens) b.conditions[cat] = opt;
+      }
+      if (!changes.length) continue;
+      if (!happens) {
+        E.log({ phase: 'plan', level: 1, text: `По плану ожидалось — ${changes.join(', ')}, но не случилось${note}.` });
+        continue;
+      }
+      E.refreshConditions();
+      E.invalidate();
+      E.log({ phase: 'plan', level: 0, text: `Обстановка меняется — ${changes.join(', ')}${note}.` });
+    }
+  }
 }
 
 export function runToEnd(b: Battle, maxSteps = 1000): void {
@@ -915,6 +1008,7 @@ function phaseMorale(E: EngineContext) {
   const sideLoss: Record<SideId, number> = { A: 0, B: 0 };
   const sideValue: Record<SideId, number> = { A: 0, B: 0 };
   for (const el of E.b.elements) {
+    if (el.status === 'pending') continue;
     sideLoss[el.side] += el.turnValueLost;
     sideValue[el.side] += el.startValue;
   }
@@ -1178,7 +1272,7 @@ function phaseChecks(E: EngineContext) {
   for (const f2 of b.formations) {
     if (f2.broken) continue;
     const ids = subtreeIds(E, f2.id);
-    const els = b.elements.filter((x) => ids.has(x.formationId));
+    const els = b.elements.filter((x) => ids.has(x.formationId) && x.status !== 'pending');
     const total = els.reduce((a, x) => a + x.startValue, 0);
     // Распад имеет смысл только для звена из нескольких элементов.
     if (total <= 0 || els.length < 2) continue;
@@ -1241,7 +1335,7 @@ function phaseChecks(E: EngineContext) {
 
 /** Сторона удерживает позиции: на месте осталось достаточно сил, не выходящих из боя. */
 export function holding(E: EngineContext, side: SideId): boolean {
-  const els = E.sideElements(side);
+  const els = E.sideElements(side).filter((x) => x.status !== 'pending');
   const start = els.reduce((a, x) => a + x.startValue, 0);
   const now = els.filter((x) => E.fighting(x)).reduce((a, x) => a + E.value(x), 0);
   return start > 0 && now >= start * E.k.holdMinShare;
@@ -1264,7 +1358,8 @@ export function combatEffectiveness(E: EngineContext, el: ElementState): number 
 function snapshot(E: EngineContext) {
   const sides = {} as Record<SideId, SideSnapshot>;
   for (const side of SIDES) {
-    const els = E.sideElements(side);
+    // Не подошедшие подкрепления на графиках не видны — их подход заметен как рост сил.
+    const els = E.sideElements(side).filter((x) => x.status !== 'pending');
     let vehicles = 0;
     for (const el of els) for (const c of el.comps) if (E.type(c.typeId).kind === 'vehicle') vehicles += c.current;
     const active = els.filter((x) => x.status === 'active');
@@ -1281,9 +1376,17 @@ function snapshot(E: EngineContext) {
   E.b.history.push({ turn: E.b.turn, band: E.b.bandIndex, sides });
 }
 
+/** Сторона ждёт подкреплений по плану (их ход ещё не наступил). */
+function awaitingReinforcements(b: Battle, side: SideId): boolean {
+  return (b.scenario.events ?? []).some(
+    (ev) => ev.kind === 'arrive' && ev.side === side && ev.nodeId && (b.eventTurns?.[ev.id] ?? ev.turn) > b.turn && elementsOfNode(b, side, ev.nodeId).some((x) => x.status === 'pending'),
+  );
+}
+
 function checkEnd(E: EngineContext) {
   const { b, k } = E;
-  const out = (side: SideId) => !E.sideElements(side).some((x) => E.fighting(x));
+  // Пока по плану ждут подкреплений, сторона не выбыла, а бой не «затих».
+  const out = (side: SideId) => !E.sideElements(side).some((x) => E.fighting(x)) && !awaitingReinforcements(b, side);
   const outA = out('A');
   const outB = out('B');
   if (outA || outB) {
@@ -1297,7 +1400,8 @@ function checkEnd(E: EngineContext) {
   }
   const losses = b.elements.reduce((a, x) => a + x.turnValueLost, 0);
   const attacking = b.elements.some((x) => E.engaged(x) && E.behavior(x) === 'attack');
-  b.quietTurns = losses <= 0 && !attacking ? b.quietTurns + 1 : 0;
+  const waiting = awaitingReinforcements(b, 'A') || awaitingReinforcements(b, 'B');
+  b.quietTurns = losses <= 0 && !attacking && !waiting ? b.quietTurns + 1 : 0;
   if (k.stalemateTurns > 0 && b.quietTurns >= k.stalemateTurns) finish(E, `Бой затих: ${b.quietTurns} ход. без потерь и без атак`);
 }
 

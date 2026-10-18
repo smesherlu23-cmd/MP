@@ -22,6 +22,7 @@ import {
 import { effectsText } from '../components/EffectsEditor';
 import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
+import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
 import { Link } from '../components/Link';
 import { Area, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
@@ -154,6 +155,7 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
           <div className="note bad">Набор правил сценария не найден — выберите другой.</div>
         )}
 
+        {rs && <PlanEditor sc={sc} rs={rs} />}
         {rs && <ForceRatio sc={sc} rs={rs} />}
       </div>
     </div>
@@ -161,7 +163,7 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
 }
 
 /** Структура подразделения стороны: компактное дерево, щелчок открывает узел в конструкторе. */
-function SideTree({ root, refId, rs }: { root: UnitNode; refId: string; rs: Ruleset }) {
+function SideTree({ root, refId, rs, arrivals }: { root: UnitNode; refId: string; rs: Ruleset; arrivals?: Map<string, number> }) {
   const stats = computeStats(root, rs);
   const orders = new Map(rs.orders.map((o) => [o.id, o.name]));
   const LIMIT = 150;
@@ -181,6 +183,7 @@ function SideTree({ root, refId, rs }: { root: UnitNode; refId: string; rs: Rule
           {n.level && <span className="faint">{n.level}</span>}
           <span className="side-node-name">{n.name}</span>
           {n.attachedFrom !== undefined && <span className="badge info">придано</span>}
+          {arrivals?.has(n.id) && <span className="badge warn" data-tip="Подкрепление по плану боя">с {arrivals.get(n.id)}-го хода</span>}
           {n.order && <span className="badge">{orders.get(n.order) ?? n.order}</span>}
           <span className="grow" />
           <span className="faint small nowrap" data-tip={statsTip(stats.get(n.id))}>
@@ -337,7 +340,7 @@ function SideEditor({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
                     ×
                   </Btn>
                 </div>
-                {isOpen && <SideTree root={f} refId={`sc:${sc.id}:${f.id}`} rs={rs} />}
+                {isOpen && <SideTree root={f} refId={`sc:${sc.id}:${f.id}`} rs={rs} arrivals={arrivalsOf(sc)} />}
               </div>
             );
           })}

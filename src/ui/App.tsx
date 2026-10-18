@@ -22,8 +22,10 @@ import {
   importFile,
   moveTab,
   redo,
+  redoBattle,
   resolveFormation,
   undo,
+  undoBattle,
   updateSettings,
   useApp,
   useBattles,
@@ -278,7 +280,12 @@ export function App() {
         e.preventDefault();
         const a = document.activeElement as HTMLElement | null;
         if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur();
-        if (e.code === 'KeyY' || e.shiftKey) redo();
+        // На вкладке боя отменяются ходы и решения ГМ в этом бою.
+        const tab = st.tabs.find((t) => t.key === st.active);
+        if (tab?.kind === 'battle' && tab.ref) {
+          if (e.code === 'KeyY' || e.shiftKey) redoBattle(tab.ref);
+          else undoBattle(tab.ref);
+        } else if (e.code === 'KeyY' || e.shiftKey) redo();
         else undo();
       }
     };

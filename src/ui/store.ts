@@ -29,7 +29,10 @@ import {
   normalizeRuleset,
   randomSeed,
   restoreBattleLog,
+  rewindBattle,
   trimBattleForStorage,
+  undoBattleAction,
+  lastBattleAction,
   type Battle,
   type UnitNode,
   type Id,
@@ -843,6 +846,65 @@ export async function deleteBattles(ids: Id[], title: string): Promise<boolean> 
   for (const id of ids) await deleteBattle(id, false, true);
   toast(`Удалено боёв: ${ids.length} (они в корзине).`, 'good', { label: 'Вернуть', run: () => void restoreFromTrash(ids.map((key) => ({ col: 'battles', key }))) });
   return true;
+}
+
+// Откат в бою: бой повторяется с теми же бросками и решениями ГМ до нужного момента.
+// Отменённые состояния хранятся в памяти — «Вернуть» (Ctrl+Y) возвращает их, пока бой не продолжили.
+const battleRedo = new Map<Id, Battle[]>();
+
+const NOT_REPLAYABLE = 'Этот бой сохранён другой версией программы — повтор с ним расходится, отменить ход нельзя. Можно «Повторить с решениями ГМ» в меню боя.';
+
+function replaceBattle(prev: Battle, next: Battle, what: string) {
+  battleRedo.set(prev.id, [...(battleRedo.get(prev.id) ?? []), prev]);
+  putBattle(next);
+  toast(`${what}.`, 'info', { label: 'Вернуть', run: () => redoBattle(prev.id) });
+}
+
+/** Отменить последнее в бою: вмешательство ГМ после последнего хода или сам ход (Ctrl+Z на вкладке боя). */
+export function undoBattle(id: Id) {
+  const b = useBattles.getState().battles[id];
+  if (!b) return;
+  const a = lastBattleAction(b);
+  if (!a) return toast('Отменять нечего: бой в самом начале.');
+  const nb = undoBattleAction(b);
+  if (!nb) return toast(NOT_REPLAYABLE, 'bad');
+  replaceBattle(b, nb, a.kind === 'turn' ? `Отменён ход ${a.turn}` : `Отменено: ${a.label}`);
+}
+
+/** Вернуть отменённое в бою (Ctrl+Y на вкладке боя). */
+export function redoBattle(id: Id) {
+  const stack = battleRedo.get(id);
+  const prev = stack?.pop();
+  if (!prev) return toast('Возвращать нечего.');
+  putBattle(prev);
+  toast(`Возвращено: ход ${prev.turn}.`);
+}
+
+/** Бой продолжили (ход, вмешательство) — отменённое уже не вернуть. */
+export function forgetBattleRedo(id: Id) {
+  battleRedo.delete(id);
+}
+
+/** Вернуться к концу выбранного хода; решения ГМ после него отбрасываются. */
+export async function rewindBattleDialog(id: Id) {
+  const b = useBattles.getState().battles[id];
+  if (!b || b.turn < 1) return;
+  const min = b.ruleset.turnMinutes;
+  const time = (t: number) => `${Math.floor((t * min) / 60)}:${String((t * min) % 60).padStart(2, '0')}`;
+  const options = Array.from({ length: b.turn }, (_, i) => b.turn - 1 - i).map((t) => ({
+    value: String(t),
+    label: t === 0 ? 'Начало боя (до первого хода)' : `После хода ${t} · ${time(t)}`,
+  }));
+  const v = await chooseDialog(
+    'Вернуться к ходу',
+    options,
+    'Бой будет повторён с теми же бросками кубиков и вашими решениями до выбранного момента; более поздние ходы и решения отбрасываются. Вернуть их можно сразу после этого (Ctrl+Y).',
+  );
+  if (v === null) return;
+  const t = Number(v);
+  const nb = rewindBattle(b, t);
+  if (!nb) return toast(NOT_REPLAYABLE, 'bad');
+  replaceBattle(b, nb, t === 0 ? 'Бой возвращён к началу' : `Бой возвращён к ходу ${t}`);
 }
 
 /** Вызвать после изменения боя движком (ход, вмешательство). */

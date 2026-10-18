@@ -5,9 +5,13 @@ import {
   EngineContext,
   STATUS_LABELS,
   applyIntervention,
+  arrivalTurn,
   combatEffectiveness,
   computeResult,
+  explainResult,
   formatReport,
+  formatSideReport,
+  lastBattleAction,
   randomSeed,
   replayBattle,
   runToEnd,
@@ -27,7 +31,24 @@ import { Btn, Card, Check, Field, Menu, Meter, Modal, Num, Section, Sel, fmt0, p
 import { useTabState } from '../hooks';
 import { nextBattleName } from './ScenarioPage';
 import { saveResultsAsNew, updateLibraryFromBattle, updateScenarioFromBattle } from '../postBattle';
-import { deleteBattle, ensureFullLog, exportJson, exportText, loadBattle, openTab, putBattle, renameBattle, toast, touchBattle, useApp, useBattles, type Tab } from '../store';
+import {
+  deleteBattle,
+  ensureFullLog,
+  exportJson,
+  exportText,
+  forgetBattleRedo,
+  loadBattle,
+  openTab,
+  putBattle,
+  renameBattle,
+  rewindBattleDialog,
+  toast,
+  touchBattle,
+  undoBattle,
+  useApp,
+  useBattles,
+  type Tab,
+} from '../store';
 
 const SIDES: SideId[] = ['A', 'B'];
 
@@ -72,11 +93,13 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
   const elapsed = b.turn * rs.turnMinutes;
 
   const step = (n: number) => {
+    forgetBattleRedo(b.id);
     for (let i = 0; i < n && !b.finished; i++) stepTurn(b);
     touchBattle(b.id);
     if (b.finished) setView('result');
   };
   const toEnd = () => {
+    forgetBattleRedo(b.id);
     runToEnd(b);
     touchBattle(b.id);
     setView('result');
@@ -90,6 +113,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
     openTab('battle', nb.id);
   };
   const iv = (type: Parameters<typeof applyIntervention>[1]['type'], payload: Record<string, unknown>) => {
+    forgetBattleRedo(b.id);
     applyIntervention(b, { type, payload });
     touchBattle(b.id);
     if (b.finished) setView('result');
@@ -100,6 +124,8 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
     .filter(Boolean)
     .join(', ');
   const winnerColor = result.winner ? b.sides[result.winner].color : undefined;
+  const lastAction = lastBattleAction(b);
+  const undoLabel = !lastAction ? '' : lastAction.kind === 'turn' ? `ход ${lastAction.turn}` : lastAction.label;
   const scenarioExists = !!useApp.getState().scenarios[b.scenarioId];
 
   return (
@@ -111,7 +137,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
         <input className="title-input" value={b.name} onChange={(e) => renameBattle(b.id, e.target.value)} />
         {b.finished ? (
           <>
-            <Btn kind="primary" onClick={() => copyText(formatReport(b))} title="Текстовый отчёт для игроков">
+            <Btn kind="primary" onClick={() => copyText(formatReport(b))} title="Полный отчёт для ГМ: все цифры обеих сторон. Донесения для игроков — в меню «⋯» и на вкладке «Итоги».">
               Скопировать отчёт
             </Btn>
             <Btn onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
@@ -131,8 +157,16 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             </Btn>
           </>
         )}
+        {undoLabel && (
+          <Btn icon onClick={() => undoBattle(b.id)} title={`Отменить: ${undoLabel} (Ctrl+Z). Бой повторяется с теми же бросками.`}>
+            ↶
+          </Btn>
+        )}
         <Menu
           items={[
+            !!undoLabel && { label: `Отменить: ${undoLabel}`, kbd: 'Ctrl+Z', onClick: () => undoBattle(b.id) },
+            b.turn > 0 && { label: 'Вернуться к ходу…', onClick: () => rewindBattleDialog(b.id), tip: 'Повторить бой до выбранного хода с теми же бросками и вашими решениями' },
+            'sep',
             !b.finished && { label: 'Изменить условия и дистанцию…', onClick: () => setCondModal(true) },
             !b.finished && { label: 'Завершить бой сейчас', onClick: () => iv('endBattle', { reason: 'Бой остановлен ГМ' }), tip: 'Подвести итоги на текущем ходу' },
             'sep',
@@ -143,6 +177,12 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             b.interventions.length > 0 && { label: 'Повторить с решениями ГМ', onClick: () => restart(true, true), tip: 'Воспроизвести этот бой вместе с вашими вмешательствами до текущего хода' },
             'sep',
             !b.finished && { label: 'Скопировать отчёт', onClick: () => copyText(formatReport(b)) },
+            ...SIDES.map((sd) => ({
+              label: `Донесение для «${b.sides[sd].name}»`,
+              onClick: () => copyText(formatSideReport(b, sd)),
+              tip: b.finished ? 'Для игроков стороны: свои силы и потери — точно, противник — оценкой по разведданным' : 'Донесения готовятся по итогам боя',
+              disabled: !b.finished,
+            })),
             {
               label: 'Сохранить отчёт с журналом…',
               onClick: () => {
@@ -216,6 +256,10 @@ function statusOf(E: EngineContext, el: ElementState): { label: string; cls: str
     if (bh === 'rout') return { label: 'Бежит', cls: 'status-dead' };
     if (bh === 'reserve') return { label: 'В резерве', cls: 'status-out' };
     return { label: 'В бою', cls: 'status-active' };
+  }
+  if (el.status === 'pending') {
+    const t = arrivalTurn(E.b, el);
+    return { label: t && t > E.b.turn ? `Подойдёт на ${t}-м ходу` : STATUS_LABELS.pending, cls: 'status-out' };
   }
   if (el.status === 'destroyed') return { label: STATUS_LABELS.destroyed, cls: 'status-dead' };
   if (el.status === 'routed') return { label: STATUS_LABELS.routed, cls: 'status-dead' };
@@ -522,6 +566,12 @@ function FormationRows(props: {
                 <Sel value={el.orderId} width={124} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={orderOptions} />
               ) : (
                 <span className={`small ${st.cls}`}>{st.label}</span>
+              )}
+              {el.status === 'pending' && !b.finished && (
+                <button type="button" className="link-btn small" onClick={() => iv('arrive', { elementIds: [el.id] })} title="Подкрепление подходит раньше плана (вмешательство ГМ)">
+                  {' '}
+                  ввести сейчас
+                </button>
               )}
             </td>
             <td className="num">
@@ -935,6 +985,20 @@ function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onE
         <div className="muted" style={{ marginTop: 4 }}>
           {b.finished ? `${result.endReason}. ` : ''}Ходов: {result.turns}.
         </div>
+        <div className="result-why">{explainResult(result)}</div>
+        {b.finished && (
+          <div className="row" style={{ marginTop: 10 }}>
+            <span className="muted small">Скопировать:</span>
+            <Btn sm onClick={() => copyText(formatReport(b))} title="Все цифры обеих сторон — для ГМ">
+              полный отчёт (ГМ)
+            </Btn>
+            {SIDES.map((sd) => (
+              <Btn key={sd} sm onClick={() => copyText(formatSideReport(b, sd))} title="Свои силы и потери — точно, противник — оценкой: чем хуже разведданные и чем меньше противника видели, тем шире диапазон">
+                донесение для «{b.sides[sd].name}»
+              </Btn>
+            ))}
+          </div>
+        )}
       </div>
       <Card tight>
         <SideCompare b={b} result={result} full />

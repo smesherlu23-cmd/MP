@@ -6,7 +6,13 @@ import {
   createBattle,
   defaultCommandLevel,
   displayNames,
+  explainResult,
   formatReport,
+  formatSideReport,
+  lastBattleAction,
+  rewindBattle,
+  undoBattleAction,
+  walkUnits,
   makeDemoScenario,
   makeLinearRuleset,
   makeLinearScenario,
@@ -215,6 +221,48 @@ describe('бой', () => {
     expect(r.turn).toBe(a.turn);
     expect(strip(r)).toEqual(strip(a));
     expect(r.conditions.weather).toBe('fog');
+  });
+
+  it('откат: отменяется последний ход или решение ГМ, состояние — как при повторе', () => {
+    const a = createBattle(sc, rs, { seed: 'UNDO' });
+    for (let i = 0; i < 3; i++) stepTurn(a);
+    const at3 = strip(clone(a));
+    const blue = a.elements.filter((x) => x.side === 'A').map((x) => x.id);
+    applyIntervention(a, { type: 'setOrder', payload: { elementIds: blue, orderId: 'defend' } });
+    stepTurn(a);
+    stepTurn(a);
+    expect(lastBattleAction(a)).toEqual({ kind: 'turn', turn: 5 });
+    const u = undoBattleAction(a)!;
+    expect(u.id).toBe(a.id);
+    expect(u.turn).toBe(4);
+    expect(u.interventions).toHaveLength(1);
+    // К ходу 3: решение ГМ, сделанное после хода 3, остаётся; отмена его возвращает бой к состоянию до решения.
+    const r3 = rewindBattle(a, 3)!;
+    expect(lastBattleAction(r3)).toMatchObject({ kind: 'intervention', label: 'смена приказа' });
+    const r3b = undoBattleAction(r3)!;
+    expect(r3b.interventions).toHaveLength(0);
+    expect(strip(r3b)).toEqual(at3);
+    // Бой, повтор которого разошёлся (сохранён другой версией), не откатывается.
+    const bad = clone(a);
+    bad.log.find((e) => e.phase === 'turn' && e.turn === 1)!.text = 'другая версия';
+    expect(rewindBattle(bad, 2)).toBeNull();
+  });
+
+  it('итог объясняет, что решило исход', () => {
+    let seen = 0;
+    for (const seed of ['W1', 'W2', 'W3', 'W4', 'W5', 'W6']) {
+      const b = createBattle(sc, rs, { seed });
+      runToEnd(b);
+      const r = b.result!;
+      const text = explainResult(r);
+      if (r.winner) {
+        seen++;
+        expect(text).toContain('Решило.');
+        expect(text).toContain(`«${r.sides[r.winner].name}»`);
+      } else expect(text).toContain('примерно поровну');
+      expect(formatReport(b)).toContain(text);
+    }
+    expect(seen).toBeGreaterThan(0);
   });
 
   it('малые группы (2–3 бойца): потери целые, численность не уходит в минус', () => {
@@ -495,5 +543,85 @@ describe('бой', () => {
     const sc = duel(rs, legacy as unknown as UnitNode, infantry('Противник', 50));
     const b = createBattle(sc, rs, { seed: 'legacy' });
     expect(b.elements.find((x) => x.name === 'Рота')?.morale).toBe(65);
+  });
+});
+
+describe('план боя и донесения', () => {
+  const rs = makeUniversalRuleset();
+  const nodeId = (sc: Scenario, side: 0 | 1, name: string) => {
+    let id = '';
+    for (const f of sc.sides[side].formations) walkUnits(f, (n) => void (n.name.includes(name) && (id = n.id)));
+    return id;
+  };
+
+  it('подкрепление вне боя до своего хода, затем вступает; без него — «не подошло»', () => {
+    const sc = makeDemoScenario();
+    const tank = nodeId(sc, 0, 'Танковая');
+    sc.events = [{ id: 'e1', kind: 'arrive', turn: 4, side: 'A', nodeId: tank }];
+    const b = createBattle(sc, rs, { seed: 'EV' });
+    const tanks = b.elements.filter((x) => x.defId === tank);
+    expect(tanks.length).toBeGreaterThan(0);
+    expect(tanks.every((x) => x.status === 'pending')).toBe(true);
+    for (let i = 0; i < 3; i++) stepTurn(b);
+    expect(tanks.every((x) => x.status === 'pending' && x.firedThisTurn === false)).toBe(true);
+    expect(tanks.every((x) => x.comps.every((c) => c.current === c.start))).toBe(true);
+    stepTurn(b);
+    expect(tanks.every((x) => x.status === 'active')).toBe(true);
+    expect(b.log.some((e) => e.phase === 'plan' && e.turn === 4 && e.text.includes('Подходят подкрепления'))).toBe(true);
+
+    sc.events = [{ id: 'e1', kind: 'arrive', turn: 2, chance: 0, side: 'A', nodeId: tank }];
+    const c = createBattle(sc, rs, { seed: 'EV' });
+    runToEnd(c);
+    expect(c.elements.filter((x) => x.defId === tank).every((x) => x.status === 'pending')).toBe(true);
+    expect(c.log.some((e) => e.phase === 'plan' && e.text.includes('не подошло'))).toBe(true);
+    // Не подошедшие в итогах не воюют и не теряют: только счётчик.
+    expect(c.result!.sides.A.status.pending).toBeGreaterThan(0);
+  });
+
+  it('смена приказа и условий по плану, разброс в пределах, прогоны воспроизводимы', () => {
+    const sc = makeDemoScenario();
+    const third = nodeId(sc, 0, '3-я мотострелковая');
+    sc.events = [
+      { id: 'o', kind: 'order', turn: 3, side: 'A', nodeId: third, orderId: 'attack' },
+      { id: 'c', kind: 'conditions', turn: 5, spread: 2, conditions: { time: 'night' } },
+    ];
+    expect(validateScenario(sc, rs)).toHaveLength(0);
+    for (const seed of ['S1', 'S2', 'S3', 'S4']) {
+      const b = createBattle(sc, rs, { seed });
+      const t = b.eventTurns!.c;
+      expect(t).toBeGreaterThanOrEqual(3);
+      expect(t).toBeLessThanOrEqual(7);
+      for (let i = 0; i < 3; i++) stepTurn(b);
+      expect(b.elements.filter((x) => x.defId === third).every((x) => x.orderId === 'attack')).toBe(true);
+      while (b.turn < t && !b.finished) stepTurn(b);
+      if (!b.finished) expect(b.conditions.time).toBe('night');
+    }
+    const r1 = runMany(sc, rs, 40, 'plan');
+    const r2 = runMany(sc, rs, 40, 'plan');
+    expect(r1.winA).toBe(r2.winA);
+    // Событие на удалённое подразделение — замечание в проверке сценария.
+    sc.events.push({ id: 'x', kind: 'arrive', turn: 2, side: 'B', nodeId: 'нет-такого' });
+    expect(validateScenario(sc, rs).some((x) => x.text.includes('План боя'))).toBe(true);
+  });
+
+  it('донесение стороны: свои цифры точно, противник — диапазоном, без решений ГМ', () => {
+    const sc = makeDemoScenario();
+    const b = createBattle(sc, rs, { seed: 'REP' });
+    stepTurn(b);
+    applyIntervention(b, { type: 'setConditions', payload: { conditions: { weather: 'fog' } } });
+    runToEnd(b);
+    const r = b.result!;
+    const text = formatSideReport(b, 'A');
+    expect(text).toContain(`потери ${r.sides.A.personnel.losses.toLocaleString('ru-RU')}`);
+    expect(text).not.toContain('ГМ:');
+    const m = /Потери: (?:около (\d+)|(\d+)–(\d+)) чел\./.exec(text);
+    if (m) {
+      const lo = Number(m[1] ?? m[2]);
+      const hi = Number(m[1] ?? m[3]);
+      const truth = r.sides.B.personnel.losses;
+      expect(lo).toBeLessThanOrEqual(Math.max(truth, 5));
+      expect(hi).toBeGreaterThanOrEqual(Math.min(truth, hi));
+    } else expect(text).toContain('Сведений почти нет');
+    expect(formatSideReport(b, 'A')).toBe(text);
   });
 });

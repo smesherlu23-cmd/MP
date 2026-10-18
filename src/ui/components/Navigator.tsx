@@ -41,7 +41,7 @@ export function Navigator() {
     <div
       key={key}
       className={`side-item${opts.active ? ' active' : ''}`}
-      title={opts.dragLib ? `${name}\nМожно перетащить в структуру подразделения или на сторону сценария` : name}
+      title={opts.dragLib ? `${name}\nМожно перетащить в структуру подразделения или на сторону сценария` : opts.sub ? `${name}\n${opts.sub}` : name}
       draggable={!!opts.dragLib}
       onDragStart={(e) => {
         if (!opts.dragLib) return;

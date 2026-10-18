@@ -281,7 +281,32 @@ export interface Scenario {
   maxTurns: number;
   seed: string;
   sides: [SideDef, SideDef];
+  /** План боя: события по ходам — работают и в бою, и в массовых прогонах. */
+  events?: ScenarioEvent[];
   updatedAt?: string;
+}
+
+/**
+ * Событие плана боя. arrive — подход подкреплений (до этого подразделение вне боя), order — смена
+ * приказа подразделению, conditions — смена условий (ночь, дождь…).
+ */
+export type ScenarioEventKind = 'arrive' | 'order' | 'conditions';
+
+export interface ScenarioEvent {
+  id: Id;
+  kind: ScenarioEventKind;
+  /** Ход, в начале которого событие наступает (1 — с первого хода). */
+  turn: number;
+  /** Разброс ±N ходов: событие наступит в случайный ход от turn−N до turn+N. */
+  spread?: number;
+  /** Вероятность, % (по умолчанию 100): подкрепление может и не подойти. */
+  chance?: number;
+  side?: SideId;
+  /** Узел стороны (формирование или подразделение) — для arrive и order. */
+  nodeId?: Id;
+  orderId?: Id;
+  conditions?: Record<Id, Id>;
+  note?: string;
 }
 
 // ---------------------------------------------------------------- состояние боя
@@ -301,7 +326,8 @@ export interface CompState {
   mia: number;
 }
 
-export type ElementStatus = 'active' | 'withdrawn' | 'routed' | 'destroyed';
+/** pending — подкрепление, которое ещё не подошло (вне боя: не стреляет, не несёт потерь). */
+export type ElementStatus = 'active' | 'pending' | 'withdrawn' | 'routed' | 'destroyed';
 
 export interface ElementState {
   id: Id;
@@ -399,6 +425,7 @@ export type Phase =
   | 'morale'
   | 'checks'
   | 'gm'
+  | 'plan'
   | 'end';
 
 export type Severity = 'info' | 'good' | 'bad' | 'critical';
@@ -443,7 +470,7 @@ export interface TurnSnapshot {
   sides: Record<SideId, SideSnapshot>;
 }
 
-export type InterventionType = 'setOrder' | 'editElement' | 'resupply' | 'setConditions' | 'setBand' | 'endBattle' | 'setFormation';
+export type InterventionType = 'setOrder' | 'editElement' | 'resupply' | 'setConditions' | 'setBand' | 'endBattle' | 'setFormation' | 'arrive';
 
 export interface Intervention {
   /** Ход, ПЕРЕД которым было сделано вмешательство (0 — до первого хода). */
@@ -476,6 +503,8 @@ export interface Battle {
   lastInitiative?: SideId;
   history: TurnSnapshot[];
   interventions: Intervention[];
+  /** Ход, на который выпало событие плана с разбросом (id события → ход). */
+  eventTurns?: Record<Id, number>;
   quietTurns: number;
   finished: boolean;
   endReason?: string;

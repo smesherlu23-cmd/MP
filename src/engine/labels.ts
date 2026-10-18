@@ -1,6 +1,6 @@
 // Человекочитаемые названия для журнала, отчётов и интерфейса.
 
-import type { Behavior, ComponentKind, ConditionOp, Echelon, ElementStatus, ObjectiveType, StatKey } from './types';
+import type { Behavior, ComponentKind, ConditionOp, Echelon, ElementStatus, ObjectiveType, ScenarioEventKind, StatKey } from './types';
 
 export const STAT_LABELS: Record<StatKey, string> = {
   fire: 'Огонь',
@@ -59,6 +59,7 @@ export const KIND_LABELS: Record<ComponentKind, string> = {
 
 export const STATUS_LABELS: Record<ElementStatus, string> = {
   active: 'В бою',
+  pending: 'Ещё не подошёл',
   withdrawn: 'Вышел из боя',
   routed: 'Бежал',
   destroyed: 'Уничтожен',
@@ -141,3 +142,9 @@ export function fmtPct(v: number, digits = 0): string {
 export function fmtMult(v: number): string {
   return `×${v.toFixed(2).replace(/\.?0+$/, '')}`;
 }
+
+export const EVENT_KIND_LABELS: Record<ScenarioEventKind, string> = {
+  arrive: 'Подход подкреплений',
+  order: 'Смена приказа',
+  conditions: 'Смена условий',
+};
