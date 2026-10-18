@@ -265,7 +265,10 @@ export function EffectModal({ b, target, onClose, iv }: { b: Battle; target: Tar
       }
     >
       <div className="fields two">
-        <Field label="Заготовка" hint={presets.find((x) => x.id === preset)?.description}>
+        <Field
+          label="Заготовка"
+          hint={[presets.find((x) => x.id === preset)?.description, 'Заготовки эффектов — в наборе правил («Временные эффекты»).'].filter(Boolean).join('\n\n')}
+        >
           <Sel value={preset} onChange={pick} options={[...presets.map((p) => ({ value: p.id, label: p.name })), { value: '', label: 'свой эффект' }]} />
         </Field>
         <Field label={`Ходов (${fmtDuration((turns * b.ruleset.turnMinutes) / 60)})`}>
@@ -281,9 +284,6 @@ export function EffectModal({ b, target, onClose, iv }: { b: Battle; target: Tar
         </div>
         <EffectsEditor value={effects} onChange={setEffects} />
       </div>
-      <p className="faint small" style={{ marginBottom: 0 }}>
-        Заготовки эффектов — в наборе правил («Временные эффекты»).
-      </p>
     </Modal>
   );
 }

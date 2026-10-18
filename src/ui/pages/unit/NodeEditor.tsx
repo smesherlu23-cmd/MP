@@ -447,14 +447,10 @@ export function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; tar
         </>
       }
     >
-      <input
-        type="search"
-        autoFocus
-        placeholder="Поиск по шаблонам…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        style={{ width: '100%', marginBottom: 10 }}
-      />
+      <div className="row" style={{ marginBottom: 10, flexWrap: 'nowrap' }}>
+        <input type="search" autoFocus placeholder="Поиск по шаблонам…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1 }} />
+        <Info text="Копия помнит свой шаблон: если позже изменить шаблон, копию можно обновить, не теряя её потерь и состояния." />
+      </div>
       <div className="insert-list">
         {items.map((u) => {
           const s = summarizeUnits([u], ctx.rs);
@@ -476,9 +472,6 @@ export function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; tar
         })}
         {!items.length && <div className="empty">Подходящих шаблонов нет. Соберите взвод или роту и сохраните как шаблон через меню «⋯».</div>}
       </div>
-      <p className="faint small" style={{ marginBottom: 0 }}>
-        Копия помнит свой шаблон: если позже изменить шаблон, копию можно обновить, не теряя её потерь и состояния.
-      </p>
     </Modal>
   );
 }

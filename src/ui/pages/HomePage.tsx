@@ -1,7 +1,7 @@
 import { fmtDuration, resolveScenario, sideUnits, summarizeUnits } from '../../engine';
 import { Link } from '../components/Link';
 import { openPalette } from '../components/Palette';
-import { Btn, Card, fmt0 } from '../components/ui';
+import { Btn, Card, Info, fmt0 } from '../components/ui';
 import { createScenario, newForceDialog, openTab, updateSettings, useApp, type TabKind } from '../store';
 import { startBattle } from './ScenarioPage';
 
@@ -232,7 +232,8 @@ export function HomePage() {
         <a href="#" onClick={(e) => (e.preventDefault(), openPalette())}>
           Ctrl+K
         </a>{' '}
-        — найти любое подразделение, сценарий или команду · Alt+← / Alt+→ — назад / вперёд · Ctrl+Z / Ctrl+Y — отменить / повторить · Ctrl+B — навигатор
+        — найти любое подразделение, сценарий или команду
+        <Info text={'Alt+← / Alt+→ — назад / вперёд\nCtrl+Z / Ctrl+Y — отменить / повторить\nCtrl+B — скрыть или показать навигатор'} />
       </p>
     </div>
   );

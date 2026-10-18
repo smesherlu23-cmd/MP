@@ -38,7 +38,10 @@ export function RestModal({ force, rs, onClose }: { force: UnitNode; rs: Ruleset
       }
     >
       <div className="fields two">
-        <Field label="Дней отдыха">
+        <Field
+          label="Дней отдыха"
+          hint={`Темпы — в наборе правил, «Коэффициенты» → «Между боями (силы)»: раненые ${k.restWoundedPerDay ?? 4}%/день, ремонт ${k.restRepairPerDay ?? 6}%/день, состояние ${k.restRecoverPerDay ?? 15}%/день. Сверх штата в строй не возвращаются.`}
+        >
           <Num value={days} onChange={(v) => setDays(Math.max(1, Math.min(365, Math.round(v))))} min={1} max={365} integer width="100%" />
         </Field>
         <Field label="Ждут возвращения в строй">
@@ -56,10 +59,6 @@ export function RestModal({ force, rs, onClose }: { force: UnitNode; rs: Ruleset
         )}
         . Мораль, слаженность, готовность, усталость, боезапас, топливо и снаряжение приблизятся к норме.
       </div>
-      <p className="faint small" style={{ marginBottom: 0 }}>
-        Темпы — в наборе правил, «Коэффициенты» → «Между боями (силы)»: раненые {k.restWoundedPerDay ?? 4}%/день, ремонт {k.restRepairPerDay ?? 6}%/день,
-        состояние {k.restRecoverPerDay ?? 15}%/день. Сверх штата в строй не возвращаются.
-      </p>
     </Modal>
   );
 }

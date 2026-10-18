@@ -240,7 +240,7 @@ export function Field(props: { label: ReactNode; hint?: string; children: ReactN
   );
 }
 
-/** Значок «?» с подсказкой (видна при наведении и при переходе на значок клавишей Tab). */
+/** Значок «?» с подсказкой (видна при наведении, по щелчку и при переходе на значок клавишей Tab). */
 export function Info({ text }: { text: string }) {
   return (
     // biome-ignore lint/a11y/noNoninteractiveTabindex: значок фокусируется, чтобы подсказка показывалась и при переходе клавишей Tab
@@ -423,6 +423,8 @@ function readOpen(id: string | undefined, def: boolean): boolean {
 export function Section(props: {
   id?: string;
   title: ReactNode;
+  /** Пояснение к разделу — значком «?» у заголовка. */
+  hint?: string;
   summary?: ReactNode;
   actions?: ReactNode;
   defaultOpen?: boolean;
@@ -442,13 +444,15 @@ export function Section(props: {
   };
   return (
     <div className={`card section${isOpen ? ' open' : ''}`}>
-      <div className="card-head" onClick={toggle}>
+      {/* Щелчок по «?» у заголовка раздел не сворачивает. */}
+      <div className="card-head" onClick={(e) => (e.target as HTMLElement).closest('.hint-icon') || toggle()}>
         <span className="chev">{isOpen ? '▾' : '▸'}</span>
         <h3>
           {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: роль button и фокус — из pressable() */}
           <span {...pressable(toggle)} aria-expanded={isOpen}>
             {props.title}
           </span>
+          {props.hint && <Info text={props.hint} />}
         </h3>
         {props.summary !== undefined && <span className="sec-summary">{props.summary}</span>}
         <span className="grow" />

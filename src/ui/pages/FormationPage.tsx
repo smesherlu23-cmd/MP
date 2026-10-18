@@ -334,8 +334,8 @@ export function FormationPage({ tab }: { tab: Tab }) {
           </span>
         )}
         <span className="faint">
-          перетаскивайте мышью — в том числе из навигатора слева
-          <Info text={KEYS_HELP} />
+          мышь и клавиши
+          <Info text={`Перетаскивайте подразделения мышью — в том числе из навигатора слева.\n\n${KEYS_HELP}`} />
         </span>
       </div>
 

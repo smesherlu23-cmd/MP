@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { pathTo, plural, summarizeUnits, type Id, type Ruleset, type Scenario, type SideUnitRef, type UnitNode } from '../../engine';
 import { createForcesFromTemplate, historyStep, toast, updateScenario, useApp } from '../store';
-import { Btn, Check, Modal, Num, Seg, fmt0 } from './ui';
+import { Btn, Check, Info, Modal, Num, Seg, fmt0 } from './ui';
 
 const keyOf = (rootId: string, nodeId: string) => `${rootId}/${nodeId}`;
 
@@ -171,6 +171,13 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
             { value: 'templates', label: 'Новые из шаблона', title: 'Создать новые силы по шаблону (полный штат) и сразу взять их в бой' },
           ]}
         />
+        <Info
+          text={
+            mode === 'forces'
+              ? 'Силы — конкретные подразделения: потери этого боя потом запишутся именно в них. Нужна только часть — раскройте подразделение (▸) и отметьте роты, взводы, батальоны; она войдёт в бой самостоятельно, с состоянием старшего.'
+              : `По шаблону создаются новые силы с полным штатом и принадлежностью «${sideName}»; они появятся в разделе «Силы» и сразу встанут на сторону.`
+          }
+        />
         <input
           type="search"
           autoFocus
@@ -185,11 +192,6 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
           </Check>
         )}
       </div>
-      <p className="muted small" style={{ marginTop: 0 }}>
-        {mode === 'forces'
-          ? 'Силы — конкретные подразделения: потери этого боя потом запишутся именно в них. Нужна только часть — раскройте подразделение (▸) и отметьте роты, взводы, батальоны; она войдёт в бой самостоятельно, с состоянием старшего.'
-          : `По шаблону создаются новые силы с полным штатом и принадлежностью «${sideName}»; они появятся в разделе «Силы» и сразу встанут на сторону.`}
-      </p>
       <div className="pick-list">
         {list.map((u) => row(u, u, 0))}
         {!list.length && (

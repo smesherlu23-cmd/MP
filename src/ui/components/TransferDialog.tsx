@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { findParent, findUnit, locateNode, plural, type Id, type UnitNode } from '../../engine';
 import { transferPart, useApp } from '../store';
-import { Btn, Modal } from './ui';
+import { Btn, Info, Modal } from './ui';
 
 export function TransferDialog({ nodeId, onDone, onClose }: { nodeId: Id; onDone: (forceId: Id) => void; onClose: () => void }) {
   const forces = useApp((s) => s.forces);
@@ -90,23 +90,22 @@ export function TransferDialog({ nodeId, onDone, onClose }: { nodeId: Id; onDone
         </>
       }
     >
-      <p className="muted small" style={{ marginTop: 0 }}>
-        Часть временно переходит в выбранное подразделение со всем составом, потерями и состоянием: в бою воюет в его составе, а сценарии, где она была
-        отдельной частью стороны, сами ссылаются на новое место. Вернуть на прежнее место — «Вернуть…» в меню части (или кнопкой у её названия).
-      </p>
       {otherRules && (
         <div className="note warn" style={{ marginBottom: 8 }}>
           Подразделение составлено по другому набору правил ({rulesets[target!.force.rulesetId!]?.name ?? 'другой'}) — типы могут не совпасть.
         </div>
       )}
-      <input
-        type="search"
-        autoFocus
-        placeholder="Поиск по названию, в том числе частей…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        style={{ width: '100%', marginBottom: 8 }}
-      />
+      <div className="row" style={{ marginBottom: 8, flexWrap: 'nowrap' }}>
+        <input
+          type="search"
+          autoFocus
+          placeholder="Поиск по названию, в том числе частей…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <Info text="Часть временно переходит в выбранное подразделение со всем составом, потерями и состоянием: в бою воюет в его составе, а сценарии, где она была отдельной частью стороны, сами ссылаются на новое место. Вернуть на прежнее место — «Вернуть…» в меню части (или кнопкой у её названия)." />
+      </div>
       <div className="pick-list">{list.map((f) => row(f, 0))}</div>
     </Modal>
   );

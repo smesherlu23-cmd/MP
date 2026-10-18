@@ -3,12 +3,14 @@
 
 import { newId, nodeSectors, summarizeUnits, type Ruleset, type Scenario, type SectorDef, type UnitNode } from '../../engine';
 import { historyStep, toastUndoable, updateScenario } from '../store';
-import { Btn, Info, Num, Section, Sel, Txt, fmt0 } from './ui';
+import { Btn, Num, Section, Sel, Txt, fmt0 } from './ui';
 
-const HINT =
-  'Без участков бой идёт на одной общей дистанции. Если поле боя делится на направления (фланги, высота и деревня), задайте участки: у каждого своя дистанция и сближение, ' +
-  'при желании — своя местность и укрепления. Наблюдение и прямой огонь — только в пределах участка; миномёты и артиллерия достают и соседние (коэффициент в наборе правил). ' +
-  'Переброски между участками нет. Подразделения назначаются на участок на сторонах (по умолчанию — первый участок). Ширина участка ограничивает, сколько сил одновременно ведут прямой огонь (0 — только охват).';
+const HINT = [
+  'Без участков бой идёт на одной общей дистанции. Если поле боя делится на направления (фланги, высота и деревня), задайте участки: у каждого своя дистанция и сближение, при желании — своя местность и укрепления.',
+  'Наблюдение и прямой огонь — только в пределах участка; миномёты и артиллерия достают и соседние (коэффициент в наборе правил). Переброски между участками нет.',
+  'Ширина участка ограничивает, сколько сил одновременно ведут прямой огонь; не задана — ограничивает только охват.',
+  'Подразделение назначается на участок в карточке стороны — у подразделения и у его частей в структуре ▸. Не назначенные — на первом участке.',
+].join('\n\n');
 
 export function SectorsEditor({ sc, rsc, rs }: { sc: Scenario; rsc: Scenario; rs: Ruleset }) {
   const sectors = sc.sectors ?? [];
@@ -51,10 +53,7 @@ export function SectorsEditor({ sc, rsc, rs }: { sc: Scenario; rsc: Scenario; rs
   const summary = sectors.length ? sectors.map((s) => `${s.name}: ${bandName(s.startBand).toLowerCase()}`).join(' · ') : 'одна общая дистанция';
 
   return (
-    <Section id="scenario-sectors" title="Участки боя" summary={summary} defaultOpen={sectors.length > 0}>
-      <p className="muted small" style={{ marginTop: 0 }}>
-        {HINT}
-      </p>
+    <Section id="scenario-sectors" title="Участки боя" hint={HINT} summary={summary} defaultOpen={sectors.length > 0}>
       {sectors.map((sec, i) => (
         <div key={sec.id} className="plan-row sector-row">
           <div className="plan-main">
@@ -129,9 +128,6 @@ export function SectorsEditor({ sc, rsc, rs }: { sc: Scenario; rsc: Scenario; rs
         <Btn sm onClick={add}>
           {sectors.length ? '+ Участок' : '+ Разделить поле боя на участки'}
         </Btn>
-        {sectors.length > 0 && (
-          <Info text="Назначить подразделение на участок — в карточке стороны, у подразделения (и у его частей в структуре ▸). Не назначенные — на первом участке." />
-        )}
       </div>
     </Section>
   );

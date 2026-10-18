@@ -69,6 +69,10 @@ test('сценарий: участки боя, событие по услови�
   await expect(width).toHaveValue('800');
   const sectors = page.locator('.section', { hasText: 'Участки боя' });
   if (!(await sectors.locator('.card-body').count())) await sectors.locator('.card-head').click();
+  // Пояснение раздела — в «?» у заголовка; щелчок по нему раздел не сворачивает.
+  await sectors.locator('.card-head .hint-icon').click();
+  await expect(sectors.locator('.card-body')).toHaveCount(1);
+  await expect(page.locator('.tooltip')).toContainText('Без участков бой идёт на одной общей дистанции');
   await sectors.getByRole('button', { name: '+ Разделить поле боя на участки' }).click();
   await expect(sectors.locator('.sector-row')).toHaveCount(2);
   await expect(page.locator('.field', { hasText: 'Ширина фронта, м' })).toHaveCount(0);

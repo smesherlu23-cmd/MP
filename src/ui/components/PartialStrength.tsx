@@ -2,7 +2,7 @@
 // до одного бойца или одной машины. Для малых операций: из отделения — трое, из взвода — один танк.
 
 import { limitComposition, ownPersonnel, type Ruleset, type UnitNode } from '../../engine';
-import { Btn, Modal, Num, fmt0 } from './ui';
+import { Btn, Info, Modal, Num, fmt0 } from './ui';
 
 export type PartialLimit = Record<string, number>;
 
@@ -78,16 +78,15 @@ export function PartialModal(props: {
         </>
       }
     >
-      <p className="muted small" style={{ marginTop: 0 }}>
-        Для малых операций: в бой идёт только часть состава, вплоть до одного бойца или одной машины. Остальные остаются в силах — не стреляют и потерь не
-        несут; потери боя запишутся в силы, а мораль и усталость изменятся на долю участвовавших. Касается только этого сценария.
-      </p>
       <table className="tbl compact partial-table">
         <thead>
           <tr>
             <th>Тип</th>
             <th className="num">В строю</th>
-            <th className="num">В бою</th>
+            <th className="num">
+              В бою{' '}
+              <Info text="Для малых операций: в бой идёт только часть состава, вплоть до одного бойца или одной машины. Остальные остаются в силах — не стреляют и потерь не несут; потери боя запишутся в силы, а мораль и усталость изменятся на долю участвовавших. Касается только этого сценария." />
+            </th>
             <th />
           </tr>
         </thead>

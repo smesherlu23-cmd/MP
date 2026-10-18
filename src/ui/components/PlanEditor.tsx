@@ -21,10 +21,11 @@ import {
 import { updateScenario } from '../store';
 import { Btn, Info, Num, Section, Sel, Txt } from './ui';
 
-const HINT =
-  'События наступают в начале хода — в каждом бою и в каждом прогоне: на заданном ходу или когда выполнено условие («потери Синих ≥ 30% → резерв в бой»). ' +
-  'Подкрепление до подхода в бою не участвует: не стреляет, не несёт потерь и не считается в задачах. Вероятность и разброс делают план неточным: массовые прогоны покажут, сколько от этого зависит. ' +
-  'В бою ГМ может ввести подкрепление раньше («ввести сейчас» в таблице сил).';
+const HINT = [
+  'События наступают в начале хода — в каждом бою и в каждом прогоне: на заданном ходу или когда выполнено условие («потери Синих ≥ 30% → резерв в бой»).',
+  'Подкрепление до подхода в бою не участвует: не стреляет, не несёт потерь и не считается в задачах. В бою ГМ может ввести его раньше («ввести сейчас» в таблице сил).',
+  'Вероятность и разброс делают план неточным: массовые прогоны покажут, сколько от этого зависит.',
+].join('\n\n');
 
 const KIND_TIP: Record<ScenarioEventKind, string> = {
   arrive: 'Подразделение вне боя до этого хода, затем вступает со своим приказом.',
@@ -78,10 +79,7 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   const hasSupport = sc.sides.some((s) => s.support?.length);
 
   return (
-    <Section id="scenario-plan" title="План боя" summary={summary} defaultOpen={events.length > 0}>
-      <p className="muted small" style={{ marginTop: 0 }}>
-        {HINT}
-      </p>
+    <Section id="scenario-plan" title="План боя" hint={HINT} summary={summary} defaultOpen={events.length > 0}>
       {events.map((ev, i) => {
         const set = (fn: (e: ScenarioEvent) => void) => upd((list) => fn(list[i]));
         const tr = ev.trigger;

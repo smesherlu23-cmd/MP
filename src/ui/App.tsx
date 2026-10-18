@@ -480,29 +480,31 @@ function TooltipHost() {
       setTip({ text, left: Math.min(Math.max(8, r.left + r.width / 2 - 170), window.innerWidth - 348), top: above ? r.top - 6 : r.bottom + 6, above });
     };
     const over = (e: MouseEvent) => show((e.target as Element)?.closest?.('[data-tip]') ?? null);
-    // С клавиатуры подсказка показывается, когда на элемент переходят клавишей Tab (не по щелчку).
+    // С клавиатуры подсказка показывается, когда на элемент переходят клавишей Tab (не по щелчку);
+    // у значка «?» — и по щелчку: его для того и нажимают.
     const focus = (e: FocusEvent) => {
       const t = e.target as Element;
-      if (t?.matches?.(':focus-visible')) show(t.closest('[data-tip]'));
+      if (t?.matches?.(':focus-visible, .hint-icon')) show(t.closest('[data-tip]'));
     };
     const hide = () => {
       cur = null;
       setTip(null);
     };
+    const down = (e: MouseEvent) => (e.target as Element)?.closest?.('.hint-icon') || hide();
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && hide();
     document.addEventListener('mouseover', over);
     document.addEventListener('focusin', focus);
     document.addEventListener('focusout', hide);
     document.addEventListener('keydown', onKey);
     document.addEventListener('scroll', hide, true);
-    document.addEventListener('mousedown', hide);
+    document.addEventListener('mousedown', down);
     return () => {
       document.removeEventListener('mouseover', over);
       document.removeEventListener('focusin', focus);
       document.removeEventListener('focusout', hide);
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('scroll', hide, true);
-      document.removeEventListener('mousedown', hide);
+      document.removeEventListener('mousedown', down);
     };
   }, []);
   if (!tip) return null;
