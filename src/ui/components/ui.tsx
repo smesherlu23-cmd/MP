@@ -264,8 +264,17 @@ export interface MenuItem {
  * Кнопка «⋯» с выпадающим списком второстепенных действий. С клавиатуры: Enter/пробел или ↓ открывают,
  * ↑/↓ выбирают пункт, Enter выполняет, Esc или Tab закрывают и возвращают фокус на кнопку.
  */
-export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefined)[]; label?: ReactNode; title?: string; sm?: boolean }) {
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+export function Menu(props: {
+  items: (MenuItem | 'sep' | false | null | undefined)[];
+  label?: ReactNode;
+  title?: string;
+  sm?: boolean;
+  /** Класс кнопки (например, primary). */
+  className?: string;
+  /** Список — от левого края кнопки (для кнопок у левого края окна). */
+  alignLeft?: boolean;
+}) {
+  const [pos, setPos] = useState<{ top: number; right?: number; left?: number } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   const close = (refocus: boolean) => {
@@ -301,14 +310,14 @@ export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefine
   const items = props.items.filter(Boolean) as (MenuItem | 'sep')[];
   const open = () => {
     const r = btn.current!.getBoundingClientRect();
-    setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
+    setPos(props.alignLeft ? { top: r.bottom + 4, left: Math.max(8, r.left) } : { top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
   };
   return (
     <>
       <button
         ref={btn}
         type="button"
-        className={`btn ${props.label ? '' : 'icon'} ${props.sm ? 'sm' : ''} ${pos ? 'active' : ''}`}
+        className={`btn ${props.label ? '' : 'icon'} ${props.sm ? 'sm' : ''} ${pos ? 'active' : ''} ${props.className ?? ''}`}
         title={props.title ?? 'Ещё'}
         aria-haspopup="menu"
         aria-expanded={!!pos}
@@ -324,7 +333,7 @@ export function Menu(props: { items: (MenuItem | 'sep' | false | null | undefine
       </button>
       {pos &&
         createPortal(
-          <div ref={pop} className="menu-pop" role="menu" style={{ top: pos.top, right: pos.right }}>
+          <div ref={pop} className="menu-pop" role="menu" style={{ top: pos.top, right: pos.right, left: pos.left }}>
             <MenuItems items={items} onPick={() => close(true)} />
           </div>,
           document.body,

@@ -89,6 +89,12 @@ export async function startBattle(sc: Scenario, rs: Ruleset) {
   openTab('battle', b.id);
 }
 
+/** Сохранить сценарий в файл — стороны с самими подразделениями (как в бою): при импорте они станут силами. */
+export function exportScenario(sc: Scenario) {
+  const r = scenarioForBattle(sc);
+  exportJson('scenario', sc.name, { ...r, sides: r.sides.map(({ units: _, orders: __, ...sd }) => sd) });
+}
+
 /** Значение задачи по умолчанию; full — вся длительность боя (в часах, у сценария прежней версии — в ходах). */
 const DEFAULT_OBJECTIVE_VALUE: Record<ObjectiveType, (full: number) => number> = {
   hold: (t) => t,
@@ -109,6 +115,15 @@ function durationHint(sc: Scenario, rs: Ruleset): string {
     'ГМ задаёт время боя, а ходов в нём столько, сколько укладывается при длине хода набора правил; сменится длина хода — подстроится и число ходов.'
   );
 }
+
+/** Быстрые переходы по разделам страницы сценария. */
+const JUMPS = [
+  { id: 'sc-setting', label: 'Обстановка' },
+  { id: 'sc-sectors', label: 'Участки' },
+  { id: 'sc-sides', label: 'Стороны' },
+  { id: 'sc-plan', label: 'План боя' },
+  { id: 'sc-ratio', label: 'Соотношение сил' },
+];
 
 export function ScenarioPage({ tab }: { tab: Tab }) {
   const st = useApp();
@@ -145,7 +160,7 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
   return (
     <div className="page">
       <Crumbs items={[{ label: 'Сценарии', section: 'scenarios' }]} />
-      <div className="page-head">
+      <div className="page-head sticky-head">
         <input className="title-input" value={sc.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
         <Btn kind="primary" onClick={start} disabled={!rs}>
           ▶ Начать бой
@@ -159,11 +174,7 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
             {
               label: 'Сохранить в файл…',
               tip: 'Вместе с подразделениями сторон — чтобы сценарий можно было открыть у другого ГМ',
-              onClick: () => {
-                // В файл — стороны с самими подразделениями (как в бою): при импорте они станут силами.
-                const r = scenarioForBattle(sc);
-                exportJson('scenario', sc.name, { ...r, sides: r.sides.map(({ units: _, orders: __, ...sd }) => sd) });
-              },
+              onClick: () => exportScenario(sc),
             },
             'sep',
             { label: 'Удалить сценарий', danger: true, onClick: () => deleteScenario(sc.id) },
@@ -184,83 +195,97 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
         </div>
       )}
 
+      <nav className="jump-nav" aria-label="Разделы сценария">
+        {JUMPS.filter((j) => j.id !== 'sc-sectors' || rs).map((j) => (
+          <button key={j.id} type="button" onClick={() => document.getElementById(j.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            {j.label}
+          </button>
+        ))}
+      </nav>
+
       <div className="stack">
-        <Card title="Обстановка">
-          <div className="fields">
-            {rs?.conditions.map((cat) => {
-              const opt = cat.options.find((o) => o.id === sc.conditions[cat.id]);
-              return (
-                <Field key={cat.id} label={cat.name} hint={opt ? effectsText(opt.effects) : undefined}>
-                  <Sel
-                    value={sc.conditions[cat.id] ?? ''}
-                    onChange={(v) => upd((d) => void (d.conditions[cat.id] = v))}
-                    options={cat.options.map((o) => ({ value: o.id, label: o.name }))}
+        <div id="sc-setting" className="jump-target">
+          <Card title="Обстановка">
+            <div className="fields">
+              {rs?.conditions.map((cat) => {
+                const opt = cat.options.find((o) => o.id === sc.conditions[cat.id]);
+                return (
+                  <Field key={cat.id} label={cat.name} hint={opt ? effectsText(opt.effects) : undefined}>
+                    <Sel
+                      value={sc.conditions[cat.id] ?? ''}
+                      onChange={(v) => upd((d) => void (d.conditions[cat.id] = v))}
+                      options={cat.options.map((o) => ({ value: o.id, label: o.name }))}
+                    />
+                  </Field>
+                );
+              })}
+              <Field label="Начальная дистанция">
+                <Sel
+                  value={sc.startBand}
+                  onChange={(v) => upd((d) => void (d.startBand = v))}
+                  options={(rs?.rangeBands ?? []).map((b) => ({ value: b.id, label: b.name }))}
+                />
+              </Field>
+              {!sc.sectors?.length && (
+                <Field
+                  label="Ширина фронта, м"
+                  hint={
+                    (sc.frontWidth && rs ? `В первой линии — до ${fmt0((sc.frontWidth / 100) * rs.coefficients.frontDensity)} мест у каждой стороны. ` : '') +
+                    'Сколько сил одновременно ведут прямой огонь: бойцы, расчёты и боевые машины сверх этого стреляют слабее («вклад сил сверх охвата» в наборе правил, там же плотность на 100 м). ' +
+                    'Пусто — ширина не задана: ограничивает только охват (по силам противника на участке).'
+                  }
+                >
+                  <Num
+                    value={sc.frontWidth}
+                    onChange={(v) => upd((d) => void (v > 0 ? (d.frontWidth = v) : delete d.frontWidth))}
+                    min={0}
+                    max={100000}
+                    step={100}
+                    integer
+                    width="100%"
+                    placeholder="не задана"
+                    emptyAs={0}
                   />
                 </Field>
-              );
-            })}
-            <Field label="Начальная дистанция">
-              <Sel
-                value={sc.startBand}
-                onChange={(v) => upd((d) => void (d.startBand = v))}
-                options={(rs?.rangeBands ?? []).map((b) => ({ value: b.id, label: b.name }))}
-              />
-            </Field>
-            {!sc.sectors?.length && (
-              <Field
-                label="Ширина фронта, м"
-                hint={
-                  (sc.frontWidth && rs ? `В первой линии — до ${fmt0((sc.frontWidth / 100) * rs.coefficients.frontDensity)} мест у каждой стороны. ` : '') +
-                  'Сколько сил одновременно ведут прямой огонь: бойцы, расчёты и боевые машины сверх этого стреляют слабее («вклад сил сверх охвата» в наборе правил, там же плотность на 100 м). ' +
-                  'Пусто — ширина не задана: ограничивает только охват (по силам противника на участке).'
-                }
-              >
-                <Num
-                  value={sc.frontWidth}
-                  onChange={(v) => upd((d) => void (v > 0 ? (d.frontWidth = v) : delete d.frontWidth))}
-                  min={0}
-                  max={100000}
-                  step={100}
-                  integer
-                  width="100%"
-                  placeholder="не задана"
-                  emptyAs={0}
-                />
+              )}
+              {rs ? (
+                <Field label="Длительность боя, ч" hint={durationHint(sc, rs)}>
+                  <Num
+                    value={scenarioHours(sc, rs)}
+                    onChange={(v) =>
+                      upd((d) => {
+                        // Сценарий прежней версии (в ходах) сначала переводится на часы — вместе с «удержать позицию».
+                        Object.assign(d, scenarioToHours(d, rs));
+                        d.hours = v;
+                        d.maxTurns = turnsFor(v, rs);
+                      })
+                    }
+                    min={Math.min(0.25, rs.turnMinutes / 60)}
+                    max={maxHours(rs)}
+                    step={0.5}
+                    width="100%"
+                  />
+                </Field>
+              ) : (
+                <Field label="Лимит ходов">
+                  <Num value={sc.maxTurns} onChange={(v) => upd((d) => void (d.maxTurns = v))} min={1} max={1000} integer width="100%" />
+                </Field>
+              )}
+              <Field label="Набор правил">
+                <Sel value={sc.rulesetId} onChange={changeRuleset} options={Object.values(st.rulesets).map((r) => ({ value: r.id, label: r.name }))} />
               </Field>
-            )}
-            {rs ? (
-              <Field label="Длительность боя, ч" hint={durationHint(sc, rs)}>
-                <Num
-                  value={scenarioHours(sc, rs)}
-                  onChange={(v) =>
-                    upd((d) => {
-                      // Сценарий прежней версии (в ходах) сначала переводится на часы — вместе с «удержать позицию».
-                      Object.assign(d, scenarioToHours(d, rs));
-                      d.hours = v;
-                      d.maxTurns = turnsFor(v, rs);
-                    })
-                  }
-                  min={Math.min(0.25, rs.turnMinutes / 60)}
-                  max={maxHours(rs)}
-                  step={0.5}
-                  width="100%"
-                />
-              </Field>
-            ) : (
-              <Field label="Лимит ходов">
-                <Num value={sc.maxTurns} onChange={(v) => upd((d) => void (d.maxTurns = v))} min={1} max={1000} integer width="100%" />
-              </Field>
-            )}
-            <Field label="Набор правил">
-              <Sel value={sc.rulesetId} onChange={changeRuleset} options={Object.values(st.rulesets).map((r) => ({ value: r.id, label: r.name }))} />
-            </Field>
-          </div>
-        </Card>
+            </div>
+          </Card>
+        </div>
 
-        {rs && <SectorsEditor sc={sc} rsc={rsc} rs={rs} />}
+        {rs && (
+          <div id="sc-sectors" className="jump-target">
+            <SectorsEditor sc={sc} rsc={rsc} rs={rs} />
+          </div>
+        )}
 
         {rs ? (
-          <div className="grid two">
+          <div id="sc-sides" className="grid two jump-target">
             {[0, 1].map((i) => (
               <SideEditor key={i} sc={sc} rsc={rsc} i={i} rs={rs} />
             ))}
@@ -269,8 +294,16 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
           <div className="note bad">Набор правил сценария не найден — выберите другой.</div>
         )}
 
-        {rs && <PlanEditor sc={rsc} rs={rs} />}
-        {rs && <ForceRatio sc={rsc} rs={rs} />}
+        {rs && (
+          <div id="sc-plan" className="jump-target">
+            <PlanEditor sc={rsc} rs={rs} />
+          </div>
+        )}
+        {rs && (
+          <div id="sc-ratio" className="jump-target">
+            <ForceRatio sc={rsc} rs={rs} />
+          </div>
+        )}
       </div>
     </div>
   );

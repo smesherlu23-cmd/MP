@@ -3,9 +3,16 @@
 // корзина и повреждённые файлы — в backups/, trash/, damaged/ (см. protect.ts).
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { DataStore, type BackupKind } from './protect';
+
+// Прежнее название программы — WarSim. Её папки остаются в ходу, чтобы после переименования
+// не потерялись данные, настройки и открытые вкладки.
+const APP_NAME = 'Echelon Commander';
+const LEGACY_NAME = 'WarSim';
+const legacyUserData = path.join(app.getPath('appData'), LEGACY_NAME);
+if (existsSync(legacyUserData)) app.setPath('userData', legacyUserData);
 
 let dataDir = '';
 let store = new DataStore('');
@@ -29,8 +36,10 @@ async function writeSettings(s: { dataDir?: string }) {
 function defaultDataDir(): string {
   // Портативная версия хранит данные рядом с .exe, установленная — в «Документах».
   const portable = process.env.PORTABLE_EXECUTABLE_DIR;
-  if (portable) return path.join(portable, 'WarSim-data');
-  return path.join(app.getPath('documents'), 'WarSim');
+  const base = portable || app.getPath('documents');
+  const legacy = path.join(base, portable ? `${LEGACY_NAME}-data` : LEGACY_NAME);
+  if (existsSync(legacy)) return legacy;
+  return path.join(base, portable ? `${APP_NAME}-data` : APP_NAME);
 }
 
 function battleMeta(b: any) {
@@ -88,7 +97,11 @@ function registerIpc() {
   });
   ipcMain.handle('data:dir', () => dataDir);
   ipcMain.handle('data:choose', async () => {
-    const res = await dialog.showOpenDialog(win!, { title: 'Папка данных WarSim', properties: ['openDirectory', 'createDirectory'], defaultPath: dataDir });
+    const res = await dialog.showOpenDialog(win!, {
+      title: `Папка данных ${APP_NAME}`,
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: dataDir,
+    });
     if (res.canceled || !res.filePaths[0]) return null;
     dataDir = res.filePaths[0];
     store = new DataStore(dataDir);
@@ -129,8 +142,8 @@ function buildMenu() {
 }
 
 const OVERLAY = {
-  dark: { color: '#12181e', symbolColor: '#dbe3ea', height: 38 },
-  light: { color: '#e6eaee', symbolColor: '#1c252e', height: 38 },
+  dark: { color: '#0f151c', symbolColor: '#e4eaf0', height: 44 },
+  light: { color: '#e8edf2', symbolColor: '#17212b', height: 44 },
 };
 
 async function createWindow() {
@@ -139,8 +152,9 @@ async function createWindow() {
     height: 900,
     minWidth: 980,
     minHeight: 620,
-    backgroundColor: '#0d1115',
-    title: 'WarSim — симулятор боя',
+    backgroundColor: '#0b1016',
+    title: APP_NAME,
+    icon: process.platform === 'linux' ? path.join(__dirname, '..', 'dist', 'favicon.ico') : undefined,
     // Без системной шапки: кнопки «свернуть / развернуть / закрыть» рисуются поверх верхней полосы программы.
     titleBarStyle: 'hidden',
     titleBarOverlay: process.platform === 'darwin' ? true : OVERLAY.dark,

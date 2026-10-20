@@ -2,7 +2,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import { makeDemoBattalion, makeDemoScenario } from '../src/engine';
-import { menu, openApp, openFromNav, startBattle } from './helpers';
+import { menu, navSec, openApp, openFromNav, startBattle } from './helpers';
 
 const blueStart = async (page: Page) =>
   Number((await page.locator('.tbl.compare tr', { hasText: 'Личный состав' }).locator('td').nth(1).locator('b').first().textContent())!.replace(/\s/g, ''));
@@ -47,9 +47,9 @@ test('шаблон без приказа и состояния; силы по ш
   await page.locator('.modal input').fill('2');
   await page.locator('.modal-foot .btn.primary').click();
   await expect(page.locator('.toast').last()).toContainText('Создано сил: 2');
-  await page.locator('.nav-item', { hasText: 'Силы' }).first().click();
-  await expect(page.locator('.sidebar .side-item', { hasText: 'Мотострелковая рота' })).toHaveCount(2);
-  await page.locator('.sidebar .side-item', { hasText: 'Мотострелковая рота 2' }).click();
+  await navSec(page, 'Силы');
+  await expect(page.locator('.nav-sec[data-sec="forces"] .side-item', { hasText: 'Мотострелковая рота' })).toHaveCount(2);
+  await page.locator('.nav-sec[data-sec="forces"] .side-item', { hasText: 'Мотострелковая рота 2' }).click();
   await expect(page.locator('.breadcrumbs')).toContainText('Силы');
   await expect(page.locator('.card-head', { hasText: 'Состояние' })).toHaveCount(1);
   await expect(page.locator('.comp-table th', { hasText: 'В строю' }).first()).toBeVisible();
@@ -80,8 +80,8 @@ test('данные прежней версии: копии в сценарии �
   );
   await page.reload();
   await expect(page.locator('.toast').first()).toContainText('перенесены в «Силы»');
-  await page.locator('.nav-item', { hasText: 'Силы' }).first().click();
-  await expect(page.locator('.sidebar .side-item', { hasText: '1-й мотострелковый батальон' })).toHaveCount(1);
+  await navSec(page, 'Силы');
+  await expect(page.locator('.nav-sec[data-sec="forces"] .side-item', { hasText: '1-й мотострелковый батальон' })).toHaveCount(1);
   await openFromNav(page, 'Старый сценарий', 'Сценарии');
   const blue = page.locator('.side-card').first();
   await expect(blue.locator('.side-unit')).toContainText('1-й мотострелковый батальон');

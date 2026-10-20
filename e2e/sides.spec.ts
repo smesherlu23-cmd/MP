@@ -1,7 +1,7 @@
 // Стороны сценария: несколько подразделений и их части; командиры — в сценарии; главная; вкладки.
 
 import { expect, test } from '@playwright/test';
-import { openApp, openFromNav, startBattle } from './helpers';
+import { navSec, openApp, openFromNav, startBattle } from './helpers';
 
 test('на сторону — силы целиком и частями, новые силы из шаблона; лишние части не воюют', async ({ page }) => {
   const errors = await openApp(page);
@@ -71,7 +71,7 @@ test('главная: «продолжить» незавершённый бой
   await page.locator('.page-head .title-input').fill('Высота 212 — мой вариант');
   await startBattle(page);
   await page.getByRole('button', { name: '▶ Ход' }).click();
-  await page.locator('.nav-item', { hasText: 'Главная' }).click();
+  await page.locator('.nav-home .nav-item').click();
   const cont = page.locator('.card', { hasText: 'Продолжить' });
   await expect(cont).toContainText('ход 1');
   await expect(page.locator('.card', { hasText: 'С чего начать' })).toHaveCount(0);
@@ -84,8 +84,8 @@ test('главная: «продолжить» незавершённый бой
 test('узкое окно: вкладки сжимаются, лишние — в списке «▾»', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 700 });
   const errors = await openApp(page);
-  await page.locator('.nav-item', { hasText: 'Шаблоны' }).first().click();
-  const items = page.locator('.sidebar .side-item');
+  await navSec(page, 'Шаблоны');
+  const items = page.locator('.nav-sec[data-sec="units"] .side-item');
   const n = await items.count();
   // Щелчок открывает вкладку-просмотр (она заменяется следующей), двойной щелчок — обычную вкладку.
   await items.nth(0).click();
@@ -103,8 +103,8 @@ test('узкое окно: вкладки сжимаются, лишние — �
   await more.click();
   // Все вкладки и «Закрыть все, кроме закреплённых».
   await expect(page.locator('.menu-pop .menu-item')).toHaveCount(n + 2);
-  await page.locator('.menu-pop .menu-item', { hasText: 'Главная' }).click();
-  await expect(page.locator('.tab.active .tab-title')).toHaveText('Главная');
+  await page.locator('.menu-pop .menu-item', { hasText: 'Штаб' }).click();
+  await expect(page.locator('.tab.active .tab-title')).toHaveText('Штаб');
   expect(errors).toEqual([]);
 });
 

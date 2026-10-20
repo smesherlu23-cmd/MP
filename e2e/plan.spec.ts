@@ -1,7 +1,7 @@
 // Бой: откат ходов, план боя (подкрепления), объяснение итога, донесения для игроков, список боёв.
 
 import { expect, test, type Page } from '@playwright/test';
-import { openApp, openFromNav, startBattle } from './helpers';
+import { navSec, openApp, openFromNav, startBattle } from './helpers';
 
 test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
@@ -82,8 +82,8 @@ test('итог с объяснением, донесения для игроко
   expect(text).not.toContain('ГМ:');
 
   // Длинный итог не вытесняет название боя в навигаторе.
-  await page.locator('.nav-item', { hasText: 'Бои' }).first().click();
-  const name = page.locator('.sidebar .side-item > span').first();
+  await navSec(page, 'Бои');
+  const name = page.locator('.nav-sec[data-sec="battles"] .side-item > span').first();
   await expect(name).toHaveText('бой 1');
   expect((await name.boundingBox())!.width).toBeGreaterThan(25);
   expect(errors).toEqual([]);

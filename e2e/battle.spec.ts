@@ -1,7 +1,7 @@
 // Бой: сводка сторон, окно элемента, итоги, хранение без подробностей, удаление боёв, прогоны.
 
 import { expect, test } from '@playwright/test';
-import { openApp, openFromNav, startBattle } from './helpers';
+import { navSec, openApp, openFromNav, startBattle } from './helpers';
 
 test('сводка сторон, окно элемента (просмотр и правка), итоги', async ({ page }) => {
   const errors = await openApp(page);
@@ -52,8 +52,8 @@ test('сохранённый бой хранится без подробност
   await expect(page.getByText('Симулятор боя').first())
     .toBeVisible()
     .catch(() => {});
-  await page.locator('.nav-item', { hasText: 'Бои' }).click();
-  await page.locator('.nav-group .side-item').first().click();
+  await navSec(page, 'Бои');
+  await page.locator('.nav-sec[data-sec="battles"] .side-item').first().click();
   const entry = page.locator('.log-entry.has-f').first();
   await entry.click();
   await expect(page.locator('.factors').first()).toBeVisible();
@@ -69,12 +69,12 @@ test('все бои сценария удаляются разом', async ({ pa
   await startBattle(page);
   await page.locator('.breadcrumbs a', { hasText: 'атака на высоту' }).click();
   await startBattle(page);
-  await expect(page.locator('.nav-group .side-item')).toHaveCount(2);
-  await page.locator('.nav-group-title').hover();
-  await page.locator('.nav-group-del').click();
+  await expect(page.locator('.nav-sec[data-sec="battles"] .side-item')).toHaveCount(2);
+  await page.locator('.nav-sec[data-sec="battles"] .nav-group-title').hover();
+  await page.locator('.nav-sec[data-sec="battles"] .nav-group-del').click();
   await page.locator('.modal').getByRole('button', { name: 'Удалить' }).click();
-  await expect(page.locator('.nav-group .side-item')).toHaveCount(0);
-  await expect(page.locator('.nav-empty')).toContainText('Боёв пока нет');
+  await expect(page.locator('.nav-sec[data-sec="battles"] .side-item')).toHaveCount(0);
+  await expect(page.locator('.nav-sec[data-sec="battles"] .nav-empty')).toContainText('Боёв пока нет');
   expect(errors).toEqual([]);
 });
 

@@ -5,17 +5,20 @@ import { BattlePage } from './pages/BattlePage';
 import { FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
 import { HomePage } from './pages/HomePage';
+import { LibraryPage } from './pages/LibraryPage';
 import { MonteCarloPage } from './pages/MonteCarloPage';
 import { RulesetPage } from './pages/RulesetPage';
 import { ScenarioPage } from './pages/ScenarioPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { Navigator } from './components/Navigator';
 import { Palette, openPalette } from './components/Palette';
-import { goBack, goForward, useNav } from './nav';
+import { goBack, goForward, sectionMeta, useNav } from './nav';
+import logo from './assets/logo.png';
 import { Btn, ContextMenuHost, Menu, openContextMenu } from './components/ui';
 import { desktop } from './storage';
 import {
   activateTab,
+  openTab,
   alertDialog,
   closeAllTabs,
   closeOtherTabs,
@@ -34,6 +37,7 @@ import {
   useApp,
   useBattles,
   useHistory,
+  type NavSection,
   type Tab,
   type TabKind,
 } from './store';
@@ -51,7 +55,8 @@ const ICONS: Record<TabKind, string> = {
 };
 
 /** Значок вкладки: силы и шаблоны открываются в одном конструкторе, но различаются. */
-const tabIcon = (t: Tab) => (t.kind === 'formation' && t.ref?.startsWith('force:') ? '⚑' : ICONS[t.kind]);
+const tabIcon = (t: Tab) =>
+  t.kind === 'formation' && t.ref?.startsWith('force:') ? '⚑' : t.kind === 'library' && t.ref ? sectionMeta(t.ref as NavSection).icon : ICONS[t.kind];
 
 function useTabTitle(t: Tab): string {
   const s = useApp();
@@ -62,13 +67,13 @@ function useTabTitle(t: Tab): string {
 function tabTitle(t: Tab, s: ReturnType<typeof useApp.getState>, battles: ReturnType<typeof useBattles.getState>['battles']): string {
   switch (t.kind) {
     case 'home':
-      return 'Главная';
+      return 'Штаб';
     case 'settings':
       return 'Настройки';
     case 'help':
       return 'Справка';
     case 'library':
-      return 'Библиотека';
+      return t.ref ? sectionMeta(t.ref as NavSection).label : 'Каталог';
     case 'ruleset':
       return s.rulesets[t.ref!]?.name ?? 'Набор правил';
     case 'scenario':
@@ -214,7 +219,7 @@ function TabItem({ t, active }: { t: Tab; active: boolean }) {
 async function showAbout() {
   const info = await desktop?.appInfo?.();
   await alertDialog(
-    'WarSim — симулятор боя',
+    'Echelon Commander',
     `Модульный симулятор боя для ГМ варгейма и ролевых войн.${info ? `\nВерсия ${info.version}.\nПапка данных: ${info.dataDir}` : '\nВерсия для браузера: данные хранятся в браузере.'}`,
   );
 }
@@ -327,6 +332,8 @@ function Page({ t }: { t: Tab }) {
       return <BattlePage tab={t} />;
     case 'montecarlo':
       return <MonteCarloPage tab={t} />;
+    case 'library':
+      return <LibraryPage tab={t} />;
     default:
       return <HomePage />;
   }
@@ -406,8 +413,23 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand" title="Показать/скрыть навигатор (Ctrl+B)" onClick={() => updateSettings({ sidebar: !s.settings.sidebar })}>
-          ☰ WARSIM
+        <div className={`brand${s.settings.sidebar ? '' : ' slim'}`}>
+          <button
+            type="button"
+            className="brand-toggle"
+            title="Показать/скрыть навигатор (Ctrl+B)"
+            onClick={() => updateSettings({ sidebar: !s.settings.sidebar })}
+          >
+            ☰
+          </button>
+          <button type="button" className="brand-name" title="Штаб" onClick={() => openTab('home')}>
+            <img src={logo} alt="" className="brand-logo" />
+            {s.settings.sidebar && (
+              <span>
+                Echelon <b>Commander</b>
+              </span>
+            )}
+          </button>
         </div>
         <div className="nav-arrows">
           <button type="button" disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
@@ -419,9 +441,29 @@ export function App() {
         </div>
         <Tabs tabs={s.tabs} active={active?.key} />
         <div className="topbar-right">
-          <button type="button" className="find-btn" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
-            <span>Найти…</span>
-            <span className="kbd">Ctrl+K</span>
+          {!s.settings.sidebar && (
+            <button type="button" className="find-btn" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
+              <span>Найти…</span>
+              <span className="kbd">Ctrl+K</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="top-icon"
+            disabled={!hist.undo}
+            onClick={undo}
+            title={hist.undo ? `Отменить: ${hist.undo} (Ctrl+Z)` : 'Отменить (Ctrl+Z)'}
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            className="top-icon"
+            disabled={!hist.redo}
+            onClick={redo}
+            title={hist.redo ? `Повторить: ${hist.redo} (Ctrl+Y)` : 'Повторить (Ctrl+Y)'}
+          >
+            ↷
           </button>
           <Menu
             sm
@@ -441,6 +483,8 @@ export function App() {
                 onClick: () => updateSettings({ sidebar: !s.settings.sidebar }),
               },
               'sep',
+              { label: 'Справка', onClick: () => openTab('help') },
+              { label: 'Настройки', onClick: () => openTab('settings') },
               { label: 'О программе', onClick: () => void showAbout() },
             ]}
           />

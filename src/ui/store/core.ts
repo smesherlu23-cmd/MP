@@ -28,8 +28,8 @@ export interface Settings {
   mcRuns: number;
   sidebar: boolean;
   density: 'compact' | 'normal';
-  /** Раздел, список которого показан в навигаторе. */
-  navSection: NavSection;
+  /** Какие разделы навигатора развёрнуты (не задано — по умолчанию, см. NAV_OPEN_DEFAULT). */
+  navOpen?: Partial<Record<NavSection, boolean>>;
   /** Что останавливает «ход до события» в бою. */
   pauseRules?: PauseRules;
   /** Прогонов в прогнозе боя. */
@@ -76,7 +76,7 @@ export interface AppState {
 
 export type NavSection = 'scenarios' | 'forces' | 'units' | 'battles' | 'rulesets';
 
-export const DEFAULT_SETTINGS: Settings = { theme: 'dark', logLevel: 1, mcRuns: 200, sidebar: true, density: 'normal', navSection: 'scenarios' };
+export const DEFAULT_SETTINGS: Settings = { theme: 'dark', logLevel: 1, mcRuns: 200, sidebar: true, density: 'normal' };
 
 export function loadLocal<T>(key: string, def: T): T {
   try {

@@ -1,7 +1,7 @@
 // Структура войск: оргсхема, наследование, шаблоны и их обновление, перетаскивание, придание.
 
 import { expect, test } from '@playwright/test';
-import { dnd, menu, navItem, openApp, openFromNav } from './helpers';
+import { dnd, menu, navItem, navSec, openApp, openFromNav } from './helpers';
 
 test('оргсхема, наследование и список', async ({ page }) => {
   const errors = await openApp(page);
@@ -70,8 +70,8 @@ test('перетаскивание в схеме, из навигатора и �
   await expect(side.locator('.side-unit')).toHaveCount(2);
   await dnd(page, side.locator('.side-unit').nth(1), side.locator('.side-unit').nth(0));
   await expect(side.locator('.side-unit .badge', { hasText: 'придано' })).toHaveCount(1);
-  await page.locator('.nav-item', { hasText: 'Силы' }).first().click();
-  await expect(page.locator('.sidebar .side-item', { hasText: 'Танковая рота' })).toHaveCount(1);
+  await navSec(page, 'Силы');
+  await expect(page.locator('.nav-sec[data-sec="forces"] .side-item', { hasText: 'Танковая рота' })).toHaveCount(1);
 
   await page.getByRole('button', { name: /Начать бой/ }).click();
   await page.getByRole('button', { name: 'До конца' }).click();
@@ -81,14 +81,14 @@ test('перетаскивание в схеме, из навигатора и �
 
 test('пустое подразделение: подсказка, набор правил и его смена', async ({ page }) => {
   const errors = await openApp(page);
-  await page.locator('.nav-item', { hasText: 'Шаблоны' }).click();
-  await page.locator('.nav-create').click();
+  await navSec(page, 'Шаблоны');
+  await page.locator('.nav-sec[data-sec="units"] .nav-add').click();
   await expect(page.locator('.empty-start')).toBeVisible();
   await expect(page.locator('.inline-select')).toHaveValue('rs-universal');
   await page.locator('.empty-start-actions button', { hasText: 'Подчинённое' }).click();
   await expect(page.locator('.empty-start')).toHaveCount(0);
   await expect(page.locator('.org-box')).toHaveCount(2);
   await page.locator('.inline-select').selectOption({ label: 'Линейная тактика (пример)' });
-  await expect(page.locator('.nav-group-title')).toHaveCount(2);
+  await expect(page.locator('.nav-sec[data-sec="units"] .nav-group-title')).toHaveCount(2);
   expect(errors).toEqual([]);
 });
