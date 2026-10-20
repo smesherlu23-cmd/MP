@@ -5,9 +5,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { walkUnits, type UnitNode } from '../../engine';
 import { openUnit, setTabState } from '../hooks';
+import { SECTIONS as NAV_SECTIONS } from '../nav';
 import { SECTIONS } from '../pages/RulesetPage';
 import { startBattle } from '../pages/ScenarioPage';
-import { createFormation, createScenario, importFile, newRulesetDialog, openTab, redo, tabKey, undo, updateSettings, useApp } from '../store';
+import { createFormation, createScenario, importFile, newForceDialog, newRulesetDialog, openTab, redo, tabKey, undo, updateSettings, useApp } from '../store';
 
 export const usePalette = create<{ open: boolean }>(() => ({ open: false }));
 export const openPalette = () => usePalette.setState({ open: true });
@@ -32,14 +33,16 @@ function buildItems(): Item[] {
   const items: Item[] = [];
   const cmd = (title: string, run: () => void, sub?: string) => items.push({ id: `cmd:${title}`, group: 'Команды', title, sub, top: true, run: () => run() });
   cmd('Новый сценарий', () => createScenario());
-  cmd('Новое подразделение', () => createFormation());
+  cmd('Новый шаблон', () => createFormation());
+  cmd('Новые силы', () => void newForceDialog());
   cmd('Новый набор правил', () => void newRulesetDialog());
   cmd('Импорт из файла…', () => importFile());
   cmd('Отменить', undo, 'Ctrl+Z');
   cmd('Повторить', redo, 'Ctrl+Y');
   cmd(s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }));
   cmd(s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор', () => updateSettings({ sidebar: !s.settings.sidebar }), 'Ctrl+B');
-  cmd('Главная', () => openTab('home'));
+  cmd('Штаб', () => openTab('home'), 'обзор');
+  for (const sec of NAV_SECTIONS) cmd(`Каталог: ${sec.label}`, () => openTab('library', sec.id));
   cmd('Справка', () => openTab('help'));
   cmd('Настройки', () => openTab('settings'));
 

@@ -1,8 +1,10 @@
 import { fmtDuration, resolveScenario, sideUnits, summarizeUnits } from '../../engine';
 import { Link } from '../components/Link';
+import { CREATE_ITEMS, createIn } from '../components/Navigator';
 import { openPalette } from '../components/Palette';
-import { Btn, Card, Info, fmt0 } from '../components/ui';
-import { createScenario, newForceDialog, openTab, updateSettings, useApp, type TabKind } from '../store';
+import { Btn, Card, Info, Menu, fmt0 } from '../components/ui';
+import { SECTIONS, showSection } from '../nav';
+import { openTab, useApp, type NavSection, type TabKind } from '../store';
 import { startBattle } from './ScenarioPage';
 
 /** «сегодня, 14:20» / «вчера, 9:05» / «17 окт.» */
@@ -78,19 +80,53 @@ export function HomePage() {
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 8);
   const fresh = !recent.length && !battles.length;
+  const counts: Record<NavSection, number> = {
+    rulesets: Object.keys(s.rulesets).length,
+    units: Object.keys(s.formations).length,
+    forces: Object.keys(s.forces).length,
+    scenarios: Object.keys(s.scenarios).length,
+    battles: battles.length,
+  };
   const firstExample = Object.values(s.scenarios).find((x) => x.id === 'sc-demo') ?? Object.values(s.scenarios)[0];
 
   return (
     <div className="page home">
       <div className="page-head">
-        <h1 className="grow">Симулятор боя</h1>
-        <Btn kind="primary" onClick={() => createScenario()}>
-          + Сценарий
+        <div className="grow">
+          <h1>Штаб</h1>
+          <div className="page-sub">Echelon Commander · симулятор боя для ГМ варгейма</div>
+        </div>
+        <Btn onClick={() => openPalette()} title="Найти любое подразделение, сценарий или команду (Ctrl+K)">
+          Найти… <span className="kbd">Ctrl+K</span>
         </Btn>
-        <Btn onClick={() => void newForceDialog()} title="Конкретное подразделение по шаблону">
-          + Силы
-        </Btn>
+        <Menu className="primary" label="+ Создать" title="Создать сценарий, силы, шаблон или набор правил" items={CREATE_ITEMS()} />
       </div>
+
+      <nav className="workflow" aria-label="Порядок работы">
+        {SECTIONS.map((x, i) => {
+          const n = counts[x.id];
+          return (
+            <div key={x.id} className={`wf-step${n ? ' done' : ''}`}>
+              <button type="button" className="wf-main" onClick={() => showSection(x.id)} title={`Открыть каталог: ${x.label}`}>
+                <span className="wf-top">
+                  <span className="wf-n">{i + 1}</span>
+                  <span className="wf-icon">{x.icon}</span>
+                  <span className="wf-count">{n}</span>
+                </span>
+                <span className="wf-label">{x.label}</span>
+                <span className="wf-about">{x.about}</span>
+              </button>
+              {x.create ? (
+                <button type="button" className="wf-add" onClick={() => createIn(x.id)}>
+                  + {x.create.replace(/^Нов(ый|ые|ое|ая) /, '')}
+                </button>
+              ) : (
+                <span className="wf-add muted">из сценария ▶</span>
+              )}
+            </div>
+          );
+        })}
+      </nav>
 
       {unfinished.length > 0 && (
         <Card title="Продолжить" className="home-continue">
@@ -135,23 +171,30 @@ export function HomePage() {
               — и нажмите «▶ Начать бой»: ход за ходом видно, кто по кому стреляет и почему.
             </li>
             <li>
-              <a href="#" onClick={(e) => (e.preventDefault(), updateSettings({ navSection: 'units' }))}>
+              <a href="#" onClick={(e) => (e.preventDefault(), showSection('units'))}>
                 Шаблоны
               </a>{' '}
               — устройство и штат подразделений (от отделения до дивизии);{' '}
-              <a href="#" onClick={(e) => (e.preventDefault(), updateSettings({ navSection: 'forces' }))}>
+              <a href="#" onClick={(e) => (e.preventDefault(), showSection('forces'))}>
                 силы
               </a>{' '}
               — конкретные подразделения по шаблонам: потери боёв записываются в них.
             </li>
-            <li>Создайте свой сценарий кнопкой «+ Сценарий» и поставьте на стороны силы или их части.</li>
+            <li>Создайте свой сценарий кнопкой «+ Создать» и поставьте на стороны силы или их части.</li>
           </ol>
         </Card>
       )}
 
       <div className="grid two">
         <div className="stack">
-          <Card title="Сценарии">
+          <Card
+            title="Сценарии"
+            actions={
+              <Btn sm kind="ghost" onClick={() => showSection('scenarios')}>
+                Все →
+              </Btn>
+            }
+          >
             <div className="home-list">
               {scenarios.map((x) => {
                 const rs = s.rulesets[x.rulesetId];
@@ -222,7 +265,7 @@ export function HomePage() {
       </div>
 
       <p className="muted small" style={{ marginTop: 18 }}>
-        Порядок работы: набор правил → подразделения → сценарий → бой. Как устроен расчёт —{' '}
+        Как устроен расчёт —{' '}
         <a href="#" onClick={(e) => (e.preventDefault(), openTab('help'))}>
           в справке
         </a>

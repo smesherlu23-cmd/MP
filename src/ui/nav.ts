@@ -3,13 +3,43 @@
 import { create } from 'zustand';
 import { openTab, resolveFormation, updateSettings, useApp, type NavSection, type Tab, type TabKind } from './store';
 
-export const SECTIONS: { id: NavSection; label: string; icon: string; create: string }[] = [
-  { id: 'scenarios', label: 'Сценарии', icon: '◈', create: 'Новый сценарий' },
-  { id: 'forces', label: 'Силы', icon: '⚑', create: 'Новые силы' },
-  { id: 'units', label: 'Шаблоны', icon: '▦', create: 'Новый шаблон' },
-  { id: 'battles', label: 'Бои', icon: '⚔', create: '' },
-  { id: 'rulesets', label: 'Наборы правил', icon: '§', create: 'Новый набор правил' },
+export interface SectionMeta {
+  id: NavSection;
+  label: string;
+  icon: string;
+  /** Подпись кнопки создания (пусто — бои создаются из сценария). */
+  create: string;
+  /** Что это за раздел — одной строкой, для каталога и «Штаба». */
+  about: string;
+}
+
+/** Разделы в порядке работы: сначала подготовка (правила → шаблоны → силы), потом игра (сценарии → бои). */
+export const SECTIONS: SectionMeta[] = [
+  { id: 'rulesets', label: 'Наборы правил', icon: '§', create: 'Новый набор правил', about: 'Типы вооружения, приказы, условия и коэффициенты расчёта' },
+  { id: 'units', label: 'Шаблоны', icon: '▦', create: 'Новый шаблон', about: 'Устройство и штат подразделений — от отделения до дивизии' },
+  { id: 'forces', label: 'Силы', icon: '⚑', create: 'Новые силы', about: 'Конкретные подразделения по шаблонам: потери боёв записываются в них' },
+  { id: 'scenarios', label: 'Сценарии', icon: '◈', create: 'Новый сценарий', about: 'Обстановка и две стороны с их силами, задачами и планом боя' },
+  { id: 'battles', label: 'Бои', icon: '⚔', create: '', about: 'Сыгранные и идущие бои: ход за ходом, с журналом и итогами' },
 ];
+
+/** Группы навигатора: подготовка и игра. */
+export const NAV_GROUPS: { label: string; ids: NavSection[] }[] = [
+  { label: 'Игра', ids: ['scenarios', 'battles'] },
+  { label: 'Подготовка', ids: ['forces', 'units', 'rulesets'] },
+];
+
+export const sectionMeta = (id: NavSection) => SECTIONS.find((x) => x.id === id)!;
+
+/** Развёрнутые по умолчанию разделы навигатора. */
+export const NAV_OPEN_DEFAULT: Record<NavSection, boolean> = { scenarios: true, battles: true, forces: true, units: false, rulesets: false };
+
+export const isNavOpen = (open: Partial<Record<NavSection, boolean>> | undefined, id: NavSection) => open?.[id] ?? NAV_OPEN_DEFAULT[id];
+
+export function setNavOpen(id: NavSection, on: boolean) {
+  const s = useApp.getState().settings;
+  if (isNavOpen(s.navOpen, id) === on) return;
+  updateSettings({ navOpen: { ...s.navOpen, [id]: on } });
+}
 
 /** Раздел, к которому относится вкладка: «lib:» — шаблоны, «force:» — силы. */
 export function sectionOf(t: Pick<Tab, 'kind' | 'ref'> | undefined): NavSection | null {
@@ -23,14 +53,16 @@ export function sectionOf(t: Pick<Tab, 'kind' | 'ref'> | undefined): NavSection 
       return 'battles';
     case 'ruleset':
       return 'rulesets';
+    case 'library':
+      return (t.ref as NavSection) ?? null;
     default:
       return null;
   }
 }
 
-/** Показать раздел в навигаторе (и сам навигатор, если он скрыт). */
+/** Открыть каталог раздела. */
 export function showSection(id: NavSection) {
-  updateSettings({ navSection: id, sidebar: true });
+  openTab('library', id);
 }
 
 // ------------------------------------------------------------------ назад / вперёд
@@ -44,11 +76,12 @@ const sync = () => useNav.setState({ back: back.length > 0, fwd: fwd.length > 0 
 
 useApp.subscribe((s, prev) => {
   if (s.active === prev.active || !prev.loaded) return;
-  // Навигатор следует за переходами: видно, в каком разделе находишься. Когда вкладка просто
-  // закрылась (в том числе при удалении объекта), раздел не меняется — список остаётся перед глазами.
+  // Навигатор следует за переходами: раздел открытого объекта разворачивается. Когда вкладка просто
+  // закрылась (в том числе при удалении объекта), навигатор не меняется.
   const closed = !s.tabs.some((t) => t.key === prev.active);
-  const sec = sectionOf(s.tabs.find((t) => t.key === s.active));
-  if (!closed && sec && sec !== s.settings.navSection) updateSettings({ navSection: sec });
+  const tab = s.tabs.find((t) => t.key === s.active);
+  const sec = tab?.kind === 'library' ? null : sectionOf(tab);
+  if (!closed && sec) setNavOpen(sec, true);
   if (jumping || !prev.active) return;
   back.push(prev.active);
   if (back.length > 100) back.shift();

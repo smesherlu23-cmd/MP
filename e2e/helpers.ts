@@ -23,11 +23,20 @@ const SECTION_OF: [string, string][] = [
   ['Оборонительный узел «Высота', 'Силы'],
 ];
 
-/** Пункт навигатора: сначала выбирается нужный раздел, потом объект в его списке. */
+const SEC_ID: Record<string, string> = { Сценарии: 'scenarios', Бои: 'battles', Силы: 'forces', Шаблоны: 'units', 'Наборы правил': 'rulesets' };
+
+/** Раздел навигатора (дерево): разворачивается, если свёрнут. */
+export async function navSec(page: Page, label: string): Promise<Locator> {
+  const sec = page.locator(`.nav-sec[data-sec="${SEC_ID[label]}"]`);
+  if (!(await sec.evaluate((e) => e.classList.contains('open')))) await sec.locator('.nav-chev').click();
+  await expect(sec).toHaveClass(/open/);
+  return sec;
+}
+
+/** Пункт навигатора: раздел разворачивается, объект — в его списке. */
 export async function navItem(page: Page, text: string, section?: string): Promise<Locator> {
-  const sec = section ?? SECTION_OF.find(([t]) => text.includes(t))?.[1] ?? 'Шаблоны';
-  await page.locator('.nav-item', { hasText: sec }).first().click();
-  return page.locator('.sidebar .side-item', { hasText: text }).first();
+  const sec = await navSec(page, section ?? SECTION_OF.find(([t]) => text.includes(t))?.[1] ?? 'Шаблоны');
+  return sec.locator('.side-item', { hasText: text }).first();
 }
 
 export async function openFromNav(page: Page, text: string, section?: string) {

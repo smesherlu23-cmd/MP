@@ -3,7 +3,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import { instantiate, makeDemoTemplates, makeUniversalRuleset, newRootUnit, newScenario, newUnit, type UnitNode } from '../src/engine';
-import { openApp } from './helpers';
+import { navSec, openApp } from './helpers';
 
 function army(name: string, regiments: number, battalions: number, companies: number, order: string): UnitNode {
   const rs = makeUniversalRuleset();
@@ -45,8 +45,8 @@ async function loadDivisions(page: Page) {
 test('дивизия: схема и список удобны на 157 подразделениях', async ({ page }) => {
   const errors = await openApp(page);
   await loadDivisions(page);
-  await page.locator('.nav-item', { hasText: 'Шаблоны' }).click();
-  await page.locator('.side-item', { hasText: '1-я дивизия' }).click();
+  await navSec(page, 'Шаблоны');
+  await page.locator('.nav-sec[data-sec="units"] .side-item', { hasText: '1-я дивизия' }).click();
   // с третьего уровня свёрнуто: дивизия, 3 полка, 9 батальонов
   await expect(page.locator('.org-box')).toHaveCount(13);
   await page.locator('.seg button', { hasText: 'Список' }).click();
@@ -63,8 +63,8 @@ test('дивизия: схема и список удобны на 157 подр�
 test('бой дивизий: свёрнутая таблица сил, сводка журнала, различимые имена, командир в бою', async ({ page }) => {
   const errors = await openApp(page);
   await loadDivisions(page);
-  await page.locator('.nav-item', { hasText: 'Сценарии' }).click();
-  await page.locator('.side-item', { hasText: 'Дивизия на дивизию' }).click();
+  await navSec(page, 'Сценарии');
+  await page.locator('.nav-sec[data-sec="scenarios"] .side-item', { hasText: 'Дивизия на дивизию' }).click();
   await page.getByRole('button', { name: /Начать бой/ }).click();
   await page.getByRole('button', { name: '▶ Ход' }).click();
 

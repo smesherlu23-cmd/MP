@@ -1,7 +1,7 @@
 // Защита данных: корзина, резервные копии, повреждённые записи; пример «Линейной тактики».
 
 import { expect, test } from '@playwright/test';
-import { activeTabTitle, menu, openApp, openFromNav, startBattle } from './helpers';
+import { activeTabTitle, menu, navSec, openApp, openFromNav, startBattle } from './helpers';
 
 const openSettings = (page: import('@playwright/test').Page) => page.locator('.nav-bottom .nav-item', { hasText: 'Настройки' }).click();
 
@@ -21,7 +21,7 @@ test('удалённый сценарий лежит в корзине и воз
   await row.getByRole('button', { name: 'Вернуть' }).click();
   await expect(page.locator('.modal')).toContainText('Корзина пуста');
   await page.keyboard.press('Escape');
-  await page.locator('.nav-item', { hasText: 'Сценарии' }).first().click();
+  await navSec(page, 'Сценарии');
   await expect(page.locator('.sidebar .side-item', { hasText: 'атака на высоту' })).toHaveCount(1);
 
   // Удалённые бои — тоже в корзину, с кнопкой «Вернуть» в уведомлении.
@@ -31,8 +31,8 @@ test('удалённый сценарий лежит в корзине и воз
   await menu(page, 'Удалить бой');
   await page.locator('.modal-foot .btn.danger').click();
   await page.locator('.toast-action', { hasText: 'Вернуть' }).click();
-  await page.locator('.nav-item', { hasText: 'Бои' }).first().click();
-  await expect(page.locator('.sidebar .side-item')).toHaveCount(1);
+  await navSec(page, 'Бои');
+  await expect(page.locator('.nav-sec[data-sec="battles"] .side-item')).toHaveCount(1);
   expect(errors).toEqual([]);
 });
 
@@ -54,7 +54,7 @@ test('резервная копия возвращает прежнее сост
   await page.locator('.modal .data-row').first().getByRole('button', { name: 'Восстановить' }).click();
   await page.locator('.modal-foot .btn.primary', { hasText: 'Восстановить' }).click();
   await expect(page.getByText('Симулятор боя').first()).toBeVisible();
-  await page.locator('.nav-item', { hasText: 'Сценарии' }).first().click();
+  await navSec(page, 'Сценарии');
   await expect(page.locator('.sidebar .side-item', { hasText: 'атака на высоту' })).toHaveCount(1);
   await expect(page.locator('.sidebar .side-item', { hasText: 'Переименованный' })).toHaveCount(0);
   // Состояние перед восстановлением тоже сохранено.
@@ -72,8 +72,8 @@ test('о повреждённой записи сообщается один р�
   await expect(dlg).toContainText('Сценарии: broken — запись повреждена');
   await page.keyboard.press('Escape');
   await expect(dlg).toHaveCount(0);
-  await page.locator('.nav-item', { hasText: 'Сценарии' }).first().click();
-  await expect(page.locator('.sidebar .side-item')).toHaveCount(2);
+  await navSec(page, 'Сценарии');
+  await expect(page.locator('.nav-sec[data-sec="scenarios"] .side-item')).toHaveCount(2);
   expect(await page.evaluate(() => localStorage.getItem('warsim:damaged:scenarios:broken'))).toContain('broken');
   await page.reload();
   await expect(page.getByText('Симулятор боя').first()).toBeVisible();
@@ -84,8 +84,8 @@ test('о повреждённой записи сообщается один р�
 
 test('клавиатура: навигатор, меню «⋯» и подсказки «?»', async ({ page }) => {
   const errors = await openApp(page);
-  await page.locator('.nav-item', { hasText: 'Сценарии' }).first().click();
-  const items = page.locator('.sidebar .side-item');
+  await navSec(page, 'Сценарии');
+  const items = page.locator('.nav-sec[data-sec="scenarios"] .side-item');
   await items.first().focus();
   await page.keyboard.press('ArrowDown');
   await expect(items.nth(1)).toBeFocused();
@@ -123,8 +123,8 @@ test('пример «Линейной тактики»: бой у перепра
   await startBattle(page);
   await page.getByRole('button', { name: '▶ Ход' }).click();
   await expect(page.locator('.log-turn').first()).toContainText('Ход 1');
-  await page.locator('.nav-item', { hasText: 'Шаблоны' }).first().click();
-  await expect(page.locator('.sidebar .nav-group-title', { hasText: 'Линейная тактика' })).toHaveCount(1);
+  await navSec(page, 'Шаблоны');
+  await expect(page.locator('.nav-sec[data-sec="units"] .nav-group-title', { hasText: 'Линейная тактика' })).toHaveCount(1);
   expect(errors).toEqual([]);
 });
 
@@ -140,7 +140,7 @@ test('у кого «Линейная тактика» уже была, прим�
     localStorage.removeItem('warsim-examples-linear');
   });
   await page.reload();
-  await page.locator('.nav-item', { hasText: 'Сценарии' }).first().click();
+  await navSec(page, 'Сценарии');
   await expect(page.locator('.sidebar .side-item', { hasText: 'бой у переправы' })).toHaveCount(1);
   const k = await page.evaluate(() => JSON.parse(localStorage.getItem('warsim:rulesets:rs-linear')!).coefficients);
   expect([k.casualtyScale, k.moralePerLossPct]).toEqual([3, 2]);
@@ -150,8 +150,8 @@ test('у кого «Линейная тактика» уже была, прим�
   await menu(page, 'Удалить сценарий');
   await page.locator('.modal-foot .btn.danger').click();
   await page.reload();
-  await page.locator('.nav-item', { hasText: 'Сценарии' }).first().click();
-  await expect(page.locator('.sidebar .side-item')).toHaveCount(1);
+  await navSec(page, 'Сценарии');
+  await expect(page.locator('.nav-sec[data-sec="scenarios"] .side-item')).toHaveCount(1);
   expect(errors).toEqual([]);
 });
 

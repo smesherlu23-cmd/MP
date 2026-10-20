@@ -1,9 +1,9 @@
 {
-  "name": "warsim",
-  "productName": "WarSim",
+  "name": "echelon-commander",
+  "productName": "Echelon Commander",
   "version": "0.1.0",
-  "description": "Модульный симулятор боя для варгейма (инструмент ГМ)",
-  "author": "WarSim",
+  "description": "Echelon Commander — модульный симулятор боя для варгейма (инструмент ГМ)",
+  "author": "Echelon Commander",
   "license": "UNLICENSED",
   "private": true,
   "main": "dist-electron/main.js",
@@ -43,8 +43,8 @@
   },
   "build": {
     "appId": "app.warsim.simulator",
-    "productName": "WarSim",
-    "copyright": "WarSim",
+    "productName": "Echelon Commander",
+    "copyright": "Echelon Commander",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -69,17 +69,19 @@
           ]
         }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "WarSim",
-      "artifactName": "WarSim-${version}-setup.exe"
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "shortcutName": "Echelon Commander",
+      "artifactName": "EchelonCommander-${version}-setup.exe"
     },
     "portable": {
-      "artifactName": "WarSim-${version}-portable.exe"
+      "artifactName": "EchelonCommander-${version}-portable.exe"
     },
     "linux": {
       "target": "AppImage",

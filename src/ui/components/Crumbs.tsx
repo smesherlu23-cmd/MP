@@ -6,7 +6,7 @@ import { openTab, type NavSection, type TabKind } from '../store';
 
 export interface Crumb {
   label: string;
-  /** Раздел навигатора. */
+  /** Раздел: щелчок открывает его каталог. */
   section?: NavSection;
   /** Объект, который откроется по щелчку. */
   open?: [TabKind, string];
@@ -21,7 +21,7 @@ export function Crumbs({ items }: { items: Crumb[] }) {
           {c.section || c.open ? (
             <a
               href="#"
-              title={c.section ? 'Показать раздел в навигаторе' : 'Открыть'}
+              title={c.section ? 'Открыть каталог раздела' : 'Открыть'}
               onClick={(e) => {
                 e.preventDefault();
                 if (c.section) showSection(c.section);
