@@ -1,25 +1,26 @@
 // Навигация: разделы программы, «где я» для каждой вкладки, история переходов (назад / вперёд).
 
 import { create } from 'zustand';
+import type { IconName } from './components/Icon';
 import { openTab, resolveFormation, updateSettings, useApp, type NavSection, type Tab, type TabKind } from './store';
 
 export interface SectionMeta {
   id: NavSection;
   label: string;
-  icon: string;
+  icon: IconName;
   /** Подпись кнопки создания (пусто — бои создаются из сценария). */
   create: string;
-  /** Что это за раздел — одной строкой, для каталога и «Штаба». */
+  /** Что это за раздел — одной строкой, для каталога и главной. */
   about: string;
 }
 
 /** Разделы в порядке работы: сначала подготовка (правила → шаблоны → силы), потом игра (сценарии → бои). */
 export const SECTIONS: SectionMeta[] = [
-  { id: 'rulesets', label: 'Наборы правил', icon: '§', create: 'Новый набор правил', about: 'Типы вооружения, приказы, условия и коэффициенты расчёта' },
-  { id: 'units', label: 'Шаблоны', icon: '▦', create: 'Новый шаблон', about: 'Устройство и штат подразделений — от отделения до дивизии' },
-  { id: 'forces', label: 'Силы', icon: '⚑', create: 'Новые силы', about: 'Конкретные подразделения по шаблонам: потери боёв записываются в них' },
-  { id: 'scenarios', label: 'Сценарии', icon: '◈', create: 'Новый сценарий', about: 'Обстановка и две стороны с их силами, задачами и планом боя' },
-  { id: 'battles', label: 'Бои', icon: '⚔', create: '', about: 'Сыгранные и идущие бои: ход за ходом, с журналом и итогами' },
+  { id: 'rulesets', label: 'Наборы правил', icon: 'ruleset', create: 'Новый набор правил', about: 'Типы вооружения, приказы, условия и коэффициенты расчёта' },
+  { id: 'units', label: 'Шаблоны', icon: 'template', create: 'Новый шаблон', about: 'Устройство и штат подразделений — от отделения до дивизии' },
+  { id: 'forces', label: 'Силы', icon: 'forces', create: 'Новые силы', about: 'Конкретные подразделения по шаблонам: потери боёв записываются в них' },
+  { id: 'scenarios', label: 'Сценарии', icon: 'scenario', create: 'Новый сценарий', about: 'Обстановка и две стороны с их силами, задачами и планом боя' },
+  { id: 'battles', label: 'Бои', icon: 'battle', create: '', about: 'Сыгранные и идущие бои: ход за ходом, с журналом и итогами' },
 ];
 
 /** Группы навигатора: подготовка и игра. */

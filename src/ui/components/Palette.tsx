@@ -41,7 +41,7 @@ function buildItems(): Item[] {
   cmd('Повторить', redo, 'Ctrl+Y');
   cmd(s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }));
   cmd(s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор', () => updateSettings({ sidebar: !s.settings.sidebar }), 'Ctrl+B');
-  cmd('Штаб', () => openTab('home'), 'обзор');
+  cmd('Главное', () => openTab('home'));
   for (const sec of NAV_SECTIONS) cmd(`Каталог: ${sec.label}`, () => openTab('library', sec.id));
   cmd('Справка', () => openTab('help'));
   cmd('Настройки', () => openTab('settings'));

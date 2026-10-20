@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { create } from 'zustand';
+import { Icon } from './Icon';
 
 export function Btn(props: {
   children?: ReactNode;
@@ -329,7 +330,7 @@ export function Menu(props: {
           }
         }}
       >
-        {props.label ?? '⋯'}
+        {props.label ?? <Icon name="more" />}
       </button>
       {pos &&
         createPortal(
@@ -587,7 +588,7 @@ export function Modal(props: { title: ReactNode; onClose: () => void; children: 
         <div className="modal-head">
           <h2>{props.title}</h2>
           <Btn kind="ghost" icon sm onClick={props.onClose} title="Закрыть (Esc)">
-            ×
+            <Icon name="close" size={15} />
           </Btn>
         </div>
         <div className="modal-body">{props.children}</div>

@@ -116,3 +116,49 @@ test('часть сил передаётся в другое подраздел�
   await expect(page.locator('.org-box', { hasText: 'Танковая рота' })).toHaveCount(1);
   expect(errors).toEqual([]);
 });
+
+test('раздел «Силы»: что пострадало в бою — видно сразу, восстанавливается одной кнопкой', async ({ page }) => {
+  const errors = await openApp(page);
+  await openFromNav(page, 'атака на высоту');
+  await startBattle(page);
+  await page.getByRole('button', { name: 'До конца' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+
+  // В сценарии — напоминание, что силы не восстановлены.
+  await openFromNav(page, 'атака на высоту');
+  const worn = page.locator('.worn-forces');
+  await expect(worn).toHaveCount(2);
+  await expect(worn.first()).toContainText('не восстановлены');
+
+  // Раздел «Силы»: сводка, фильтр, кнопка «Восстановить всех».
+  await (await navSec(page, 'Силы')).locator('.nav-item').first().click();
+  await expect(page.locator('.page-head h1')).toHaveText('Силы');
+  const summary = page.locator('.forces-summary');
+  await expect(summary).toContainText('раненых ждут возвращения');
+  await page
+    .locator('.catalog-bar')
+    .getByRole('button', { name: /^Ниже нормы/ })
+    .click();
+  await expect(page.locator('.force-card')).toHaveCount(2);
+  await expect(page.locator('.force-card .badge').first()).not.toHaveText('Боеготовы');
+  await summary.getByRole('button', { name: /Восстановить всех/ }).click();
+  await expect(page.locator('.force-card')).toHaveCount(0);
+  await page
+    .locator('.catalog-bar')
+    .getByRole('button', { name: /^Боеготовы/ })
+    .click();
+  await expect(page.locator('.force-card')).toHaveCount(4);
+  await expect(summary.getByRole('button', { name: /Восстановить всех/ })).toBeDisabled();
+
+  // Ctrl+Z возвращает потери; в сценарии напоминание исчезает после восстановления.
+  await page.keyboard.press('Control+z');
+  await expect(summary.getByRole('button', { name: /Восстановить всех/ })).toBeEnabled();
+  await openFromNav(page, 'атака на высоту');
+  await expect(worn).toHaveCount(2);
+  await worn
+    .first()
+    .getByRole('button', { name: /Восстановить/ })
+    .click();
+  await expect(worn).toHaveCount(1);
+  expect(errors).toEqual([]);
+});

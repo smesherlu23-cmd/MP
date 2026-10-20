@@ -45,6 +45,7 @@ import {
   deleteForce,
   duplicateForce,
   forceUsage,
+  restoreForces,
   type Tab,
 } from '../store';
 import {
@@ -63,6 +64,7 @@ import { EmptyStart, OrgChart, TreeList } from './unit/OrgChart';
 import { InsertDialog, NodeEditor } from './unit/NodeEditor';
 import { TransferDialog } from '../components/TransferDialog';
 import { SummaryCard } from './unit/Summary';
+import { ForceReadiness } from './ForcesPage';
 
 export function FormationPage({ tab }: { tab: Tab }) {
   const ref = tab.ref!;
@@ -230,7 +232,12 @@ export function FormationPage({ tab }: { tab: Tab }) {
                 ]
               : [
                   {
-                    label: 'Отдых и восстановление…',
+                    label: 'Восстановить полностью',
+                    onClick: () => restoreForces([root.id]),
+                    tip: 'Раненые и техника возвращаются, недостающее — до штата, состояние — к норме',
+                  },
+                  {
+                    label: 'Отдых…',
                     onClick: () => setBetween('rest'),
                     tip: 'Раненые возвращаются в строй, техника ремонтируется, мораль и усталость приходят в норму',
                   },
@@ -339,6 +346,9 @@ export function FormationPage({ tab }: { tab: Tab }) {
         </span>
       </div>
 
+      {!isLib && (root.children.length > 0 || root.composition.length > 0) && (
+        <ForceReadiness force={root} onRest={() => setBetween('rest')} onReplenish={() => setBetween('replenish')} />
+      )}
       {!root.children.length && !root.composition.length && <EmptyStart ctx={ctx} />}
       {view === 'chart' ? (
         <div className="stack">

@@ -1,4 +1,5 @@
 import { fmtDuration, resolveScenario, sideUnits, summarizeUnits } from '../../engine';
+import { Icon, type IconName } from '../components/Icon';
 import { Link } from '../components/Link';
 import { CREATE_ITEMS, createIn } from '../components/Navigator';
 import { openPalette } from '../components/Palette';
@@ -24,7 +25,7 @@ interface Recent {
   key: string;
   kind: TabKind;
   ref: string;
-  icon: string;
+  icon: IconName;
   what: string;
   name: string;
   at: string;
@@ -43,7 +44,7 @@ export function HomePage() {
       key: `sc:${x.id}`,
       kind: 'scenario' as TabKind,
       ref: x.id,
-      icon: '◈',
+      icon: 'scenario' as IconName,
       what: 'сценарий',
       name: x.name,
       at: x.updatedAt ?? '',
@@ -52,7 +53,7 @@ export function HomePage() {
       key: `fc:${x.id}`,
       kind: 'formation' as TabKind,
       ref: `force:${x.id}`,
-      icon: '⚑',
+      icon: 'forces' as IconName,
       what: 'силы',
       name: x.name,
       at: x.updatedAt ?? '',
@@ -61,7 +62,7 @@ export function HomePage() {
       key: `fm:${x.id}`,
       kind: 'formation' as TabKind,
       ref: `lib:${x.id}`,
-      icon: '▦',
+      icon: 'template' as IconName,
       what: 'шаблон',
       name: x.name,
       at: x.updatedAt ?? '',
@@ -70,7 +71,7 @@ export function HomePage() {
       key: `rs:${x.id}`,
       kind: 'ruleset' as TabKind,
       ref: x.id,
-      icon: '§',
+      icon: 'ruleset' as IconName,
       what: 'набор правил',
       name: x.name,
       at: x.updatedAt ?? '',
@@ -93,11 +94,11 @@ export function HomePage() {
     <div className="page home">
       <div className="page-head">
         <div className="grow">
-          <h1>Штаб</h1>
+          <h1>Главное</h1>
           <div className="page-sub">Echelon Commander · симулятор боя для ГМ варгейма</div>
         </div>
         <Btn onClick={() => openPalette()} title="Найти любое подразделение, сценарий или команду (Ctrl+K)">
-          Найти… <span className="kbd">Ctrl+K</span>
+          <Icon name="search" size={14} /> Найти… <span className="kbd">Ctrl+K</span>
         </Btn>
         <Menu className="primary" label="+ Создать" title="Создать сценарий, силы, шаблон или набор правил" items={CREATE_ITEMS()} />
       </div>
@@ -110,7 +111,9 @@ export function HomePage() {
               <button type="button" className="wf-main" onClick={() => showSection(x.id)} title={`Открыть каталог: ${x.label}`}>
                 <span className="wf-top">
                   <span className="wf-n">{i + 1}</span>
-                  <span className="wf-icon">{x.icon}</span>
+                  <span className="wf-icon">
+                    <Icon name={x.icon} size={17} />
+                  </span>
                   <span className="wf-count">{n}</span>
                 </span>
                 <span className="wf-label">{x.label}</span>
@@ -135,7 +138,9 @@ export function HomePage() {
               const tm = b.turnMinutes;
               return (
                 <div key={b.id} className="row">
-                  <span className="home-icon">⚔</span>
+                  <span className="home-icon">
+                    <Icon name="battle" />
+                  </span>
                   <div className="grow" style={{ minWidth: 0 }}>
                     <Link kind="battle" refId={b.id} className="home-name">
                       {b.name}
@@ -247,7 +252,7 @@ export function HomePage() {
             {recent.map((x) => (
               <div key={x.key} className="row">
                 <span className="home-icon" title={x.what}>
-                  {x.icon}
+                  <Icon name={x.icon} />
                 </span>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <Link kind={x.kind} refId={x.ref} className="home-name">

@@ -13,7 +13,7 @@ test('бой: «до события», прогноз и ветка боя', asy
   await page.getByRole('button', { name: 'Прогноз' }).click();
   const modal = page.locator('.modal');
   await expect(modal.locator('table.forecast')).toContainText('Победа: Синие', { timeout: 20000 });
-  await modal.getByRole('button', { name: 'Закрыть' }).click();
+  await modal.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.locator('.battle-head button[aria-haspopup="menu"]').click();
   await menu(page, 'Ответвить бой');
   await page.locator('.modal .modal-foot').getByRole('button', { name: 'Выбрать' }).click();
@@ -112,15 +112,21 @@ test('силы между боями: итоги в боевой путь, от�
   await openFromNav(page, '1-й мотострелковый батальон');
   const hist = page.locator('.section', { hasText: 'Боевой путь' });
   await expect(hist).toContainText('боёв: 1');
-  await page.locator('.page-head button[aria-haspopup="menu"]').click();
-  await menu(page, 'Отдых и восстановление');
+  const panel = page.locator('.readiness');
+  await expect(panel.locator('.badge')).not.toHaveText('Боеготовы');
+  await panel.getByRole('button', { name: 'Отдых…' }).click();
   await expect(page.locator('.modal')).toContainText('вернётся в строй');
-  await page.locator('.modal').getByRole('button', { name: 'Отдых' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Отдых', exact: true }).click();
   await expect(hist).toContainText('Отдых 7 дней');
   await page.locator('.page-head button[aria-haspopup="menu"]').click();
   await menu(page, 'Пополнить до штата');
-  await page.locator('.modal').getByRole('button', { name: 'Пополнить' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Пополнить', exact: true }).click();
   await expect(hist).toContainText('Пополнение до штата');
+  // Одной кнопкой — полное восстановление.
+  await panel.getByRole('button', { name: 'Восстановить' }).click();
+  await expect(panel.locator('.badge')).toHaveText('Боеготовы');
+  await expect(hist).toContainText('Полное восстановление');
+  await expect(panel.getByRole('button', { name: 'Восстановить' })).toBeDisabled();
   expect(errors).toEqual([]);
 });
 

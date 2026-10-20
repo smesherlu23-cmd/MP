@@ -14,9 +14,13 @@ import {
   nextName,
   locateNode,
   relinkScenario,
+  restoreForce,
+  forceCondition,
+  plural,
   returnUnit,
   transferUnit,
   walkUnits,
+  type ForceCondition,
   type ForcesPatch,
   type UnitNode,
   type Id,
@@ -89,6 +93,46 @@ export async function newForceDialog(faction?: string): Promise<Id | undefined> 
   if (v === null) return;
   if (v) return createForcesFromTemplate(v, { faction })[0];
   return addForce(newRootUnit('Новое подразделение', { rulesetId: defaultRulesetId(), faction }));
+}
+
+/** Набор правил, по которому считаются силы. */
+const rulesetOf = (f: UnitNode) => get().rulesets[f.rulesetId ?? defaultRulesetId() ?? ''];
+
+/** Боеготовность сил: численность, раненые и ремонт, состояние. */
+export function forceStatus(f: UnitNode): ForceCondition {
+  return forceCondition(f, rulesetOf(f));
+}
+
+/** Можно ли что-то восстановить (некомплект, раненые, ремонт, состояние не в норме). */
+export function canRestore(f: UnitNode): boolean {
+  return restoreForce(f, rulesetOf(f)).changed;
+}
+
+/**
+ * Полное восстановление «одной кнопкой»: раненые и техника возвращаются, недостающее — до штата,
+ * состояние — к норме. Несколько подразделений — один шаг отмены. Возвращает, сколько восстановлено.
+ */
+export function restoreForces(ids: Id[]): number {
+  const s = get();
+  const todo = ids
+    .map((id) => s.forces[id])
+    .filter((f): f is UnitNode => !!f)
+    .map((f) => ({ f, r: restoreForce(f, rulesetOf(f)) }))
+    .filter((x) => x.r.changed);
+  if (!todo.length) {
+    toast('Восстанавливать нечего: силы в полном составе, состояние в норме.');
+    return 0;
+  }
+  historyStep(todo.length === 1 ? `восстановление «${todo[0].f.name}»` : `восстановление сил (${todo.length})`);
+  for (const { f, r } of todo) updateForce(f.id, (d) => void Object.assign(d, r.force));
+  const pers = todo.reduce((a, x) => a + x.r.personnel, 0);
+  const eq = todo.reduce((a, x) => a + x.r.equipment, 0);
+  const gain = [pers ? `+${pers} чел.` : '', eq ? `+${eq} ед. техники и вооружения` : ''].filter(Boolean).join(', ');
+  toastUndoable(
+    `${todo.length === 1 ? `«${todo[0].f.name}» восстановлено` : `Восстановлено ${todo.length} ${plural(todo.length, 'подразделение', 'подразделения', 'подразделений')}`}: ${gain ? `${gain}, ` : ''}состояние в норме.`,
+    'good',
+  );
+  return todo.length;
 }
 
 export function duplicateForce(id: Id): Id | undefined {

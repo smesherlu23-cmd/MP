@@ -5,6 +5,7 @@ import { BattlePage } from './pages/BattlePage';
 import { FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
 import { HomePage } from './pages/HomePage';
+import { ForcesPage } from './pages/ForcesPage';
 import { LibraryPage } from './pages/LibraryPage';
 import { MonteCarloPage } from './pages/MonteCarloPage';
 import { RulesetPage } from './pages/RulesetPage';
@@ -14,6 +15,7 @@ import { Navigator } from './components/Navigator';
 import { Palette, openPalette } from './components/Palette';
 import { goBack, goForward, sectionMeta, useNav } from './nav';
 import logo from './assets/logo.png';
+import { Icon, type IconName } from './components/Icon';
 import { Btn, ContextMenuHost, Menu, openContextMenu } from './components/ui';
 import { desktop } from './storage';
 import {
@@ -42,21 +44,22 @@ import {
   type TabKind,
 } from './store';
 
-const ICONS: Record<TabKind, string> = {
-  home: '⌂',
-  ruleset: '§',
-  formation: '▦',
-  scenario: '◈',
-  battle: '⚔',
-  montecarlo: '∑',
-  settings: '⚙',
-  help: '?',
-  library: '▤',
+const ICONS: Record<TabKind, IconName> = {
+  home: 'home',
+  ruleset: 'ruleset',
+  formation: 'template',
+  scenario: 'scenario',
+  battle: 'battle',
+  montecarlo: 'chart',
+  settings: 'settings',
+  help: 'help',
+  library: 'template',
 };
 
 /** Значок вкладки: силы и шаблоны открываются в одном конструкторе, но различаются. */
-const tabIcon = (t: Tab) =>
-  t.kind === 'formation' && t.ref?.startsWith('force:') ? '⚑' : t.kind === 'library' && t.ref ? sectionMeta(t.ref as NavSection).icon : ICONS[t.kind];
+const tabIconName = (t: Tab): IconName =>
+  t.kind === 'formation' && t.ref?.startsWith('force:') ? 'forces' : t.kind === 'library' && t.ref ? sectionMeta(t.ref as NavSection).icon : ICONS[t.kind];
+const tabIcon = (t: Tab) => <Icon name={tabIconName(t)} size={14} />;
 
 function useTabTitle(t: Tab): string {
   const s = useApp();
@@ -67,7 +70,7 @@ function useTabTitle(t: Tab): string {
 function tabTitle(t: Tab, s: ReturnType<typeof useApp.getState>, battles: ReturnType<typeof useBattles.getState>['battles']): string {
   switch (t.kind) {
     case 'home':
-      return 'Штаб';
+      return 'Главное';
     case 'settings':
       return 'Настройки';
     case 'help':
@@ -134,7 +137,13 @@ function Tabs({ tabs, active }: { tabs: Tab[]; active?: string }) {
             title="Все открытые вкладки"
             items={[
               ...tabs.map((t) => ({
-                label: `${t.pinned ? '⊙ ' : ''}${tabIcon(t)} ${tabTitle(t, s, battles)}`,
+                label: (
+                  <span className="menu-ico">
+                    {tabIcon(t)}
+                    {t.pinned ? '(закреплена) ' : ''}
+                    {tabTitle(t, s, battles)}
+                  </span>
+                ),
                 onClick: () => activateTab(t.key),
                 kbd: t.key === active ? '●' : undefined,
               })),
@@ -197,7 +206,7 @@ function TabItem({ t, active }: { t: Tab; active: boolean }) {
       <span className="tab-title">{title}</span>
       {t.pinned ? (
         <span className="tab-pin" title="Закреплена">
-          ⊙
+          <Icon name="pin" size={13} />
         </span>
       ) : (
         <button
@@ -209,7 +218,7 @@ function TabItem({ t, active }: { t: Tab; active: boolean }) {
             closeTab(t.key);
           }}
         >
-          ×
+          <Icon name="close" size={13} />
         </button>
       )}
     </div>
@@ -333,7 +342,7 @@ function Page({ t }: { t: Tab }) {
     case 'montecarlo':
       return <MonteCarloPage tab={t} />;
     case 'library':
-      return <LibraryPage tab={t} />;
+      return t.ref === 'forces' ? <ForcesPage /> : <LibraryPage tab={t} />;
     default:
       return <HomePage />;
   }
@@ -420,9 +429,9 @@ export function App() {
             title="Показать/скрыть навигатор (Ctrl+B)"
             onClick={() => updateSettings({ sidebar: !s.settings.sidebar })}
           >
-            ☰
+            <Icon name="sidebar" size={17} />
           </button>
-          <button type="button" className="brand-name" title="Штаб" onClick={() => openTab('home')}>
+          <button type="button" className="brand-name" title="Главное" onClick={() => openTab('home')}>
             <img src={logo} alt="" className="brand-logo" />
             {s.settings.sidebar && (
               <span>
@@ -433,16 +442,17 @@ export function App() {
         </div>
         <div className="nav-arrows">
           <button type="button" disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
-            ‹
+            <Icon name="left" />
           </button>
           <button type="button" disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
-            ›
+            <Icon name="right" />
           </button>
         </div>
         <Tabs tabs={s.tabs} active={active?.key} />
         <div className="topbar-right">
           {!s.settings.sidebar && (
             <button type="button" className="find-btn" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
+              <Icon name="search" size={14} />
               <span>Найти…</span>
               <span className="kbd">Ctrl+K</span>
             </button>
@@ -454,7 +464,7 @@ export function App() {
             onClick={undo}
             title={hist.undo ? `Отменить: ${hist.undo} (Ctrl+Z)` : 'Отменить (Ctrl+Z)'}
           >
-            ↶
+            <Icon name="undo" />
           </button>
           <button
             type="button"
@@ -463,7 +473,7 @@ export function App() {
             onClick={redo}
             title={hist.redo ? `Повторить: ${hist.redo} (Ctrl+Y)` : 'Повторить (Ctrl+Y)'}
           >
-            ↷
+            <Icon name="redo" />
           </button>
           <Menu
             sm

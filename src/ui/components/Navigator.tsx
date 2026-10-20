@@ -3,14 +3,17 @@
 // Раздел открытой вкладки подсвечен — всегда видно, где находишься.
 
 import { useRef, useState } from 'react';
+import { Icon, type IconName } from './Icon';
 import { arrowNav, Menu, pressable } from './ui';
 import { openPalette } from './Palette';
 import { NAV_GROUPS, isNavOpen, sectionMeta, sectionOf, setNavOpen, showSection } from '../nav';
+import { LEVEL_LABEL } from './ForceCampaign';
 import { DND_FORCE, DND_LIB } from '../pages/unit/model';
 import {
   createFormation,
   createScenario,
   deleteBattles,
+  forceStatus,
   importFile,
   newForceDialog,
   newRulesetDialog,
@@ -28,20 +31,29 @@ export function createIn(sec: NavSection) {
   else if (sec === 'rulesets') void newRulesetDialog();
 }
 
-/** Пункты меню «+ Создать» — в навигаторе и в «Штабе». */
+const withIcon = (icon: IconName, text: string) => (
+  <span className="menu-ico">
+    <Icon name={icon} size={15} />
+    {text}
+  </span>
+);
+
+/** Пункты меню «+ Создать» — в навигаторе и на главной. */
 export const CREATE_ITEMS = () => [
-  { label: '◈  Сценарий', onClick: () => createIn('scenarios'), tip: 'Обстановка и две стороны' },
-  { label: '⚑  Силы', onClick: () => createIn('forces'), tip: 'Конкретное подразделение по шаблону' },
-  { label: '▦  Шаблон', onClick: () => createIn('units'), tip: 'Устройство и штат подразделения' },
-  { label: '§  Набор правил', onClick: () => createIn('rulesets') },
+  { label: withIcon('scenario', 'Сценарий'), onClick: () => createIn('scenarios'), tip: 'Обстановка и две стороны' },
+  { label: withIcon('forces', 'Силы'), onClick: () => createIn('forces'), tip: 'Конкретное подразделение по шаблону' },
+  { label: withIcon('template', 'Шаблон'), onClick: () => createIn('units'), tip: 'Устройство и штат подразделения' },
+  { label: withIcon('ruleset', 'Набор правил'), onClick: () => createIn('rulesets') },
   'sep' as const,
-  { label: 'Импорт из файла…', onClick: () => importFile(), tip: 'Набор правил, подразделение, сценарий или бой в формате JSON' },
+  { label: withIcon('import', 'Импорт из файла…'), onClick: () => importFile(), tip: 'Набор правил, подразделение, сценарий или бой в формате JSON' },
 ];
 
-function NavItem(props: { icon: string; label: string; count?: number; selected?: boolean; here?: boolean; onClick: () => void; title?: string }) {
+function NavItem(props: { icon: IconName; label: string; count?: number; selected?: boolean; here?: boolean; onClick: () => void; title?: string }) {
   return (
     <button type="button" className={`nav-item${props.selected ? ' selected' : ''}${props.here ? ' here' : ''}`} onClick={props.onClick} title={props.title}>
-      <span className="nav-icon">{props.icon}</span>
+      <span className="nav-icon">
+        <Icon name={props.icon} />
+      </span>
       <span className="grow">{props.label}</span>
       {props.count !== undefined && <span className="nav-count">{props.count}</span>}
     </button>
@@ -70,7 +82,7 @@ export function Navigator() {
     key: string,
     name: string,
     onOpen: (o: { background?: boolean; preview?: boolean }) => void,
-    opts: { sub?: string; active?: boolean; dragLib?: string; dragForce?: string } = {},
+    opts: { sub?: string; active?: boolean; dragLib?: string; dragForce?: string; status?: { cls: string; text: string } } = {},
   ) => (
     <div
       key={key}
@@ -97,6 +109,7 @@ export function Navigator() {
       onAuxClick={(e) => e.button === 1 && onOpen({ background: true })}
       {...pressable((e) => onOpen({ background: e.ctrlKey || e.metaKey }))}
     >
+      {opts.status && <span className={`status-dot ${opts.status.cls}`} title={opts.status.text} />}
       <span>{name}</span>
       {opts.sub && <span className="sub">{opts.sub}</span>}
     </div>
@@ -163,6 +176,7 @@ export function Navigator() {
           sub: x.level,
           active: isOpen('formation', `force:${x.id}`),
           dragForce: x.id,
+          status: LEVEL_LABEL[forceStatus(x).level],
         });
       // Силы — по принадлежности: чьи это войска.
       const list =
@@ -222,7 +236,7 @@ export function Navigator() {
             disabled={!!q}
             onClick={() => setNavOpen(sec, !open)}
           >
-            ▸
+            <Icon name="right" size={14} />
           </button>
           <NavItem
             icon={meta.icon}
@@ -235,7 +249,7 @@ export function Navigator() {
           />
           {meta.create && (
             <button type="button" className="nav-add" title={meta.create} onClick={() => createIn(sec)}>
-              +
+              <Icon name="plus" size={15} />
             </button>
           )}
         </div>
@@ -248,7 +262,7 @@ export function Navigator() {
     <aside className={`sidebar nav${s.settings.sidebar ? '' : ' hidden'}`}>
       <div className="nav-tools">
         <button type="button" className="nav-search" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
-          <span className="nav-search-icon">⌕</span>
+          <Icon name="search" size={15} />
           <span className="grow">Найти…</span>
           <span className="kbd">Ctrl+K</span>
         </button>
@@ -261,7 +275,7 @@ export function Navigator() {
       )}
       <div className="nav-scroll" ref={listRef} onKeyDown={(e) => arrowNav(e, listRef.current, '.side-item')}>
         <div className="nav-home">
-          <NavItem icon="⌂" label="Штаб" here={activeTab?.kind === 'home'} onClick={() => openTab('home')} title="Обзор: что продолжить, с чего начать" />
+          <NavItem icon="home" label="Главное" here={activeTab?.kind === 'home'} onClick={() => openTab('home')} title="Что продолжить, с чего начать" />
         </div>
         {NAV_GROUPS.map((g) => {
           const items = g.ids.map(section).filter(Boolean);
@@ -275,8 +289,8 @@ export function Navigator() {
         {q && !NAV_GROUPS.some((g) => g.ids.some((id) => sectionList(id).list.some(Boolean))) && <div className="nav-empty">Ничего не найдено</div>}
       </div>
       <nav className="nav-bottom">
-        <NavItem icon="?" label="Справка" here={activeTab?.kind === 'help'} onClick={() => openTab('help')} />
-        <NavItem icon="⚙" label="Настройки" here={activeTab?.kind === 'settings'} onClick={() => openTab('settings')} />
+        <NavItem icon="help" label="Справка" here={activeTab?.kind === 'help'} onClick={() => openTab('help')} />
+        <NavItem icon="settings" label="Настройки" here={activeTab?.kind === 'settings'} onClick={() => openTab('settings')} />
       </nav>
     </aside>
   );

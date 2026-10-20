@@ -58,13 +58,13 @@ test('вкладки: просмотр из навигатора, закрепл
   await items.nth(2).click();
   await expect(page.locator('.tab')).toHaveCount(3);
   // Закрепить «Главную» и закрыть остальные, кроме активной.
-  await page.locator('.tab', { hasText: 'Штаб' }).click({ button: 'right' });
+  await page.locator('.tab', { hasText: 'Главное' }).click({ button: 'right' });
   await page.locator('.menu-pop .menu-item', { hasText: 'Закрепить' }).click();
   await expect(page.locator('.tab.pinned')).toHaveCount(1);
   await page.locator('.tab.active').click({ button: 'right' });
   await page.locator('.menu-pop .menu-item', { hasText: 'Закрыть другие' }).click();
   await expect(page.locator('.tab')).toHaveCount(2);
-  await expect(page.locator('.tab.pinned .tab-title')).toHaveText('Штаб');
+  await expect(page.locator('.tab.pinned .tab-title')).toHaveText('Главное');
   expect(errors).toEqual([]);
 });
 
