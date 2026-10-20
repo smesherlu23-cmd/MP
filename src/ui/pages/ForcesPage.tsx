@@ -1,17 +1,17 @@
-// Раздел «Силы»: боеготовность всех подразделений сил с первого взгляда — численность, раненые и ремонт,
-// мораль, усталость, боезапас — и восстановление одной кнопкой (одного подразделения, группы или всех сразу).
+// Раздел «Силы»: подразделения сил по командам (у команды — свой цвет и название), боеготовность с первого
+// взгляда — численность, раненые и ремонт, мораль, усталость, боезапас — и действия между боями на карточке.
 
 import { useState } from 'react';
-import { ROOT_STATE, type ForceCondition, type UnitNode } from '../../engine';
-import { LEVEL_LABEL, ReplenishModal, RestModal } from '../components/ForceCampaign';
+import { plural, ROOT_STATE, type ForceCondition, type UnitNode } from '../../engine';
+import { ForceActions, LEVEL_LABEL } from '../components/ForceCampaign';
 import { Icon } from '../components/Icon';
-import { Btn, Menu, Seg, fmt0 } from '../components/ui';
+import { Btn, Check, Field, Menu, Modal, Seg, Txt, fmt0 } from '../components/ui';
 import { sectionMeta } from '../nav';
 import {
   canRestore,
-  defaultRulesetId,
   deleteForce,
   duplicateForce,
+  editTeam,
   exportJson,
   forceStatus,
   forceUsage,
@@ -19,6 +19,9 @@ import {
   newForceDialog,
   openTab,
   restoreForces,
+  TEAM_PALETTE,
+  teamColor,
+  teamSides,
   useApp,
 } from '../store';
 import { fmtWhen } from './HomePage';
@@ -69,30 +72,87 @@ export function StateLine({ c }: { c: ForceCondition }) {
   );
 }
 
+/** Команда: название и цвет; переименование меняет принадлежность всех её сил. */
+function TeamModal({ team, onClose }: { team: string; onClose: () => void }) {
+  const [name, setName] = useState(team);
+  const [color, setColor] = useState(() => (team ? teamColor(team) : TEAM_PALETTE[0]));
+  const sides = teamSides(team);
+  const [renameSides, setRenameSides] = useState(true);
+  const renamed = name.trim() !== team;
+  return (
+    <Modal
+      title={team ? `Команда «${team}»` : 'Силы без команды'}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="muted small grow">Отменить переименование — Ctrl+Z.</span>
+          <Btn onClick={onClose}>Отмена</Btn>
+          <Btn
+            kind="primary"
+            disabled={!name.trim() && !team}
+            onClick={() => {
+              editTeam(team, { name, color, renameSides });
+              onClose();
+            }}
+          >
+            Сохранить
+          </Btn>
+        </>
+      }
+    >
+      <div className="stack" style={{ gap: 12 }}>
+        <Field label="Название">
+          <Txt value={name} onChange={setName} placeholder="Синие, 1-я армия, отряд «Север»…" />
+        </Field>
+        <Field label="Цвет">
+          <div className="team-swatches">
+            {TEAM_PALETTE.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`team-swatch${color.toLowerCase() === c ? ' on' : ''}`}
+                style={{ background: c }}
+                title={c}
+                onClick={() => setColor(c)}
+              />
+            ))}
+            <label className="team-swatch custom" title="Свой цвет" style={{ background: TEAM_PALETTE.includes(color.toLowerCase()) ? undefined : color }}>
+              <input type="color" value={color.startsWith('#') ? color : '#888888'} onChange={(e) => setColor(e.target.value)} />
+              <Icon name="plus" size={13} />
+            </label>
+          </div>
+        </Field>
+        {team && renamed && sides.length > 0 && (
+          <Check value={renameSides} onChange={setRenameSides}>
+            переименовать и стороны «{team}» в сценариях ({sides.length}) — чтобы новые силы со стороны попадали в эту команду
+          </Check>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export function ForcesPage() {
   const s = useApp();
   const meta = sectionMeta('forces');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
-  const [modal, setModal] = useState<{ kind: 'rest' | 'replenish'; force: UnitNode } | null>(null);
+  const [teamEdit, setTeamEdit] = useState<string | null>(null);
   const q = query.trim().toLowerCase();
 
   const all = Object.values(s.forces)
     .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
     .map((f) => ({ f, c: forceStatus(f), can: canRestore(f) }));
   // «Ниже нормы» — всё, что можно восстановить: потери, некомплект против штата, мораль, боезапас…
-  const restorable = all.filter((x) => x.can);
+  const restorable = all.filter((x) => x.can).length;
   const ready = all.filter((x) => x.c.level === 'ready').length;
-  const worn = all.length - ready;
-  const wounded = all.reduce((a, x) => a + x.c.wounded, 0);
-  const repair = all.reduce((a, x) => a + x.c.repair, 0);
 
   const shown = all.filter(
     (x) =>
       (!q || x.f.name.toLowerCase().includes(q) || (x.f.faction ?? '').toLowerCase().includes(q)) &&
       (filter === 'all' || (filter === 'need' ? x.can : x.c.level === 'ready')),
   );
-  const factions = [...new Set(shown.map((x) => x.f.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
+  const teams = [...new Set(shown.map((x) => x.f.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
 
   const card = ({ f, c, can }: (typeof all)[number]) => {
     const lv = LEVEL_LABEL[c.level];
@@ -101,7 +161,7 @@ export function ForcesPage() {
     const last = [...(f.history ?? [])].reverse().find((h) => h.kind === 'battle' && h.battleId);
     const open = () => openTab('formation', `force:${f.id}`);
     return (
-      <div key={f.id} className={`force-card lvl-${c.level}`}>
+      <div key={f.id} className="force-card" style={{ borderLeftColor: teamColor(f.faction ?? '') }}>
         <div className="fc-head">
           <button type="button" className="link fc-name" onClick={open} title="Открыть подразделение">
             {f.name}
@@ -109,6 +169,22 @@ export function ForcesPage() {
           <span className={`badge ${lv.cls}`} data-tip={c.issues.length ? `Что не так: ${c.issues.join(', ')}` : 'Полный состав, состояние в норме'}>
             {lv.text}
           </span>
+          <Menu
+            sm
+            items={[
+              { label: 'Открыть', onClick: open },
+              {
+                label: 'Восстановить полностью',
+                disabled: !can,
+                onClick: () => restoreForces([f.id]),
+                tip: 'Раненые и техника возвращаются, недостающее — до штата из резерва, состояние — к норме',
+              },
+              { label: 'Дублировать', onClick: () => duplicateForce(f.id) },
+              { label: 'Сохранить в файл…', onClick: () => exportJson('force', f.name, { ...f, faction: f.faction ?? '' }) },
+              'sep',
+              { label: 'Удалить силы', danger: true, onClick: () => void deleteForce(f.id) },
+            ]}
+          />
         </div>
         <div className="faint small fc-sub">
           {tpl ? `по шаблону «${tpl.name}»` : 'без шаблона'}
@@ -131,34 +207,7 @@ export function ForcesPage() {
             <span className="faint nowrap">{fmtWhen(last.at)}</span>
           </div>
         )}
-        <div className="fc-actions">
-          <Btn
-            sm
-            kind={can && c.level !== 'ready' ? 'primary' : undefined}
-            disabled={!can}
-            onClick={() => restoreForces([f.id])}
-            title={can ? 'Полное восстановление: раненые и техника возвращаются, недостающее — до штата, состояние — к норме' : 'Восстанавливать нечего'}
-          >
-            <Icon name="restore" size={14} /> Восстановить
-          </Btn>
-          <Btn sm kind="ghost" onClick={() => setModal({ kind: 'rest', force: f })} title="Отдых на N дней: часть раненых вернётся, техника отремонтируется">
-            <Icon name="rest" size={14} /> Отдых…
-          </Btn>
-          <Btn sm kind="ghost" onClick={() => setModal({ kind: 'replenish', force: f })} title="Пополнить людей и технику до штата">
-            <Icon name="replenish" size={14} /> Пополнить…
-          </Btn>
-          <span className="grow" />
-          <Menu
-            sm
-            items={[
-              { label: 'Открыть', onClick: open },
-              { label: 'Дублировать', onClick: () => duplicateForce(f.id) },
-              { label: 'Сохранить в файл…', onClick: () => exportJson('force', f.name, { ...f, faction: f.faction ?? '' }) },
-              'sep',
-              { label: 'Удалить силы', danger: true, onClick: () => void deleteForce(f.id) },
-            ]}
-          />
-        </div>
+        <ForceActions force={f} grid />
       </div>
     );
   };
@@ -181,54 +230,14 @@ export function ForcesPage() {
         </Btn>
       </div>
 
-      {all.length > 0 && (
-        <div className="forces-summary">
-          <div className="fs-item">
-            <span className="fs-v">{all.length}</span>
-            <span className="fs-k">подразделений</span>
-          </div>
-          <div className="fs-item good">
-            <span className="fs-v">{ready}</span>
-            <span className="fs-k">боеготовы</span>
-          </div>
-          <div className={`fs-item${worn ? ' warn' : ''}`}>
-            <span className="fs-v">{restorable.length}</span>
-            <span className="fs-k">ниже штата или нормы</span>
-          </div>
-          <div className="fs-item">
-            <span className="fs-v">{fmt0(wounded)}</span>
-            <span className="fs-k">раненых ждут возвращения</span>
-          </div>
-          <div className="fs-item">
-            <span className="fs-v">{fmt0(repair)}</span>
-            <span className="fs-k">ед. техники в ремонте</span>
-          </div>
-          <span className="grow" />
-          <Btn
-            kind={restorable.length ? 'primary' : undefined}
-            disabled={!restorable.length}
-            onClick={() => restoreForces(restorable.map((x) => x.f.id))}
-            title="Все силы — в полный состав, состояние — к норме. Отменить — Ctrl+Z."
-          >
-            <Icon name="restore" size={15} /> Восстановить всех{restorable.length ? ` (${restorable.length})` : ''}
-          </Btn>
-        </div>
-      )}
-
       <div className="catalog-bar">
-        <input
-          type="search"
-          className="catalog-search"
-          placeholder="Поиск по названию или принадлежности…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <input type="search" className="catalog-search" placeholder="Поиск по названию или команде…" value={query} onChange={(e) => setQuery(e.target.value)} />
         <Seg
           value={filter}
           onChange={setFilter}
           options={[
             { value: 'all', label: `Все (${all.length})` },
-            { value: 'need', label: `Ниже нормы (${restorable.length})` },
+            { value: 'need', label: `Ниже нормы (${restorable})` },
             { value: 'ready', label: `Боеготовы (${ready})` },
           ]}
         />
@@ -251,47 +260,50 @@ export function ForcesPage() {
           )}
         </div>
       ) : (
-        factions.map((fa) => {
-          const list = shown.filter((x) => (x.f.faction?.trim() || '') === fa);
-          const fix = list.filter((x) => x.can);
+        teams.map((team) => {
+          const list = shown.filter((x) => (x.f.faction?.trim() || '') === team);
+          const mine = all.filter((x) => (x.f.faction?.trim() || '') === team);
+          const wounded = mine.reduce((a, x) => a + x.c.wounded, 0);
+          const repair = mine.reduce((a, x) => a + x.c.repair, 0);
+          const okCount = mine.filter((x) => x.c.level === 'ready').length;
           return (
-            <div key={fa || '_'} className="catalog-group">
-              {(factions.length > 1 || fa) && (
-                <div className="catalog-group-head">
-                  <Icon name="flag" size={15} />
-                  <h3 className="grow">{fa || 'Без принадлежности'}</h3>
-                  <span className="faint small">{list.length}</span>
-                  {fix.length > 0 && (
-                    <Btn sm kind="ghost" onClick={() => restoreForces(fix.map((x) => x.f.id))} title="Восстановить все подразделения этой группы">
-                      <Icon name="restore" size={14} /> Восстановить группу ({fix.length})
-                    </Btn>
-                  )}
-                  <Btn sm kind="ghost" onClick={() => void newForceDialog(fa || undefined)} title="Новые силы с этой принадлежностью">
-                    <Icon name="plus" size={14} /> Силы
-                  </Btn>
-                </div>
-              )}
+            <div key={team || '_'} className="catalog-group team-group">
+              <div className="catalog-group-head team-head">
+                <button
+                  type="button"
+                  className="team-dot"
+                  style={{ background: teamColor(team) }}
+                  title="Название и цвет команды"
+                  onClick={() => setTeamEdit(team)}
+                />
+                <h3>{team || 'Без команды'}</h3>
+                <span className="faint small grow">
+                  {mine.length} {plural(mine.length, 'подразделение', 'подразделения', 'подразделений')} · боеготовы: {okCount}
+                  {wounded > 0 && ` · раненых: ${fmt0(wounded)}`}
+                  {repair > 0 && ` · в ремонте: ${fmt0(repair)} ед.`}
+                </span>
+                <Btn sm kind="ghost" onClick={() => setTeamEdit(team)} title="Переименовать команду, выбрать цвет">
+                  <Icon name="pencil" size={14} /> {team ? 'Название и цвет' : 'Назначить команду'}
+                </Btn>
+                <Btn sm kind="ghost" onClick={() => void newForceDialog(team || undefined)} title="Новые силы этой команды">
+                  <Icon name="plus" size={14} /> Силы
+                </Btn>
+              </div>
               <div className="force-grid">{list.map(card)}</div>
             </div>
           );
         })
       )}
 
-      {modal?.kind === 'rest' && (
-        <RestModal force={modal.force} rs={s.rulesets[modal.force.rulesetId ?? defaultRulesetId() ?? '']} onClose={() => setModal(null)} />
-      )}
-      {modal?.kind === 'replenish' && (
-        <ReplenishModal force={modal.force} rs={s.rulesets[modal.force.rulesetId ?? defaultRulesetId() ?? '']} onClose={() => setModal(null)} />
-      )}
+      {teamEdit !== null && <TeamModal team={teamEdit} onClose={() => setTeamEdit(null)} />}
     </div>
   );
 }
 
 /** Панель боеготовности на странице подразделения сил: состояние и действия между боями — на виду. */
-export function ForceReadiness({ force, onRest, onReplenish }: { force: UnitNode; onRest: () => void; onReplenish: () => void }) {
+export function ForceReadiness({ force }: { force: UnitNode }) {
   useApp((s) => s.forces[force.id]);
   const c = forceStatus(force);
-  const can = canRestore(force);
   const lv = LEVEL_LABEL[c.level];
   return (
     <div className={`readiness card lvl-${c.level}`}>
@@ -307,26 +319,7 @@ export function ForceReadiness({ force, onRest, onReplenish }: { force: UnitNode
         )}
       </div>
       <StateLine c={c} />
-      <div className="rd-actions">
-        <Btn
-          kind={can && c.level !== 'ready' ? 'primary' : undefined}
-          disabled={!can}
-          onClick={() => restoreForces([force.id])}
-          title={
-            can
-              ? 'Полное восстановление: раненые и техника возвращаются, недостающее — до штата, состояние — к норме. Отменить — Ctrl+Z.'
-              : 'Восстанавливать нечего'
-          }
-        >
-          <Icon name="restore" size={15} /> Восстановить
-        </Btn>
-        <Btn sm kind="ghost" onClick={onRest} title="Отдых на N дней: часть раненых вернётся, техника отремонтируется">
-          <Icon name="rest" size={14} /> Отдых…
-        </Btn>
-        <Btn sm kind="ghost" onClick={onReplenish} title="Пополнить людей и технику до штата">
-          <Icon name="replenish" size={14} /> Пополнить…
-        </Btn>
-      </div>
+      <ForceActions force={force} grid />
     </div>
   );
 }

@@ -35,6 +35,7 @@ import {
   type UnitNode,
 } from '../../engine';
 import { effectsText } from '../components/EffectsEditor';
+import { ForceActions } from '../components/ForceCampaign';
 import { Icon } from '../components/Icon';
 import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
@@ -53,7 +54,6 @@ import {
   exportJson,
   forceStatus,
   historyStep,
-  restoreForces,
   openTab,
   putBattle,
   scenarioForBattle,
@@ -326,18 +326,15 @@ function WornForces({ ids }: { ids: Id[] }) {
       <div className="row" style={{ flexWrap: 'nowrap' }}>
         <Icon name="alert" size={15} />
         <span className="grow">{worn.length > 1 ? 'Силы не восстановлены после прошлых боёв' : 'Силы не восстановлены после прошлого боя'}</span>
-        <Btn
-          sm
-          kind="primary"
-          onClick={() => restoreForces(worn.map((x) => x.f.id))}
-          title="Раненые и техника возвращаются, недостающее — до штата, состояние — к норме. Отменить — Ctrl+Z."
-        >
-          <Icon name="restore" size={14} /> Восстановить{worn.length > 1 ? ` (${worn.length})` : ''}
-        </Btn>
       </div>
       {worn.map((x) => (
-        <div key={x.f.id} className="small">
-          «{x.f.name}»: {x.c.issues.join(', ')}
+        <div key={x.f.id} className="worn-force">
+          <div className="small">
+            <b>{x.f.name}</b>: {x.c.issues.join(', ')}
+          </div>
+          <div className="worn-actions">
+            <ForceActions force={x.f} />
+          </div>
         </div>
       ))}
     </div>

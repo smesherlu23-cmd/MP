@@ -14,6 +14,7 @@ import {
   createScenario,
   deleteBattles,
   forceStatus,
+  teamColor,
   importFile,
   newForceDialog,
   newRulesetDialog,
@@ -82,7 +83,7 @@ export function Navigator() {
     key: string,
     name: string,
     onOpen: (o: { background?: boolean; preview?: boolean }) => void,
-    opts: { sub?: string; active?: boolean; dragLib?: string; dragForce?: string; status?: { cls: string; text: string } } = {},
+    opts: { sub?: string; active?: boolean; dragLib?: string; dragForce?: string; color?: string; warn?: { cls: string; text: string } } = {},
   ) => (
     <div
       key={key}
@@ -91,7 +92,7 @@ export function Navigator() {
         opts.dragLib
           ? `${name}\nМожно перетащить в структуру шаблона или сил`
           : opts.dragForce
-            ? `${name}\nМожно перетащить на сторону сценария`
+            ? `${name}${opts.warn ? ` — ${opts.warn.text.toLowerCase()}` : ''}\nМожно перетащить на сторону сценария`
             : opts.sub
               ? `${name}\n${opts.sub}`
               : name
@@ -109,15 +110,21 @@ export function Navigator() {
       onAuxClick={(e) => e.button === 1 && onOpen({ background: true })}
       {...pressable((e) => onOpen({ background: e.ctrlKey || e.metaKey }))}
     >
-      {opts.status && <span className={`status-dot ${opts.status.cls}`} title={opts.status.text} />}
+      {opts.color && <span className="team-dot sm" style={{ background: opts.color }} aria-hidden />}
       <span>{name}</span>
       {opts.sub && <span className="sub">{opts.sub}</span>}
+      {opts.warn && (
+        <span className={`side-warn ${opts.warn.cls}`} aria-hidden>
+          <Icon name="alert" size={13} />
+        </span>
+      )}
     </div>
   );
-  const group = (title: string, items: React.ReactNode[], onDelete?: () => void, deleteTitle?: string) =>
+  const group = (title: string, items: React.ReactNode[], onDelete?: () => void, deleteTitle?: string, color?: string) =>
     items.length ? (
       <div key={`g:${title}`} className="nav-group">
         <div className="nav-group-title">
+          {color && <span className="team-dot sm" style={{ background: color }} aria-hidden />}
           <span className="grow">{title}</span>
           {onDelete && (
             <button type="button" className="nav-group-del" onClick={onDelete} title={deleteTitle}>
@@ -176,12 +183,13 @@ export function Navigator() {
           sub: x.level,
           active: isOpen('formation', `force:${x.id}`),
           dragForce: x.id,
-          status: LEVEL_LABEL[forceStatus(x).level],
+          color: teamColor(x.faction ?? ''),
+          warn: ((l) => (l === 'ready' ? undefined : LEVEL_LABEL[l]))(forceStatus(x).level),
         });
-      // Силы — по принадлежности: чьи это войска.
+      // Силы — по командам: чьи это войска; у команды свой цвет.
       const list =
         factions.length > 1
-          ? factions.map((f) => group(f || 'Без принадлежности', units.filter((u) => (u.faction?.trim() || '') === f).map(item)))
+          ? factions.map((f) => group(f || 'Без команды', units.filter((u) => (u.faction?.trim() || '') === f).map(item), undefined, undefined, teamColor(f)))
           : units.map(item);
       return { list, empty: 'Сил пока нет.' };
     }

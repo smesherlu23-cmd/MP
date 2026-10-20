@@ -15,7 +15,12 @@ import {
   locateNode,
   relinkScenario,
   restoreForce,
+  restForce,
+  healForce,
+  repairForce,
+  transferStrength,
   forceCondition,
+  type RestPart,
   plural,
   returnUnit,
   transferUnit,
@@ -41,6 +46,7 @@ import {
   tabExists,
   toast,
   toastUndoable,
+  updateSettings,
 } from './core';
 import { defaultRulesetId } from './library';
 
@@ -133,6 +139,141 @@ export function restoreForces(ids: Id[]): number {
     'good',
   );
   return todo.length;
+}
+
+/** Действие над одним подразделением сил между боями: один шаг отмены, уведомление с «Отменить». */
+function betweenStep(id: Id, label: string, fn: (f: UnitNode) => { force: UnitNode; changed: boolean }, message: (name: string) => string, nothing: string) {
+  const f = get().forces[id];
+  if (!f) return false;
+  const r = fn(f);
+  if (!r.changed) {
+    toast(nothing);
+    return false;
+  }
+  historyStep(`${label} «${f.name}»`);
+  updateForce(id, (d) => void Object.assign(d, r.force));
+  toastUndoable(message(f.name), 'good');
+  return true;
+}
+
+/** Отдых: состояние бойцов в строю — к норме на pct%. */
+export function restForceStep(id: Id, pct: number, parts: RestPart[]) {
+  return betweenStep(
+    id,
+    'отдых',
+    (f) => restForce(f, pct, parts),
+    (n) => `«${n}»: отдых ${Math.round(pct)}% — состояние бойцов восстановлено.`,
+    'Отдыхать незачем: состояние в норме.',
+  );
+}
+
+/** Лечить: раненые возвращаются в строй (не сверх штата). */
+export function healForceStep(id: Id) {
+  let count = 0;
+  return betweenStep(
+    id,
+    'лечение',
+    (f) => {
+      const r = healForce(f, rulesetOf(f));
+      count = r.count;
+      return r;
+    },
+    (n) => `«${n}»: в строй вернулись ${count} чел.`,
+    'Лечить некого: раненых нет или штат уже заполнен.',
+  );
+}
+
+/** Чинить: повреждённая техника и вооружение возвращаются в строй, состояние техники — к норме. */
+export function repairForceStep(id: Id) {
+  let count = 0;
+  return betweenStep(
+    id,
+    'ремонт',
+    (f) => {
+      const r = repairForce(f, rulesetOf(f));
+      count = r.count;
+      return r;
+    },
+    (n) => (count ? `«${n}»: отремонтировано ${count} ед. техники и вооружения.` : `«${n}»: состояние техники — в норме.`),
+    'Чинить нечего: техника в строю и исправна.',
+  );
+}
+
+/** Пополнение из другого подразделения: по типам, сколько указано. Один шаг отмены на оба подразделения. */
+export function transferStrengthStep(targetId: Id, donorId: Id, amounts: Record<Id, number>) {
+  const s = get();
+  const t = s.forces[targetId];
+  const d = s.forces[donorId];
+  if (!t || !d || t.id === d.id) return false;
+  const r = transferStrength(t, d, rulesetOf(t), amounts);
+  if (!r.changed) {
+    toast('Передавать нечего.');
+    return false;
+  }
+  historyStep(`пополнение «${t.name}» из «${d.name}»`);
+  updateForce(t.id, (x) => void Object.assign(x, r.target));
+  updateForce(d.id, (x) => void Object.assign(x, r.donor));
+  const what = [r.personnel ? `${r.personnel} чел.` : '', r.equipment ? `${r.equipment} ед. техники и вооружения` : ''].filter(Boolean).join(' и ');
+  toastUndoable(`Из «${d.name}» в «${t.name}» передано ${what}.`, 'good');
+  return true;
+}
+
+// ------------------------------------------------------------------ команды
+
+/** Палитра команд по умолчанию — различимые в обеих темах цвета. */
+export const TEAM_PALETTE = ['#3b82f6', '#ef4444', '#22c55e', '#eab308', '#a855f7', '#06b6d4', '#f97316', '#ec4899'];
+
+const teamKey = (f: UnitNode) => f.faction?.trim() || '';
+
+/** Цвет команды: заданный, иначе цвет одноимённой стороны сценария, иначе из палитры по названию. */
+export function teamColor(name: string): string {
+  const key = name.trim();
+  if (!key) return 'var(--faint)';
+  const s = get();
+  const own = s.settings.teamColors?.[key];
+  if (own) return own;
+  const low = key.toLowerCase();
+  for (const sc of Object.values(s.scenarios)) for (const sd of sc.sides) if (sd.name.trim().toLowerCase() === low && sd.color) return sd.color;
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return TEAM_PALETTE[h % TEAM_PALETTE.length];
+}
+
+/** Стороны сценариев с таким же названием, как у команды. */
+export function teamSides(name: string): { scenarioId: Id; sideId: string }[] {
+  const low = name.trim().toLowerCase();
+  if (!low) return [];
+  return Object.values(get().scenarios).flatMap((sc) =>
+    sc.sides.filter((sd) => sd.name.trim().toLowerCase() === low).map((sd) => ({ scenarioId: sc.id, sideId: sd.id })),
+  );
+}
+
+/**
+ * Команда: новое название и цвет. Название меняется у всех её сил (одним шагом отмены); по желанию — и у
+ * одноимённых сторон сценариев, чтобы новые силы со стороны попадали в ту же команду.
+ */
+export function editTeam(from: string, opts: { name: string; color: string; renameSides: boolean }) {
+  const a = from.trim();
+  const b = opts.name.trim();
+  const s = get();
+  const ids = Object.values(s.forces)
+    .filter((f) => teamKey(f) === a)
+    .map((f) => f.id);
+  const renamed = b !== a && ids.length > 0;
+  const merge = renamed && !!b && Object.values(s.forces).some((f) => teamKey(f) === b);
+  if (renamed) {
+    const sides = opts.renameSides && a ? teamSides(a) : [];
+    historyStep(`команда «${a || 'Без команды'}»`);
+    for (const id of ids) updateForce(id, (d) => void (d.faction = b || undefined));
+    for (const x of sides) updateScenario(x.scenarioId, (sc) => sc.sides.forEach((sd) => sd.id === x.sideId && (sd.name = b)));
+    toastUndoable(
+      merge
+        ? `Силы команды «${a || 'Без команды'}» перешли в «${b}».`
+        : `Команда «${a || 'Без команды'}» теперь «${b || 'Без команды'}»${sides.length ? `, стороны в сценариях — тоже (${sides.length})` : ''}.`,
+    );
+  }
+  const key = renamed ? b : a;
+  if (key && (opts.color !== teamColor(key) || renamed)) updateSettings({ teamColors: { ...(get().settings.teamColors ?? {}), [key]: opts.color } });
 }
 
 export function duplicateForce(id: Id): Id | undefined {

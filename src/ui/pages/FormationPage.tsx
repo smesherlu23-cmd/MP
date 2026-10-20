@@ -21,7 +21,7 @@ import {
 import { Crumbs } from '../components/Crumbs';
 import { Link } from '../components/Link';
 import { TypeMapModal } from '../components/RulesetTransfer';
-import { ForceHistory, ReplenishModal, RestModal } from '../components/ForceCampaign';
+import { ForceHistory } from '../components/ForceCampaign';
 import { Card, Info, Menu, Seg } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import {
@@ -46,6 +46,7 @@ import {
   duplicateForce,
   forceUsage,
   restoreForces,
+  teamColor,
   type Tab,
 } from '../store';
 import {
@@ -77,7 +78,6 @@ export function FormationPage({ tab }: { tab: Tab }) {
   const [transfer, setTransfer] = useState<Id | null>(null);
   const [drop, setDrop] = useState<{ id: Id; pos: DropPos } | null>(null);
   const [typeMap, setTypeMap] = useState<{ to: Id; ids: Id[] } | null>(null);
-  const [between, setBetween] = useState<'rest' | 'replenish' | null>(null);
   const ctxRef = useRef<Ctx | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -234,14 +234,8 @@ export function FormationPage({ tab }: { tab: Tab }) {
                   {
                     label: 'Восстановить полностью',
                     onClick: () => restoreForces([root.id]),
-                    tip: 'Раненые и техника возвращаются, недостающее — до штата, состояние — к норме',
+                    tip: 'Раненые и техника возвращаются, недостающее — до штата из резерва, состояние — к норме',
                   },
-                  {
-                    label: 'Отдых…',
-                    onClick: () => setBetween('rest'),
-                    tip: 'Раненые возвращаются в строй, техника ремонтируется, мораль и усталость приходят в норму',
-                  },
-                  { label: 'Пополнить до штата…', onClick: () => setBetween('replenish'), tip: 'Довести численность людей и техники до штата' },
                   'sep' as const,
                   !!tpl && { label: `Открыть шаблон «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
                   { label: 'Сохранить как шаблон', onClick: () => saveAsTemplate(root, rs) },
@@ -272,14 +266,14 @@ export function FormationPage({ tab }: { tab: Tab }) {
         </span>
         {!isLib && (
           <span>
-            принадлежность:{' '}
+            <span className="team-dot sm" style={{ background: teamColor(root.faction ?? '') }} /> команда:{' '}
             <input
               className="inline-input"
               list="force-factions"
               value={root.faction ?? ''}
               placeholder="чьи это силы"
               onChange={(e) => ctx.upd((d) => void (d.faction = e.target.value || undefined))}
-              title="Армия, сторона, фракция — для порядка в списке сил"
+              title="Сторона, армия, отряд — силы сгруппированы по командам, у команды свой цвет (раздел «Силы»)"
             />
             <datalist id="force-factions">
               {factions.map((f) => (
@@ -346,9 +340,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
         </span>
       </div>
 
-      {!isLib && (root.children.length > 0 || root.composition.length > 0) && (
-        <ForceReadiness force={root} onRest={() => setBetween('rest')} onReplenish={() => setBetween('replenish')} />
-      )}
+      {!isLib && (root.children.length > 0 || root.composition.length > 0) && <ForceReadiness force={root} />}
       {!root.children.length && !root.composition.length && <EmptyStart ctx={ctx} />}
       {view === 'chart' ? (
         <div className="stack">
@@ -384,8 +376,6 @@ export function FormationPage({ tab }: { tab: Tab }) {
         />
       )}
       {!isLib && <ForceHistory force={root} />}
-      {between === 'rest' && <RestModal force={root} rs={rs} onClose={() => setBetween(null)} />}
-      {between === 'replenish' && <ReplenishModal force={root} rs={rs} onClose={() => setBetween(null)} />}
       {typeMap && st.rulesets[typeMap.to] && (
         <TypeMapModal
           from={rs}

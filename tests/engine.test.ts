@@ -9,6 +9,8 @@ import {
   applyBattleToForces,
   extractForces,
   forceFromTemplate,
+  ROOT_STATE,
+  STATE_KEYS,
   forceRefIssues,
   partOf,
   resolveScenario,
@@ -55,6 +57,11 @@ import {
   stepUntilEvent,
   restForce,
   restoreForce,
+  healForce,
+  repairForce,
+  betweenNeeds,
+  transferStrength,
+  strengthByType,
   forceCondition,
   replenishForce,
   recoverableOf,
@@ -969,7 +976,7 @@ describe('участки, удары, эффекты, условия плана'
 describe('силы между боями, варианты прогонов, перенос между наборами', () => {
   const rs = makeUniversalRuleset();
 
-  it('итоги боя — в боевой путь; отдых возвращает раненых, пополнение — до штата', () => {
+  it('итоги боя — в боевой путь; отдых — состояние, лечение — раненые, ремонт — техника, пополнение — до штата', () => {
     const { scenario, forces } = extractForces(makeDemoScenario(), new Set(), () => newId('u'));
     const map = Object.fromEntries(forces.map((f) => [f.id, f])) as Record<string, UnitNode>;
     const b = createBattle(resolveScenario(scenario, map), rs, { seed: 'R1' });
@@ -979,12 +986,62 @@ describe('силы между боями, варианты прогонов, п�
     expect(f.history?.[0]).toMatchObject({ kind: 'battle', battleId: b.id });
     const rec = recoverableOf(f, rs);
     expect(rec.personnel).toBeGreaterThan(0);
-    const r = restForce(f, 10, rs);
-    expect(r.personnel).toBeGreaterThan(0);
-    expect(recoverableOf(r.force, rs).personnel).toBeLessThan(rec.personnel);
-    expect(r.force.history!.at(-1)!.kind).toBe('rest');
-    const full = replenishForce(r.force, rs, { personnel: true, equipment: true });
-    walkUnits(full.force, (n) => n.composition.forEach((c) => expect(c.current).toBe(c.authorized)));
+    const needs = betweenNeeds(f, rs);
+    expect(needs.rest).toBe(true);
+    expect(needs.heal).toBeGreaterThan(0);
+
+    // Отдых: только состояние бойцов, раненые не возвращаются; 50% — половина пути до нормы.
+    const before = forceCondition(f, rs);
+    const half = restForce(f, 50);
+    expect(half.changed).toBe(true);
+    expect(recoverableOf(half.force, rs)).toEqual(rec);
+    expect(forceCondition(half.force, rs).persCur).toBe(before.persCur);
+    const mid = forceCondition(half.force, rs).state.morale;
+    expect(mid).toBeGreaterThan(before.state.morale);
+    expect(mid).toBeLessThan(ROOT_STATE.morale);
+    expect(half.force.history!.at(-1)).toMatchObject({ kind: 'rest', title: 'Отдых 50%' });
+    const onlySpirit = restForce(f, 100, ['spirit']);
+    walkUnits(onlySpirit.force, (n) => expect(n.state.morale ?? ROOT_STATE.morale).toBeGreaterThanOrEqual(ROOT_STATE.morale));
+    expect(forceCondition(onlySpirit.force, rs).state.ammo).toBe(before.state.ammo);
+    const full = restForce(f, 100);
+    expect(betweenNeeds(full.force, rs).rest).toBe(false);
+    expect(restForce(full.force, 100).changed).toBe(false);
+
+    // Лечить — раненые в строй; чинить — техника из ремонта.
+    const healed = healForce(f, rs);
+    expect(healed.count).toBe(needs.heal);
+    expect(betweenNeeds(healed.force, rs).heal).toBe(0);
+    expect(healed.force.history!.at(-1)).toMatchObject({ kind: 'heal', personnel: needs.heal });
+    if (needs.repair) {
+      const fixed = repairForce(healed.force, rs);
+      expect(fixed.count).toBe(needs.repair);
+      expect(recoverableOf(fixed.force, rs).equipment).toBe(0);
+    }
+
+    const filled = replenishForce(healed.force, rs, { personnel: true, equipment: true });
+    walkUnits(filled.force, (n) => n.composition.forEach((c) => expect(c.current).toBe(c.authorized)));
+  });
+
+  it('пополнение из другого подразделения: у одного прибавилось, у другого убыло ровно столько же', () => {
+    const { scenario, forces } = extractForces(makeDemoScenario(), new Set(), () => newId('u'));
+    const map = Object.fromEntries(forces.map((f) => [f.id, f])) as Record<string, UnitNode>;
+    const b = createBattle(resolveScenario(scenario, map), rs, { seed: 'R3' });
+    runToEnd(b);
+    const target = applyBattleToForces(b, map).updated[0];
+    const donor = forceFromTemplate(toTemplate(target), { name: 'Резервный батальон' });
+    const gap = strengthByType(target);
+    const typeId = [...gap.entries()].find(([, x]) => x.authorized > x.current)![0];
+    const want = gap.get(typeId)!.authorized - gap.get(typeId)!.current;
+    const donorHad = strengthByType(donor).get(typeId)!.current;
+    const r = transferStrength(target, donor, rs, { [typeId]: want + 1000 });
+    expect(r.changed).toBe(true);
+    expect(strengthByType(r.target).get(typeId)!.current).toBe(gap.get(typeId)!.authorized);
+    expect(strengthByType(r.donor).get(typeId)!.current).toBe(donorHad - want);
+    walkUnits(r.target, (n) => n.composition.forEach((c) => expect(c.current).toBeLessThanOrEqual(c.authorized)));
+    walkUnits(r.donor, (n) => n.composition.forEach((c) => expect(c.current).toBeGreaterThanOrEqual(0)));
+    expect(r.target.history!.at(-1)).toMatchObject({ kind: 'transfer', title: 'Пополнение из «Резервный батальон»' });
+    expect(r.donor.history!.at(-1)!.kind).toBe('transfer');
+    expect(transferStrength(target, donor, rs, { [typeId]: 0 }).changed).toBe(false);
   });
 
   it('полное восстановление одной кнопкой: штат, раненые, состояние — к норме, опыт сохраняется', () => {
@@ -1007,7 +1064,13 @@ describe('силы между боями, варианты прогонов, п�
         expect(c.recoverable).toBeUndefined();
       });
       expect(n.state.experience).toBe(exp.get(n.id));
-      expect(Object.keys(n.state).filter((k) => k !== 'experience')).toEqual([]);
+      // Остаётся только то, что лучше нормы (например, мораль после победы).
+      for (const k of STATE_KEYS) {
+        const v = n.state[k];
+        if (k === 'experience' || v === undefined) continue;
+        if (k === 'fatigue') expect(v).toBeLessThan(ROOT_STATE[k]);
+        else expect(v).toBeGreaterThan(ROOT_STATE[k]);
+      }
     });
     expect(r.force.history!.at(-1)).toMatchObject({ kind: 'restore', personnel: r.personnel });
     const after = forceCondition(r.force, rs);

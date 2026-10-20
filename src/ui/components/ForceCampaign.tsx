@@ -1,11 +1,42 @@
-// Силы между боями: отдых (раненые возвращаются, техника ремонтируется, состояние приходит в норму),
-// пополнение до штата и боевой путь — бои, отдых и пополнения подразделения.
+// Силы между боями: отдых (состояние бойцов в строю — к норме на N%), лечение раненых, ремонт техники,
+// пополнение — из резерва или из другого подразделения — и боевой путь подразделения.
 
 import { useMemo, useState } from 'react';
-import { plural, recoverableOf, replenishForce, restForce, type ForceCondition, type ForceRecord, type Ruleset, type UnitNode } from '../../engine';
-import { fmtDate, historyStep, openTab, toastUndoable, updateForce, useApp } from '../store';
+import { createPortal } from 'react-dom';
+import {
+  betweenNeeds,
+  forceCondition,
+  REST_PART_IDS,
+  REST_PARTS,
+  ROOT_STATE,
+  replenishForce,
+  restForce,
+  STATE_LABELS,
+  strengthByType,
+  transferStrength,
+  type ForceCondition,
+  type ForceRecord,
+  type Id,
+  type RestPart,
+  type Ruleset,
+  type StateKey,
+  type UnitNode,
+} from '../../engine';
+import {
+  defaultRulesetId,
+  fmtDate,
+  healForceStep,
+  historyStep,
+  openTab,
+  repairForceStep,
+  restForceStep,
+  toastUndoable,
+  transferStrengthStep,
+  updateForce,
+  useApp,
+} from '../store';
 import { Icon, type IconName } from './Icon';
-import { Btn, Check, Field, Modal, Num, Section, Txt, fmt0 } from './ui';
+import { Btn, Check, Field, Modal, Num, Range, Section, Seg, Txt, fmt0 } from './ui';
 
 /** Боеготовность сил — подпись и цвет. */
 export const LEVEL_LABEL: Record<ForceCondition['level'], { text: string; cls: string }> = {
@@ -15,15 +46,23 @@ export const LEVEL_LABEL: Record<ForceCondition['level'], { text: string; cls: s
 };
 
 const signed = (v: number | undefined, unit: string) => (v ? `${v > 0 ? '+' : '−'}${fmt0(Math.abs(v))} ${unit}` : '');
+const rulesetIdOf = (f: UnitNode) => f.rulesetId ?? defaultRulesetId() ?? '';
+const useRuleset = (f: UnitNode): Ruleset | undefined => useApp((s) => s.rulesets[rulesetIdOf(f)]);
+const PERCENT_KEYS = new Set<StateKey>(['ammo', 'fuel', 'equipment']);
+const fmtState = (k: StateKey, v: number) => `${Math.round(v)}${PERCENT_KEYS.has(k) ? '%' : ''}`;
 
-export function RestModal({ force, rs, onClose }: { force: UnitNode; rs: Ruleset | undefined; onClose: () => void }) {
-  const [days, setDays] = useState(7);
-  const preview = useMemo(() => restForce(force, days, rs), [force, days, rs]);
-  const rec = recoverableOf(force, rs);
-  const k = rs?.coefficients ?? {};
+/** Отдых: насколько (в % разницы до нормы) и что восстанавливать; видно, что станет с показателями. */
+export function RestModal({ force, onClose }: { force: UnitNode; onClose: () => void }) {
+  const rs = useRuleset(force);
+  const [pct, setPct] = useState(100);
+  const [parts, setParts] = useState<RestPart[]>(REST_PART_IDS);
+  const preview = useMemo(() => restForce(force, pct, parts), [force, pct, parts]);
+  const before = forceCondition(force, rs).state;
+  const after = forceCondition(preview.force, rs).state;
+  const keys = REST_PARTS.filter((x) => parts.includes(x.id)).flatMap((x) => x.keys as readonly StateKey[]);
   return (
     <Modal
-      title={`Отдых и восстановление — ${force.name}`}
+      title={`Отдых — ${force.name}`}
       onClose={onClose}
       footer={
         <>
@@ -31,101 +70,336 @@ export function RestModal({ force, rs, onClose }: { force: UnitNode; rs: Ruleset
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn
             kind="primary"
+            disabled={!preview.changed}
             onClick={() => {
-              historyStep(`отдых «${force.name}»`);
-              updateForce(force.id, (d) => void Object.assign(d, preview.force));
-              toastUndoable(
-                `«${force.name}»: отдых ${days} ${plural(days, 'день', 'дня', 'дней')} — в строй вернулось ${fmt0(preview.personnel)} чел.${preview.equipment ? `, отремонтировано ${preview.equipment} ед.` : ''}`,
-              );
+              restForceStep(force.id, pct, parts);
               onClose();
             }}
           >
-            Отдых
+            Отдых {pct}%
           </Btn>
         </>
       }
     >
-      <div className="fields two">
-        <Field
-          label="Дней отдыха"
-          hint={`Темпы — в наборе правил, «Коэффициенты» → «Между боями (силы)»: раненые ${k.restWoundedPerDay ?? 4}%/день, ремонт ${k.restRepairPerDay ?? 6}%/день, состояние ${k.restRecoverPerDay ?? 15}%/день. Сверх штата в строй не возвращаются.`}
-        >
-          <Num value={days} onChange={(v) => setDays(Math.max(1, Math.min(365, Math.round(v))))} min={1} max={365} integer width="100%" />
-        </Field>
-        <Field label="Ждут возвращения в строй">
-          <div style={{ paddingTop: 6 }}>
-            {fmt0(rec.personnel)} чел. раненых{rec.equipment ? `, ${fmt0(rec.equipment)} ед. техники и вооружения в ремонте` : ''}
-          </div>
-        </Field>
+      <div className="muted small" style={{ marginBottom: 12 }}>
+        Восстанавливается состояние бойцов, которые сейчас в строю. Раненые и техника в ремонте не возвращаются — для этого «Лечить» и «Чинить», а недостающих —
+        «Пополнить».
       </div>
-      <div className="note" style={{ marginTop: 12 }}>
-        За {days} {plural(days, 'день', 'дня', 'дней')} вернётся в строй: <b>{fmt0(preview.personnel)} чел.</b>
-        {rec.equipment > 0 && (
-          <>
-            , отремонтировано: <b>{fmt0(preview.equipment)} ед.</b>
-          </>
-        )}
-        . Мораль, слаженность, готовность, усталость, боезапас, топливо и снаряжение приблизятся к норме.
+      <Field label="Насколько восстановить, % до нормы">
+        <div className="row rest-pct">
+          <Range value={pct} onChange={(v) => setPct(Math.max(0, Math.min(100, Math.round(v))))} min={0} max={100} step={5} />
+          {[25, 50, 75, 100].map((v) => (
+            <Btn key={v} sm kind={pct === v ? 'primary' : 'ghost'} onClick={() => setPct(v)}>
+              {v}%
+            </Btn>
+          ))}
+        </div>
+      </Field>
+      <div className="row" style={{ gap: 16, margin: '10px 0 12px', flexWrap: 'wrap' }}>
+        {REST_PARTS.map((x) => (
+          <Check key={x.id} value={parts.includes(x.id)} onChange={(v) => setParts((p) => (v ? [...p, x.id] : p.filter((y) => y !== x.id)))}>
+            {x.label}
+          </Check>
+        ))}
       </div>
+      {keys.length > 0 && (
+        <table className="tbl rest-preview">
+          <thead>
+            <tr>
+              <th />
+              <th className="num">Сейчас</th>
+              <th className="num">После отдыха</th>
+              <th className="num">Норма</th>
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((k) => (
+              <tr key={k}>
+                <td>{STATE_LABELS[k]}</td>
+                <td className="num">{fmtState(k, before[k])}</td>
+                <td className={`num${Math.round(after[k]) !== Math.round(before[k]) ? ' good' : ''}`}>
+                  <b>{fmtState(k, after[k])}</b>
+                </td>
+                <td className="num faint">{fmtState(k, ROOT_STATE[k])}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </Modal>
   );
 }
 
-export function ReplenishModal({ force, rs, onClose }: { force: UnitNode; rs: Ruleset | undefined; onClose: () => void }) {
+/** Пополнение: из резерва (до штата) или из другого подразделения — по типам, сколько передать. */
+export function ReplenishModal({ force, onClose }: { force: UnitNode; onClose: () => void }) {
+  const rs = useRuleset(force);
+  const forces = useApp((s) => s.forces);
+  const [source, setSource] = useState<'reserve' | 'force'>('reserve');
   const [personnel, setPersonnel] = useState(true);
   const [equipment, setEquipment] = useState(true);
   const [note, setNote] = useState('');
-  const preview = useMemo(() => replenishForce(force, rs, { personnel, equipment }, note || undefined), [force, rs, personnel, equipment, note]);
+  const reserve = useMemo(() => replenishForce(force, rs, { personnel, equipment }, note || undefined), [force, rs, personnel, equipment, note]);
+
+  // Чего не хватает до штата — по типам; доноры — силы с тем же набором правил, своя команда — первой.
+  const need = useMemo(
+    () =>
+      [...strengthByType(force).entries()]
+        .map(([typeId, x]) => ({ typeId, gap: Math.max(0, x.authorized - x.current), rec: x.recoverable }))
+        .filter((x) => x.gap > 0),
+    [force],
+  );
+  const team = force.faction?.trim() || '';
+  const donors = useMemo(
+    () =>
+      Object.values(forces)
+        .filter((f) => f.id !== force.id && rulesetIdOf(f) === rulesetIdOf(force))
+        .map((f) => {
+          const st = strengthByType(f);
+          return { f, st, can: need.reduce((a, x) => a + Math.min(x.gap, st.get(x.typeId)?.current ?? 0), 0) };
+        })
+        .sort(
+          (a, b) =>
+            Number((b.f.faction?.trim() || '') === team) - Number((a.f.faction?.trim() || '') === team) ||
+            b.can - a.can ||
+            a.f.name.localeCompare(b.f.name, 'ru'),
+        ),
+    [forces, force, need, team],
+  );
+  const ownTeam = (f: UnitNode) => (f.faction?.trim() || '') === team;
+  // По умолчанию — из своей команды (где есть нужное); из чужой — только если выбрать явно.
+  const [donorId, setDonorId] = useState<Id>(() => donors.find((d) => ownTeam(d.f) && d.can > 0)?.f.id ?? donors.find((d) => ownTeam(d.f))?.f.id ?? '');
+  const donor = donors.find((d) => d.f.id === donorId);
+  const [amounts, setAmounts] = useState<Record<Id, number>>({});
+  const maxOf = (typeId: Id) => Math.min(need.find((x) => x.typeId === typeId)?.gap ?? 0, donor?.st.get(typeId)?.current ?? 0);
+  const amountOf = (typeId: Id) => Math.min(amounts[typeId] ?? Number.POSITIVE_INFINITY, maxOf(typeId));
+  const plan = Object.fromEntries(need.map((x) => [x.typeId, amountOf(x.typeId)]));
+  const transfer = donor ? transferStrength(force, donor.f, rs, plan) : null;
+  const typeName = (id: Id) => rs?.componentTypes.find((t) => t.id === id)?.name ?? id;
+  const wounded = need.some((x) => x.rec > 0);
+
+  const apply = () => {
+    if (source === 'force') {
+      if (donor) transferStrengthStep(force.id, donor.f.id, plan);
+    } else {
+      historyStep(`пополнение «${force.name}»`);
+      updateForce(force.id, (d) => void Object.assign(d, reserve.force));
+      toastUndoable(`«${force.name}» пополнено: +${fmt0(reserve.personnel)} чел.${reserve.equipment ? `, +${reserve.equipment} ед.` : ''}`, 'good');
+    }
+    onClose();
+  };
+  const ok = source === 'force' ? !!transfer?.changed : reserve.personnel > 0 || reserve.equipment > 0;
+  const donorAfter = transfer ? forceCondition(transfer.donor, rs) : null;
+  // Личный состав считается вместе с экипажами техники — сколько людей уйдёт у донора всего.
+  const donorBefore = donor ? forceCondition(donor.f, rs) : null;
+  const withCrews = donorAfter && donorBefore ? donorBefore.persCur - donorAfter.persCur : 0;
+
   return (
     <Modal
-      title={`Пополнить до штата — ${force.name}`}
+      title={`Пополнить — ${force.name}`}
       onClose={onClose}
+      wide={source === 'force'}
       footer={
         <>
           <span className="muted small grow">Запишется в боевой путь. Отменить — Ctrl+Z.</span>
           <Btn onClick={onClose}>Отмена</Btn>
-          <Btn
-            kind="primary"
-            disabled={!preview.personnel && !preview.equipment}
-            onClick={() => {
-              historyStep(`пополнение «${force.name}»`);
-              updateForce(force.id, (d) => void Object.assign(d, preview.force));
-              toastUndoable(`«${force.name}» пополнено: +${fmt0(preview.personnel)} чел.${preview.equipment ? `, +${preview.equipment} ед.` : ''}`);
-              onClose();
-            }}
-          >
+          <Btn kind="primary" disabled={!ok} onClick={apply}>
             Пополнить
           </Btn>
         </>
       }
     >
-      <div className="stack" style={{ gap: 8 }}>
-        <Check value={personnel} onChange={setPersonnel}>
-          личный состав
-        </Check>
-        <Check value={equipment} onChange={setEquipment}>
-          техника и вооружение
-        </Check>
-        <Field label="Примечание (откуда пополнение)">
-          <Txt value={note} onChange={setNote} placeholder="маршевая рота, из резерва…" />
-        </Field>
-        <div className="note">
-          Придёт: <b>{fmt0(preview.personnel)} чел.</b>
-          {preview.equipment ? (
-            <>
-              , <b>{fmt0(preview.equipment)} ед.</b> техники и вооружения
-            </>
-          ) : null}
-          . Раненые остаются ранеными — после отдыха вернутся, но не сверх штата.
-        </div>
+      <div style={{ marginBottom: 12 }}>
+        <Seg
+          value={source}
+          onChange={setSource}
+          options={[
+            { value: 'reserve', label: 'Из резерва' },
+            { value: 'force', label: 'Из другого подразделения', title: 'Люди и техника переходят из другого подразделения сил' },
+          ]}
+        />
       </div>
+      {source === 'reserve' ? (
+        <div className="stack" style={{ gap: 8 }}>
+          <Check value={personnel} onChange={setPersonnel}>
+            личный состав
+          </Check>
+          <Check value={equipment} onChange={setEquipment}>
+            техника и вооружение
+          </Check>
+          <Field label="Примечание (откуда пополнение)">
+            <Txt value={note} onChange={setNote} placeholder="маршевая рота, из резерва…" />
+          </Field>
+          <div className="note">
+            До штата придёт: <b>{fmt0(reserve.personnel)} чел.</b>
+            {reserve.equipment ? (
+              <>
+                , <b>{fmt0(reserve.equipment)} ед.</b> техники и вооружения
+              </>
+            ) : null}
+            .
+            {wounded && ' Раненые и техника в ремонте займут места в штате, только если они останутся свободными, — поэтому сначала лучше «Лечить» и «Чинить».'}
+          </div>
+        </div>
+      ) : !donors.length ? (
+        <div className="muted">Других подразделений сил с тем же набором правил нет.</div>
+      ) : (
+        <div className="stack" style={{ gap: 10 }}>
+          <Field label="Откуда">
+            <select
+              value={donorId}
+              onChange={(e) => {
+                setDonorId(e.target.value);
+                setAmounts({});
+              }}
+            >
+              {!donor && <option value="">— выберите подразделение —</option>}
+              {[true, false].map((own) => {
+                const list = donors.filter((d) => ownTeam(d.f) === own);
+                return list.length ? (
+                  <optgroup key={String(own)} label={own ? (team ? `Команда «${team}»` : 'Без команды') : 'Другие команды'}>
+                    {list.map((d) => (
+                      <option key={d.f.id} value={d.f.id}>
+                        {d.f.name}
+                        {!own && d.f.faction ? ` · ${d.f.faction}` : ''}
+                        {d.can ? '' : ' — нужного нет'}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null;
+              })}
+            </select>
+          </Field>
+          {!donor && (
+            <div className="muted small">
+              {donors.some((d) => ownTeam(d.f))
+                ? 'Выберите подразделение, из которого перейдут люди и техника.'
+                : `В ${team ? `команде «${team}»` : 'этой группе'} нет других подразделений с тем же набором правил — можно взять из другой команды.`}
+            </div>
+          )}
+          {donor && (
+            <table className="tbl transfer-table">
+              <thead>
+                <tr>
+                  <th>Тип</th>
+                  <th className="num">Не хватает</th>
+                  <th className="num">У донора в строю</th>
+                  <th className="num">Передать</th>
+                </tr>
+              </thead>
+              <tbody>
+                {need.map((x) => (
+                  <tr key={x.typeId}>
+                    <td>{typeName(x.typeId)}</td>
+                    <td className="num">
+                      {fmt0(x.gap)}
+                      {x.rec > 0 && <span className="faint small"> (вне строя {fmt0(x.rec)})</span>}
+                    </td>
+                    <td className="num">{fmt0(donor?.st.get(x.typeId)?.current ?? 0)}</td>
+                    <td className="num">
+                      <Num
+                        value={amountOf(x.typeId)}
+                        onChange={(v) => setAmounts((a) => ({ ...a, [x.typeId]: Math.max(0, Math.round(v)) }))}
+                        min={0}
+                        max={maxOf(x.typeId)}
+                        integer
+                        width={72}
+                        disabled={!maxOf(x.typeId)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {transfer?.changed && donorAfter && (
+            <div className="note">
+              Перейдёт: <b>{fmt0(transfer.personnel)} чел.</b>
+              {transfer.equipment > 0 && (
+                <>
+                  , <b>{fmt0(transfer.equipment)} ед.</b> техники и вооружения
+                  {withCrews > transfer.personnel && ` (вместе с экипажами — ${fmt0(withCrews)} чел.)`}
+                </>
+              )}
+              . У «{donor?.f.name}» останется {fmt0(donorAfter.persCur)} из {fmt0(donorAfter.persAuth)} чел.
+              {donorAfter.equipAuth > 0 && `, техники ${fmt0(donorAfter.equipCur)} из ${fmt0(donorAfter.equipAuth)}`}.
+              {wounded &&
+                ' Раненые и техника в ремонте займут места в штате, только если они останутся свободными, — поэтому сначала лучше «Лечить» и «Чинить».'}
+            </div>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }
 
-const KIND_ICON: Record<ForceRecord['kind'], IconName> = { battle: 'battle', rest: 'rest', replenish: 'replenish', restore: 'restore' };
+/** Действия между боями: отдых, лечение, ремонт, пополнение — каждое доступно, когда есть что делать. */
+export function ForceActions({ force, grid }: { force: UnitNode; grid?: boolean }) {
+  const rs = useRuleset(force);
+  const [modal, setModal] = useState<'rest' | 'replenish' | null>(null);
+  const n = betweenNeeds(force, rs);
+  const missing = n.personnelMissing + n.equipmentMissing;
+  // В карточке и на панели — сеткой одинаковых кнопок, в заметке сценария — строкой.
+  const kind = grid ? undefined : 'ghost';
+  const buttons = (
+    <>
+      <Btn
+        sm
+        kind={kind}
+        disabled={!n.rest}
+        onClick={() => setModal('rest')}
+        title={n.rest ? 'Восстановить мораль, усталость, слаженность, боезапас бойцов в строю' : 'Состояние в норме'}
+      >
+        <Icon name="rest" size={14} /> Отдых…
+      </Btn>
+      <Btn
+        sm
+        kind={kind}
+        disabled={!n.heal}
+        onClick={() => healForceStep(force.id)}
+        title={n.heal ? `Вернуть в строй раненых: ${fmt0(n.heal)} чел.` : 'Раненых нет'}
+      >
+        <Icon name="heal" size={14} /> Лечить{n.heal ? ` (${fmt0(n.heal)})` : ''}
+      </Btn>
+      <Btn
+        sm
+        kind={kind}
+        disabled={!n.repair && !n.vehicleCondition}
+        onClick={() => repairForceStep(force.id)}
+        title={
+          n.repair
+            ? `Вернуть в строй технику и вооружение из ремонта: ${fmt0(n.repair)} ед.`
+            : n.vehicleCondition
+              ? 'Привести состояние техники в норму'
+              : 'Техника в строю и исправна'
+        }
+      >
+        <Icon name="wrench" size={14} /> Чинить{n.repair ? ` (${fmt0(n.repair)})` : ''}
+      </Btn>
+      <Btn sm kind={kind} disabled={!missing} onClick={() => setModal('replenish')} title={missing ? 'Из резерва или из другого подразделения' : 'Полный штат'}>
+        <Icon name="replenish" size={14} /> Пополнить…
+      </Btn>
+    </>
+  );
+  return (
+    <>
+      {grid ? <div className="force-actions">{buttons}</div> : buttons}
+      {modal === 'rest' && createPortal(<RestModal force={force} onClose={() => setModal(null)} />, document.body)}
+      {modal === 'replenish' && createPortal(<ReplenishModal force={force} onClose={() => setModal(null)} />, document.body)}
+    </>
+  );
+}
 
-/** Боевой путь сил: бои (с исходом и потерями), отдых, пополнения. */
+const KIND_ICON: Record<ForceRecord['kind'], IconName> = {
+  battle: 'battle',
+  rest: 'rest',
+  heal: 'heal',
+  repair: 'wrench',
+  replenish: 'replenish',
+  transfer: 'transfer',
+  restore: 'restore',
+};
+
+/** Боевой путь сил: бои (с исходом и потерями), отдых, лечение, ремонт, пополнения. */
 export function ForceHistory({ force }: { force: UnitNode }) {
   const list = force.history ?? [];
   const index = useApp((s) => s.battleIndex);
@@ -134,13 +408,13 @@ export function ForceHistory({ force }: { force: UnitNode }) {
   const summary = list.length ? `боёв: ${battles}${lost > 0 ? `, потери за всё время: ${fmt0(lost)} чел.` : ''}` : 'пока пусто';
   return (
     <Section id="force-history" title="Боевой путь" summary={summary} defaultOpen={list.length > 0}>
-      {!list.length && <div className="muted">Здесь появятся бои, итоги которых записаны в эти силы, а также отдых и пополнения.</div>}
+      {!list.length && <div className="muted">Здесь появятся бои, итоги которых записаны в эти силы, а также отдых, лечение, ремонт и пополнения.</div>}
       <div className="stack" style={{ gap: 4 }}>
         {[...list].reverse().map((x, i) => (
           <div key={i} className="history-row">
             <span className="faint small nowrap">{fmtDate(x.at)}</span>
             <span className="history-icon">
-              <Icon name={KIND_ICON[x.kind]} size={14} />
+              <Icon name={KIND_ICON[x.kind] ?? 'dot'} size={14} />
             </span>
             <span className="grow" style={{ minWidth: 0 }}>
               {x.battleId && index[x.battleId] ? (

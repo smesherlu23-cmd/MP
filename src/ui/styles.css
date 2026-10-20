@@ -364,7 +364,8 @@ a:hover,
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.side-item > span:first-child {
+.side-item > span:first-child,
+.side-item > .team-dot + span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3972,11 +3973,18 @@ span.wf-add {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fc-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.force-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
   margin-top: 2px;
+}
+.force-actions .btn {
+  justify-content: center;
+  gap: 6px;
+}
+.fc-head > .btn.icon {
+  margin: -3px -6px 0 -4px;
 }
 
 .readiness {
@@ -4018,12 +4026,8 @@ span.wf-add {
   flex-direction: column;
   gap: 8px;
 }
-.rd-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+.readiness .force-actions {
+  min-width: 270px;
 }
 .worn-forces {
   display: flex;
@@ -4041,4 +4045,105 @@ span.wf-add {
 .side-item .status-dot {
   flex-shrink: 0;
   margin-right: 0;
+}
+
+/* ---------- команды: цвет и название */
+
+.team-dot {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 2px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 50%;
+  vertical-align: -2px;
+}
+button.team-dot {
+  cursor: pointer;
+}
+button.team-dot:hover {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 14%, transparent);
+}
+.team-dot.sm {
+  width: 9px;
+  height: 9px;
+  border-width: 0;
+  vertical-align: 0;
+}
+.team-head h3 {
+  margin: 0;
+}
+.team-head .faint {
+  margin-left: 4px;
+}
+.side-warn {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.side-warn.warn {
+  color: var(--warn);
+}
+.side-warn.bad {
+  color: var(--bad);
+}
+.team-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.team-swatch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 15%, transparent);
+}
+.team-swatch.on {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 2px var(--panel);
+}
+.team-swatch.custom {
+  background: var(--panel3);
+  color: var(--muted);
+}
+.team-swatch.custom input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.rest-pct {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.rest-pct .range-field {
+  flex: 1;
+  min-width: 220px;
+}
+.rest-preview td.good b {
+  color: var(--good);
+}
+.worn-force {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
+}
+.worn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: -6px;
+}
+.transfer-table td {
+  vertical-align: middle;
 }

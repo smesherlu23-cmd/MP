@@ -117,48 +117,58 @@ test('часть сил передаётся в другое подраздел�
   expect(errors).toEqual([]);
 });
 
-test('раздел «Силы»: что пострадало в бою — видно сразу, восстанавливается одной кнопкой', async ({ page }) => {
+test('раздел «Силы»: команды с цветом и названием, пополнение из другого подразделения', async ({ page }) => {
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
   await page.getByRole('button', { name: 'До конца' }).click();
   await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
 
-  // В сценарии — напоминание, что силы не восстановлены.
+  // В сценарии — напоминание и действия прямо у сил.
   await openFromNav(page, 'атака на высоту');
   const worn = page.locator('.worn-forces');
   await expect(worn).toHaveCount(2);
   await expect(worn.first()).toContainText('не восстановлены');
+  await expect(worn.first().getByRole('button', { name: /^Лечить/ })).toBeEnabled();
 
-  // Раздел «Силы»: сводка, фильтр, кнопка «Восстановить всех».
+  // Раздел «Силы»: группы по командам, общего «Восстановить всех» нет.
   await (await navSec(page, 'Силы')).locator('.nav-item').first().click();
   await expect(page.locator('.page-head h1')).toHaveText('Силы');
-  const summary = page.locator('.forces-summary');
-  await expect(summary).toContainText('раненых ждут возвращения');
-  await page
-    .locator('.catalog-bar')
-    .getByRole('button', { name: /^Ниже нормы/ })
-    .click();
-  await expect(page.locator('.force-card')).toHaveCount(2);
-  await expect(page.locator('.force-card .badge').first()).not.toHaveText('Боеготовы');
-  await summary.getByRole('button', { name: /Восстановить всех/ }).click();
-  await expect(page.locator('.force-card')).toHaveCount(0);
-  await page
-    .locator('.catalog-bar')
-    .getByRole('button', { name: /^Боеготовы/ })
-    .click();
-  await expect(page.locator('.force-card')).toHaveCount(4);
-  await expect(summary.getByRole('button', { name: /Восстановить всех/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Восстановить всех/ })).toHaveCount(0);
+  const blue = page.locator('.team-group', { hasText: 'Синие' });
+  await expect(blue.locator('.force-card')).toHaveCount(2);
 
-  // Ctrl+Z возвращает потери; в сценарии напоминание исчезает после восстановления.
-  await page.keyboard.press('Control+z');
-  await expect(summary.getByRole('button', { name: /Восстановить всех/ })).toBeEnabled();
+  // Переименовать команду: у её сил и у одноимённых сторон сценариев.
+  await blue.getByRole('button', { name: 'Название и цвет', exact: true }).click();
+  await page.locator('.modal input').first().fill('Север');
+  await page.locator('.modal .team-swatch').nth(2).click();
+  await expect(page.locator('.modal')).toContainText('переименовать и стороны');
+  await page.locator('.modal').getByRole('button', { name: 'Сохранить' }).click();
+  const north = page.locator('.team-group', { hasText: 'Север' });
+  await expect(north.locator('.force-card')).toHaveCount(2);
+  await expect(page.locator('.nav-sec[data-sec="forces"] .nav-group-title', { hasText: 'Север' })).toHaveCount(1);
   await openFromNav(page, 'атака на высоту');
-  await expect(worn).toHaveCount(2);
-  await worn
-    .first()
-    .getByRole('button', { name: /Восстановить/ })
-    .click();
-  await expect(worn).toHaveCount(1);
+  await expect(page.locator('.side-card .title-input').first()).toHaveValue('Север');
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('.side-card .title-input').first()).toHaveValue('Синие');
+  await page.keyboard.press('Control+y');
+
+  // Новые силы в команде «Север» — и из них пополнить потрёпанный батальон.
+  await (await navSec(page, 'Силы')).locator('.nav-item').first().click();
+  await north.getByRole('button', { name: 'Силы', exact: true }).click();
+  await page.locator('.modal select').selectOption({ label: 'Мотострелковый батальон (пример)' });
+  await page.locator('.modal .btn.primary').click();
+  await (await navSec(page, 'Силы')).locator('.nav-item').first().click();
+  await expect(north.locator('.force-card')).toHaveCount(3);
+  const card = north.locator('.force-card', { hasText: '1-й мотострелковый' });
+  const persBefore = await card.locator('.fc-meter').first().locator('b').textContent();
+  await card.getByRole('button', { name: 'Пополнить…' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Из другого подразделения' }).click();
+  await expect(page.locator('.modal select')).toContainText('Мотострелковый батальон');
+  await expect(page.locator('.modal .note')).toContainText('Перейдёт');
+  await page.locator('.modal').getByRole('button', { name: 'Пополнить', exact: true }).click();
+  await expect(card.locator('.fc-meter').first().locator('b')).not.toHaveText(persBefore!);
+  const donor = north.locator('.force-card', { hasText: /^Мотострелковый батальон/ });
+  await expect(donor.locator('.badge')).not.toHaveText('Боеготовы');
   expect(errors).toEqual([]);
 });
