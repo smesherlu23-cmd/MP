@@ -273,7 +273,7 @@ export interface TransferOrigin {
 /** Запись боевого пути сил. */
 export interface ForceRecord {
   at: string;
-  kind: 'battle' | 'rest' | 'replenish';
+  kind: 'battle' | 'rest' | 'replenish' | 'restore';
   title: string;
   battleId?: Id;
   /** Итог боя для стороны этих сил: «Победа (решительная)», «Поражение»… */

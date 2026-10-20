@@ -35,6 +35,7 @@ import {
   type UnitNode,
 } from '../../engine';
 import { effectsText } from '../components/EffectsEditor';
+import { Icon } from '../components/Icon';
 import { CommanderSelect } from '../components/CommanderSelect';
 import { Crumbs } from '../components/Crumbs';
 import { AddUnitsModal } from '../components/AddUnits';
@@ -50,7 +51,9 @@ import {
   deleteScenario,
   duplicateScenario,
   exportJson,
+  forceStatus,
   historyStep,
+  restoreForces,
   openTab,
   putBattle,
   scenarioForBattle,
@@ -305,6 +308,38 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Силы стороны, не восстановившиеся после прошлых боёв: что с ними и кнопка «Восстановить». */
+function WornForces({ ids }: { ids: Id[] }) {
+  const forces = useApp((s) => s.forces);
+  const worn = [...new Set(ids)]
+    .map((id) => forces[id])
+    .filter((f): f is UnitNode => !!f)
+    .map((f) => ({ f, c: forceStatus(f) }))
+    .filter((x) => x.c.level !== 'ready');
+  if (!worn.length) return null;
+  return (
+    <div className={`note worn-forces ${worn.some((x) => x.c.level === 'depleted') ? 'bad' : 'warn'}`}>
+      <div className="row" style={{ flexWrap: 'nowrap' }}>
+        <Icon name="alert" size={15} />
+        <span className="grow">{worn.length > 1 ? 'Силы не восстановлены после прошлых боёв' : 'Силы не восстановлены после прошлого боя'}</span>
+        <Btn
+          sm
+          kind="primary"
+          onClick={() => restoreForces(worn.map((x) => x.f.id))}
+          title="Раненые и техника возвращаются, недостающее — до штата, состояние — к норме. Отменить — Ctrl+Z."
+        >
+          <Icon name="restore" size={14} /> Восстановить{worn.length > 1 ? ` (${worn.length})` : ''}
+        </Btn>
+      </div>
+      {worn.map((x) => (
+        <div key={x.f.id} className="small">
+          «{x.f.name}»: {x.c.issues.join(', ')}
+        </div>
+      ))}
     </div>
   );
 }
@@ -722,6 +757,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
               чел.
             </div>
           )}
+          <WornForces ids={refs.map((r) => r.forceId)} />
           <div className="row" style={{ marginTop: 6, gap: 6 }}>
             <Btn onClick={() => setAdding(true)} title="Готовые силы (целиком или части) или новые силы по шаблону. Потери боя потом записываются в силы.">
               + Добавить на сторону…

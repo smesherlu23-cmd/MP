@@ -417,6 +417,116 @@ export function replenishForce(src: UnitNode, rs: Ruleset | undefined, what: { p
   return { force: f, personnel, equipment };
 }
 
+/**
+ * Полное восстановление «одной кнопкой»: раненые и отремонтированная техника возвращаются, недостающее
+ * пополняется до штата, состояние (мораль, слаженность, готовность, усталость, боезапас, топливо,
+ * снаряжение, техника) — к норме; опыт сохраняется. Возвращает изменённую копию и что изменилось.
+ */
+export function restoreForce(src: UnitNode, rs: Ruleset | undefined, at = new Date().toISOString()) {
+  const f = cloneDeep(src);
+  const kinds = new Map((rs?.componentTypes ?? []).map((t) => [t.id, t.kind]));
+  let personnel = 0;
+  let equipment = 0;
+  let state = false;
+  walkUnits(f, (n) => {
+    for (const c of n.composition) {
+      const add = Math.max(0, c.authorized - c.current);
+      if (add) {
+        c.current = c.authorized;
+        if (kinds.get(c.typeId) === 'personnel') personnel += add;
+        else equipment += add;
+      }
+      if (c.recoverable) {
+        delete c.recoverable;
+        state = true;
+      }
+    }
+    // Свои значения состояния (их оставляют бои) снимаются: подразделение снова в норме.
+    for (const k of STATE_KEYS) {
+      if (k === 'experience' || typeof n.state[k] !== 'number') continue;
+      if (n.state[k] !== ROOT_STATE[k]) state = true;
+      delete n.state[k];
+    }
+  });
+  const changed = personnel > 0 || equipment > 0 || state;
+  if (changed) {
+    f.updatedAt = at;
+    addRecord(f, { at, kind: 'restore', title: 'Полное восстановление', personnel, equipment });
+  }
+  return { force: f, personnel, equipment, changed };
+}
+
+/** Сводка боеготовности сил: численность, раненые и ремонт, средние показатели состояния. */
+export interface ForceCondition {
+  /** Люди (с экипажами): в строю, по штату. */
+  persCur: number;
+  persAuth: number;
+  /** Техника и вооружение: в строю, по штату. */
+  equipCur: number;
+  equipAuth: number;
+  /** Ждут возвращения: раненые (чел.) и техника в ремонте (ед.). */
+  wounded: number;
+  repair: number;
+  /** Средние по составу (с учётом численности) показатели состояния. */
+  state: UnitState;
+  /** Готовы / потрёпаны / обескровлены. */
+  level: 'ready' | 'worn' | 'depleted';
+  /** Что не так — коротко, для подсказки. */
+  issues: string[];
+}
+
+export function forceCondition(root: UnitNode, rs: Ruleset | undefined): ForceCondition {
+  const types = new Map((rs?.componentTypes ?? []).map((t) => [t.id, t]));
+  let persCur = 0;
+  let persAuth = 0;
+  let equipCur = 0;
+  let equipAuth = 0;
+  let wounded = 0;
+  let repair = 0;
+  const sum: Record<string, number> = {};
+  let weight = 0;
+  const visit = (n: UnitNode, parent: Resolved) => {
+    const r = resolveChild(n, parent);
+    let own = 0;
+    for (const c of n.composition) {
+      const t = types.get(c.typeId);
+      if (!t) continue;
+      const crew = t.kind === 'personnel' ? 1 : t.crew;
+      persCur += Math.max(0, c.current) * crew;
+      persAuth += c.authorized * crew;
+      own += Math.max(0, c.current) * Math.max(1, crew);
+      if (t.kind === 'personnel') wounded += c.recoverable ?? 0;
+      else {
+        equipCur += Math.max(0, c.current);
+        equipAuth += c.authorized;
+        repair += c.recoverable ?? 0;
+      }
+    }
+    if (own > 0) {
+      for (const k of STATE_KEYS) sum[k] = (sum[k] ?? 0) + r.state[k] * own;
+      weight += own;
+    }
+    for (const ch of n.children) visit(ch, r);
+  };
+  visit(root, ROOT_RESOLVED);
+  const base = resolveChild(root, ROOT_RESOLVED).state;
+  const state = { ...base };
+  if (weight > 0) for (const k of STATE_KEYS) state[k] = Math.round(sum[k] / weight);
+  const strength = persAuth > 0 ? persCur / persAuth : 1;
+  const issues: string[] = [];
+  if (strength < 0.9) issues.push(`некомплект ${Math.round((1 - strength) * 100)}%`);
+  if (equipAuth > 0 && equipCur / equipAuth < 0.9) issues.push(`техники не хватает: ${equipAuth - equipCur} ед.`);
+  if (wounded) issues.push(`раненых: ${wounded}`);
+  if (repair) issues.push(`в ремонте: ${repair} ед.`);
+  if (state.morale < ROOT_STATE.morale - 5) issues.push(`мораль ${state.morale}`);
+  if (state.fatigue > ROOT_STATE.fatigue + 10) issues.push(`усталость ${state.fatigue}`);
+  if (state.ammo < 90) issues.push(`боезапас ${state.ammo}%`);
+  if (state.fuel < 90) issues.push(`топливо ${state.fuel}%`);
+  if (state.cohesion < ROOT_STATE.cohesion - 10) issues.push(`слаженность ${state.cohesion}`);
+  const level: ForceCondition['level'] = strength < 0.7 || state.morale < 40 || state.ammo < 35 ? 'depleted' : issues.length ? 'worn' : 'ready';
+  return { persCur, persAuth, equipCur, equipAuth, wounded, repair, state, level, issues };
+}
+
 /** Новый отпечаток копий после очистки шаблонов: актуальные копии остаются актуальными. */
 export function rehashCopies(copies: UnitNode[], before: Map<Id, string>, templates: Record<Id, UnitNode>) {
   for (const root of copies)

@@ -103,8 +103,8 @@ test('узкое окно: вкладки сжимаются, лишние — �
   await more.click();
   // Все вкладки и «Закрыть все, кроме закреплённых».
   await expect(page.locator('.menu-pop .menu-item')).toHaveCount(n + 2);
-  await page.locator('.menu-pop .menu-item', { hasText: 'Штаб' }).click();
-  await expect(page.locator('.tab.active .tab-title')).toHaveText('Штаб');
+  await page.locator('.menu-pop .menu-item', { hasText: 'Главное' }).click();
+  await expect(page.locator('.tab.active .tab-title')).toHaveText('Главное');
   expect(errors).toEqual([]);
 });
 

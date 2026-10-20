@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { resolveScenario, sideUnits, summarizeUnits, type UnitNode } from '../../engine';
+import { Icon } from '../components/Icon';
 import { createIn } from '../components/Navigator';
 import { Btn, Menu, fmt0, type MenuItem } from '../components/ui';
 import { sectionMeta } from '../nav';
@@ -11,15 +12,12 @@ import {
   defaultRulesetId,
   deleteBattle,
   deleteBattles,
-  deleteForce,
   deleteFormation,
   deleteRuleset,
   deleteScenario,
-  duplicateForce,
   duplicateFormation,
   duplicateScenario,
   exportJson,
-  forceUsage,
   importFile,
   openTab,
   useApp,
@@ -149,40 +147,6 @@ function useCatalog(sec: NavSection, q: string): { head: string[]; groups: Group
       empty: 'Боёв пока нет. Бой начинается со страницы сценария — кнопка «▶ Начать бой».',
     };
   }
-  if (sec === 'forces') {
-    const list = Object.values(s.forces)
-      .filter((x) => match(x.name, x.faction))
-      .sort(byName);
-    const factions = [...new Set(list.map((u) => u.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
-    const groups = factions.map(
-      (f): Group => ({
-        title: factions.length > 1 || f ? f || 'Без принадлежности' : '',
-        rows: list
-          .filter((u) => (u.faction?.trim() || '') === f)
-          .map((x) => {
-            const tpl = x.templateId ? s.formations[x.templateId] : undefined;
-            const used = forceUsage(x.id).length;
-            return {
-              id: x.id,
-              name: x.name,
-              open: () => openTab('formation', `force:${x.id}`),
-              cells: [tpl?.name ?? '—', persons(x), used || '—', fmtWhen(x.updatedAt)],
-              menu: [
-                { label: 'Дублировать', onClick: () => duplicateForce(x.id) },
-                { label: 'Сохранить в файл…', onClick: () => exportJson('force', x.name, { ...x, faction: x.faction ?? '' }) },
-                'sep',
-                { label: 'Удалить силы', danger: true, onClick: () => void deleteForce(x.id) },
-              ],
-            };
-          }),
-      }),
-    );
-    return {
-      head: ['Шаблон', 'Состав', 'В сценариях', 'Изменены'],
-      groups,
-      empty: 'Сил пока нет. Силы — конкретные подразделения, созданные по шаблонам: у каждого своё состояние и свои потери после боёв.',
-    };
-  }
   if (sec === 'units') {
     const list = Object.values(s.formations)
       .filter((x) => match(x.name))
@@ -250,7 +214,9 @@ export function LibraryPage({ tab }: { tab: Tab }) {
   return (
     <div className="page catalog">
       <div className="page-head">
-        <span className="page-icon">{meta.icon}</span>
+        <span className="page-icon">
+          <Icon name={meta.icon} size={22} />
+        </span>
         <div className="grow">
           <h1>{meta.label}</h1>
           <div className="page-sub">{meta.about}</div>
@@ -272,7 +238,9 @@ export function LibraryPage({ tab }: { tab: Tab }) {
 
       {count === 0 ? (
         <div className="empty-card">
-          <div className="empty-icon">{meta.icon}</div>
+          <div className="empty-icon">
+            <Icon name={meta.icon} size={32} />
+          </div>
           <div>{q ? 'Ничего не найдено.' : empty}</div>
           {!q && meta.create && (
             <Btn kind="primary" onClick={() => createIn(sec)}>

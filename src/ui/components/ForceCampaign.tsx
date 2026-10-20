@@ -2,9 +2,17 @@
 // пополнение до штата и боевой путь — бои, отдых и пополнения подразделения.
 
 import { useMemo, useState } from 'react';
-import { plural, recoverableOf, replenishForce, restForce, type ForceRecord, type Ruleset, type UnitNode } from '../../engine';
+import { plural, recoverableOf, replenishForce, restForce, type ForceCondition, type ForceRecord, type Ruleset, type UnitNode } from '../../engine';
 import { fmtDate, historyStep, openTab, toastUndoable, updateForce, useApp } from '../store';
+import { Icon, type IconName } from './Icon';
 import { Btn, Check, Field, Modal, Num, Section, Txt, fmt0 } from './ui';
+
+/** Боеготовность сил — подпись и цвет. */
+export const LEVEL_LABEL: Record<ForceCondition['level'], { text: string; cls: string }> = {
+  ready: { text: 'Боеготовы', cls: 'good' },
+  worn: { text: 'Потрёпаны', cls: 'warn' },
+  depleted: { text: 'Обескровлены', cls: 'bad' },
+};
 
 const signed = (v: number | undefined, unit: string) => (v ? `${v > 0 ? '+' : '−'}${fmt0(Math.abs(v))} ${unit}` : '');
 
@@ -115,7 +123,7 @@ export function ReplenishModal({ force, rs, onClose }: { force: UnitNode; rs: Ru
   );
 }
 
-const KIND_ICON: Record<ForceRecord['kind'], string> = { battle: '⚔', rest: '☾', replenish: '＋' };
+const KIND_ICON: Record<ForceRecord['kind'], IconName> = { battle: 'battle', rest: 'rest', replenish: 'replenish', restore: 'restore' };
 
 /** Боевой путь сил: бои (с исходом и потерями), отдых, пополнения. */
 export function ForceHistory({ force }: { force: UnitNode }) {
@@ -131,7 +139,9 @@ export function ForceHistory({ force }: { force: UnitNode }) {
         {[...list].reverse().map((x, i) => (
           <div key={i} className="history-row">
             <span className="faint small nowrap">{fmtDate(x.at)}</span>
-            <span className="history-icon">{KIND_ICON[x.kind]}</span>
+            <span className="history-icon">
+              <Icon name={KIND_ICON[x.kind]} size={14} />
+            </span>
             <span className="grow" style={{ minWidth: 0 }}>
               {x.battleId && index[x.battleId] ? (
                 <a href="#" onClick={(e) => (e.preventDefault(), openTab('battle', x.battleId!))}>

@@ -54,6 +54,8 @@ import {
   forecast,
   stepUntilEvent,
   restForce,
+  restoreForce,
+  forceCondition,
   replenishForce,
   recoverableOf,
   sweepVariants,
@@ -983,6 +985,38 @@ describe('силы между боями, варианты прогонов, п�
     expect(r.force.history!.at(-1)!.kind).toBe('rest');
     const full = replenishForce(r.force, rs, { personnel: true, equipment: true });
     walkUnits(full.force, (n) => n.composition.forEach((c) => expect(c.current).toBe(c.authorized)));
+  });
+
+  it('полное восстановление одной кнопкой: штат, раненые, состояние — к норме, опыт сохраняется', () => {
+    const { scenario, forces } = extractForces(makeDemoScenario(), new Set(), () => newId('u'));
+    const map = Object.fromEntries(forces.map((f) => [f.id, f])) as Record<string, UnitNode>;
+    const b = createBattle(resolveScenario(scenario, map), rs, { seed: 'R2' });
+    runToEnd(b);
+    const f = applyBattleToForces(b, map).updated[0];
+    const before = forceCondition(f, rs);
+    expect(before.level).not.toBe('ready');
+    expect(before.issues.length).toBeGreaterThan(0);
+    const exp = new Map<string, number | undefined>();
+    walkUnits(f, (n) => exp.set(n.id, n.state.experience));
+    const r = restoreForce(f, rs);
+    expect(r.changed).toBe(true);
+    expect(r.personnel).toBeGreaterThan(0);
+    walkUnits(r.force, (n) => {
+      n.composition.forEach((c) => {
+        expect(c.current).toBe(c.authorized);
+        expect(c.recoverable).toBeUndefined();
+      });
+      expect(n.state.experience).toBe(exp.get(n.id));
+      expect(Object.keys(n.state).filter((k) => k !== 'experience')).toEqual([]);
+    });
+    expect(r.force.history!.at(-1)).toMatchObject({ kind: 'restore', personnel: r.personnel });
+    const after = forceCondition(r.force, rs);
+    expect(after.level).toBe('ready');
+    expect(after.persCur).toBe(after.persAuth);
+    // Повторно — ничего не меняется и в боевой путь не пишется.
+    const again = restoreForce(r.force, rs);
+    expect(again.changed).toBe(false);
+    expect(again.force.history).toHaveLength(r.force.history!.length);
   });
 
   it('перебор параметра: по варианту на значение', () => {

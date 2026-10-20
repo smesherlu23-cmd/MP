@@ -4,25 +4,27 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { displayNames, formatFactor, type Battle, type LogEntry, type Phase } from '../../engine';
 import { useTabState } from '../hooks';
 import { ensureFullLog } from '../store';
+import { Icon, type IconName } from './Icon';
 import { pressable, Seg } from './ui';
 
-const PHASES: { id: Phase; label: string; icon: string }[] = [
-  { id: 'detection', label: 'Обнаружение', icon: '◉' },
-  { id: 'initiative', label: 'Инициатива', icon: '⚑' },
-  { id: 'fire', label: 'Огонь', icon: '✹' },
-  { id: 'losses', label: 'Потери', icon: '✚' },
-  { id: 'movement', label: 'Движение', icon: '➜' },
-  { id: 'fatigue', label: 'Усталость', icon: '≈' },
-  { id: 'morale', label: 'Мораль', icon: '♥' },
-  { id: 'checks', label: 'Проверки', icon: '!' },
-  { id: 'orders', label: 'Приказы', icon: '✉' },
-  { id: 'gm', label: 'ГМ', icon: '✎' },
+const PHASES: { id: Phase; label: string; icon: IconName }[] = [
+  { id: 'detection', label: 'Обнаружение', icon: 'eye' },
+  { id: 'initiative', label: 'Инициатива', icon: 'flag' },
+  { id: 'fire', label: 'Огонь', icon: 'crosshair' },
+  { id: 'losses', label: 'Потери', icon: 'plus' },
+  { id: 'movement', label: 'Движение', icon: 'arrow' },
+  { id: 'fatigue', label: 'Усталость', icon: 'waves' },
+  { id: 'morale', label: 'Мораль', icon: 'heart' },
+  { id: 'checks', label: 'Проверки', icon: 'alert' },
+  { id: 'orders', label: 'Приказы', icon: 'mail' },
+  { id: 'gm', label: 'ГМ', icon: 'pencil' },
 ];
-const ICON: Partial<Record<Phase, string>> = Object.fromEntries(PHASES.map((p) => [p.id, p.icon]));
-ICON.setup = '•';
-ICON.turn = '⏱';
-ICON.end = '■';
-ICON.supply = '⛽';
+const ICON: Partial<Record<Phase, IconName>> = Object.fromEntries(PHASES.map((p) => [p.id, p.icon]));
+ICON.setup = 'dot';
+ICON.turn = 'clock';
+ICON.end = 'stop';
+ICON.supply = 'package';
+const phaseIcon = (ph: Phase) => <Icon name={ICON[ph] ?? 'dot'} size={13} />;
 
 export function RichText({ text, b, onElement }: { text: string; b: Battle; onElement?: (id: string) => void }) {
   const parts = text.split(/(\[\[[efs]:[^\]]+\]\])/g);
@@ -207,7 +209,7 @@ function SummaryRow({ s, b, open, onToggle, onElement }: { s: Summary; b: Battle
       {open &&
         s.entries.map(({ e, i }) => (
           <div key={i} className={`log-entry log-sub sev-${e.severity} lvl${e.level}`}>
-            <span className="ph">{ICON[e.phase] ?? '·'}</span>
+            <span className="ph">{phaseIcon(e.phase)}</span>
             <span>
               <RichText text={e.text} b={b} onElement={onElement} />
             </span>
@@ -413,7 +415,7 @@ export function LogView(props: {
                     style={{ cursor: 'pointer' }}
                     onClick={() => setPhases(phases.includes(p.id) ? phases.filter((x) => x !== p.id) : [...phases, p.id])}
                   >
-                    {p.icon} {p.label}
+                    <Icon name={p.icon} size={13} /> {p.label}
                   </button>
                 ))}
                 {filtersActive && (
@@ -486,7 +488,7 @@ export function LogView(props: {
               title={e.factors || e.hadFactors ? 'Нажмите, чтобы увидеть расчёт' : undefined}
               {...(e.factors || e.hadFactors ? { ...pressable(() => openEntry(e, i)), 'aria-expanded': open.has(i) } : {})}
             >
-              <span className="ph">{ICON[e.phase] ?? '·'}</span>
+              <span className="ph">{phaseIcon(e.phase)}</span>
               <span>
                 <RichText text={e.text} b={b} onElement={props.onElement} />
                 {(e.factors || e.hadFactors) && !open.has(i) && <span className="fx-hint"> ⓘ</span>}
