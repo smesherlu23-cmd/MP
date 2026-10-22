@@ -334,7 +334,7 @@ function Page({ t }: { t: Tab }) {
     case 'settings':
       return <SettingsPage />;
     case 'help':
-      return <HelpPage />;
+      return <HelpPage tab={t} />;
     case 'ruleset':
       return <RulesetPage tab={t} />;
     case 'formation':

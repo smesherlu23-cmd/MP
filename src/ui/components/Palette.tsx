@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { walkUnits, type UnitNode } from '../../engine';
 import { openUnit, setTabState } from '../hooks';
 import { SECTIONS as NAV_SECTIONS } from '../nav';
+import { HELP_GROUPS } from '../pages/HelpPage';
 import { SECTIONS } from '../pages/RulesetPage';
 import { startBattle } from '../pages/ScenarioPage';
 import { createFormation, createScenario, importFile, newForceDialog, newRulesetDialog, openTab, redo, tabKey, undo, updateSettings, useApp } from '../store';
@@ -25,7 +26,7 @@ interface Item {
   run: (background: boolean) => void;
 }
 
-const GROUP_ORDER = ['Сценарии', 'Подразделения', 'Команды сил', 'Бои', 'Наборы правил', 'Команды'];
+const GROUP_ORDER = ['Сценарии', 'Подразделения', 'Команды сил', 'Бои', 'Наборы правил', 'Справка', 'Команды'];
 
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е');
 
@@ -94,6 +95,16 @@ function buildItems(): Item[] {
         },
       });
   }
+
+  for (const g of HELP_GROUPS)
+    for (const t of g.topics)
+      items.push({
+        id: `help:${t.id}`,
+        group: 'Справка',
+        title: t.title,
+        sub: g.title,
+        run: (bg) => openTab('help', undefined, { background: bg, sub: t.id }),
+      });
 
   const battles = Object.values(s.battleIndex).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
   battles.forEach((b, i) =>
