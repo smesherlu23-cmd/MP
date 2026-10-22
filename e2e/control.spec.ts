@@ -103,7 +103,7 @@ test('сценарий: участки боя, событие по услови�
   expect(errors).toEqual([]);
 });
 
-test('силы между боями: итоги в боевой путь, отдых в процентах, лечение, ремонт, пополнение', async ({ page }) => {
+test('силы между боями: итоги в боевой путь, отдых в процентах, лечение, ремонт, боезапас, топливо, пополнение', async ({ page }) => {
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
@@ -127,6 +127,15 @@ test('силы между боями: итоги в боевой путь, от�
   await panel.getByRole('button', { name: /^Чинить/ }).click();
   await expect(hist).toContainText('Ремонт техники');
   await expect(panel.getByRole('button', { name: /^Чинить/ })).toBeDisabled();
+  // Боезапас и топливо — отдельно, до заданного уровня.
+  await panel.getByRole('button', { name: 'Боезапас…' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Пополнить до 100%' }).click();
+  await expect(hist).toContainText('Боезапас пополнен до 100%');
+  await expect(panel.getByRole('button', { name: 'Боезапас…' })).toBeDisabled();
+  await panel.getByRole('button', { name: 'Топливо…' }).click();
+  await page.locator('.modal').getByRole('button', { name: '75%' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Пополнить до 75%' }).click();
+  await expect(hist).toContainText('Топливо пополнено до 75%');
   // Пополнить из резерва — до штата.
   await panel.getByRole('button', { name: 'Пополнить…' }).click();
   await page.locator('.modal').getByRole('button', { name: 'Пополнить', exact: true }).click();

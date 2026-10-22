@@ -365,11 +365,11 @@ const kindsOf = (rs: Ruleset | undefined) => new Map((rs?.componentTypes ?? []).
 /** Хуже ли значение показателя, чем норма (усталость — чем больше, тем хуже). */
 const worseThanNorm = (k: StateKey, v: number) => (k === 'fatigue' ? v > ROOT_STATE[k] : v < ROOT_STATE[k]);
 
-/** Что восстанавливает отдых: состояние бойцов, которые сейчас в строю. */
+/** Что восстанавливает отдых: состояние бойцов, которые сейчас в строю (боезапас и топливо — отдельным пополнением). */
 export const REST_PARTS = [
   { id: 'spirit', label: 'Мораль и усталость', keys: ['morale', 'fatigue'] },
   { id: 'order', label: 'Слаженность и готовность', keys: ['cohesion', 'readiness'] },
-  { id: 'supply', label: 'Боезапас, топливо, снаряжение', keys: ['ammo', 'fuel', 'equipment'] },
+  { id: 'gear', label: 'Снаряжение', keys: ['equipment'] },
 ] as const satisfies readonly { id: string; label: string; keys: readonly StateKey[] }[];
 export type RestPart = (typeof REST_PARTS)[number]['id'];
 export const REST_PART_IDS: RestPart[] = REST_PARTS.map((x) => x.id);
@@ -406,7 +406,7 @@ export function restForce(src: UnitNode, pct: number, parts: RestPart[] = REST_P
 export function betweenNeeds(f: UnitNode, rs: Ruleset | undefined) {
   const kinds = kindsOf(rs);
   const restKeys = REST_PARTS.flatMap((x) => x.keys as readonly StateKey[]);
-  const out = { rest: false, heal: 0, repair: 0, vehicleCondition: false, personnelMissing: 0, equipmentMissing: 0 };
+  const out = { rest: false, heal: 0, repair: 0, vehicleCondition: false, personnelMissing: 0, equipmentMissing: 0, ammo: false, fuel: false };
   walkUnits(f, (n) => {
     for (const c of n.composition) {
       const gap = Math.max(0, c.authorized - c.current);
@@ -425,8 +425,40 @@ export function betweenNeeds(f: UnitNode, rs: Ruleset | undefined) {
     }
     const vc = n.state.vehicleCondition;
     if (typeof vc === 'number' && worseThanNorm('vehicleCondition', vc)) out.vehicleCondition = true;
+    for (const k of ['ammo', 'fuel'] as const) {
+      const v = n.state[k];
+      if (typeof v === 'number' && v < 100) out[k] = true;
+    }
   });
   return out;
+}
+
+/** Что пополняется отдельно от отдыха: боезапас и топливо. */
+export type SupplyKey = 'ammo' | 'fuel';
+export const SUPPLY_LABEL: Record<SupplyKey, { name: string; done: string }> = {
+  ammo: { name: 'Боезапас', done: 'Боезапас пополнен' },
+  fuel: { name: 'Топливо', done: 'Топливо пополнено' },
+};
+
+/**
+ * Пополнить боезапас или топливо до level% (100 — полностью): у кого меньше — поднимается до этого уровня,
+ * у кого больше — не трогается. Возвращает изменённую копию.
+ */
+export function resupplyForce(src: UnitNode, key: SupplyKey, level: number, at = new Date().toISOString()) {
+  const f = cloneDeep(src);
+  const to = Math.max(0, Math.min(100, Math.round(level)));
+  let changed = false;
+  walkUnits(f, (n) => {
+    const v = n.state[key];
+    if (typeof v !== 'number' || v >= to) return;
+    n.state[key] = to;
+    changed = true;
+  });
+  if (changed) {
+    f.updatedAt = at;
+    addRecord(f, { at, kind: 'supply', title: `${SUPPLY_LABEL[key].done} до ${to}%` });
+  }
+  return { force: f, changed };
 }
 
 /** Вернуть в строй раненых (не сверх штата — остальные ждут). Возвращает изменённую копию и сколько вернулось. */

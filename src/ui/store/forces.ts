@@ -16,6 +16,9 @@ import {
   relinkScenario,
   restoreForce,
   restForce,
+  resupplyForce,
+  SUPPLY_LABEL,
+  type SupplyKey,
   healForce,
   repairForce,
   transferStrength,
@@ -164,6 +167,18 @@ export function restForceStep(id: Id, pct: number, parts: RestPart[]) {
     (f) => restForce(f, pct, parts),
     (n) => `«${n}»: отдых ${Math.round(pct)}% — состояние бойцов восстановлено.`,
     'Отдыхать незачем: состояние в норме.',
+  );
+}
+
+/** Пополнить боезапас или топливо до level%. */
+export function resupplyForceStep(id: Id, key: SupplyKey, level: number) {
+  const what = SUPPLY_LABEL[key];
+  return betweenStep(
+    id,
+    `пополнение: ${what.name.toLowerCase()}`,
+    (f) => resupplyForce(f, key, level),
+    (n) => `«${n}»: ${what.done.toLowerCase()} до ${Math.round(level)}%.`,
+    `${what.name}: пополнять нечего — везде не меньше ${Math.round(level)}%.`,
   );
 }
 

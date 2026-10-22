@@ -3975,13 +3975,17 @@ span.wf-add {
 }
 .force-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-top: 2px;
 }
 .force-actions .btn {
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
+  padding-left: 4px;
+  padding-right: 4px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 .fc-head > .btn.icon {
   margin: -3px -6px 0 -4px;
@@ -4027,7 +4031,7 @@ span.wf-add {
   gap: 8px;
 }
 .readiness .force-actions {
-  min-width: 270px;
+  min-width: 360px;
 }
 .worn-forces {
   display: flex;

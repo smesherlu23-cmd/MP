@@ -60,6 +60,7 @@ import {
   healForce,
   repairForce,
   betweenNeeds,
+  resupplyForce,
   transferStrength,
   strengthByType,
   forceCondition,
@@ -1005,6 +1006,17 @@ describe('силы между боями, варианты прогонов, п�
     expect(forceCondition(onlySpirit.force, rs).state.ammo).toBe(before.state.ammo);
     const full = restForce(f, 100);
     expect(betweenNeeds(full.force, rs).rest).toBe(false);
+    // Боезапас и топливо — отдельным пополнением, до заданного уровня; кто выше — не трогается.
+    expect(forceCondition(full.force, rs).state.ammo).toBe(before.state.ammo);
+    expect(betweenNeeds(f, rs).ammo).toBe(true);
+    const ammo60 = resupplyForce(f, 'ammo', 60);
+    walkUnits(ammo60.force, (n) => typeof n.state.ammo === 'number' && expect(n.state.ammo).toBeGreaterThanOrEqual(60));
+    expect(forceCondition(ammo60.force, rs).state.fuel).toBe(before.state.fuel);
+    expect(ammo60.force.history!.at(-1)).toMatchObject({ kind: 'supply', title: 'Боезапас пополнен до 60%' });
+    const fueled = resupplyForce(resupplyForce(f, 'ammo', 100).force, 'fuel', 100);
+    expect(betweenNeeds(fueled.force, rs).ammo).toBe(false);
+    expect(betweenNeeds(fueled.force, rs).fuel).toBe(false);
+    expect(resupplyForce(fueled.force, 'fuel', 100).changed).toBe(false);
     expect(restForce(full.force, 100).changed).toBe(false);
 
     // Лечить — раненые в строй; чинить — техника из ремонта.

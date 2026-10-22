@@ -11,7 +11,9 @@ import {
   ROOT_STATE,
   replenishForce,
   restForce,
+  resupplyForce,
   STATE_LABELS,
+  SUPPLY_LABEL,
   strengthByType,
   transferStrength,
   type ForceCondition,
@@ -20,7 +22,9 @@ import {
   type RestPart,
   type Ruleset,
   type StateKey,
+  type SupplyKey,
   type UnitNode,
+  walkUnits,
 } from '../../engine';
 import {
   defaultRulesetId,
@@ -30,6 +34,7 @@ import {
   openTab,
   repairForceStep,
   restForceStep,
+  resupplyForceStep,
   toastUndoable,
   transferStrengthStep,
   updateForce,
@@ -82,8 +87,8 @@ export function RestModal({ force, onClose }: { force: UnitNode; onClose: () => 
       }
     >
       <div className="muted small" style={{ marginBottom: 12 }}>
-        Восстанавливается состояние бойцов, которые сейчас в строю. Раненые и техника в ремонте не возвращаются — для этого «Лечить» и «Чинить», а недостающих —
-        «Пополнить».
+        Восстанавливается состояние бойцов, которые сейчас в строю. Раненые и техника в ремонте не возвращаются — для этого «Лечить» и «Чинить», недостающих —
+        «Пополнить», а боезапас и топливо пополняются отдельно.
       </div>
       <Field label="Насколько восстановить, % до нормы">
         <div className="row rest-pct">
@@ -126,6 +131,62 @@ export function RestModal({ force, onClose }: { force: UnitNode; onClose: () => 
           </tbody>
         </table>
       )}
+    </Modal>
+  );
+}
+
+/** Пополнение боезапаса или топлива: до какого уровня (у кого больше — не трогается). */
+export function SupplyModal({ force, what, onClose }: { force: UnitNode; what: SupplyKey; onClose: () => void }) {
+  const rs = useRuleset(force);
+  const [level, setLevel] = useState(100);
+  const preview = useMemo(() => resupplyForce(force, what, level), [force, what, level]);
+  const before = forceCondition(force, rs).state[what];
+  const after = forceCondition(preview.force, rs).state[what];
+  let low = 0;
+  let total = 0;
+  walkUnits(force, (n) => {
+    total++;
+    const v = n.state[what];
+    if (typeof v === 'number' && v < level) low++;
+  });
+  const name = SUPPLY_LABEL[what].name;
+  return (
+    <Modal
+      title={`${name} — ${force.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <span className="muted small grow">Запишется в боевой путь. Отменить — Ctrl+Z.</span>
+          <Btn onClick={onClose}>Отмена</Btn>
+          <Btn
+            kind="primary"
+            disabled={!preview.changed}
+            onClick={() => {
+              resupplyForceStep(force.id, what, level);
+              onClose();
+            }}
+          >
+            Пополнить до {level}%
+          </Btn>
+        </>
+      }
+    >
+      <Field label="Пополнить до, %">
+        <div className="row rest-pct">
+          <Range value={level} onChange={(v) => setLevel(Math.max(0, Math.min(100, Math.round(v))))} min={0} max={100} step={5} />
+          {[25, 50, 75, 100].map((v) => (
+            <Btn key={v} sm kind={level === v ? 'primary' : 'ghost'} onClick={() => setLevel(v)}>
+              {v}%
+            </Btn>
+          ))}
+        </div>
+      </Field>
+      <div className="note" style={{ marginTop: 12 }}>
+        {name}: сейчас в среднем <b>{Math.round(before)}%</b> → после пополнения <b className={after > before ? 'good' : undefined}>{Math.round(after)}%</b>.
+        {preview.changed
+          ? ` Пополнятся подразделения, у которых меньше ${level}%${total > 1 ? ` (${low} из ${total})` : ''}; у кого больше — останется как есть.`
+          : ` Везде уже не меньше ${level}%.`}
+      </div>
     </Modal>
   );
 }
@@ -335,7 +396,7 @@ export function ReplenishModal({ force, onClose }: { force: UnitNode; onClose: (
 /** Действия между боями: отдых, лечение, ремонт, пополнение — каждое доступно, когда есть что делать. */
 export function ForceActions({ force, grid }: { force: UnitNode; grid?: boolean }) {
   const rs = useRuleset(force);
-  const [modal, setModal] = useState<'rest' | 'replenish' | null>(null);
+  const [modal, setModal] = useState<'rest' | 'replenish' | SupplyKey | null>(null);
   const n = betweenNeeds(force, rs);
   const missing = n.personnelMissing + n.equipmentMissing;
   // В карточке и на панели — сеткой одинаковых кнопок, в заметке сценария — строкой.
@@ -347,7 +408,7 @@ export function ForceActions({ force, grid }: { force: UnitNode; grid?: boolean 
         kind={kind}
         disabled={!n.rest}
         onClick={() => setModal('rest')}
-        title={n.rest ? 'Восстановить мораль, усталость, слаженность, боезапас бойцов в строю' : 'Состояние в норме'}
+        title={n.rest ? 'Восстановить мораль, усталость, слаженность, готовность и снаряжение бойцов в строю' : 'Состояние в норме'}
       >
         <Icon name="rest" size={14} /> Отдых…
       </Btn>
@@ -378,6 +439,12 @@ export function ForceActions({ force, grid }: { force: UnitNode; grid?: boolean 
       <Btn sm kind={kind} disabled={!missing} onClick={() => setModal('replenish')} title={missing ? 'Из резерва или из другого подразделения' : 'Полный штат'}>
         <Icon name="replenish" size={14} /> Пополнить…
       </Btn>
+      <Btn sm kind={kind} disabled={!n.ammo} onClick={() => setModal('ammo')} title={n.ammo ? 'Пополнить боезапас' : 'Боезапас полный'}>
+        <Icon name="ammo" size={14} /> Боезапас…
+      </Btn>
+      <Btn sm kind={kind} disabled={!n.fuel} onClick={() => setModal('fuel')} title={n.fuel ? 'Пополнить топливо' : 'Баки полные'}>
+        <Icon name="fuel" size={14} /> Топливо…
+      </Btn>
     </>
   );
   return (
@@ -385,6 +452,7 @@ export function ForceActions({ force, grid }: { force: UnitNode; grid?: boolean 
       {grid ? <div className="force-actions">{buttons}</div> : buttons}
       {modal === 'rest' && createPortal(<RestModal force={force} onClose={() => setModal(null)} />, document.body)}
       {modal === 'replenish' && createPortal(<ReplenishModal force={force} onClose={() => setModal(null)} />, document.body)}
+      {(modal === 'ammo' || modal === 'fuel') && createPortal(<SupplyModal force={force} what={modal} onClose={() => setModal(null)} />, document.body)}
     </>
   );
 }
@@ -394,6 +462,7 @@ const KIND_ICON: Record<ForceRecord['kind'], IconName> = {
   rest: 'rest',
   heal: 'heal',
   repair: 'wrench',
+  supply: 'package',
   replenish: 'replenish',
   transfer: 'transfer',
   restore: 'restore',
