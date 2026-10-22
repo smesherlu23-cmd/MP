@@ -1,6 +1,7 @@
 // Проверки конца хода: выход из боя, уничтожение, паника, отход, штабы, распад, резервы, удержание.
 
 import { type EngineContext, clamp, e, fm, round1, s } from '../context';
+import { dec } from '../labels';
 import type { Behavior, ElementState, Factor, FormationState, SideId } from '../types';
 import { SIDES, subtreeIds } from './common';
 
@@ -243,7 +244,7 @@ export function phaseChecks(E: EngineContext) {
         if (hit <= 0) continue;
         const v = hit * E.mult(el, 'moraleLoss');
         el.morale = clamp(el.morale - v, 0, 100);
-        E.log({ phase: 'checks', level: 2, side: el.side, severity: 'bad', refs: [el.id], text: `Мораль ${e(el)} −${v.toFixed(1)}: ${label}.` });
+        E.log({ phase: 'checks', level: 2, side: el.side, severity: 'bad', refs: [el.id], text: `Мораль ${e(el)} −${dec(v)}: ${label}.` });
       }
     }
   }

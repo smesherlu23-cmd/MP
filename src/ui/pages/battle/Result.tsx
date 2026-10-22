@@ -1,6 +1,6 @@
 // Итоги и оценка боя, сравнение сторон, графики, запись итогов в силы.
 
-import { explainResult, fmtDuration, formatReport, formatSideReport, plural, type Battle, type BattleResult, type SideResult } from '../../../engine';
+import { dec, explainResult, fmtDuration, formatReport, formatSideReport, plural, type Battle, type BattleResult, type SideResult } from '../../../engine';
 import { LineChart } from '../../components/Charts';
 import { RichText } from '../../components/LogView';
 import { Btn, Card, Section, fmt0, pct } from '../../components/ui';
@@ -110,7 +110,7 @@ export function SideCompare({ b, result, full }: { b: Battle; result: BattleResu
             'Удача и исполнение',
             (r) => {
               const v = b.sides[r.side].luck ?? 1;
-              return <span className={v >= 1.1 ? 'good' : v <= 0.9 ? 'bad' : 'faint'}>×{v.toFixed(2)}</span>;
+              return <span className={v >= 1.1 ? 'good' : v <= 0.9 ? 'bad' : 'faint'}>×{dec(v, 2)}</span>;
             },
             () =>
               'Выпадает каждой стороне в начале боя: множитель огня и стойкости — внезапность, слаженность, ошибки, везение («Удача и исполнение стороны» в наборе правил).',

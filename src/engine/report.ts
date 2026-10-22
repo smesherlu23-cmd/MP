@@ -1,7 +1,7 @@
 // Человекочитаемый отчёт о бое — для копирования в чат игры, на форум или в документ.
 
 import { fmtDuration } from './duration';
-import { STATUS_LABELS } from './labels';
+import { dec, STATUS_LABELS } from './labels';
 import { explainResult } from './outcome';
 import { displayNames } from './names';
 import { Rng } from './rng';
@@ -222,8 +222,8 @@ export function formatLog(b: Battle, log: LogEntry[], level: 0 | 1 | 2 = 1, with
 }
 
 export function formatFactor(value: number, kind: 'mult' | 'add' | 'base' | 'chance'): string {
-  if (kind === 'mult') return `×${value.toFixed(2)}`;
+  if (kind === 'mult') return `×${dec(value, 2)}`;
   if (kind === 'chance') return `${Math.round(value * 100)}%`;
-  if (kind === 'add') return `${value > 0 ? '+' : ''}${Number(value.toFixed(2))}`;
-  return `${Number(value.toFixed(3))}`;
+  if (kind === 'add') return `${value > 0 ? '+' : ''}${String(Number(value.toFixed(2))).replace('.', ',')}`;
+  return String(Number(value.toFixed(3))).replace('.', ',');
 }

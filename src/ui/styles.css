@@ -619,7 +619,8 @@ input.invalid {
 .fields {
   display: grid;
   gap: 10px 14px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  /* Не уже 240px: подписи вида «Первый эшелон (по умолчанию)» в выпадающих списках не обрезаются. */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
 .fields.two {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -2420,6 +2421,20 @@ html.desktop .topbar a {
   font-size: 11px;
   color: var(--faint);
 }
+.nav-search input {
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+.nav-search:focus-within {
+  border-color: var(--accent);
+}
 .btn.nav-create {
   width: 100%;
   min-height: 32px;
@@ -3723,12 +3738,12 @@ span.wf-add {
 
 .page-head.sticky-head {
   position: sticky;
-  top: 0;
+  /* Прилипает к самому краю области прокрутки, а не к её отступу: над шапкой ничего не просвечивает. */
+  top: -22px;
   z-index: 5;
   margin: 0 -28px 8px;
   padding: 8px 28px 10px;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  backdrop-filter: blur(6px);
+  background: var(--bg);
   border-bottom: 1px solid transparent;
 }
 .jump-nav {
@@ -4147,6 +4162,49 @@ button.team-dot:hover {
   flex-wrap: wrap;
   gap: 2px;
   margin-left: -6px;
+}
+.force-actions > .btn.primary {
+  grid-column: 1 / -1;
+}
+.force-actions-ok {
+  margin-top: 4px;
+}
+.between-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.between-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+}
+.between-pct {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 24px;
+}
+.worn-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.worn-line .chip-issue {
+  font-size: 12px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .between-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .transfer-table td {
   vertical-align: middle;

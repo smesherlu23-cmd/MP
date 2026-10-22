@@ -26,7 +26,7 @@ import {
 } from '../store';
 import { fmtWhen } from './HomePage';
 
-type Filter = 'all' | 'need' | 'ready';
+type Filter = 'all' | ForceCondition['level'];
 
 /** Полоса численности: в строю, а за ней — те, кто может вернуться (раненые, техника в ремонте). */
 export function StrengthBar(props: { label: string; cur: number; auth: number; back: number; backText: string; unit: string }) {
@@ -143,14 +143,11 @@ export function ForcesPage() {
   const all = Object.values(s.forces)
     .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
     .map((f) => ({ f, c: forceStatus(f), can: canRestore(f) }));
-  // «Ниже нормы» — всё, что можно восстановить: потери, некомплект против штата, мораль, боезапас…
-  const restorable = all.filter((x) => x.can).length;
-  const ready = all.filter((x) => x.c.level === 'ready').length;
+  // Фильтр — по уровню боеготовности: каждое подразделение ровно в одной группе.
+  const byLevel = (lv: ForceCondition['level']) => all.filter((x) => x.c.level === lv).length;
 
   const shown = all.filter(
-    (x) =>
-      (!q || x.f.name.toLowerCase().includes(q) || (x.f.faction ?? '').toLowerCase().includes(q)) &&
-      (filter === 'all' || (filter === 'need' ? x.can : x.c.level === 'ready')),
+    (x) => (!q || x.f.name.toLowerCase().includes(q) || (x.f.faction ?? '').toLowerCase().includes(q)) && (filter === 'all' || x.c.level === filter),
   );
   const teams = [...new Set(shown.map((x) => x.f.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
 
@@ -237,8 +234,7 @@ export function ForcesPage() {
           onChange={setFilter}
           options={[
             { value: 'all', label: `Все (${all.length})` },
-            { value: 'need', label: `Ниже нормы (${restorable})` },
-            { value: 'ready', label: `Боеготовы (${ready})` },
+            ...(['ready', 'worn', 'depleted'] as const).map((lv) => ({ value: lv, label: `${LEVEL_LABEL[lv].text} (${byLevel(lv)})` })),
           ]}
         />
       </div>

@@ -451,7 +451,7 @@ export function App() {
         <Tabs tabs={s.tabs} active={active?.key} />
         <div className="topbar-right">
           {!s.settings.sidebar && (
-            <button type="button" className="find-btn" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
+            <button type="button" className="find-btn" onClick={() => openPalette()} title="Быстрый переход к любому объекту и команде">
               <Icon name="search" size={14} />
               <span>Найти…</span>
               <span className="kbd">Ctrl+K</span>

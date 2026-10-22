@@ -21,7 +21,8 @@ function niceMax(v: number): number {
   return 10 * p;
 }
 
-const fmtTick = (v: number) => (Math.abs(v) >= 1000 ? `${Math.round(v / 100) / 10}k` : String(Math.round(v * 10) / 10));
+const fmtTick = (v: number) =>
+  Math.abs(v) >= 1000 ? `${String(Math.round(v / 100) / 10).replace('.', ',')}k` : String(Math.round(v * 10) / 10).replace('.', ',');
 
 export interface Series {
   name: string;

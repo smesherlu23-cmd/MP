@@ -76,7 +76,6 @@ export function Navigator() {
     battles: Object.keys(s.battleIndex).length,
     rulesets: Object.keys(s.rulesets).length,
   };
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const isOpen = (kind: TabKind, ref: string) => activeTab?.ref === ref && activeTab.kind === kind;
 
   const row = (
@@ -269,18 +268,26 @@ export function Navigator() {
   return (
     <aside className={`sidebar nav${s.settings.sidebar ? '' : ' hidden'}`}>
       <div className="nav-tools">
-        <button type="button" className="nav-search" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
+        {/* Одно поле: ввод сразу фильтрует дерево, Enter (или Ctrl+K) — полный поиск по всему, включая части и команды. */}
+        <label className="nav-search" title="Фильтр навигатора; Enter или Ctrl+K — найти что угодно, включая вложенные части и команды">
           <Icon name="search" size={15} />
-          <span className="grow">Найти…</span>
+          <input
+            type="search"
+            className="grow"
+            placeholder="Найти…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                openPalette(filter);
+              } else if (e.key === 'Escape') setFilter('');
+            }}
+          />
           <span className="kbd">Ctrl+K</span>
-        </button>
+        </label>
         <Menu alignLeft className="primary nav-create" label="+ Создать" title="Создать сценарий, силы, шаблон или набор правил" items={CREATE_ITEMS()} />
       </div>
-      {total > 12 && (
-        <div className="nav-filter">
-          <input type="search" placeholder="Фильтр по названию…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-        </div>
-      )}
       <div className="nav-scroll" ref={listRef} onKeyDown={(e) => arrowNav(e, listRef.current, '.side-item')}>
         <div className="nav-home">
           <NavItem icon="home" label="Главное" here={activeTab?.kind === 'home'} onClick={() => openTab('home')} title="Что продолжить, с чего начать" />

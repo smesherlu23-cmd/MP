@@ -3,7 +3,7 @@
 import { type EngineContext, lerp } from './context';
 import { newObjective } from './defaults';
 import { fmtDuration, hoursFor } from './duration';
-import { OBJECTIVE_SHORT } from './labels';
+import { dec, OBJECTIVE_SHORT } from './labels';
 import type {
   Behavior,
   BattleResult,
@@ -115,13 +115,13 @@ function scoreObjective(E: EngineContext, side: SideId, o: Objective): Objective
     case 'inflict': {
       const pct = lossValuePct(E, foe);
       score = o.value > 0 ? Math.min(1, pct / o.value) : 1;
-      explanation = `Потери противника — ${pct.toFixed(1)}% боевой ценности (цель ${o.value}%).`;
+      explanation = `Потери противника — ${dec(pct)}% боевой ценности (цель ${o.value}%).`;
       break;
     }
     case 'preserve': {
       const pct = lossValuePct(E, own);
       score = pct <= o.value ? 1 : Math.max(0, 1 - (pct - o.value) / Math.max(10, o.value));
-      explanation = `Свои потери — ${pct.toFixed(1)}% боевой ценности (допустимо ${o.value}%).`;
+      explanation = `Свои потери — ${dec(pct)}% боевой ценности (допустимо ${o.value}%).`;
       break;
     }
     case 'recon': {

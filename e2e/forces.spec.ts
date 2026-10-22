@@ -129,7 +129,8 @@ test('раздел «Силы»: команды с цветом и назван�
   const worn = page.locator('.worn-forces');
   await expect(worn).toHaveCount(2);
   await expect(worn.first()).toContainText('не восстановлены');
-  await expect(worn.first().getByRole('button', { name: /^Лечить/ })).toBeEnabled();
+  await expect(worn.first().getByRole('button', { name: 'Между боями…' })).toBeEnabled();
+  await expect(worn.first().locator('.chip-issue').first()).toBeVisible();
 
   // Раздел «Силы»: группы по командам, общего «Восстановить всех» нет.
   await (await navSec(page, 'Силы')).locator('.nav-item').first().click();

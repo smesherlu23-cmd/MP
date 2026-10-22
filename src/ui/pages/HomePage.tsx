@@ -1,9 +1,9 @@
 import { fmtDuration, resolveScenario, sideUnits, summarizeUnits } from '../../engine';
 import { Icon, type IconName } from '../components/Icon';
 import { Link } from '../components/Link';
-import { CREATE_ITEMS, createIn } from '../components/Navigator';
+import { createIn } from '../components/Navigator';
 import { openPalette } from '../components/Palette';
-import { Btn, Card, Info, Menu, fmt0 } from '../components/ui';
+import { Btn, Card, Info, fmt0 } from '../components/ui';
 import { SECTIONS, showSection } from '../nav';
 import { openTab, useApp, type NavSection, type TabKind } from '../store';
 import { startBattle } from './ScenarioPage';
@@ -97,10 +97,6 @@ export function HomePage() {
           <h1>Главное</h1>
           <div className="page-sub">Echelon Commander · симулятор боя для ГМ варгейма</div>
         </div>
-        <Btn onClick={() => openPalette()} title="Найти любое подразделение, сценарий или команду (Ctrl+K)">
-          <Icon name="search" size={14} /> Найти… <span className="kbd">Ctrl+K</span>
-        </Btn>
-        <Menu className="primary" label="+ Создать" title="Создать сценарий, силы, шаблон или набор правил" items={CREATE_ITEMS()} />
       </div>
 
       <nav className="workflow" aria-label="Порядок работы">

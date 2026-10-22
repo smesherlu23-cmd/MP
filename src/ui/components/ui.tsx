@@ -70,7 +70,9 @@ export function Num(props: {
   emptyAs?: number;
 }) {
   const fmt = (v: number | null | undefined) =>
-    v === null || v === undefined || Number.isNaN(v) || (props.emptyAs !== undefined && v === props.emptyAs) ? '' : String(Math.round(v * 10000) / 10000);
+    v === null || v === undefined || Number.isNaN(v) || (props.emptyAs !== undefined && v === props.emptyAs)
+      ? ''
+      : String(Math.round(v * 10000) / 10000).replace('.', ',');
   const [text, setText] = useState(fmt(props.value));
   const focused = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: fmt — чистая функция; текст обновляется только при смене значения
@@ -203,7 +205,8 @@ export function Sel<T extends string | number>(props: {
     <select
       value={String(props.value)}
       disabled={props.disabled}
-      title={props.title}
+      // Без своей подсказки — выбранное значение целиком (на случай, если в узком поле оно не поместилось).
+      title={props.title ?? props.options.find((o) => String(o.value) === String(props.value))?.label}
       style={props.width ? { width: props.width } : undefined}
       onChange={(e) => props.onChange((isNum ? Number(e.target.value) : e.target.value) as T)}
     >

@@ -329,11 +329,16 @@ function WornForces({ ids }: { ids: Id[] }) {
       </div>
       {worn.map((x) => (
         <div key={x.f.id} className="worn-force">
-          <div className="small">
-            <b>{x.f.name}</b>: {x.c.issues.join(', ')}
-          </div>
-          <div className="worn-actions">
-            <ForceActions force={x.f} />
+          <div className="worn-line">
+            <b className="small">{x.f.name}</b>
+            {x.c.issues.slice(0, 4).map((t) => (
+              <span key={t} className="chip-issue">
+                {t}
+              </span>
+            ))}
+            {x.c.issues.length > 4 && <Info text={`Ещё: ${x.c.issues.slice(4).join(', ')}`} />}
+            <span className="grow" />
+            <ForceActions force={x.f} compact />
           </div>
         </div>
       ))}

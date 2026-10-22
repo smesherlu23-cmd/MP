@@ -20,6 +20,8 @@ import {
   SUPPLY_LABEL,
   type SupplyKey,
   healForce,
+  prepareForce,
+  type BetweenPlan,
   repairForce,
   transferStrength,
   forceCondition,
@@ -183,13 +185,13 @@ export function resupplyForceStep(id: Id, key: SupplyKey, level: number) {
 }
 
 /** Лечить: раненые возвращаются в строй (не сверх штата). */
-export function healForceStep(id: Id) {
+export function healForceStep(id: Id, pct = 100) {
   let count = 0;
   return betweenStep(
     id,
     'лечение',
     (f) => {
-      const r = healForce(f, rulesetOf(f));
+      const r = healForce(f, rulesetOf(f), pct);
       count = r.count;
       return r;
     },
@@ -199,18 +201,34 @@ export function healForceStep(id: Id) {
 }
 
 /** Чинить: повреждённая техника и вооружение возвращаются в строй, состояние техники — к норме. */
-export function repairForceStep(id: Id) {
+export function repairForceStep(id: Id, pct = 100) {
   let count = 0;
   return betweenStep(
     id,
     'ремонт',
     (f) => {
-      const r = repairForce(f, rulesetOf(f));
+      const r = repairForce(f, rulesetOf(f), pct);
       count = r.count;
       return r;
     },
     (n) => (count ? `«${n}»: отремонтировано ${count} ед. техники и вооружения.` : `«${n}»: состояние техники — в норме.`),
     'Чинить нечего: техника в строю и исправна.',
+  );
+}
+
+/** Между боями: всё, что отмечено в плане, — одним шагом отмены и одной записью в боевом пути. */
+export function prepareForceStep(id: Id, plan: BetweenPlan) {
+  let done: string[] = [];
+  return betweenStep(
+    id,
+    'подготовка к бою',
+    (f) => {
+      const r = prepareForce(f, rulesetOf(f), plan);
+      done = r.done;
+      return r;
+    },
+    (n) => `«${n}»: ${done.join('; ')}.`,
+    'Делать нечего: силы в норме.',
   );
 }
 

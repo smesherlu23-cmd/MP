@@ -1,6 +1,7 @@
 // Мораль, слаженность и снятие подавления в конце хода.
 
 import { type EngineContext, clamp, e, lerp, round1 } from '../context';
+import { dec } from '../labels';
 import type { Factor, SideId } from '../types';
 
 // ------------------------------------------------------------------ мораль
@@ -30,7 +31,7 @@ export function phaseMorale(E: EngineContext) {
       };
       const w = clamp(k.moraleValueWeight, 0, 1);
       const moraleLossPct = persPct * (1 - w) + lossPct * w;
-      addNeg(`Потери за ход: люди ${persPct.toFixed(1)}%, боевая ценность ${lossPct.toFixed(1)}%`, moraleLossPct * k.moralePerLossPct);
+      addNeg(`Потери за ход: люди ${dec(persPct)}%, боевая ценность ${dec(lossPct)}%`, moraleLossPct * k.moralePerLossPct);
       if (f.suppression) addNeg(`Подавление ${Math.round(el.suppression)}%`, el.suppression * k.moraleSuppression);
       if (f.fatigue && el.fatigue > k.moraleFatigueThreshold) addNeg(`Изнурение (усталость ${Math.round(el.fatigue)}%)`, k.moraleHighFatigue);
       if (f.ammo && el.ammo <= 0) addNeg('Нет боезапаса', k.moraleNoAmmo);
@@ -80,7 +81,7 @@ export function phaseMorale(E: EngineContext) {
           side: el.side,
           severity: delta < 0 ? 'bad' : 'good',
           refs: [el.id],
-          text: `Мораль ${e(el)}: ${Math.round(before)} → ${Math.round(el.morale)} (${delta > 0 ? '+' : ''}${delta.toFixed(1)}).`,
+          text: `Мораль ${e(el)}: ${Math.round(before)} → ${Math.round(el.morale)} (${delta > 0 ? '+' : ''}${dec(delta)}).`,
           factors,
           data: { morale: [Math.round(before), Math.round(el.morale)] },
         });

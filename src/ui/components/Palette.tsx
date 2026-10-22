@@ -10,8 +10,9 @@ import { SECTIONS } from '../pages/RulesetPage';
 import { startBattle } from '../pages/ScenarioPage';
 import { createFormation, createScenario, importFile, newForceDialog, newRulesetDialog, openTab, redo, tabKey, undo, updateSettings, useApp } from '../store';
 
-export const usePalette = create<{ open: boolean }>(() => ({ open: false }));
-export const openPalette = () => usePalette.setState({ open: true });
+export const usePalette = create<{ open: boolean; query: string }>(() => ({ open: false, query: '' }));
+/** Открыть быстрый переход; query — с чего начать поиск (из поля навигатора). */
+export const openPalette = (query = '') => usePalette.setState({ open: true, query: typeof query === 'string' ? query : '' });
 const closePalette = () => usePalette.setState({ open: false });
 
 interface Item {
@@ -133,7 +134,7 @@ export function Palette() {
 }
 
 function PaletteBody() {
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(() => usePalette.getState().query);
   const [cur, setCur] = useState(0);
   const items = useMemo(buildItems, []);
   const list = useMemo(() => search(items, q), [items, q]);

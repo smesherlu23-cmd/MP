@@ -150,12 +150,20 @@ export function plural(n: number, one: string, few: string, many: string): strin
   return many;
 }
 
+/** Число с заданным числом знаков после запятой — по-русски, с запятой: 3,5. */
+export function dec(v: number, digits = 1): string {
+  return v.toFixed(digits).replace('.', ',');
+}
+
 export function fmtPct(v: number, digits = 0): string {
-  return `${v.toFixed(digits)}%`;
+  return `${dec(v, digits)}%`;
 }
 
 export function fmtMult(v: number): string {
-  return `×${v.toFixed(2).replace(/\.?0+$/, '')}`;
+  return `×${v
+    .toFixed(2)
+    .replace(/\.?0+$/, '')
+    .replace('.', ',')}`;
 }
 
 export const EVENT_KIND_LABELS: Record<ScenarioEventKind, string> = {
