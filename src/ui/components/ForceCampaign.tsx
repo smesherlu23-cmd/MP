@@ -53,7 +53,7 @@ export const LEVEL_LABEL: Record<ForceCondition['level'], { text: string; cls: s
   depleted: { text: 'Обескровлены', cls: 'bad' },
 };
 
-const signed = (v: number | undefined, unit: string) => (v ? `${v > 0 ? '+' : '−'}${fmt0(Math.abs(v))} ${unit}` : '');
+export const signed = (v: number | undefined, unit: string) => (v ? `${v > 0 ? '+' : '−'}${fmt0(Math.abs(v))} ${unit}` : '');
 const rulesetIdOf = (f: UnitNode) => f.rulesetId ?? defaultRulesetId() ?? '';
 const useRuleset = (f: UnitNode): Ruleset | undefined => useApp((s) => s.rulesets[rulesetIdOf(f)]);
 const PERCENT_KEYS = new Set<StateKey>(['ammo', 'fuel', 'equipment']);
@@ -624,7 +624,7 @@ export function ForceActions({ force, grid, compact }: { force: UnitNode; grid?:
   );
 }
 
-const KIND_ICON: Record<ForceRecord['kind'], IconName> = {
+export const KIND_ICON: Record<ForceRecord['kind'], IconName> = {
   battle: 'battle',
   rest: 'rest',
   heal: 'heal',

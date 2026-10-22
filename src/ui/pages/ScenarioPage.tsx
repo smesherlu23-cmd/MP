@@ -1,6 +1,7 @@
 // Сценарий: условия боя, стороны, их подразделения, укрепления, разведданные и задачи.
 
 import { Fragment, useState } from 'react';
+import { create } from 'zustand';
 import {
   OBJECTIVE_HAS_VALUE,
   OBJECTIVE_LABELS,
@@ -19,6 +20,8 @@ import {
   newObjective,
   partOf,
   randomSeed,
+  runManyAsync,
+  type MonteCarloResult,
   resolveScenario,
   scenarioForceIds,
   summarizeUnits,
@@ -35,6 +38,7 @@ import {
   type SideUnitRef,
   type UnitNode,
 } from '../../engine';
+import { StackBar } from '../components/Charts';
 import { effectsText } from '../components/EffectsEditor';
 import { ForceActions } from '../components/ForceCampaign';
 import { Icon } from '../components/Icon';
@@ -317,6 +321,7 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
         )}
         {rs && (
           <div id="sc-ratio" className="jump-target">
+            <QuickForecast sc={sc} rs={rs} />
             <ForceRatio sc={rsc} rs={rs} />
           </div>
         )}
@@ -961,6 +966,83 @@ function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset })
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Быстрый прогноз по сценарию: результат и для какой версии сценария и сил он посчитан. */
+const useQuickForecast = create<{
+  bySc: Record<Id, { running?: boolean; done?: number; result?: MonteCarloResult; stamp?: string }>;
+}>(() => ({ bySc: {} }));
+const QUICK_RUNS = 100;
+
+/** Версия сценария и сил на его сторонах: изменилось что-то — прогноз устарел. */
+function forecastStamp(sc: Scenario): string {
+  const forces = useApp.getState().forces;
+  const ids = [...scenarioForceIds(sc)].sort();
+  return [sc.updatedAt ?? '', sc.rulesetId, ...ids.map((id) => `${id}@${forces[id]?.updatedAt ?? ''}`)].join('|');
+}
+
+/**
+ * Шансы сторон прямо в сценарии: 100 прогонов в фоне (как «Прогоны», но быстро и без подробностей),
+ * пересчёт по кнопке; изменился сценарий или силы — видно, что прогноз устарел.
+ */
+function QuickForecast({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
+  const st = useQuickForecast((s) => s.bySc[sc.id]);
+  useApp((s) => s.forces);
+  const stale = !!st?.result && st.stamp !== forecastStamp(sc);
+  const set = (x: Partial<NonNullable<typeof st>>) => useQuickForecast.setState((s) => ({ bySc: { ...s.bySc, [sc.id]: { ...s.bySc[sc.id], ...x } } }));
+  const run = async () => {
+    set({ running: true, done: 0 });
+    try {
+      const result = await runManyAsync(scenarioForBattle(sc), rs, QUICK_RUNS, randomSeed(), (done) => set({ done }));
+      set({ running: false, result, stamp: forecastStamp(sc) });
+    } catch (e) {
+      set({ running: false });
+      toast(`Ошибка прогноза: ${(e as Error).message}`, 'bad');
+    }
+  };
+  const r = st?.result;
+  return (
+    <div className="card quick-forecast">
+      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        <b>Прогноз исхода</b>
+        <Info text={`${QUICK_RUNS} прогонов сценария без вмешательства ГМ, с текущим состоянием сил. Подробно — «Прогоны».`} />
+        {r && (
+          <span className={`qf-line${stale ? ' faint' : ''}`}>
+            <span style={{ color: sc.sides[0].color }}>
+              {r.sideNames.A}: <b>{Math.round(r.winA)}%</b>
+            </span>
+            <span className="faint">ничья {Math.round(r.draw)}%</span>
+            <span style={{ color: sc.sides[1].color }}>
+              {r.sideNames.B}: <b>{Math.round(r.winB)}%</b>
+            </span>
+          </span>
+        )}
+        {stale && <span className="warn small">сценарий или силы изменились</span>}
+        <span className="grow" />
+        {st?.running ? (
+          <span className="faint small">
+            считаю… {st.done ?? 0} из {QUICK_RUNS}
+          </span>
+        ) : (
+          <Btn sm kind={r && !stale ? 'ghost' : undefined} onClick={() => void run()}>
+            {r ? 'Пересчитать' : 'Оценить шансы'}
+          </Btn>
+        )}
+        <Btn sm kind="ghost" onClick={() => openTab('montecarlo', sc.id)} title="Подробные прогоны: исходы, потери, сравнение вариантов">
+          Подробнее →
+        </Btn>
+      </div>
+      {r && (
+        <StackBar
+          parts={[
+            { label: r.sideNames.A, value: r.winA, color: sc.sides[0].color },
+            { label: 'Ничья', value: r.draw, color: 'var(--faint)' },
+            { label: r.sideNames.B, value: r.winB, color: sc.sides[1].color },
+          ]}
+        />
       )}
     </div>
   );

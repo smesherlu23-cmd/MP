@@ -25,7 +25,7 @@ interface Item {
   run: (background: boolean) => void;
 }
 
-const GROUP_ORDER = ['Сценарии', 'Подразделения', 'Бои', 'Наборы правил', 'Команды'];
+const GROUP_ORDER = ['Сценарии', 'Подразделения', 'Команды сил', 'Бои', 'Наборы правил', 'Команды'];
 
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е');
 
@@ -48,6 +48,8 @@ function buildItems(): Item[] {
   cmd('Настройки', () => openTab('settings'));
 
   const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name, 'ru');
+  for (const team of [...new Set(Object.values(s.forces).map((f) => f.faction?.trim() || ''))].filter(Boolean).sort((a, b) => a.localeCompare(b, 'ru')))
+    items.push({ id: `team:${team}`, group: 'Команды сил', title: `Команда «${team}»`, run: (bg) => openTab('team', team, { background: bg }) });
   for (const sc of Object.values(s.scenarios).sort(byName)) {
     items.push({ id: `sc:${sc.id}`, group: 'Сценарии', title: sc.name, top: true, run: (bg) => openTab('scenario', sc.id, { background: bg }) });
     const rs = s.rulesets[sc.rulesetId];

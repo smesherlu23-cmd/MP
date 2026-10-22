@@ -130,12 +130,18 @@ export function Navigator() {
       )}
     </div>
   );
-  const group = (title: string, items: React.ReactNode[], onDelete?: () => void, deleteTitle?: string, color?: string) =>
+  const group = (title: string, items: React.ReactNode[], onDelete?: () => void, deleteTitle?: string, color?: string, onOpen?: () => void) =>
     items.length ? (
       <div key={`g:${title}`} className="nav-group">
         <div className="nav-group-title">
           {color && <span className="team-dot sm" style={{ background: color }} aria-hidden />}
-          <span className="grow">{title}</span>
+          {onOpen ? (
+            <button type="button" className="grow nav-group-link" onClick={onOpen} title={`Страница команды «${title}»`}>
+              {title}
+            </button>
+          ) : (
+            <span className="grow">{title}</span>
+          )}
           {onDelete && (
             <button type="button" className="nav-group-del" onClick={onDelete} title={deleteTitle}>
               ×
@@ -228,7 +234,11 @@ export function Navigator() {
       // Силы — по командам: чьи это войска; у команды свой цвет.
       const list =
         factions.length > 1
-          ? factions.map((f) => group(f || 'Без команды', units.filter((u) => (u.faction?.trim() || '') === f).map(item), undefined, undefined, teamColor(f)))
+          ? factions.map((f) =>
+              group(f || 'Без команды', units.filter((u) => (u.faction?.trim() || '') === f).map(item), undefined, undefined, teamColor(f), () =>
+                openTab('team', f || undefined),
+              ),
+            )
           : units.map(item);
       return { list: [...list, more(sec, hidden)], empty: 'Сил пока нет.' };
     }

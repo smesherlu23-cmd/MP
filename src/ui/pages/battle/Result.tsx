@@ -3,10 +3,10 @@
 import { dec, explainResult, fmtDuration, formatReport, formatSideReport, plural, type Battle, type BattleResult, type SideResult } from '../../../engine';
 import { LineChart } from '../../components/Charts';
 import { RichText } from '../../components/LogView';
-import { Btn, Card, Section, fmt0, pct } from '../../components/ui';
+import { Btn, Card, Menu, Section, fmt0, pct } from '../../components/ui';
 import { applyResultsToForces, battleForces } from '../../postBattle';
-import { fmtDate, useApp } from '../../store';
-import { SIDES, copyText } from './common';
+import { exportText, fmtDate, useApp } from '../../store';
+import { SIDES, copyText, printText } from './common';
 
 /** Стороны рядом: только то, что нужно, чтобы понять ход боя. full — для итогов (с техникой по типам). */
 export function SideCompare({ b, result, full }: { b: Battle; result: BattleResult; full?: boolean }) {
@@ -139,6 +139,12 @@ export function SideCompare({ b, result, full }: { b: Battle; result: BattleResu
   );
 }
 
+/** Отчёт для ГМ и донесения сторон — для копирования, файла и печати. */
+const reports = (b: Battle) => [
+  { label: 'Полный отчёт', text: () => formatReport(b) },
+  ...SIDES.map((sd) => ({ label: `Донесение для «${b.sides[sd].name}»`, text: () => formatSideReport(b, sd) })),
+];
+
 export function Result({ b, result, onElement }: { b: Battle; result: BattleResult; onElement: (id: string) => void }) {
   const keyEvents = b.log.filter((x) => x.level === 0 && x.phase !== 'turn' && x.phase !== 'setup' && x.phase !== 'end');
   return (
@@ -170,6 +176,17 @@ export function Result({ b, result, onElement }: { b: Battle; result: BattleResu
                 донесение для «{b.sides[sd].name}»
               </Btn>
             ))}
+            <Menu
+              sm
+              label="Сохранить или напечатать…"
+              title="Отчёт и донесения — в текстовый файл или на печать (в том числе в PDF)"
+              items={[
+                ...reports(b).flatMap((r) => [
+                  { label: `${r.label} — в файл…`, onClick: () => void exportText(`${b.name} — ${r.label}`, r.text(), 'txt') },
+                  { label: `${r.label} — печать…`, onClick: () => printText(`${b.name} — ${r.label}`, r.text()) },
+                ]),
+              ]}
+            />
           </div>
         )}
       </div>

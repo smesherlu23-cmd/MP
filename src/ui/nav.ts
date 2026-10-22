@@ -50,6 +50,8 @@ export function sectionOf(t: Pick<Tab, 'kind' | 'ref'> | undefined): NavSection 
       return 'scenarios';
     case 'formation':
       return t.ref?.startsWith('force:') ? 'forces' : 'units';
+    case 'team':
+      return 'forces';
     case 'battle':
       return 'battles';
     case 'ruleset':

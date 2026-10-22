@@ -7,7 +7,7 @@ import { storage, type BattleMeta, type Collection } from '../storage';
 import { resolveFormation } from './library';
 import { useBattles } from './battles';
 
-export type TabKind = 'home' | 'ruleset' | 'formation' | 'scenario' | 'battle' | 'montecarlo' | 'settings' | 'help' | 'library';
+export type TabKind = 'home' | 'ruleset' | 'formation' | 'scenario' | 'battle' | 'montecarlo' | 'settings' | 'help' | 'library' | 'team';
 
 export interface Tab {
   key: string;
@@ -375,6 +375,8 @@ export function tabExists(t: Tab): boolean {
       return !!resolveFormation(t.ref!);
     case 'battle':
       return !!s.battleIndex[t.ref!] || !!useBattles.getState().battles[t.ref!];
+    case 'team':
+      return Object.values(s.forces).some((f) => (f.faction?.trim() || '') === (t.ref ?? ''));
     default:
       return true;
   }

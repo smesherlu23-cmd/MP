@@ -172,3 +172,51 @@ test('раздел «Силы»: команды с цветом и назван�
   await expect(donor.locator('.badge')).not.toHaveText('Боеготовы');
   expect(errors).toEqual([]);
 });
+
+test('незаписанные итоги: значок у боя, список на «Главном», вопрос перед новым боем', async ({ page }) => {
+  const errors = await openApp(page);
+  await openFromNav(page, 'атака на высоту');
+  await startBattle(page);
+  await page.getByRole('button', { name: 'До конца' }).click();
+  await expect(page.locator('.nav-sec[data-sec="battles"] .side-item .side-warn')).toHaveCount(1);
+  await page.locator('.nav-home .side-item, .nav-home button').first().click();
+  await expect(page.locator('.home-unrecorded')).toContainText('бой 1');
+  // Новый бой тех же сил — с вопросом; отказ — боя нет.
+  await openFromNav(page, 'атака на высоту');
+  await page.getByRole('button', { name: '▶ Начать бой' }).click();
+  await expect(page.locator('.modal')).toContainText('Итоги прошлого боя не записаны');
+  await page.locator('.modal').getByRole('button', { name: 'Отмена' }).click();
+  await expect(page.locator('.nav-sec[data-sec="battles"] .side-item')).toHaveCount(1);
+  // Записали — напоминание пропадает.
+  await page.locator('.nav-sec[data-sec="battles"] .side-item').first().click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await expect(page.locator('.nav-sec[data-sec="battles"] .side-item .side-warn')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('страница команды: численность, бои и боевой путь всех её сил', async ({ page }) => {
+  const errors = await openApp(page);
+  await openFromNav(page, 'атака на высоту');
+  await startBattle(page);
+  await page.getByRole('button', { name: 'До конца' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await (await navSec(page, 'Силы')).locator('.nav-group-link', { hasText: 'Синие' }).click();
+  await expect(page.locator('.page-head h1')).toHaveText('Синие');
+  await expect(page.locator('.team-kpis')).toContainText('Потери за всё время');
+  await expect(page.locator('.team-battles tbody tr')).toHaveCount(1);
+  await expect(page.locator('.team-page .force-card')).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+test('прогноз исхода прямо в сценарии; устаревает при правке', async ({ page }) => {
+  const errors = await openApp(page);
+  await openFromNav(page, 'атака на высоту');
+  const qf = page.locator('.quick-forecast');
+  await qf.getByRole('button', { name: 'Оценить шансы' }).click();
+  await expect(qf.locator('.qf-line')).toContainText('%', { timeout: 30000 });
+  await expect(qf).not.toContainText('изменились');
+  await page.locator('.field', { hasText: 'Длительность боя' }).locator('input').fill('3');
+  await page.locator('.field', { hasText: 'Длительность боя' }).locator('input').press('Enter');
+  await expect(qf).toContainText('изменились');
+  expect(errors).toEqual([]);
+});

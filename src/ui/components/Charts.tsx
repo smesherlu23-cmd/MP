@@ -184,7 +184,7 @@ export function StackBar(props: { parts: { label: string; value: number; color: 
           <div
             key={p.label}
             style={{ width: `${(p.value / total) * 100}%`, background: p.color }}
-            title={p.title ?? `${p.label}: ${Math.round((p.value / total) * 1000) / 10}%`}
+            title={p.title ?? `${p.label}: ${String(Math.round((p.value / total) * 1000) / 10).replace('.', ',')}%`}
           >
             {(p.value / total) * 100 >= 8 ? `${Math.round((p.value / total) * 100)}%` : ''}
           </div>
