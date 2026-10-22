@@ -103,7 +103,7 @@ test('сценарий: участки боя, событие по услови�
   expect(errors).toEqual([]);
 });
 
-test('силы между боями: итоги в боевой путь, отдых, пополнение', async ({ page }) => {
+test('силы между боями: итоги в боевой путь, отдых в процентах, лечение, ремонт, боезапас, топливо, пополнение', async ({ page }) => {
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
@@ -114,19 +114,39 @@ test('силы между боями: итоги в боевой путь, от�
   await expect(hist).toContainText('боёв: 1');
   const panel = page.locator('.readiness');
   await expect(panel.locator('.badge')).not.toHaveText('Боеготовы');
+  // Отдых — в процентах, раненые при этом не возвращаются.
   await panel.getByRole('button', { name: 'Отдых…' }).click();
-  await expect(page.locator('.modal')).toContainText('вернётся в строй');
-  await page.locator('.modal').getByRole('button', { name: 'Отдых', exact: true }).click();
-  await expect(hist).toContainText('Отдых 7 дней');
-  await page.locator('.page-head button[aria-haspopup="menu"]').click();
-  await menu(page, 'Пополнить до штата');
+  await expect(page.locator('.modal')).toContainText('Раненые и техника в ремонте не возвращаются');
+  await page.locator('.modal').getByRole('button', { name: '50%' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Отдых 50%' }).click();
+  await expect(hist).toContainText('Отдых 50%');
+  // Лечить — раненые в строй; Чинить — техника из ремонта.
+  await panel.getByRole('button', { name: /^Лечить/ }).click();
+  await expect(hist).toContainText('Лечение раненых');
+  await expect(panel.getByRole('button', { name: /^Лечить/ })).toBeDisabled();
+  await panel.getByRole('button', { name: /^Чинить/ }).click();
+  await expect(hist).toContainText('Ремонт техники');
+  await expect(panel.getByRole('button', { name: /^Чинить/ })).toBeDisabled();
+  // Боезапас и топливо — отдельно, до заданного уровня.
+  await panel.getByRole('button', { name: 'Боезапас…' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Пополнить до 100%' }).click();
+  await expect(hist).toContainText('Боезапас пополнен до 100%');
+  await expect(panel.getByRole('button', { name: 'Боезапас…' })).toBeDisabled();
+  await panel.getByRole('button', { name: 'Топливо…' }).click();
+  await page.locator('.modal').getByRole('button', { name: '75%' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Пополнить до 75%' }).click();
+  await expect(hist).toContainText('Топливо пополнено до 75%');
+  // Пополнить из резерва — до штата.
+  await panel.getByRole('button', { name: 'Пополнить…' }).click();
   await page.locator('.modal').getByRole('button', { name: 'Пополнить', exact: true }).click();
   await expect(hist).toContainText('Пополнение до штата');
-  // Одной кнопкой — полное восстановление.
-  await panel.getByRole('button', { name: 'Восстановить' }).click();
+  await expect(panel.getByRole('button', { name: 'Пополнить…' })).toBeDisabled();
+  // Всё сразу — «Восстановить полностью» в меню «⋯».
+  await page.locator('.page-head button[aria-haspopup="menu"]').click();
+  await menu(page, 'Восстановить полностью');
   await expect(panel.locator('.badge')).toHaveText('Боеготовы');
   await expect(hist).toContainText('Полное восстановление');
-  await expect(panel.getByRole('button', { name: 'Восстановить' })).toBeDisabled();
+  await expect(panel.getByRole('button', { name: 'Отдых…' })).toBeDisabled();
   expect(errors).toEqual([]);
 });
 

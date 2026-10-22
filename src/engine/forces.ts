@@ -6,7 +6,21 @@
 import { COEFFICIENT_DEFAULTS } from './coefficients';
 import { plural } from './labels';
 import { STATE_KEYS } from './types';
-import type { Battle, ComponentType, ElementState, ForceRecord, Id, Ruleset, Scenario, SideDef, SideUnitRef, UnitNode, UnitState } from './types';
+import type {
+  Battle,
+  ComponentEntry,
+  ComponentType,
+  ElementState,
+  ForceRecord,
+  Id,
+  Ruleset,
+  Scenario,
+  SideDef,
+  SideUnitRef,
+  StateKey,
+  UnitNode,
+  UnitState,
+} from './types';
 import {
   cloneDeep,
   findParent,
@@ -346,59 +360,159 @@ export function recoverableOf(f: UnitNode, rs: Ruleset | undefined): { personnel
   return { personnel, equipment };
 }
 
+const kindsOf = (rs: Ruleset | undefined) => new Map((rs?.componentTypes ?? []).map((t) => [t.id, t.kind]));
+
+/** Хуже ли значение показателя, чем норма (усталость — чем больше, тем хуже). */
+const worseThanNorm = (k: StateKey, v: number) => (k === 'fatigue' ? v > ROOT_STATE[k] : v < ROOT_STATE[k]);
+
+/** Что восстанавливает отдых: состояние бойцов, которые сейчас в строю (боезапас и топливо — отдельным пополнением). */
+export const REST_PARTS = [
+  { id: 'spirit', label: 'Мораль и усталость', keys: ['morale', 'fatigue'] },
+  { id: 'order', label: 'Слаженность и готовность', keys: ['cohesion', 'readiness'] },
+  { id: 'gear', label: 'Снаряжение', keys: ['equipment'] },
+] as const satisfies readonly { id: string; label: string; keys: readonly StateKey[] }[];
+export type RestPart = (typeof REST_PARTS)[number]['id'];
+export const REST_PART_IDS: RestPart[] = REST_PARTS.map((x) => x.id);
+
 /**
- * Отдых сил N дней: раненые возвращаются в строй, повреждённая техника ремонтируется (не сверх штата),
- * мораль, слаженность, готовность, усталость, боезапас, топливо, снаряжение приближаются к норме.
- * Темпы — в наборе правил («Между боями»). Возвращает изменённую копию.
+ * Отдых: показатели бойцов, которые сейчас в строю, приближаются к норме на pct% разницы (100% — до нормы).
+ * Раненые не возвращаются, техника не ремонтируется, людей не прибавляется — это «Лечить», «Чинить» и «Пополнить».
+ * Что лучше нормы — не трогается; опыт — тоже. Возвращает изменённую копию.
  */
-export function restForce(src: UnitNode, days: number, rs: Ruleset | undefined): { force: UnitNode; personnel: number; equipment: number } {
+export function restForce(src: UnitNode, pct: number, parts: RestPart[] = REST_PART_IDS, at = new Date().toISOString()) {
   const f = cloneDeep(src);
-  const kinds = new Map((rs?.componentTypes ?? []).map((t) => [t.id, t.kind]));
-  const d = Math.max(0, days);
-  const share = (key: string) => Math.min(1, (d * coef(rs, key)) / 100);
-  const wounded = share('restWoundedPerDay');
-  const repair = share('restRepairPerDay');
-  const recover = share('restRecoverPerDay');
-  let personnel = 0;
-  let equipment = 0;
+  const share = Math.max(0, Math.min(100, pct)) / 100;
+  const keys = REST_PARTS.filter((x) => parts.includes(x.id)).flatMap((x) => x.keys as readonly StateKey[]);
+  let changed = false;
+  walkUnits(f, (n) => {
+    for (const k of keys) {
+      const v = n.state[k];
+      if (typeof v !== 'number' || !worseThanNorm(k, v)) continue;
+      const next = Math.round(v + (ROOT_STATE[k] - v) * share);
+      if (next === v) continue;
+      n.state[k] = next;
+      changed = true;
+    }
+  });
+  if (changed) {
+    f.updatedAt = at;
+    const what = REST_PARTS.filter((x) => parts.includes(x.id)).map((x) => x.label.toLowerCase());
+    addRecord(f, { at, kind: 'rest', title: `Отдых ${Math.round(share * 100)}%`, note: what.length < REST_PARTS.length ? what.join(', ') : undefined });
+  }
+  return { force: f, changed };
+}
+
+/** Что можно сделать с силами между боями — без пересчёта: есть ли что восстанавливать отдыхом, сколько вернётся после лечения и ремонта, сколько не хватает до штата. */
+export function betweenNeeds(f: UnitNode, rs: Ruleset | undefined) {
+  const kinds = kindsOf(rs);
+  const restKeys = REST_PARTS.flatMap((x) => x.keys as readonly StateKey[]);
+  const out = { rest: false, heal: 0, repair: 0, vehicleCondition: false, personnelMissing: 0, equipmentMissing: 0, ammo: false, fuel: false };
   walkUnits(f, (n) => {
     for (const c of n.composition) {
+      const gap = Math.max(0, c.authorized - c.current);
+      const back = Math.min(c.recoverable ?? 0, gap);
+      if (kinds.get(c.typeId) === 'personnel') {
+        out.heal += back;
+        out.personnelMissing += gap;
+      } else {
+        out.repair += back;
+        out.equipmentMissing += gap;
+      }
+    }
+    for (const k of restKeys) {
+      const v = n.state[k];
+      if (typeof v === 'number' && worseThanNorm(k, v)) out.rest = true;
+    }
+    const vc = n.state.vehicleCondition;
+    if (typeof vc === 'number' && worseThanNorm('vehicleCondition', vc)) out.vehicleCondition = true;
+    for (const k of ['ammo', 'fuel'] as const) {
+      const v = n.state[k];
+      if (typeof v === 'number' && v < 100) out[k] = true;
+    }
+  });
+  return out;
+}
+
+/** Что пополняется отдельно от отдыха: боезапас и топливо. */
+export type SupplyKey = 'ammo' | 'fuel';
+export const SUPPLY_LABEL: Record<SupplyKey, { name: string; done: string }> = {
+  ammo: { name: 'Боезапас', done: 'Боезапас пополнен' },
+  fuel: { name: 'Топливо', done: 'Топливо пополнено' },
+};
+
+/**
+ * Пополнить боезапас или топливо до level% (100 — полностью): у кого меньше — поднимается до этого уровня,
+ * у кого больше — не трогается. Возвращает изменённую копию.
+ */
+export function resupplyForce(src: UnitNode, key: SupplyKey, level: number, at = new Date().toISOString()) {
+  const f = cloneDeep(src);
+  const to = Math.max(0, Math.min(100, Math.round(level)));
+  let changed = false;
+  walkUnits(f, (n) => {
+    const v = n.state[key];
+    if (typeof v !== 'number' || v >= to) return;
+    n.state[key] = to;
+    changed = true;
+  });
+  if (changed) {
+    f.updatedAt = at;
+    addRecord(f, { at, kind: 'supply', title: `${SUPPLY_LABEL[key].done} до ${to}%` });
+  }
+  return { force: f, changed };
+}
+
+/** Вернуть в строй раненых (не сверх штата — остальные ждут). Возвращает изменённую копию и сколько вернулось. */
+export function healForce(src: UnitNode, rs: Ruleset | undefined, at = new Date().toISOString()) {
+  return returnRecoverable(src, rs, 'personnel', at);
+}
+
+/**
+ * Отремонтировать технику и вооружение: повреждённое возвращается в строй (не сверх штата), состояние
+ * техники — к норме. Возвращает изменённую копию и сколько единиц вернулось.
+ */
+export function repairForce(src: UnitNode, rs: Ruleset | undefined, at = new Date().toISOString()) {
+  return returnRecoverable(src, rs, 'equipment', at);
+}
+
+function returnRecoverable(src: UnitNode, rs: Ruleset | undefined, what: 'personnel' | 'equipment', at: string) {
+  const f = cloneDeep(src);
+  const kinds = kindsOf(rs);
+  let count = 0;
+  let condition = false;
+  walkUnits(f, (n) => {
+    for (const c of n.composition) {
+      if ((kinds.get(c.typeId) === 'personnel') !== (what === 'personnel')) continue;
       const rec = c.recoverable ?? 0;
-      if (rec <= 0) continue;
-      const isPers = kinds.get(c.typeId) === 'personnel';
-      const back = Math.min(Math.round(rec * (isPers ? wounded : repair)), Math.max(0, c.authorized - c.current));
+      const back = Math.min(rec, Math.max(0, c.authorized - c.current));
       if (back <= 0) continue;
       c.current += back;
       c.recoverable = rec - back;
       if (!c.recoverable) delete c.recoverable;
-      if (isPers) personnel += back;
-      else equipment += back;
+      count += back;
     }
-    // Состояние: заданные значения приближаются к норме; наследуемые и опыт не трогаются.
-    for (const k of STATE_KEYS) {
-      if (k === 'experience') continue;
-      const v = n.state[k];
-      if (typeof v !== 'number') continue;
-      const norm = ROOT_STATE[k];
-      n.state[k] = Math.round(v + (norm - v) * recover);
+    const v = n.state.vehicleCondition;
+    if (what === 'equipment' && typeof v === 'number' && worseThanNorm('vehicleCondition', v)) {
+      n.state.vehicleCondition = ROOT_STATE.vehicleCondition;
+      condition = true;
     }
   });
-  f.updatedAt = new Date().toISOString();
-  addRecord(f, {
-    at: f.updatedAt,
-    kind: 'rest',
-    title: `Отдых ${d} ${plural(d, 'день', 'дня', 'дней')}`,
-    personnel,
-    equipment,
-    note: personnel || equipment ? undefined : 'в строй никто не вернулся',
-  });
-  return { force: f, personnel, equipment };
+  const changed = count > 0 || condition;
+  if (changed) {
+    f.updatedAt = at;
+    addRecord(
+      f,
+      what === 'personnel'
+        ? { at, kind: 'heal', title: 'Лечение раненых', personnel: count }
+        : { at, kind: 'repair', title: 'Ремонт техники', equipment: count || undefined, note: count ? undefined : 'состояние техники — в норме' },
+    );
+  }
+  return { force: f, count, changed };
 }
 
-/** Пополнение до штата: людей и/или техники и вооружения. Возвращает изменённую копию и сколько пришло. */
+/** Пополнение до штата из резерва: людей и/или техники и вооружения. Возвращает изменённую копию и сколько пришло. */
 export function replenishForce(src: UnitNode, rs: Ruleset | undefined, what: { personnel: boolean; equipment: boolean }, note?: string) {
   const f = cloneDeep(src);
-  const kinds = new Map((rs?.componentTypes ?? []).map((t) => [t.id, t.kind]));
+  const kinds = kindsOf(rs);
   let personnel = 0;
   let equipment = 0;
   walkUnits(f, (n) => {
@@ -417,14 +531,75 @@ export function replenishForce(src: UnitNode, rs: Ruleset | undefined, what: { p
   return { force: f, personnel, equipment };
 }
 
+/** Численность сил по типам: в строю, по штату, вне строя (раненые, ремонт). */
+export function strengthByType(f: UnitNode): Map<Id, { current: number; authorized: number; recoverable: number }> {
+  const out = new Map<Id, { current: number; authorized: number; recoverable: number }>();
+  walkUnits(f, (n) => {
+    for (const c of n.composition) {
+      const x = out.get(c.typeId) ?? { current: 0, authorized: 0, recoverable: 0 };
+      x.current += c.current;
+      x.authorized += c.authorized;
+      x.recoverable += c.recoverable ?? 0;
+      out.set(c.typeId, x);
+    }
+  });
+  return out;
+}
+
 /**
- * Полное восстановление «одной кнопкой»: раненые и отремонтированная техника возвращаются, недостающее
- * пополняется до штата, состояние (мораль, слаженность, готовность, усталость, боезапас, топливо,
- * снаряжение, техника) — к норме; опыт сохраняется. Возвращает изменённую копию и что изменилось.
+ * Пополнение из другого подразделения: по каждому типу передаётся amounts[тип] (не больше, чем недостаёт
+ * до штата и чем есть в строю у донора). Недостающее заполняется по порядку дерева; у донора люди и техника
+ * берутся оттуда, где их больше. Обоим — запись в боевой путь. Возвращает изменённые копии.
+ */
+export function transferStrength(target: UnitNode, donor: UnitNode, rs: Ruleset | undefined, amounts: Record<Id, number>, at = new Date().toISOString()) {
+  const t = cloneDeep(target);
+  const d = cloneDeep(donor);
+  const kinds = kindsOf(rs);
+  const entries = (root: UnitNode, typeId: Id) => {
+    const list: ComponentEntry[] = [];
+    walkUnits(root, (n) => n.composition.forEach((c) => c.typeId === typeId && list.push(c)));
+    return list;
+  };
+  let personnel = 0;
+  let equipment = 0;
+  for (const [typeId, want] of Object.entries(amounts)) {
+    const need = entries(t, typeId);
+    const have = entries(d, typeId);
+    const deficit = need.reduce((a, c) => a + Math.max(0, c.authorized - c.current), 0);
+    const avail = have.reduce((a, c) => a + c.current, 0);
+    const count = Math.max(0, Math.min(Math.round(want), deficit, avail));
+    if (!count) continue;
+    if (kinds.get(typeId) === 'personnel') personnel += count;
+    else equipment += count;
+    let left = count;
+    for (const c of need) {
+      const add = Math.min(left, Math.max(0, c.authorized - c.current));
+      c.current += add;
+      left -= add;
+    }
+    for (let k = 0; k < count; k++) {
+      const c = have.reduce((a, b) => (b.current > a.current ? b : a));
+      c.current -= 1;
+    }
+  }
+  const changed = personnel > 0 || equipment > 0;
+  if (changed) {
+    t.updatedAt = at;
+    d.updatedAt = at;
+    addRecord(t, { at, kind: 'transfer', title: `Пополнение из «${donor.name}»`, personnel, equipment: equipment || undefined });
+    addRecord(d, { at, kind: 'transfer', title: `Передано в «${target.name}»`, personnel: -personnel || undefined, equipment: -equipment || undefined });
+  }
+  return { target: t, donor: d, personnel, equipment, changed };
+}
+
+/**
+ * Полное восстановление: раненые и отремонтированная техника возвращаются, недостающее пополняется
+ * до штата, состояние (мораль, слаженность, готовность, усталость, боезапас, топливо, снаряжение,
+ * техника) — к норме; что лучше нормы и опыт — сохраняются. Возвращает изменённую копию и что изменилось.
  */
 export function restoreForce(src: UnitNode, rs: Ruleset | undefined, at = new Date().toISOString()) {
   const f = cloneDeep(src);
-  const kinds = new Map((rs?.componentTypes ?? []).map((t) => [t.id, t.kind]));
+  const kinds = kindsOf(rs);
   let personnel = 0;
   let equipment = 0;
   let state = false;
@@ -441,10 +616,11 @@ export function restoreForce(src: UnitNode, rs: Ruleset | undefined, at = new Da
         state = true;
       }
     }
-    // Свои значения состояния (их оставляют бои) снимаются: подразделение снова в норме.
+    // Свои значения хуже нормы (их оставляют бои) снимаются: подразделение снова в норме.
     for (const k of STATE_KEYS) {
-      if (k === 'experience' || typeof n.state[k] !== 'number') continue;
-      if (n.state[k] !== ROOT_STATE[k]) state = true;
+      const v = n.state[k];
+      if (k === 'experience' || typeof v !== 'number' || (!worseThanNorm(k, v) && v !== ROOT_STATE[k])) continue;
+      if (v !== ROOT_STATE[k]) state = true;
       delete n.state[k];
     }
   });

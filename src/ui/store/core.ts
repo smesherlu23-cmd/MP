@@ -36,6 +36,8 @@ export interface Settings {
   forecastRuns?: number;
   /** Сколько вкладок держать открытыми (давно не используемые закрываются сами); 0 — без предела. */
   maxTabs?: number;
+  /** Цвета команд (принадлежность сил): название → цвет. Не задано — по одноимённой стороне сценария или из палитры. */
+  teamColors?: Record<string, string>;
 }
 
 export interface Toast {
