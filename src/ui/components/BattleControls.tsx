@@ -408,6 +408,7 @@ export function SupportPanel({
           <div key={side} className="support-side">
             <div className="row" style={{ gap: 6 }}>
               <b style={{ color: b.sides[side].color }}>{b.sides[side].name}</b>
+              {!assets.length && !fx.length && !st.length && <span className="faint small">эффектов и поддержки нет</span>}
               <span className="grow" />
               {live && (
                 <button
@@ -465,7 +466,6 @@ export function SupportPanel({
                 )}
               </div>
             ))}
-            {!assets.length && !fx.length && !st.length && <div className="faint small">Эффектов и огневой поддержки нет.</div>}
           </div>
         );
       })}

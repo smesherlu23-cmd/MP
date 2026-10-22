@@ -6,6 +6,9 @@ import { useRef, useState } from 'react';
 import { Icon, type IconName } from './Icon';
 import { arrowNav, Menu, pressable } from './ui';
 import { openPalette } from './Palette';
+
+/** Сколько объектов раздела видно в навигаторе без фильтра (остальные — в каталоге). */
+const NAV_LIMIT = 6;
 import { NAV_GROUPS, isNavOpen, sectionMeta, sectionOf, setNavOpen, showSection } from '../nav';
 import { LEVEL_LABEL } from './ForceCampaign';
 import { DND_FORCE, DND_LIB } from '../pages/unit/model';
@@ -82,7 +85,15 @@ export function Navigator() {
     key: string,
     name: string,
     onOpen: (o: { background?: boolean; preview?: boolean }) => void,
-    opts: { sub?: string; active?: boolean; dragLib?: string; dragForce?: string; color?: string; warn?: { cls: string; text: string } } = {},
+    opts: {
+      sub?: string;
+      hint?: string;
+      active?: boolean;
+      dragLib?: string;
+      dragForce?: string;
+      color?: string;
+      warn?: { cls: string; text: string };
+    } = {},
   ) => (
     <div
       key={key}
@@ -92,8 +103,8 @@ export function Navigator() {
           ? `${name}\nМожно перетащить в структуру шаблона или сил`
           : opts.dragForce
             ? `${name}${opts.warn ? ` — ${opts.warn.text.toLowerCase()}` : ''}\nМожно перетащить на сторону сценария`
-            : opts.sub
-              ? `${name}\n${opts.sub}`
+            : opts.sub || opts.hint || opts.warn
+              ? [name, opts.sub, opts.hint, opts.warn?.text].filter(Boolean).join('\n')
               : name
       }
       draggable={!!(opts.dragLib || opts.dragForce)}
@@ -135,29 +146,55 @@ export function Navigator() {
       </div>
     ) : null;
 
+  /**
+   * Длинный раздел (без фильтра) показывает недавно изменённые и открытое сейчас; остальное — в каталоге
+   * раздела по ссылке «Ещё N». Порядок показанных — прежний.
+   */
+  const capped = <T extends { id: string; updatedAt?: string }>(items: T[], active: (x: T) => boolean): { shown: T[]; hidden: number } => {
+    if (q || items.length <= NAV_LIMIT + 2) return { shown: items, hidden: 0 };
+    const keep = new Set(
+      [...items]
+        .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+        .slice(0, NAV_LIMIT)
+        .map((x) => x.id),
+    );
+    for (const x of items) if (active(x)) keep.add(x.id);
+    const shown = items.filter((x) => keep.has(x.id));
+    return { shown, hidden: items.length - shown.length };
+  };
+  const more = (sec: NavSection, hidden: number) =>
+    hidden > 0 ? (
+      <button key="more" type="button" className="nav-more" onClick={() => showSection(sec)} title="Открыть каталог раздела — там все, с поиском">
+        ещё {hidden} — все в каталоге →
+      </button>
+    ) : null;
+
   /** Список раздела и подпись для пустого списка. */
   const sectionList = (sec: NavSection): { list: React.ReactNode[]; empty: string } => {
     if (sec === 'scenarios') {
       const battlesBy = new Map<string, number>();
       for (const b of Object.values(s.battleIndex)) battlesBy.set(b.scenarioId, (battlesBy.get(b.scenarioId) ?? 0) + 1);
-      const list = Object.values(s.scenarios)
-        .filter((x) => match(x.name))
-        .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-        .map((x) =>
-          row(x.id, x.name, (o) => openTab('scenario', x.id, o), {
-            sub: battlesBy.get(x.id) ? `боёв: ${battlesBy.get(x.id)}` : undefined,
-            active:
-              (activeTab?.kind === 'scenario' || activeTab?.kind === 'montecarlo') && activeTab.ref === x.id
-                ? true
-                : !!activeTab?.ref?.startsWith(`sc:${x.id}:`),
-          }),
-        );
-      return { list, empty: 'Сценариев пока нет.' };
-    }
-    if (sec === 'units') {
-      const units = Object.values(s.formations)
+      const all = Object.values(s.scenarios)
         .filter((x) => match(x.name))
         .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+      const { shown, hidden } = capped(all, (x) => activeTab?.ref === x.id || !!activeTab?.ref?.startsWith(`sc:${x.id}:`));
+      const list = shown.map((x) =>
+        row(x.id, x.name, (o) => openTab('scenario', x.id, o), {
+          // Число боёв — в подсказке: справа от названия подпись только обрезала бы его.
+          hint: battlesBy.get(x.id) ? `боёв: ${battlesBy.get(x.id)}` : undefined,
+          active:
+            (activeTab?.kind === 'scenario' || activeTab?.kind === 'montecarlo') && activeTab.ref === x.id ? true : !!activeTab?.ref?.startsWith(`sc:${x.id}:`),
+        }),
+      );
+      return { list: [...list, more(sec, hidden)], empty: 'Сценариев пока нет.' };
+    }
+    if (sec === 'units') {
+      const { shown: units, hidden } = capped(
+        Object.values(s.formations)
+          .filter((x) => match(x.name))
+          .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+        (x) => isOpen('formation', `lib:${x.id}`),
+      );
       const rsIds = [...new Set(units.map((u) => u.rulesetId ?? ''))];
       const item = (x: (typeof units)[number]) =>
         row(x.id, x.name, (o) => openTab('formation', `lib:${x.id}`, o), {
@@ -170,12 +207,15 @@ export function Navigator() {
         rsIds.length > 1
           ? rsIds.map((id) => group(s.rulesets[id]?.name ?? 'Без набора правил', units.filter((u) => (u.rulesetId ?? '') === id).map(item)))
           : units.map(item);
-      return { list, empty: 'Шаблонов нет.' };
+      return { list: [...list, more(sec, hidden)], empty: 'Шаблонов нет.' };
     }
     if (sec === 'forces') {
-      const units = Object.values(s.forces)
-        .filter((x) => match(x.name) || match(x.faction ?? ''))
-        .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+      const { shown: units, hidden } = capped(
+        Object.values(s.forces)
+          .filter((x) => match(x.name) || match(x.faction ?? ''))
+          .sort((a, b) => a.name.localeCompare(b.name, 'ru')),
+        (x) => isOpen('formation', `force:${x.id}`),
+      );
       const factions = [...new Set(units.map((u) => u.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
       const item = (x: (typeof units)[number]) =>
         row(x.id, x.name, (o) => openTab('formation', `force:${x.id}`, o), {
@@ -190,12 +230,15 @@ export function Navigator() {
         factions.length > 1
           ? factions.map((f) => group(f || 'Без команды', units.filter((u) => (u.faction?.trim() || '') === f).map(item), undefined, undefined, teamColor(f)))
           : units.map(item);
-      return { list, empty: 'Сил пока нет.' };
+      return { list: [...list, more(sec, hidden)], empty: 'Сил пока нет.' };
     }
     if (sec === 'battles') {
-      const battles = Object.values(s.battleIndex)
-        .filter((x) => match(x.name))
-        .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+      const { shown: battles, hidden } = capped(
+        Object.values(s.battleIndex)
+          .filter((x) => match(x.name))
+          .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')),
+        (x) => isOpen('battle', x.id),
+      );
       const byScenario = new Map<string, typeof battles>();
       for (const b of battles) byScenario.set(b.scenarioId, [...(byScenario.get(b.scenarioId) ?? []), b]);
       const list = [...byScenario.entries()].map(([scId, items]) => {
@@ -206,6 +249,7 @@ export function Navigator() {
             row(b.id, b.name.startsWith(`${scName} · `) ? b.name.slice(scName.length + 3) : b.name, (o) => openTab('battle', b.id, o), {
               sub: b.finished ? (b.headline ?? 'итог') : `ход ${b.turn}`,
               active: isOpen('battle', b.id),
+              warn: b.unrecorded ? { cls: 'warn', text: 'Итоги не записаны в силы' } : undefined,
             }),
           ),
           () =>
@@ -216,7 +260,7 @@ export function Navigator() {
           `Удалить все бои этого сценария (${items.length})`,
         );
       });
-      return { list, empty: 'Боёв пока нет. Бой начинается со страницы сценария.' };
+      return { list: [...list, more(sec, hidden)], empty: 'Боёв пока нет. Бой начинается со страницы сценария.' };
     }
     const list = Object.values(s.rulesets)
       .filter((x) => match(x.name))

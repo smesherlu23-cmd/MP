@@ -114,6 +114,62 @@ export function effectsNext(b: Battle, E: EngineContext, el: ElementState) {
 export const CMD_TIP =
   'Командир сейчас. Меняйте по обстановке: удачное решение — выше, ошибка или растерянность — ниже.\nДействует со следующего хода и записывается в журнал.';
 
+/**
+ * Сводка сторон над таблицей сил — компактно, строкой на сторону (чтобы таблица с приказами была на виду
+ * и на небольшом экране); «подробнее» разворачивает полное сравнение.
+ */
+function SideStrip({ b, result, tabKey }: { b: Battle; result: BattleResult; tabKey: string }) {
+  const [open, setOpen] = useTabState(`${tabKey}:compare`, false);
+  if (open)
+    return (
+      <Card tight>
+        <SideCompare b={b} result={result} />
+        <div className="side-strip-foot">
+          <button type="button" className="link-btn small" onClick={() => setOpen(false)}>
+            свернуть сводку
+          </button>
+        </div>
+      </Card>
+    );
+  return (
+    <div className="side-strip card">
+      {SIDES.map((side) => {
+        const r = result.sides[side];
+        return (
+          <div key={side} className="side-strip-row">
+            <span className="dot" style={{ background: b.sides[side].color }} />
+            <b className="side-strip-name">{r.name}</b>
+            <span>
+              <b>{fmt0(r.personnel.current)}</b>
+              <span className="faint"> из {fmt0(r.personnel.start)}</span>
+            </span>
+            <span
+              className={r.personnel.lossPct > 25 ? 'bad' : undefined}
+              data-tip={`убито ${fmt0(r.personnel.kia)}, ранено ${fmt0(r.personnel.wia)}, пропало ${fmt0(r.personnel.mia)}`}
+            >
+              <span className="faint">потери</span> {fmt0(r.personnel.losses)} · {Math.round(r.personnel.lossPct)}%
+            </span>
+            {b.ruleset.features.morale && (
+              <span>
+                <span className="faint">мораль</span> {Math.round(r.morale)}
+              </span>
+            )}
+            <span data-tip="Остаточная боеспособность стороны в целом (по боевой ценности, с моралью и усталостью); у элементов в таблице — своя.">
+              <span className="faint">боесп.</span> {Math.round(r.combatEffectiveness)}%
+            </span>
+            <span data-tip={r.objectives.map((o) => `${Math.round(o.score * 100)}% — ${o.label}`).join('\n') || undefined}>
+              <span className="faint">задачи</span> <b className={r.score >= 0.75 ? 'good' : r.score < 0.4 ? 'bad' : 'warn'}>{Math.round(r.score * 100)}%</b>
+            </span>
+          </div>
+        );
+      })}
+      <button type="button" className="link-btn small side-strip-more" onClick={() => setOpen(true)} title="Техника, удача и исполнение, все показатели">
+        подробнее
+      </button>
+    </div>
+  );
+}
+
 export function Forces(props: {
   b: Battle;
   E: EngineContext;
@@ -156,9 +212,7 @@ export function Forces(props: {
   };
   return (
     <div className="stack">
-      <Card tight>
-        <SideCompare b={b} result={result} />
-      </Card>
+      <SideStrip b={b} result={result} tabKey={props.tabKey} />
       <SupportPanel b={b} iv={iv} onStrike={(side, assetId) => props.onStrike(side, assetId)} onEffect={props.onEffect} />
       {sel.length > 0 && !b.finished && (
         <div className="group-bar">

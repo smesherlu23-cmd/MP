@@ -52,6 +52,11 @@ function battleMeta(b: any) {
     finished: b.finished,
     headline: b.result?.headline,
     updatedAt: b.updatedAt ?? b.createdAt,
+    // Окончен, а итоги в силы не записаны — какие силы участвовали (как unrecordedForces в интерфейсе).
+    unrecorded:
+      b.finished && !b.appliedToForces
+        ? [...new Set((b.scenario?.sides ?? []).flatMap((sd: any) => (sd.units ?? []).map((u: any) => u.forceId)))].filter(Boolean)
+        : undefined,
   };
 }
 

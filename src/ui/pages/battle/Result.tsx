@@ -101,9 +101,13 @@ export function SideCompare({ b, result, full }: { b: Battle; result: BattleResu
               </tr>
             );
           })}
-        {row('Боеспособность', (r) => (
-          <b>{pct(r.combatEffectiveness)}</b>
-        ))}
+        {row(
+          'Боеспособность',
+          (r) => (
+            <b>{pct(r.combatEffectiveness)}</b>
+          ),
+          () => 'Остаточная боеспособность стороны в целом (по боевой ценности, с моралью и усталостью); у элементов в таблице сил — своя.',
+        )}
         {f.morale && row('Мораль', (r) => Math.round(r.morale))}
         {b.sides.A.luck !== undefined &&
           row(

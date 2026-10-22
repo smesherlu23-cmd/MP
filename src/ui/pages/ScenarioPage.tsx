@@ -20,6 +20,7 @@ import {
   partOf,
   randomSeed,
   resolveScenario,
+  scenarioForceIds,
   summarizeUnits,
   defaultCommandLevel,
   plural,
@@ -86,6 +87,18 @@ export async function startBattle(sc: Scenario, rs: Ruleset) {
   const issues = scenarioIssues(sc, rs);
   const errors = issues.filter((x) => x.level === 'error');
   if (errors.length && !(await confirmDialog('В сценарии есть ошибки', `${errors.map((x) => `• ${x.text}`).join('\n')}\n\nВсё равно начать бой?`, 'Начать')))
+    return;
+  // Итоги прошлых боёв этих же сил не записаны — силы выйдут в бой без тех потерь.
+  const mine = scenarioForceIds(sc);
+  const pending = Object.values(useApp.getState().battleIndex).filter((m) => m.unrecorded?.some((id) => mine.has(id)));
+  if (
+    pending.length &&
+    !(await confirmDialog(
+      'Итоги прошлого боя не записаны',
+      `${pending.map((m) => `• ${m.name}`).join('\n')}\n\nЭти же силы участвовали в ${pending.length > 1 ? 'этих боях' : 'этом бою'}, но потери не записаны — они выйдут в новый бой без них. Записать итоги можно на вкладке «Итоги» боя.\n\nВсё равно начать бой?`,
+      'Начать бой',
+    ))
+  )
     return;
   const b = createBattle(scenarioForBattle(sc), rs, { seed: randomSeed(), id: newId('bt'), name: nextBattleName(sc) });
   putBattle(b);

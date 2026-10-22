@@ -37,7 +37,8 @@ export function HomePage() {
   const scenarios = Object.values(s.scenarios).sort(byDate).slice(0, 8);
   const battles = Object.values(s.battleIndex).sort(byDate);
   const unfinished = battles.filter((b) => !b.finished).slice(0, 5);
-  const finished = battles.filter((b) => b.finished).slice(0, 6);
+  const unrecorded = battles.filter((b) => b.unrecorded?.length).slice(0, 5);
+  const finished = battles.filter((b) => b.finished && !b.unrecorded?.length).slice(0, 6);
   // Недавно изменённое — только то, что правили (у примеров после установки даты изменения нет).
   const recent: Recent[] = [
     ...Object.values(s.scenarios).map((x) => ({
@@ -126,6 +127,31 @@ export function HomePage() {
           );
         })}
       </nav>
+
+      {unrecorded.length > 0 && (
+        <Card title="Итоги не записаны в силы" className="home-continue home-unrecorded">
+          <div className="home-list">
+            {unrecorded.map((b) => (
+              <div key={b.id} className="row">
+                <span className="home-icon warn">
+                  <Icon name="alert" />
+                </span>
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <Link kind="battle" refId={b.id} className="home-name">
+                    {b.name}
+                  </Link>
+                  <div className="faint small">
+                    {b.headline ?? 'окончен'} · {fmtWhen(b.updatedAt)}
+                  </div>
+                </div>
+                <Btn sm onClick={() => openTab('battle', b.id)} title="Открыть итоги боя и записать потери в силы">
+                  К итогам
+                </Btn>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {unfinished.length > 0 && (
         <Card title="Продолжить" className="home-continue">
