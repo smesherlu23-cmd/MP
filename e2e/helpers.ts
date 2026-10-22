@@ -27,6 +27,9 @@ const SEC_ID: Record<string, string> = { Сценарии: 'scenarios', Бои: 
 
 /** Раздел навигатора (дерево): разворачивается, если свёрнут. */
 export async function navSec(page: Page, label: string): Promise<Locator> {
+  // Поле поиска навигатора могло остаться заполненным — тогда видны только совпадения.
+  const search = page.locator('.nav-search input');
+  if (await search.inputValue()) await search.fill('');
   const sec = page.locator(`.nav-sec[data-sec="${SEC_ID[label]}"]`);
   if (!(await sec.evaluate((e) => e.classList.contains('open')))) await sec.locator('.nav-chev').click();
   await expect(sec).toHaveClass(/open/);
@@ -35,12 +38,18 @@ export async function navSec(page: Page, label: string): Promise<Locator> {
 
 /** Пункт навигатора: раздел разворачивается, объект — в его списке. */
 export async function navItem(page: Page, text: string, section?: string): Promise<Locator> {
-  const sec = await navSec(page, section ?? SECTION_OF.find(([t]) => text.includes(t))?.[1] ?? 'Шаблоны');
-  return sec.locator('.side-item', { hasText: text }).first();
+  const label = section ?? SECTION_OF.find(([t]) => text.includes(t))?.[1] ?? 'Шаблоны';
+  const sec = await navSec(page, label);
+  const item = sec.locator('.side-item', { hasText: text }).first();
+  if (await item.count()) return item;
+  // В длинном разделе видны не все — остальные находятся полем поиска навигатора.
+  await page.locator('.nav-search input').fill(text);
+  return page.locator(`.nav-sec[data-sec="${SEC_ID[label]}"] .side-item`, { hasText: text }).first();
 }
 
 export async function openFromNav(page: Page, text: string, section?: string) {
   await (await navItem(page, text, section)).click();
+  await page.locator('.nav-search input').fill('');
 }
 
 /** Пункт открытого меню «⋯». */

@@ -461,29 +461,33 @@ export function resupplyForce(src: UnitNode, key: SupplyKey, level: number, at =
   return { force: f, changed };
 }
 
-/** Вернуть в строй раненых (не сверх штата — остальные ждут). Возвращает изменённую копию и сколько вернулось. */
-export function healForce(src: UnitNode, rs: Ruleset | undefined, at = new Date().toISOString()) {
-  return returnRecoverable(src, rs, 'personnel', at);
+/**
+ * Вернуть в строй раненых (не сверх штата — остальные ждут): pct% тех, кого можно вернуть (100 — всех).
+ * Возвращает изменённую копию и сколько вернулось.
+ */
+export function healForce(src: UnitNode, rs: Ruleset | undefined, pct = 100, at = new Date().toISOString()) {
+  return returnRecoverable(src, rs, 'personnel', pct, at);
 }
 
 /**
- * Отремонтировать технику и вооружение: повреждённое возвращается в строй (не сверх штата), состояние
- * техники — к норме. Возвращает изменённую копию и сколько единиц вернулось.
+ * Отремонтировать технику и вооружение: pct% повреждённого возвращается в строй (не сверх штата), состояние
+ * техники — к норме на pct% разницы. Возвращает изменённую копию и сколько единиц вернулось.
  */
-export function repairForce(src: UnitNode, rs: Ruleset | undefined, at = new Date().toISOString()) {
-  return returnRecoverable(src, rs, 'equipment', at);
+export function repairForce(src: UnitNode, rs: Ruleset | undefined, pct = 100, at = new Date().toISOString()) {
+  return returnRecoverable(src, rs, 'equipment', pct, at);
 }
 
-function returnRecoverable(src: UnitNode, rs: Ruleset | undefined, what: 'personnel' | 'equipment', at: string) {
+function returnRecoverable(src: UnitNode, rs: Ruleset | undefined, what: 'personnel' | 'equipment', pct: number, at: string) {
   const f = cloneDeep(src);
   const kinds = kindsOf(rs);
+  const share = Math.max(0, Math.min(100, pct)) / 100;
   let count = 0;
   let condition = false;
   walkUnits(f, (n) => {
     for (const c of n.composition) {
       if ((kinds.get(c.typeId) === 'personnel') !== (what === 'personnel')) continue;
       const rec = c.recoverable ?? 0;
-      const back = Math.min(rec, Math.max(0, c.authorized - c.current));
+      const back = Math.round(Math.min(rec, Math.max(0, c.authorized - c.current)) * share);
       if (back <= 0) continue;
       c.current += back;
       c.recoverable = rec - back;
@@ -492,21 +496,106 @@ function returnRecoverable(src: UnitNode, rs: Ruleset | undefined, what: 'person
     }
     const v = n.state.vehicleCondition;
     if (what === 'equipment' && typeof v === 'number' && worseThanNorm('vehicleCondition', v)) {
-      n.state.vehicleCondition = ROOT_STATE.vehicleCondition;
-      condition = true;
+      const next = Math.round(v + (ROOT_STATE.vehicleCondition - v) * share);
+      if (next !== v) {
+        n.state.vehicleCondition = next;
+        condition = true;
+      }
     }
   });
   const changed = count > 0 || condition;
   if (changed) {
     f.updatedAt = at;
+    const part = share < 1 ? ` ${Math.round(share * 100)}%` : '';
     addRecord(
       f,
       what === 'personnel'
-        ? { at, kind: 'heal', title: 'Лечение раненых', personnel: count }
-        : { at, kind: 'repair', title: 'Ремонт техники', equipment: count || undefined, note: count ? undefined : 'состояние техники — в норме' },
+        ? { at, kind: 'heal', title: `Лечение раненых${part}`, personnel: count }
+        : {
+            at,
+            kind: 'repair',
+            title: `Ремонт техники${part}`,
+            equipment: count || undefined,
+            note: count ? undefined : share < 1 ? 'состояние техники улучшено' : 'состояние техники — в норме',
+          },
     );
   }
   return { force: f, count, changed };
+}
+
+/** Всё, что можно сделать с силами между боями, разом: что включено — то и делается, по порядку. */
+export interface BetweenPlan {
+  /** Отдых, % до нормы (что восстанавливать — parts). */
+  rest?: { pct: number; parts?: RestPart[] };
+  /** Лечить и чинить: какую долю, %. */
+  heal?: number;
+  repair?: number;
+  /** Боезапас и топливо: до какого уровня, %. */
+  ammo?: number;
+  fuel?: number;
+  /** Недостающее до штата — из резерва (после лечения и ремонта). */
+  replenish?: { personnel: boolean; equipment: boolean };
+}
+
+/**
+ * Подготовка к бою одним шагом: лечение, ремонт, пополнение из резерва, отдых, боезапас, топливо — что
+ * указано в плане. В боевой путь — одна запись «Между боями» с перечнем сделанного. Возвращает изменённую
+ * копию, сколько вернулось и пришло, и что сделано.
+ */
+export function prepareForce(src: UnitNode, rs: Ruleset | undefined, plan: BetweenPlan, at = new Date().toISOString()) {
+  const before = (src.history ?? []).length;
+  let f = src;
+  const done: string[] = [];
+  let personnel = 0;
+  let equipment = 0;
+  if (plan.heal) {
+    const r = healForce(f, rs, plan.heal, at);
+    if (r.changed) {
+      f = r.force;
+      personnel += r.count;
+      done.push(`лечение${plan.heal < 100 ? ` ${plan.heal}%` : ''}: ${r.count} чел.`);
+    }
+  }
+  if (plan.repair) {
+    const r = repairForce(f, rs, plan.repair, at);
+    if (r.changed) {
+      f = r.force;
+      equipment += r.count;
+      done.push(`ремонт${plan.repair < 100 ? ` ${plan.repair}%` : ''}${r.count ? `: ${r.count} ед.` : ''}`);
+    }
+  }
+  if (plan.replenish && (plan.replenish.personnel || plan.replenish.equipment)) {
+    const r = replenishForce(f, rs, plan.replenish);
+    if (r.personnel || r.equipment) {
+      f = r.force;
+      personnel += r.personnel;
+      equipment += r.equipment;
+      done.push(`пополнение из резерва: ${[r.personnel ? `${r.personnel} чел.` : '', r.equipment ? `${r.equipment} ед.` : ''].filter(Boolean).join(', ')}`);
+    }
+  }
+  if (plan.rest?.pct) {
+    const r = restForce(f, plan.rest.pct, plan.rest.parts, at);
+    if (r.changed) {
+      f = r.force;
+      done.push(`отдых ${plan.rest.pct}%`);
+    }
+  }
+  for (const key of ['ammo', 'fuel'] as const) {
+    const level = plan[key];
+    if (level === undefined) continue;
+    const r = resupplyForce(f, key, level, at);
+    if (r.changed) {
+      f = r.force;
+      done.push(`${SUPPLY_LABEL[key].name.toLowerCase()} до ${Math.round(level)}%`);
+    }
+  }
+  const changed = done.length > 0;
+  if (changed) {
+    // Шаги записались по отдельности — сводятся в одну запись.
+    f = { ...f, history: [...(f.history ?? []).slice(0, before)] };
+    addRecord(f, { at, kind: 'restore', title: 'Между боями', personnel: personnel || undefined, equipment: equipment || undefined, note: done.join('; ') });
+  }
+  return { force: f, personnel, equipment, done, changed };
 }
 
 /** Пополнение до штата из резерва: людей и/или техники и вооружения. Возвращает изменённую копию и сколько пришло. */

@@ -59,6 +59,8 @@ import {
   restoreForce,
   healForce,
   repairForce,
+  prepareForce,
+  dec,
   betweenNeeds,
   resupplyForce,
   transferStrength,
@@ -1032,6 +1034,35 @@ describe('силы между боями, варианты прогонов, п�
 
     const filled = replenishForce(healed.force, rs, { personnel: true, equipment: true });
     walkUnits(filled.force, (n) => n.composition.forEach((c) => expect(c.current).toBe(c.authorized)));
+
+    // Частью: половина раненых возвращается, остальные ждут.
+    const halfHealed = healForce(f, rs, 50);
+    expect(halfHealed.count).toBeGreaterThan(0);
+    expect(halfHealed.count).toBeLessThan(needs.heal);
+    expect(betweenNeeds(halfHealed.force, rs).heal).toBe(needs.heal - halfHealed.count);
+    expect(halfHealed.force.history!.at(-1)).toMatchObject({ kind: 'heal', title: 'Лечение раненых 50%' });
+
+    // Между боями — всё разом, одной записью в боевом пути.
+    const len = (f.history ?? []).length;
+    const prep = prepareForce(f, rs, { heal: 100, repair: 100, rest: { pct: 100 }, ammo: 100, fuel: 100, replenish: { personnel: true, equipment: true } });
+    expect(prep.changed).toBe(true);
+    expect(prep.force.history!.length).toBe(len + 1);
+    expect(prep.force.history!.at(-1)).toMatchObject({ kind: 'restore', title: 'Между боями' });
+    expect(prep.done.length).toBeGreaterThan(2);
+    const after = betweenNeeds(prep.force, rs);
+    expect(after.heal + after.repair + after.personnelMissing + after.equipmentMissing).toBe(0);
+    expect(after.rest || after.ammo || after.fuel).toBe(false);
+    expect(prepareForce(prep.force, rs, { heal: 100, rest: { pct: 100 } }).changed).toBe(false);
+  });
+
+  it('числа в журнале и отчётах — с десятичной запятой', () => {
+    expect(dec(3.5)).toBe('3,5');
+    expect(dec(0.912, 2)).toBe('0,91');
+    const b = createBattle(makeDemoScenario(), rs, { seed: 'DEC' });
+    runToEnd(b);
+    const text = b.log.map((x) => x.text).join('\n');
+    expect(text).not.toMatch(/×\d\.\d/);
+    expect(text).toMatch(/×\d,\d/);
   });
 
   it('пополнение из другого подразделения: у одного прибавилось, у другого убыло ровно столько же', () => {

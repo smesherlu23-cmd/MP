@@ -619,7 +619,8 @@ input.invalid {
 .fields {
   display: grid;
   gap: 10px 14px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  /* Не уже 240px: подписи вида «Первый эшелон (по умолчанию)» в выпадающих списках не обрезаются. */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
 .fields.two {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -1380,6 +1381,130 @@ table.tbl {
 .help ol {
   padding-left: 22px;
   margin: 0 0 8px;
+}
+.help-layout {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+.help-toc {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+  padding-bottom: 8px;
+}
+.help-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  color: var(--faint);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.help-search:focus-within {
+  border-color: var(--accent);
+}
+.help-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+.help-found {
+  font-size: 12px;
+  margin: 0 0 4px 2px;
+}
+.help-toc-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+.help-toc-title,
+.help-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.help-toc-title {
+  margin: 6px 0 2px 8px;
+}
+.help-toc a {
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-decoration: none;
+}
+.help-toc a:hover {
+  color: var(--text);
+  background: var(--panel2);
+}
+.help-toc a.on {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.help-export {
+  margin-top: 6px;
+  align-self: flex-start;
+}
+.help-group + .help-group {
+  margin-top: 26px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.help-body section {
+  scroll-margin-top: 8px;
+}
+.help-body section > h2:first-child {
+  margin-top: 10px;
+}
+.help-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 4px 0 12px;
+}
+.help-table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.help-table th,
+.help-table td {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.help-table td.nw {
+  white-space: nowrap;
+}
+.help-table th {
+  background: var(--panel2);
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .help-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .help-toc {
+    position: static;
+    max-height: none;
+  }
 }
 .help code {
   font-family: var(--mono);
@@ -2419,6 +2544,20 @@ html.desktop .topbar a {
 .nav-search .kbd {
   font-size: 11px;
   color: var(--faint);
+}
+.nav-search input {
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+.nav-search:focus-within {
+  border-color: var(--accent);
 }
 .btn.nav-create {
   width: 100%;
@@ -3723,12 +3862,12 @@ span.wf-add {
 
 .page-head.sticky-head {
   position: sticky;
-  top: 0;
+  /* Прилипает к самому краю области прокрутки, а не к её отступу: над шапкой ничего не просвечивает. */
+  top: -22px;
   z-index: 5;
   margin: 0 -28px 8px;
   padding: 8px 28px 10px;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
-  backdrop-filter: blur(6px);
+  background: var(--bg);
   border-bottom: 1px solid transparent;
 }
 .jump-nav {
@@ -4148,6 +4287,179 @@ button.team-dot:hover {
   gap: 2px;
   margin-left: -6px;
 }
+.force-actions > .btn.primary {
+  grid-column: 1 / -1;
+}
+.force-actions-ok {
+  margin-top: 4px;
+}
+.between-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.between-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+}
+.between-pct {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 24px;
+}
+.worn-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.worn-line .chip-issue {
+  font-size: 12px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .between-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .transfer-table td {
   vertical-align: middle;
+}
+
+/* ---------- «Главное»: бои, итоги которых не записаны в силы */
+
+.home-icon.warn {
+  color: var(--warn);
+}
+.home-unrecorded {
+  border-left: 3px solid var(--warn);
+}
+
+/* ---------- бой: компактная сводка сторон над таблицей сил */
+
+.side-strip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+}
+.side-strip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 13px;
+  padding-right: 80px;
+}
+.side-strip-row .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: -10px;
+}
+.side-strip-name {
+  min-width: 90px;
+}
+.side-strip-more {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+}
+.side-strip-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 10px 6px;
+}
+.support-side {
+  padding: 6px 10px;
+}
+
+/* ---------- навигатор: «ещё N» в длинном разделе */
+
+.nav-more {
+  display: block;
+  width: 100%;
+  padding: 3px 10px 5px 18px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.nav-more:hover {
+  color: var(--accent);
+}
+
+/* ---------- страница команды */
+
+.team-dot.lg {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+.team-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 36px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+.team-page > .card {
+  margin-bottom: 16px;
+}
+.team-sub {
+  margin: 8px 0 10px;
+}
+.team-page .force-grid {
+  margin-bottom: 16px;
+}
+.team-battles td {
+  vertical-align: top;
+}
+.team-link {
+  cursor: pointer;
+}
+.team-link:hover {
+  color: var(--accent);
+}
+.nav-group-link {
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nav-group-link:hover {
+  color: var(--accent);
+}
+
+/* ---------- сценарий: быстрый прогноз исхода */
+
+.quick-forecast {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.qf-line {
+  display: inline-flex;
+  gap: 14px;
+  font-size: 13px;
 }

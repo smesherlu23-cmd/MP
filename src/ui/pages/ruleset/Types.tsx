@@ -3,7 +3,7 @@
 import { KIND_LABELS, clone, newId, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
 import { Btn, Card, Check, Field, Info, Menu, Num, Sel, Seg, Tags, Txt, pressable } from '../../components/ui';
 import { useTabState } from '../../hooks';
-import { confirmDialog, useApp } from '../../store';
+import { confirmDialog, openTab, useApp } from '../../store';
 import type { Upd } from './common';
 
 export function typeUsage(typeId: string): number {
@@ -49,6 +49,13 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
       <div className="row">
         <Btn kind="primary" onClick={add}>
           + Тип
+        </Btn>
+        <Btn
+          kind="ghost"
+          onClick={() => openTab('help', undefined, { sub: 'gm-type-fields' })}
+          title="Руководство ГМ: что делает каждое число типа и как его подобрать"
+        >
+          Как подобрать числа
         </Btn>
         <div className="grow" />
         <Seg

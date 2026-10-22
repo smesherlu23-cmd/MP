@@ -20,6 +20,8 @@ export interface BattleMeta {
   finished: boolean;
   headline?: string;
   updatedAt?: string;
+  /** Окончен, а итоги в силы не записаны: какие силы участвовали. */
+  unrecorded?: string[];
 }
 
 export type BackupKind = 'auto' | 'manual' | 'restore' | 'examples';
@@ -96,7 +98,15 @@ export function battleMeta(b: Battle | BattleMeta): BattleMeta {
     finished: x.finished,
     headline: x.result?.headline ?? (b as BattleMeta).headline,
     updatedAt: x.updatedAt,
+    unrecorded: x.scenario ? unrecordedForces(x) : (b as BattleMeta).unrecorded,
   };
+}
+
+/** Силы окончённого боя, в которые ещё не записаны его итоги (пусто — записывать нечего или уже записано). */
+export function unrecordedForces(b: Battle): string[] | undefined {
+  if (!b.finished || b.appliedToForces) return undefined;
+  const ids = [...new Set(b.scenario.sides.flatMap((sd) => (sd.units ?? []).map((u) => u.forceId)))];
+  return ids.length ? ids : undefined;
 }
 
 const PREFIX = 'warsim:';

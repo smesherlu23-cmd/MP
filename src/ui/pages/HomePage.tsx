@@ -1,9 +1,9 @@
 import { fmtDuration, resolveScenario, sideUnits, summarizeUnits } from '../../engine';
 import { Icon, type IconName } from '../components/Icon';
 import { Link } from '../components/Link';
-import { CREATE_ITEMS, createIn } from '../components/Navigator';
+import { createIn } from '../components/Navigator';
 import { openPalette } from '../components/Palette';
-import { Btn, Card, Info, Menu, fmt0 } from '../components/ui';
+import { Btn, Card, Info, fmt0 } from '../components/ui';
 import { SECTIONS, showSection } from '../nav';
 import { openTab, useApp, type NavSection, type TabKind } from '../store';
 import { startBattle } from './ScenarioPage';
@@ -37,7 +37,8 @@ export function HomePage() {
   const scenarios = Object.values(s.scenarios).sort(byDate).slice(0, 8);
   const battles = Object.values(s.battleIndex).sort(byDate);
   const unfinished = battles.filter((b) => !b.finished).slice(0, 5);
-  const finished = battles.filter((b) => b.finished).slice(0, 6);
+  const unrecorded = battles.filter((b) => b.unrecorded?.length).slice(0, 5);
+  const finished = battles.filter((b) => b.finished && !b.unrecorded?.length).slice(0, 6);
   // Недавно изменённое — только то, что правили (у примеров после установки даты изменения нет).
   const recent: Recent[] = [
     ...Object.values(s.scenarios).map((x) => ({
@@ -97,10 +98,6 @@ export function HomePage() {
           <h1>Главное</h1>
           <div className="page-sub">Echelon Commander · симулятор боя для ГМ варгейма</div>
         </div>
-        <Btn onClick={() => openPalette()} title="Найти любое подразделение, сценарий или команду (Ctrl+K)">
-          <Icon name="search" size={14} /> Найти… <span className="kbd">Ctrl+K</span>
-        </Btn>
-        <Menu className="primary" label="+ Создать" title="Создать сценарий, силы, шаблон или набор правил" items={CREATE_ITEMS()} />
       </div>
 
       <nav className="workflow" aria-label="Порядок работы">
@@ -130,6 +127,31 @@ export function HomePage() {
           );
         })}
       </nav>
+
+      {unrecorded.length > 0 && (
+        <Card title="Итоги не записаны в силы" className="home-continue home-unrecorded">
+          <div className="home-list">
+            {unrecorded.map((b) => (
+              <div key={b.id} className="row">
+                <span className="home-icon warn">
+                  <Icon name="alert" />
+                </span>
+                <div className="grow" style={{ minWidth: 0 }}>
+                  <Link kind="battle" refId={b.id} className="home-name">
+                    {b.name}
+                  </Link>
+                  <div className="faint small">
+                    {b.headline ?? 'окончен'} · {fmtWhen(b.updatedAt)}
+                  </div>
+                </div>
+                <Btn sm onClick={() => openTab('battle', b.id)} title="Открыть итоги боя и записать потери в силы">
+                  К итогам
+                </Btn>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {unfinished.length > 0 && (
         <Card title="Продолжить" className="home-continue">

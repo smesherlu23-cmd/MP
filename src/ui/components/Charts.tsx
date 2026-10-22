@@ -21,7 +21,8 @@ function niceMax(v: number): number {
   return 10 * p;
 }
 
-const fmtTick = (v: number) => (Math.abs(v) >= 1000 ? `${Math.round(v / 100) / 10}k` : String(Math.round(v * 10) / 10));
+const fmtTick = (v: number) =>
+  Math.abs(v) >= 1000 ? `${String(Math.round(v / 100) / 10).replace('.', ',')}k` : String(Math.round(v * 10) / 10).replace('.', ',');
 
 export interface Series {
   name: string;
@@ -183,7 +184,7 @@ export function StackBar(props: { parts: { label: string; value: number; color: 
           <div
             key={p.label}
             style={{ width: `${(p.value / total) * 100}%`, background: p.color }}
-            title={p.title ?? `${p.label}: ${Math.round((p.value / total) * 1000) / 10}%`}
+            title={p.title ?? `${p.label}: ${String(Math.round((p.value / total) * 1000) / 10).replace('.', ',')}%`}
           >
             {(p.value / total) * 100 >= 8 ? `${Math.round((p.value / total) * 100)}%` : ''}
           </div>

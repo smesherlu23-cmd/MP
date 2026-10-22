@@ -6,6 +6,7 @@ import { FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
 import { HomePage } from './pages/HomePage';
 import { ForcesPage } from './pages/ForcesPage';
+import { TeamPage } from './pages/TeamPage';
 import { LibraryPage } from './pages/LibraryPage';
 import { MonteCarloPage } from './pages/MonteCarloPage';
 import { RulesetPage } from './pages/RulesetPage';
@@ -54,6 +55,7 @@ const ICONS: Record<TabKind, IconName> = {
   settings: 'settings',
   help: 'help',
   library: 'template',
+  team: 'forces',
 };
 
 /** Значок вкладки: силы и шаблоны открываются в одном конструкторе, но различаются. */
@@ -77,6 +79,8 @@ function tabTitle(t: Tab, s: ReturnType<typeof useApp.getState>, battles: Return
       return 'Справка';
     case 'library':
       return t.ref ? sectionMeta(t.ref as NavSection).label : 'Каталог';
+    case 'team':
+      return t.ref ? `Команда «${t.ref}»` : 'Силы без команды';
     case 'ruleset':
       return s.rulesets[t.ref!]?.name ?? 'Набор правил';
     case 'scenario':
@@ -330,7 +334,7 @@ function Page({ t }: { t: Tab }) {
     case 'settings':
       return <SettingsPage />;
     case 'help':
-      return <HelpPage />;
+      return <HelpPage tab={t} />;
     case 'ruleset':
       return <RulesetPage tab={t} />;
     case 'formation':
@@ -343,6 +347,8 @@ function Page({ t }: { t: Tab }) {
       return <MonteCarloPage tab={t} />;
     case 'library':
       return t.ref === 'forces' ? <ForcesPage /> : <LibraryPage tab={t} />;
+    case 'team':
+      return <TeamPage team={t.ref ?? ''} />;
     default:
       return <HomePage />;
   }
@@ -451,7 +457,7 @@ export function App() {
         <Tabs tabs={s.tabs} active={active?.key} />
         <div className="topbar-right">
           {!s.settings.sidebar && (
-            <button type="button" className="find-btn" onClick={openPalette} title="Быстрый переход к любому объекту и команде">
+            <button type="button" className="find-btn" onClick={() => openPalette()} title="Быстрый переход к любому объекту и команде">
               <Icon name="search" size={14} />
               <span>Найти…</span>
               <span className="kbd">Ctrl+K</span>

@@ -5,6 +5,8 @@ import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   betweenNeeds,
+  prepareForce,
+  type BetweenPlan,
   forceCondition,
   REST_PART_IDS,
   REST_PARTS,
@@ -32,6 +34,7 @@ import {
   healForceStep,
   historyStep,
   openTab,
+  prepareForceStep,
   repairForceStep,
   restForceStep,
   resupplyForceStep,
@@ -50,7 +53,7 @@ export const LEVEL_LABEL: Record<ForceCondition['level'], { text: string; cls: s
   depleted: { text: 'Обескровлены', cls: 'bad' },
 };
 
-const signed = (v: number | undefined, unit: string) => (v ? `${v > 0 ? '+' : '−'}${fmt0(Math.abs(v))} ${unit}` : '');
+export const signed = (v: number | undefined, unit: string) => (v ? `${v > 0 ? '+' : '−'}${fmt0(Math.abs(v))} ${unit}` : '');
 const rulesetIdOf = (f: UnitNode) => f.rulesetId ?? defaultRulesetId() ?? '';
 const useRuleset = (f: UnitNode): Ruleset | undefined => useApp((s) => s.rulesets[rulesetIdOf(f)]);
 const PERCENT_KEYS = new Set<StateKey>(['ammo', 'fuel', 'equipment']);
@@ -393,71 +396,235 @@ export function ReplenishModal({ force, onClose }: { force: UnitNode; onClose: (
   );
 }
 
-/** Действия между боями: отдых, лечение, ремонт, пополнение — каждое доступно, когда есть что делать. */
-export function ForceActions({ force, grid }: { force: UnitNode; grid?: boolean }) {
+/** Процент: ползунок, поле и быстрые 25 / 50 / 75 / 100. */
+function PctPicker({ value, onChange, disabled }: { value: number; onChange: (v: number) => void; disabled?: boolean }) {
+  return (
+    <div className="row rest-pct">
+      <Range value={value} onChange={(v) => onChange(Math.max(0, Math.min(100, Math.round(v))))} min={0} max={100} step={5} disabled={disabled} />
+      {[25, 50, 75, 100].map((v) => (
+        <Btn key={v} sm kind={value === v ? 'primary' : 'ghost'} disabled={disabled} onClick={() => onChange(v)}>
+          {v}%
+        </Btn>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Между боями — всё в одном окне: лечение и ремонт (сколько вернуть), пополнение из резерва, отдых,
+ * боезапас и топливо; видно, что станет с подразделением. Одна запись в боевом пути, один шаг отмены.
+ */
+export function BetweenModal({ force, onClose }: { force: UnitNode; onClose: () => void }) {
   const rs = useRuleset(force);
-  const [modal, setModal] = useState<'rest' | 'replenish' | SupplyKey | null>(null);
+  const n = betweenNeeds(force, rs);
+  const [on, setOn] = useState({
+    heal: n.heal > 0,
+    repair: n.repair > 0 || n.vehicleCondition,
+    replenish: false,
+    rest: n.rest,
+    ammo: n.ammo,
+    fuel: n.fuel,
+  });
+  const [heal, setHeal] = useState(100);
+  const [repair, setRepair] = useState(100);
+  const [rest, setRest] = useState(100);
+  const [ammo, setAmmo] = useState(100);
+  const [fuel, setFuel] = useState(100);
+  const plan: BetweenPlan = {
+    heal: on.heal ? heal : undefined,
+    repair: on.repair ? repair : undefined,
+    replenish: on.replenish ? { personnel: true, equipment: true } : undefined,
+    rest: on.rest ? { pct: rest } : undefined,
+    ammo: on.ammo ? ammo : undefined,
+    fuel: on.fuel ? fuel : undefined,
+  };
+  const preview = prepareForce(force, rs, plan);
+  const before = forceCondition(force, rs);
+  const after = forceCondition(preview.force, rs);
+  const toggle = (k: keyof typeof on) => (v: boolean) => setOn((o) => ({ ...o, [k]: v }));
+  const missing = n.personnelMissing + n.equipmentMissing;
+  const rows: { key: keyof typeof on; show: boolean; label: string; pct?: [number, (v: number) => void]; hint?: string }[] = [
+    { key: 'heal', show: n.heal > 0, label: `Лечить — раненых ${fmt0(n.heal)} чел.`, pct: [heal, setHeal], hint: 'сколько вернуть' },
+    {
+      key: 'repair',
+      show: n.repair > 0 || n.vehicleCondition,
+      label: n.repair ? `Чинить — в ремонте ${fmt0(n.repair)} ед.` : 'Чинить — состояние техники',
+      pct: [repair, setRepair],
+      hint: 'сколько вернуть',
+    },
+    { key: 'replenish', show: missing > 0, label: 'Пополнить до штата из резерва (после лечения и ремонта)' },
+    { key: 'rest', show: n.rest, label: 'Отдых — мораль, усталость, слаженность, готовность, снаряжение', pct: [rest, setRest], hint: '% до нормы' },
+    { key: 'ammo', show: n.ammo, label: 'Боезапас', pct: [ammo, setAmmo], hint: 'до уровня' },
+    { key: 'fuel', show: n.fuel, label: 'Топливо', pct: [fuel, setFuel], hint: 'до уровня' },
+  ];
+  const cmp: { label: string; b: string; a: string; better: boolean }[] = [
+    { label: 'Личный состав', b: `${fmt0(before.persCur)} / ${fmt0(before.persAuth)}`, a: fmt0(after.persCur), better: after.persCur > before.persCur },
+    ...(before.equipAuth > 0
+      ? [{ label: 'Техника', b: `${fmt0(before.equipCur)} / ${fmt0(before.equipAuth)}`, a: fmt0(after.equipCur), better: after.equipCur > before.equipCur }]
+      : []),
+    ...(['morale', 'fatigue', 'cohesion', 'ammo', 'fuel'] as const).map((k) => ({
+      label: STATE_LABELS[k],
+      b: fmtState(k, before.state[k]),
+      a: fmtState(k, after.state[k]),
+      better: k === 'fatigue' ? after.state[k] < before.state[k] : after.state[k] > before.state[k],
+    })),
+  ];
+  return (
+    <Modal
+      title={`Между боями — ${force.name}`}
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <span className="muted small grow">Одна запись в боевом пути. Отменить — Ctrl+Z.</span>
+          <Btn onClick={onClose}>Отмена</Btn>
+          <Btn
+            kind="primary"
+            disabled={!preview.changed}
+            onClick={() => {
+              prepareForceStep(force.id, plan);
+              onClose();
+            }}
+          >
+            Выполнить
+          </Btn>
+        </>
+      }
+    >
+      <div className="between-grid">
+        <div className="stack" style={{ gap: 10 }}>
+          {rows
+            .filter((r) => r.show)
+            .map((r) => (
+              <div key={r.key} className="between-row">
+                <Check value={on[r.key]} onChange={toggle(r.key)}>
+                  {r.label}
+                </Check>
+                {r.pct && (
+                  <div className="between-pct">
+                    <span className="faint small">{r.hint}</span>
+                    <PctPicker value={r.pct[0]} onChange={r.pct[1]} disabled={!on[r.key]} />
+                  </div>
+                )}
+              </div>
+            ))}
+          {!rows.some((r) => r.show) && <div className="muted">Силы в норме — делать нечего.</div>}
+        </div>
+        <table className="tbl rest-preview">
+          <thead>
+            <tr>
+              <th />
+              <th className="num">Сейчас</th>
+              <th className="num">Станет</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cmp.map((x) => (
+              <tr key={x.label}>
+                <td>{x.label}</td>
+                <td className="num">{x.b}</td>
+                <td className={`num${x.better ? ' good' : ''}`}>
+                  <b>{x.a}</b>
+                </td>
+              </tr>
+            ))}
+            <tr>
+              <td>Боеготовность</td>
+              <td className="num">
+                <span className={`badge ${LEVEL_LABEL[before.level].cls}`}>{LEVEL_LABEL[before.level].text}</span>
+              </td>
+              <td className="num">
+                <span className={`badge ${LEVEL_LABEL[after.level].cls}`}>{LEVEL_LABEL[after.level].text}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Действия между боями. На карточке и панели — «Между боями…» и только те действия, для которых есть дело
+ * (остальных не видно); compact — одна кнопка «Между боями…» (для заметки в сценарии).
+ */
+export function ForceActions({ force, grid, compact }: { force: UnitNode; grid?: boolean; compact?: boolean }) {
+  const rs = useRuleset(force);
+  const [modal, setModal] = useState<'between' | 'rest' | 'replenish' | SupplyKey | null>(null);
   const n = betweenNeeds(force, rs);
   const missing = n.personnelMissing + n.equipmentMissing;
-  // В карточке и на панели — сеткой одинаковых кнопок, в заметке сценария — строкой.
+  const any = n.rest || n.heal > 0 || n.repair > 0 || n.vehicleCondition || missing > 0 || n.ammo || n.fuel;
   const kind = grid ? undefined : 'ghost';
-  const buttons = (
+  const modals = (
     <>
-      <Btn
-        sm
-        kind={kind}
-        disabled={!n.rest}
-        onClick={() => setModal('rest')}
-        title={n.rest ? 'Восстановить мораль, усталость, слаженность, готовность и снаряжение бойцов в строю' : 'Состояние в норме'}
-      >
-        <Icon name="rest" size={14} /> Отдых…
-      </Btn>
-      <Btn
-        sm
-        kind={kind}
-        disabled={!n.heal}
-        onClick={() => healForceStep(force.id)}
-        title={n.heal ? `Вернуть в строй раненых: ${fmt0(n.heal)} чел.` : 'Раненых нет'}
-      >
-        <Icon name="heal" size={14} /> Лечить{n.heal ? ` (${fmt0(n.heal)})` : ''}
-      </Btn>
-      <Btn
-        sm
-        kind={kind}
-        disabled={!n.repair && !n.vehicleCondition}
-        onClick={() => repairForceStep(force.id)}
-        title={
-          n.repair
-            ? `Вернуть в строй технику и вооружение из ремонта: ${fmt0(n.repair)} ед.`
-            : n.vehicleCondition
-              ? 'Привести состояние техники в норму'
-              : 'Техника в строю и исправна'
-        }
-      >
-        <Icon name="wrench" size={14} /> Чинить{n.repair ? ` (${fmt0(n.repair)})` : ''}
-      </Btn>
-      <Btn sm kind={kind} disabled={!missing} onClick={() => setModal('replenish')} title={missing ? 'Из резерва или из другого подразделения' : 'Полный штат'}>
-        <Icon name="replenish" size={14} /> Пополнить…
-      </Btn>
-      <Btn sm kind={kind} disabled={!n.ammo} onClick={() => setModal('ammo')} title={n.ammo ? 'Пополнить боезапас' : 'Боезапас полный'}>
-        <Icon name="ammo" size={14} /> Боезапас…
-      </Btn>
-      <Btn sm kind={kind} disabled={!n.fuel} onClick={() => setModal('fuel')} title={n.fuel ? 'Пополнить топливо' : 'Баки полные'}>
-        <Icon name="fuel" size={14} /> Топливо…
-      </Btn>
-    </>
-  );
-  return (
-    <>
-      {grid ? <div className="force-actions">{buttons}</div> : buttons}
+      {modal === 'between' && createPortal(<BetweenModal force={force} onClose={() => setModal(null)} />, document.body)}
       {modal === 'rest' && createPortal(<RestModal force={force} onClose={() => setModal(null)} />, document.body)}
       {modal === 'replenish' && createPortal(<ReplenishModal force={force} onClose={() => setModal(null)} />, document.body)}
       {(modal === 'ammo' || modal === 'fuel') && createPortal(<SupplyModal force={force} what={modal} onClose={() => setModal(null)} />, document.body)}
     </>
   );
+  if (!any) return grid ? <div className="force-actions-ok faint small">Состояние в норме — действия не нужны</div> : null;
+  const between = (
+    <Btn sm kind="primary" onClick={() => setModal('between')} title="Лечить, чинить, пополнить, отдых, боезапас и топливо — в одном окне">
+      <Icon name="restore" size={14} /> Между боями…
+    </Btn>
+  );
+  if (compact)
+    return (
+      <>
+        {between}
+        {modals}
+      </>
+    );
+  const buttons = (
+    <>
+      {between}
+      {n.rest && (
+        <Btn sm kind={kind} onClick={() => setModal('rest')} title="Восстановить мораль, усталость, слаженность, готовность и снаряжение бойцов в строю">
+          <Icon name="rest" size={14} /> Отдых…
+        </Btn>
+      )}
+      {n.heal > 0 && (
+        <Btn sm kind={kind} onClick={() => healForceStep(force.id)} title={`Вернуть в строй всех раненых: ${fmt0(n.heal)} чел. Часть — в «Между боями…»`}>
+          <Icon name="heal" size={14} /> Лечить ({fmt0(n.heal)})
+        </Btn>
+      )}
+      {(n.repair > 0 || n.vehicleCondition) && (
+        <Btn
+          sm
+          kind={kind}
+          onClick={() => repairForceStep(force.id)}
+          title={n.repair ? `Вернуть в строй всю технику из ремонта: ${fmt0(n.repair)} ед. Часть — в «Между боями…»` : 'Привести состояние техники в норму'}
+        >
+          <Icon name="wrench" size={14} /> Чинить{n.repair ? ` (${fmt0(n.repair)})` : ''}
+        </Btn>
+      )}
+      {missing > 0 && (
+        <Btn sm kind={kind} onClick={() => setModal('replenish')} title="Из резерва или из другого подразделения">
+          <Icon name="replenish" size={14} /> Пополнить…
+        </Btn>
+      )}
+      {n.ammo && (
+        <Btn sm kind={kind} onClick={() => setModal('ammo')} title="Пополнить боезапас">
+          <Icon name="ammo" size={14} /> Боезапас…
+        </Btn>
+      )}
+      {n.fuel && (
+        <Btn sm kind={kind} onClick={() => setModal('fuel')} title="Пополнить топливо">
+          <Icon name="fuel" size={14} /> Топливо…
+        </Btn>
+      )}
+    </>
+  );
+  return (
+    <>
+      {grid ? <div className="force-actions">{buttons}</div> : buttons}
+      {modals}
+    </>
+  );
 }
 
-const KIND_ICON: Record<ForceRecord['kind'], IconName> = {
+export const KIND_ICON: Record<ForceRecord['kind'], IconName> = {
   battle: 'battle',
   rest: 'rest',
   heal: 'heal',

@@ -6,12 +6,14 @@ import { create } from 'zustand';
 import { walkUnits, type UnitNode } from '../../engine';
 import { openUnit, setTabState } from '../hooks';
 import { SECTIONS as NAV_SECTIONS } from '../nav';
+import { HELP_GROUPS } from '../pages/HelpPage';
 import { SECTIONS } from '../pages/RulesetPage';
 import { startBattle } from '../pages/ScenarioPage';
 import { createFormation, createScenario, importFile, newForceDialog, newRulesetDialog, openTab, redo, tabKey, undo, updateSettings, useApp } from '../store';
 
-export const usePalette = create<{ open: boolean }>(() => ({ open: false }));
-export const openPalette = () => usePalette.setState({ open: true });
+export const usePalette = create<{ open: boolean; query: string }>(() => ({ open: false, query: '' }));
+/** Открыть быстрый переход; query — с чего начать поиск (из поля навигатора). */
+export const openPalette = (query = '') => usePalette.setState({ open: true, query: typeof query === 'string' ? query : '' });
 const closePalette = () => usePalette.setState({ open: false });
 
 interface Item {
@@ -24,7 +26,7 @@ interface Item {
   run: (background: boolean) => void;
 }
 
-const GROUP_ORDER = ['Сценарии', 'Подразделения', 'Бои', 'Наборы правил', 'Команды'];
+const GROUP_ORDER = ['Сценарии', 'Подразделения', 'Команды сил', 'Бои', 'Наборы правил', 'Справка', 'Команды'];
 
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, 'е');
 
@@ -47,6 +49,8 @@ function buildItems(): Item[] {
   cmd('Настройки', () => openTab('settings'));
 
   const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name, 'ru');
+  for (const team of [...new Set(Object.values(s.forces).map((f) => f.faction?.trim() || ''))].filter(Boolean).sort((a, b) => a.localeCompare(b, 'ru')))
+    items.push({ id: `team:${team}`, group: 'Команды сил', title: `Команда «${team}»`, run: (bg) => openTab('team', team, { background: bg }) });
   for (const sc of Object.values(s.scenarios).sort(byName)) {
     items.push({ id: `sc:${sc.id}`, group: 'Сценарии', title: sc.name, top: true, run: (bg) => openTab('scenario', sc.id, { background: bg }) });
     const rs = s.rulesets[sc.rulesetId];
@@ -92,6 +96,16 @@ function buildItems(): Item[] {
       });
   }
 
+  for (const g of HELP_GROUPS)
+    for (const t of g.topics)
+      items.push({
+        id: `help:${t.id}`,
+        group: 'Справка',
+        title: t.title,
+        sub: g.title,
+        run: (bg) => openTab('help', undefined, { background: bg, sub: t.id }),
+      });
+
   const battles = Object.values(s.battleIndex).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
   battles.forEach((b, i) =>
     items.push({
@@ -133,7 +147,7 @@ export function Palette() {
 }
 
 function PaletteBody() {
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(() => usePalette.getState().query);
   const [cur, setCur] = useState(0);
   const items = useMemo(buildItems, []);
   const list = useMemo(() => search(items, q), [items, q]);

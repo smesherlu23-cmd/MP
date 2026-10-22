@@ -26,7 +26,7 @@ import {
 } from '../store';
 import { fmtWhen } from './HomePage';
 
-type Filter = 'all' | 'need' | 'ready';
+type Filter = 'all' | ForceCondition['level'];
 
 /** Полоса численности: в строю, а за ней — те, кто может вернуться (раненые, техника в ремонте). */
 export function StrengthBar(props: { label: string; cur: number; auth: number; back: number; backText: string; unit: string }) {
@@ -73,7 +73,7 @@ export function StateLine({ c }: { c: ForceCondition }) {
 }
 
 /** Команда: название и цвет; переименование меняет принадлежность всех её сил. */
-function TeamModal({ team, onClose }: { team: string; onClose: () => void }) {
+export function TeamModal({ team, onClose }: { team: string; onClose: () => void }) {
   const [name, setName] = useState(team);
   const [color, setColor] = useState(() => (team ? teamColor(team) : TEAM_PALETTE[0]));
   const sides = teamSides(team);
@@ -132,6 +132,68 @@ function TeamModal({ team, onClose }: { team: string; onClose: () => void }) {
   );
 }
 
+/** Карточка подразделения сил: боеготовность, численность, состояние, последний бой и действия между боями. */
+export function ForceCard({ f }: { f: UnitNode }) {
+  const s = useApp();
+  const c = forceStatus(f);
+  const can = canRestore(f);
+  const lv = LEVEL_LABEL[c.level];
+  const tpl = f.templateId ? s.formations[f.templateId] : undefined;
+  const used = forceUsage(f.id);
+  const last = [...(f.history ?? [])].reverse().find((h) => h.kind === 'battle' && h.battleId);
+  const open = () => openTab('formation', `force:${f.id}`);
+  return (
+    <div key={f.id} className="force-card" style={{ borderLeftColor: teamColor(f.faction ?? '') }}>
+      <div className="fc-head">
+        <button type="button" className="link fc-name" onClick={open} title="Открыть подразделение">
+          {f.name}
+        </button>
+        <span className={`badge ${lv.cls}`} data-tip={c.issues.length ? `Что не так: ${c.issues.join(', ')}` : 'Полный состав, состояние в норме'}>
+          {lv.text}
+        </span>
+        <Menu
+          sm
+          items={[
+            { label: 'Открыть', onClick: open },
+            {
+              label: 'Восстановить полностью',
+              disabled: !can,
+              onClick: () => restoreForces([f.id]),
+              tip: 'Раненые и техника возвращаются, недостающее — до штата из резерва, состояние — к норме',
+            },
+            { label: 'Дублировать', onClick: () => duplicateForce(f.id) },
+            { label: 'Сохранить в файл…', onClick: () => exportJson('force', f.name, { ...f, faction: f.faction ?? '' }) },
+            'sep',
+            { label: 'Удалить силы', danger: true, onClick: () => void deleteForce(f.id) },
+          ]}
+        />
+      </div>
+      <div className="faint small fc-sub">
+        {tpl ? `по шаблону «${tpl.name}»` : 'без шаблона'}
+        {used.length > 0 && ` · в сценариях: ${used.length}`}
+      </div>
+      <StrengthBar label="Личный состав" cur={c.persCur} auth={c.persAuth} back={c.wounded} backText={`раненых ${fmt0(c.wounded)}`} unit="чел." />
+      {c.equipAuth > 0 && (
+        <StrengthBar label="Техника" cur={c.equipCur} auth={c.equipAuth} back={c.repair} backText={`в ремонте ${fmt0(c.repair)}`} unit="ед." />
+      )}
+      <StateLine c={c} />
+      {last && (
+        <div className="fc-last small">
+          <Icon name="battle" size={13} />
+          <span className="grow">
+            <a href="#" onClick={(e) => (e.preventDefault(), last.battleId && openTab('battle', last.battleId))}>
+              {last.title}
+            </a>
+            {last.outcome && <span className="faint"> · {last.outcome}</span>}
+          </span>
+          <span className="faint nowrap">{fmtWhen(last.at)}</span>
+        </div>
+      )}
+      <ForceActions force={f} grid />
+    </div>
+  );
+}
+
 export function ForcesPage() {
   const s = useApp();
   const meta = sectionMeta('forces');
@@ -142,75 +204,14 @@ export function ForcesPage() {
 
   const all = Object.values(s.forces)
     .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-    .map((f) => ({ f, c: forceStatus(f), can: canRestore(f) }));
-  // «Ниже нормы» — всё, что можно восстановить: потери, некомплект против штата, мораль, боезапас…
-  const restorable = all.filter((x) => x.can).length;
-  const ready = all.filter((x) => x.c.level === 'ready').length;
+    .map((f) => ({ f, c: forceStatus(f) }));
+  // Фильтр — по уровню боеготовности: каждое подразделение ровно в одной группе.
+  const byLevel = (lv: ForceCondition['level']) => all.filter((x) => x.c.level === lv).length;
 
   const shown = all.filter(
-    (x) =>
-      (!q || x.f.name.toLowerCase().includes(q) || (x.f.faction ?? '').toLowerCase().includes(q)) &&
-      (filter === 'all' || (filter === 'need' ? x.can : x.c.level === 'ready')),
+    (x) => (!q || x.f.name.toLowerCase().includes(q) || (x.f.faction ?? '').toLowerCase().includes(q)) && (filter === 'all' || x.c.level === filter),
   );
   const teams = [...new Set(shown.map((x) => x.f.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
-
-  const card = ({ f, c, can }: (typeof all)[number]) => {
-    const lv = LEVEL_LABEL[c.level];
-    const tpl = f.templateId ? s.formations[f.templateId] : undefined;
-    const used = forceUsage(f.id);
-    const last = [...(f.history ?? [])].reverse().find((h) => h.kind === 'battle' && h.battleId);
-    const open = () => openTab('formation', `force:${f.id}`);
-    return (
-      <div key={f.id} className="force-card" style={{ borderLeftColor: teamColor(f.faction ?? '') }}>
-        <div className="fc-head">
-          <button type="button" className="link fc-name" onClick={open} title="Открыть подразделение">
-            {f.name}
-          </button>
-          <span className={`badge ${lv.cls}`} data-tip={c.issues.length ? `Что не так: ${c.issues.join(', ')}` : 'Полный состав, состояние в норме'}>
-            {lv.text}
-          </span>
-          <Menu
-            sm
-            items={[
-              { label: 'Открыть', onClick: open },
-              {
-                label: 'Восстановить полностью',
-                disabled: !can,
-                onClick: () => restoreForces([f.id]),
-                tip: 'Раненые и техника возвращаются, недостающее — до штата из резерва, состояние — к норме',
-              },
-              { label: 'Дублировать', onClick: () => duplicateForce(f.id) },
-              { label: 'Сохранить в файл…', onClick: () => exportJson('force', f.name, { ...f, faction: f.faction ?? '' }) },
-              'sep',
-              { label: 'Удалить силы', danger: true, onClick: () => void deleteForce(f.id) },
-            ]}
-          />
-        </div>
-        <div className="faint small fc-sub">
-          {tpl ? `по шаблону «${tpl.name}»` : 'без шаблона'}
-          {used.length > 0 && ` · в сценариях: ${used.length}`}
-        </div>
-        <StrengthBar label="Личный состав" cur={c.persCur} auth={c.persAuth} back={c.wounded} backText={`раненых ${fmt0(c.wounded)}`} unit="чел." />
-        {c.equipAuth > 0 && (
-          <StrengthBar label="Техника" cur={c.equipCur} auth={c.equipAuth} back={c.repair} backText={`в ремонте ${fmt0(c.repair)}`} unit="ед." />
-        )}
-        <StateLine c={c} />
-        {last && (
-          <div className="fc-last small">
-            <Icon name="battle" size={13} />
-            <span className="grow">
-              <a href="#" onClick={(e) => (e.preventDefault(), last.battleId && openTab('battle', last.battleId))}>
-                {last.title}
-              </a>
-              {last.outcome && <span className="faint"> · {last.outcome}</span>}
-            </span>
-            <span className="faint nowrap">{fmtWhen(last.at)}</span>
-          </div>
-        )}
-        <ForceActions force={f} grid />
-      </div>
-    );
-  };
 
   return (
     <div className="page catalog forces-page">
@@ -237,8 +238,7 @@ export function ForcesPage() {
           onChange={setFilter}
           options={[
             { value: 'all', label: `Все (${all.length})` },
-            { value: 'need', label: `Ниже нормы (${restorable})` },
-            { value: 'ready', label: `Боеготовы (${ready})` },
+            ...(['ready', 'worn', 'depleted'] as const).map((lv) => ({ value: lv, label: `${LEVEL_LABEL[lv].text} (${byLevel(lv)})` })),
           ]}
         />
       </div>
@@ -276,7 +276,16 @@ export function ForcesPage() {
                   title="Название и цвет команды"
                   onClick={() => setTeamEdit(team)}
                 />
-                <h3>{team || 'Без команды'}</h3>
+                <h3>
+                  <button
+                    type="button"
+                    className="link team-link"
+                    onClick={() => openTab('team', team || undefined)}
+                    title="Страница команды: потери, бои, боевой путь"
+                  >
+                    {team || 'Без команды'}
+                  </button>
+                </h3>
                 <span className="faint small grow">
                   {mine.length} {plural(mine.length, 'подразделение', 'подразделения', 'подразделений')} · боеготовы: {okCount}
                   {wounded > 0 && ` · раненых: ${fmt0(wounded)}`}
@@ -289,7 +298,11 @@ export function ForcesPage() {
                   <Icon name="plus" size={14} /> Силы
                 </Btn>
               </div>
-              <div className="force-grid">{list.map(card)}</div>
+              <div className="force-grid">
+                {list.map((x) => (
+                  <ForceCard key={x.f.id} f={x.f} />
+                ))}
+              </div>
             </div>
           );
         })

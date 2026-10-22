@@ -1,7 +1,7 @@
 // Огонь: распределение по целям, потери, подавление; удары огневой поддержки вне поля боя.
 
 import { type EngineContext, clamp, e, fm, lerp, round1, s } from '../context';
-import { plural } from '../labels';
+import { dec, plural } from '../labels';
 import type { ElementState, Factor, Id, SideId, StrikeOrder } from '../types';
 import { subtreeIds } from './common';
 import { frontage, frontageKey } from './frontage';
@@ -220,7 +220,7 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
         level: 2,
         side,
         refs: [sh.id, ...allocation.keys()],
-        text: `${e(sh)} ведёт ${ambush ? 'огонь из засады' : 'огонь'} по: ${list}. Эффективность ×${(sm / bonus / rnd).toFixed(2)}.`,
+        text: `${e(sh)} ведёт ${ambush ? 'огонь из засады' : 'огонь'} по: ${list}. Эффективность ×${dec(sm / bonus / rnd, 2)}.`,
         factors,
       });
     }

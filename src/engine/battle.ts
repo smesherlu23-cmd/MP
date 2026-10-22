@@ -3,7 +3,7 @@
 import { EngineContext, clamp, s } from './context';
 import { clone, defaultCommandLevel, normalizeRuleset, SCHEMA_VERSION } from './defaults';
 import { scenarioInTurns } from './duration';
-import { plural } from './labels';
+import { dec, plural } from './labels';
 import { defaultObjectives } from './outcome';
 import { Rng } from './rng';
 import type { Battle, CompState, ElementState, FormationState, Id, Ruleset, Scenario, SideId, SideState, UnitNode } from './types';
@@ -217,7 +217,7 @@ export function createBattle(scenario: Scenario, ruleset: Ruleset, opts: CreateO
     E.log({
       phase: 'setup',
       level: 2,
-      text: `Удача и исполнение сторон в этом бою: ${SIDES.map((x) => `${s(x)} ×${b.sides[x].luck!.toFixed(2)}`).join(', ')}.`,
+      text: `Удача и исполнение сторон в этом бою: ${SIDES.map((x) => `${s(x)} ×${dec(b.sides[x].luck!, 2)}`).join(', ')}.`,
     });
   }
 
