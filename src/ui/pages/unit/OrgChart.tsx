@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef, useState } from 'react';
 import { isOutdated, type DropPos, type UnitNode } from '../../../engine';
-import { Menu } from '../../components/ui';
+import { Chev, Menu, openContextMenu } from '../../components/ui';
 import { type Ctx, acceptsDrop, addChild, canInsertTemplate, dragStart, isStacked, nodeActions, riskOf, statsLine, statsTip } from './model';
 
 export function EmptyStart({ ctx }: { ctx: Ctx }) {
@@ -58,7 +58,7 @@ export function NodeBadges({ ctx, node, compact }: { ctx: Ctx; node: UnitNode; c
       )}
       {tpl && !isLibRoot && (
         <span className={`badge${outdated ? ' bad' : ''}`} data-tip={outdated ? `Шаблон «${tpl.name}» изменён — можно обновить` : `Из шаблона «${tpl.name}»`}>
-          {outdated ? 'шаблон ⟳' : 'шаблон'}
+          {outdated ? 'шаблон изменён' : 'шаблон'}
         </span>
       )}
     </>
@@ -73,7 +73,7 @@ export function OrgChart({ ctx }: { ctx: Ctx }) {
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
   zoomRef.current = zoom;
-  // Широкая схема уменьшается, чтобы помещаться по ширине (не мельче 70%), дальше — прокрутка.
+  // Широкая схема уменьшается, чтобы помещаться по ширине (не мельче 85% — надписи остаются читаемыми), дальше — прокрутка.
   // biome-ignore lint/correctness/useExhaustiveDependencies: масштаб подгоняется при смене подразделения и свёртывании ветвей
   useLayoutEffect(() => {
     const box = ref.current;
@@ -81,7 +81,7 @@ export function OrgChart({ ctx }: { ctx: Ctx }) {
     if (!box || !el) return;
     const fit = () => {
       const natural = el.getBoundingClientRect().width / zoomRef.current;
-      const next = Math.max(0.7, Math.min(1, (box.clientWidth - 16) / Math.max(1, natural)));
+      const next = Math.max(0.85, Math.min(1, (box.clientWidth - 16) / Math.max(1, natural)));
       if (Math.abs(next - zoomRef.current) > 0.01) setZoom(Math.round(next * 100) / 100);
     };
     fit();
@@ -130,6 +130,10 @@ export function OrgBox({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       onDragLeave={() => ctx.drop?.id === node.id && ctx.setDrop(null)}
       onDrop={(e) => ctx.onDrop(e, node.id, 'inside')}
       onClick={() => ctx.setSel(node.id)}
+      onContextMenu={(e) => {
+        ctx.setSel(node.id);
+        openContextMenu(e, nodeActions(ctx, node));
+      }}
     >
       <div className="org-top">
         <div className="org-name">{node.name}</div>
@@ -157,7 +161,13 @@ export function OrgNode({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       <OrgBox ctx={ctx} node={node} />
       {node.children.length > 0 && (
         <button type="button" className="org-fold" onClick={() => ctx.toggle(node.id)} title={folded ? 'Развернуть' : 'Свернуть'}>
-          {folded ? `▸ ${node.children.length}` : '▾'}
+          {folded ? (
+            <>
+              <Chev open={false} size={11} /> {node.children.length}
+            </>
+          ) : (
+            <Chev open size={11} />
+          )}
         </button>
       )}
       {node.children.length > 0 &&
@@ -222,6 +232,10 @@ export function TreeRow({ ctx, node, depth }: { ctx: Ctx; node: UnitNode; depth:
         onDragLeave={() => ctx.drop?.id === node.id && ctx.setDrop(null)}
         onDrop={(e) => ctx.onDrop(e, node.id, ctx.drop?.pos ?? 'inside')}
         onClick={() => ctx.setSel(node.id)}
+        onContextMenu={(e) => {
+          ctx.setSel(node.id);
+          openContextMenu(e, nodeActions(ctx, node));
+        }}
       >
         <span
           className="unit-fold"
@@ -230,7 +244,7 @@ export function TreeRow({ ctx, node, depth }: { ctx: Ctx; node: UnitNode; depth:
             if (node.children.length) ctx.toggle(node.id);
           }}
         >
-          {node.children.length ? (folded ? '▸' : '▾') : ''}
+          {node.children.length ? <Chev open={!folded} /> : ''}
         </span>
         {risk && <span className={`status-dot ${risk.cls}`} data-tip={`Риск паники и отхода: ${risk.label}`} />}
         <span className="unit-name" title={node.name}>

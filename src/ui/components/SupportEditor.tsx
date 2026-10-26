@@ -4,7 +4,7 @@
 import { newId, plural, type Ruleset, type Scenario, type SupportAsset } from '../../engine';
 import { useTabState } from '../hooks';
 import { updateScenario } from '../store';
-import { Btn, Info, Num, Sel, Txt } from './ui';
+import { Chev, Btn, Info, Num, Sel, Txt } from './ui';
 
 export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
   const side = sc.sides[i];
@@ -33,7 +33,9 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
     <div>
       <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
         <button type="button" className="sec-toggle" onClick={() => setOpen(!open)}>
-          <span className="chev">{open ? '▾' : '▸'}</span>
+          <span className="chev">
+            <Chev open={open} />
+          </span>
           <h4>Огневая поддержка</h4>
         </button>
         <Info text="Средства вне поля боя — артиллерия старшего начальника, авиация, корабли. Их нельзя поразить; удар наносится по вызову ГМ в бою (в начале следующего хода) или по плану боя. Сила удара — огневая мощь типа из каталога (лучшая по дистанциям) × число единиц; по необнаруженной цели — слабее." />

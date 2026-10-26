@@ -66,7 +66,7 @@ test('бой дивизий: свёрнутая таблица сил, свод�
   await navSec(page, 'Сценарии');
   await page.locator('.nav-sec[data-sec="scenarios"] .side-item', { hasText: 'Дивизия на дивизию' }).click();
   await page.getByRole('button', { name: /Начать бой/ }).click();
-  await page.getByRole('button', { name: '▶ Ход' }).click();
+  await page.getByRole('button', { name: 'Ход', exact: true }).click();
 
   // таблица сил: батальоны свёрнуты, у групп — итоги
   await expect(page.locator('.tbl.forces tr.group')).toHaveCount(26);

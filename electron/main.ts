@@ -126,8 +126,9 @@ function registerIpc() {
 }
 
 // Своей шапки и меню у окна нет: вкладки и меню программы нарисованы в самом окне.
-// Меню остаётся скрытым — только ради сочетаний клавиш (масштаб, полный экран, буфер обмена).
-// Отмены и повтора в нём нет: Ctrl+Z / Ctrl+Y обрабатывает сама программа.
+// Меню остаётся скрытым — только ради сочетаний клавиш (полный экран, буфер обмена).
+// Отмены, повтора и масштаба в нём нет: Ctrl+Z / Ctrl+Y и Ctrl+плюс / минус / 0 обрабатывает сама программа
+// (масштаб запоминается в настройках).
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
@@ -136,15 +137,7 @@ function buildMenu() {
     },
     {
       label: 'Вид',
-      submenu: [
-        { role: 'reload' },
-        { role: 'togglefullscreen' },
-        { role: 'zoomIn' },
-        { role: 'zoomIn', accelerator: 'CommandOrControl+=', visible: false },
-        { role: 'zoomOut' },
-        { role: 'resetZoom' },
-        { role: 'toggleDevTools' },
-      ],
+      submenu: [{ role: 'reload' }, { role: 'togglefullscreen' }, { role: 'toggleDevTools' }],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

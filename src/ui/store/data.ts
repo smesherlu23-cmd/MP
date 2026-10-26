@@ -445,12 +445,16 @@ export async function exportText(name: string, text: string, ext = 'txt') {
 
 export async function importFile() {
   const file = await storage.importFile();
-  if (!file) return;
+  if (file) importContent(file.content);
+}
+
+/** Импорт содержимого файла JSON (выбранного в окне или брошенного на окно программы). */
+export function importContent(content: string, fileName?: string) {
   let data: any;
   try {
-    data = JSON.parse(file.content);
+    data = JSON.parse(content);
   } catch {
-    toast('Файл не является JSON.', 'bad');
+    toast(fileName ? `«${fileName}» — не файл JSON.` : 'Файл не является JSON.', 'bad');
     return;
   }
   const s = get();

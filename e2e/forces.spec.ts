@@ -121,7 +121,7 @@ test('раздел «Силы»: команды с цветом и назван�
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
   await page.getByRole('button', { name: 'До конца' }).click();
-  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).first().click();
 
   // В сценарии — напоминание и действия прямо у сил.
   await openFromNav(page, 'атака на высоту');
@@ -183,13 +183,13 @@ test('незаписанные итоги: значок у боя, список 
   await expect(page.locator('.home-unrecorded')).toContainText('бой 1');
   // Новый бой тех же сил — с вопросом; отказ — боя нет.
   await openFromNav(page, 'атака на высоту');
-  await page.getByRole('button', { name: '▶ Начать бой' }).click();
+  await page.getByRole('button', { name: 'Начать бой', exact: true }).click();
   await expect(page.locator('.modal')).toContainText('Итоги прошлого боя не записаны');
   await page.locator('.modal').getByRole('button', { name: 'Отмена' }).click();
   await expect(page.locator('.nav-sec[data-sec="battles"] .side-item')).toHaveCount(1);
   // Записали — напоминание пропадает.
   await page.locator('.nav-sec[data-sec="battles"] .side-item').first().click();
-  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).first().click();
   await expect(page.locator('.nav-sec[data-sec="battles"] .side-item .side-warn')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -199,7 +199,7 @@ test('страница команды: численность, бои и бое�
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
   await page.getByRole('button', { name: 'До конца' }).click();
-  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).first().click();
   await (await navSec(page, 'Силы')).locator('.nav-group-link', { hasText: 'Синие' }).click();
   await expect(page.locator('.page-head h1')).toHaveText('Синие');
   await expect(page.locator('.team-kpis')).toContainText('Потери за всё время');

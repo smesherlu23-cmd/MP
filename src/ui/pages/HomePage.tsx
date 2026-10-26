@@ -121,7 +121,7 @@ export function HomePage() {
                   + {x.create.replace(/^Нов(ый|ые|ое|ая) /, '')}
                 </button>
               ) : (
-                <span className="wf-add muted">из сценария ▶</span>
+                <span className="wf-add muted">из сценария</span>
               )}
             </div>
           );
@@ -174,7 +174,7 @@ export function HomePage() {
                     </div>
                   </div>
                   <Btn sm kind="primary" onClick={() => openTab('battle', b.id)} title="Открыть бой и продолжить с текущего хода">
-                    Продолжить ▶
+                    <Icon name="play" size={12} /> Продолжить
                   </Btn>
                 </div>
               );
@@ -195,7 +195,7 @@ export function HomePage() {
               ) : (
                 'сценарий из раздела «Сценарии»'
               )}{' '}
-              — и нажмите «▶ Начать бой»: ход за ходом видно, кто по кому стреляет и почему.
+              — и нажмите «Начать бой»: ход за ходом видно, кто по кому стреляет и почему.
             </li>
             <li>
               <a href="#" onClick={(e) => (e.preventDefault(), showSection('units'))}>
@@ -240,11 +240,11 @@ export function HomePage() {
                         {forces} чел.
                       </span>
                     )}
-                    <Btn sm kind="ghost" onClick={() => openTab('montecarlo', x.id)} title="Массовые прогоны">
-                      ∑
+                    <Btn sm kind="ghost" icon onClick={() => openTab('montecarlo', x.id)} title="Массовые прогоны">
+                      <Icon name="sigma" size={14} />
                     </Btn>
-                    <Btn sm kind="ghost" disabled={!rs} onClick={() => rs && startBattle(x, rs)} title="Начать бой">
-                      ▶
+                    <Btn sm kind="ghost" icon disabled={!rs} onClick={() => rs && startBattle(x, rs)} title="Начать бой">
+                      <Icon name="play" size={13} />
                     </Btn>
                   </div>
                 );

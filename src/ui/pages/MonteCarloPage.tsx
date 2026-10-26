@@ -1,5 +1,6 @@
 // Массовое моделирование сценария: вероятности исходов, средние потери, разброс, список прогонов.
 
+import { Icon } from '../components/Icon';
 import { Fragment, useMemo, useState } from 'react';
 import { create } from 'zustand';
 import { createBattle, fmtDuration, newId, randomSeed, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
@@ -83,7 +84,7 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
             </>
           ) : (
             <Btn kind="primary" onClick={start}>
-              ▶ Запустить
+              <Icon name="play" size={13} /> Запустить
             </Btn>
           )}
           <div className="grow" />

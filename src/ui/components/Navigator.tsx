@@ -2,19 +2,42 @@
 // в панели инструментов окна. Каждый раздел разворачивается на месте; щелчок по названию раздела открывает
 // его каталог. Раздел открытой страницы подсвечен — всегда видно, где находишься.
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
+import { cloneUnit, findUnit, toTemplate } from '../../engine';
 import { Icon, type IconName } from './Icon';
-import { arrowNav, pressable } from './ui';
+import { RenameInput, arrowNav, openContextMenu } from './ui';
+import {
+  DND_OBJ,
+  OBJ_ICON,
+  openObj,
+  objFromKey,
+  objKey,
+  objKeys,
+  objMenu,
+  objName,
+  placeFavorite,
+  renameObj,
+  startRename,
+  stopRename,
+  useObjDrag,
+  useRenaming,
+  type Obj,
+} from '../objects';
 
 /** Сколько объектов раздела видно в навигаторе без фильтра (остальные — в каталоге). */
 const NAV_LIMIT = 6;
 import { NAV_GROUPS, isNavOpen, sectionMeta, sectionOf, setNavOpen, showSection, useNavFilter } from '../nav';
 import { LEVEL_LABEL } from './ForceCampaign';
-import { DND_FORCE, DND_LIB } from '../pages/unit/model';
+import { DND_FORCE, DND_LIB, DND_NODE } from '../pages/unit/model';
 import {
+  containsTemplate,
   createFormation,
   createScenario,
   deleteBattles,
+  toast,
+  toastUndoable,
+  transferPart,
+  updateFormation,
   forceStatus,
   teamColor,
   importFile,
@@ -24,6 +47,7 @@ import {
   useApp,
   type NavSection,
   type TabKind,
+  updateSettings,
 } from '../store';
 
 /** Создать объект раздела (у боёв своей кнопки нет — бой начинается из сценария). */
@@ -69,6 +93,9 @@ export function Navigator() {
   const here = sectionOf(activeTab);
   const filter = useNavFilter((x) => x.q);
   const listRef = useRef<HTMLDivElement>(null);
+  const rename = useRenaming();
+  const dragging = useObjDrag((x) => x.on);
+  const [over, setOver] = useState<string | null>(null);
   const q = filter.trim().toLowerCase();
   const match = (name: string) => !q || name.toLowerCase().includes(q);
   const counts: Record<NavSection, number> = {
@@ -80,11 +107,42 @@ export function Navigator() {
   };
   const isOpen = (kind: TabKind, ref: string) => activeTab?.ref === ref && activeTab.kind === kind;
 
+  /**
+   * Подразделение со страницы шаблона или сил можно бросить на строку в боковой панели: на силы — передать
+   * часть им (как «Передать…»), на шаблон — добавить в него копию.
+   */
+  const dropTarget = (o: Obj) => {
+    if (o.kind !== 'force' && o.kind !== 'template') return undefined;
+    return (e: React.DragEvent) => {
+      const raw = e.dataTransfer.getData(DND_NODE);
+      if (!raw) return;
+      const x = JSON.parse(raw) as { ref?: string; id?: string };
+      const [scope, rootId] = (x.ref ?? '').split(':');
+      const root = scope === 'force' ? s.forces[rootId] : scope === 'lib' ? s.formations[rootId] : undefined;
+      const node = root && x.id ? findUnit(root, x.id) : null;
+      if (!node) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (o.kind === 'force') {
+        if (scope !== 'force') return toast('В силы передаются только части других сил. Шаблон вставляется на странице сил.', 'bad');
+        transferPart(node.id, o.id);
+        return;
+      }
+      if (scope === 'lib' && rootId === o.id) return;
+      const copy = toTemplate(cloneUnit(node));
+      if (containsTemplate(copy, o.id)) return toast('Нельзя вставить шаблон сам в себя.', 'bad');
+      updateFormation(o.id, (d) => void d.children.push(copy));
+      toastUndoable(`Копия «${node.name}» добавлена в шаблон «${objName(o)}».`);
+    };
+  };
+
   const row = (
     key: string,
     name: string,
     onOpen: () => void,
     opts: {
+      obj?: Obj;
+      icon?: IconName;
       sub?: string;
       hint?: string;
       active?: boolean;
@@ -92,40 +150,99 @@ export function Navigator() {
       dragForce?: string;
       color?: string;
       warn?: { cls: string; text: string };
+      /** Строка избранного: перетаскивается внутри избранного, меню — с «Убрать из избранного». */
+      fav?: boolean;
     } = {},
-  ) => (
-    <div
-      key={key}
-      className={`side-item${opts.active ? ' active' : ''}`}
-      title={
-        opts.dragLib
-          ? `${name}\nМожно перетащить в структуру шаблона или сил`
-          : opts.dragForce
-            ? `${name}${opts.warn ? ` — ${opts.warn.text.toLowerCase()}` : ''}\nМожно перетащить на сторону сценария`
-            : opts.sub || opts.hint || opts.warn
-              ? [name, opts.sub, opts.hint, opts.warn?.text].filter(Boolean).join('\n')
-              : name
-      }
-      draggable={!!(opts.dragLib || opts.dragForce)}
-      onDragStart={(e) => {
-        if (opts.dragLib) e.dataTransfer.setData(DND_LIB, opts.dragLib);
-        else if (opts.dragForce) e.dataTransfer.setData(DND_FORCE, opts.dragForce);
-        else return;
-        e.dataTransfer.effectAllowed = 'copy';
-      }}
-      onClick={onOpen}
-      {...pressable(onOpen)}
-    >
-      {opts.color && <span className="team-dot sm" style={{ background: opts.color }} aria-hidden />}
-      <span>{name}</span>
-      {opts.sub && <span className="sub">{opts.sub}</span>}
-      {opts.warn && (
-        <span className={`side-warn ${opts.warn.cls}`} aria-hidden>
-          <Icon name="alert" size={13} />
-        </span>
-      )}
-    </div>
-  );
+  ) => {
+    const ok = opts.obj ? objKey(opts.obj) : undefined;
+    const renaming = !!ok && rename.key === ok && rename.where === 'side' && rename.row === key;
+    const target = opts.obj && dropTarget(opts.obj);
+    const tip = renaming
+      ? undefined
+      : opts.dragLib
+        ? `${name}\nМожно перетащить в структуру шаблона или сил`
+        : opts.dragForce
+          ? `${name}${opts.warn ? ` — ${opts.warn.text.toLowerCase()}` : ''}\nМожно перетащить на сторону сценария`
+          : opts.sub || opts.hint || opts.warn
+            ? [name, opts.sub, opts.hint, opts.warn?.text].filter(Boolean).join('\n')
+            : name;
+    return (
+      // biome-ignore lint/a11y/useSemanticElements: строка списка с вложенным полем переименования — не <button>
+      <div
+        key={key}
+        role="button"
+        tabIndex={0}
+        data-obj={ok}
+        data-row={key}
+        className={`side-item${opts.active ? ' active' : ''}${over === `${key}:${opts.fav ? 'f' : ''}` ? ' drop-inside' : ''}`}
+        title={tip}
+        draggable={!renaming && !!(opts.obj || opts.dragLib || opts.dragForce)}
+        onDragStart={(e) => {
+          if (opts.dragLib) e.dataTransfer.setData(DND_LIB, opts.dragLib);
+          else if (opts.dragForce) e.dataTransfer.setData(DND_FORCE, opts.dragForce);
+          if (ok) e.dataTransfer.setData(DND_OBJ, ok);
+          e.dataTransfer.effectAllowed = 'copyMove';
+          useObjDrag.setState({ on: true });
+        }}
+        onDragEnd={() => useObjDrag.setState({ on: false })}
+        onDragOver={(e) => {
+          const fav = opts.fav && e.dataTransfer.types.includes(DND_OBJ);
+          if (!fav && !(target && e.dataTransfer.types.includes(DND_NODE))) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setOver(`${key}:${opts.fav ? 'f' : ''}`);
+        }}
+        onDragLeave={() => setOver(null)}
+        onDrop={(e) => {
+          setOver(null);
+          useObjDrag.setState({ on: false });
+          const k = e.dataTransfer.getData(DND_OBJ);
+          if (opts.fav && k && ok) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (k !== ok) placeFavorite(k, ok);
+            return;
+          }
+          if (target) target(e);
+        }}
+        onClick={() => !renaming && onOpen()}
+        onDoubleClick={() => opts.obj && startRename(opts.obj, { where: 'side', row: key })}
+        onKeyDown={(e) => {
+          if (renaming) return;
+          if (opts.obj) objKeys(opts.obj, e, key);
+          else if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+        onContextMenu={(e) => opts.obj && openContextMenu(e, objMenu(opts.obj, { row: key }))}
+      >
+        {opts.icon && (
+          <span className="side-icon">
+            <Icon name={opts.icon} size={15} />
+          </span>
+        )}
+        {opts.color && <span className="team-dot sm" style={{ background: opts.color }} aria-hidden />}
+        {renaming && opts.obj ? (
+          <RenameInput
+            value={objName(opts.obj) ?? name}
+            onDone={(v) => {
+              stopRename();
+              if (v !== null && opts.obj) renameObj(opts.obj, v);
+            }}
+          />
+        ) : (
+          <span>{name}</span>
+        )}
+        {opts.sub && !renaming && <span className="sub">{opts.sub}</span>}
+        {opts.warn && (
+          <span className={`side-warn ${opts.warn.cls}`} aria-hidden>
+            <Icon name="alert" size={13} />
+          </span>
+        )}
+      </div>
+    );
+  };
   const group = (title: string, items: React.ReactNode[], onDelete?: () => void, deleteTitle?: string, color?: string, onOpen?: () => void) =>
     items.length ? (
       <div key={`g:${title}`} className="nav-group">
@@ -182,6 +299,7 @@ export function Navigator() {
       const { shown, hidden } = capped(all, (x) => activeTab?.ref === x.id || !!activeTab?.ref?.startsWith(`sc:${x.id}:`));
       const list = shown.map((x) =>
         row(x.id, x.name, () => openTab('scenario', x.id), {
+          obj: { kind: 'scenario', id: x.id },
           // Число боёв — в подсказке: справа от названия подпись только обрезала бы его.
           hint: battlesBy.get(x.id) ? `боёв: ${battlesBy.get(x.id)}` : undefined,
           active:
@@ -200,6 +318,7 @@ export function Navigator() {
       const rsIds = [...new Set(units.map((u) => u.rulesetId ?? ''))];
       const item = (x: (typeof units)[number]) =>
         row(x.id, x.name, () => openTab('formation', `lib:${x.id}`), {
+          obj: { kind: 'template', id: x.id },
           sub: x.level,
           active: isOpen('formation', `lib:${x.id}`),
           dragLib: x.id,
@@ -221,6 +340,7 @@ export function Navigator() {
       const factions = [...new Set(units.map((u) => u.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
       const item = (x: (typeof units)[number]) =>
         row(x.id, x.name, () => openTab('formation', `force:${x.id}`), {
+          obj: { kind: 'force', id: x.id },
           sub: x.level,
           active: isOpen('formation', `force:${x.id}`),
           dragForce: x.id,
@@ -253,16 +373,13 @@ export function Navigator() {
           scName,
           items.map((b) =>
             row(b.id, b.name.startsWith(`${scName} · `) ? b.name.slice(scName.length + 3) : b.name, () => openTab('battle', b.id), {
+              obj: { kind: 'battle', id: b.id },
               sub: b.finished ? (b.headline ?? 'итог') : `ход ${b.turn}`,
               active: isOpen('battle', b.id),
               warn: b.unrecorded ? { cls: 'warn', text: 'Итоги не записаны в силы' } : undefined,
             }),
           ),
-          () =>
-            deleteBattles(
-              items.map((b) => b.id),
-              `Удалить все бои сценария «${scName}»?`,
-            ),
+          () => deleteBattles(items.map((b) => b.id)),
           `Удалить все бои этого сценария (${items.length})`,
         );
       });
@@ -271,9 +388,22 @@ export function Navigator() {
     const list = Object.values(s.rulesets)
       .filter((x) => match(x.name))
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-      .map((x) => row(x.id, x.name, () => openTab('ruleset', x.id), { active: isOpen('ruleset', x.id) }));
+      .map((x) => row(x.id, x.name, () => openTab('ruleset', x.id), { obj: { kind: 'ruleset', id: x.id }, active: isOpen('ruleset', x.id) }));
     return { list, empty: 'Наборов правил нет.' };
   };
+
+  /** Строка избранного или недавних: со значком раздела. */
+  const objRow = (k: string, where: 'fav' | 'rec') => {
+    const o = objFromKey(k)!;
+    return row(`${where}:${k}`, objName(o) ?? '', () => openObj(o), { obj: o, icon: OBJ_ICON[o.kind], active: s.active === k, fav: where === 'fav' });
+  };
+  const alive = (k: string) => {
+    const o = objFromKey(k);
+    return !!o && objName(o) !== undefined;
+  };
+  const favKeys = (s.settings.favorites ?? []).filter(alive);
+  const recentKeys = (s.settings.recent ?? []).filter(alive).slice(0, 5);
+  const recentOpen = !!s.settings.navRecent;
 
   const section = (sec: NavSection) => {
     const meta = sectionMeta(sec);
@@ -321,6 +451,30 @@ export function Navigator() {
         <div className="nav-home">
           <NavItem icon="home" label="Главное" here={activeTab?.kind === 'home'} onClick={() => openTab('home')} title="Что продолжить, с чего начать" />
         </div>
+        {!q && (favKeys.length > 0 || dragging) && (
+          // biome-ignore lint/a11y/noStaticElementInteractions: место, куда бросают объект, чтобы добавить его в избранное
+          <div
+            className={`nav-block nav-favs${over === 'favs' ? ' drop-over' : ''}`}
+            onDragOver={(e) => {
+              if (!e.dataTransfer.types.includes(DND_OBJ)) return;
+              e.preventDefault();
+              setOver('favs');
+            }}
+            onDragLeave={(e) => e.currentTarget === e.target && setOver(null)}
+            onDrop={(e) => {
+              setOver(null);
+              useObjDrag.setState({ on: false });
+              const k = e.dataTransfer.getData(DND_OBJ);
+              if (!k) return;
+              e.preventDefault();
+              placeFavorite(k, null);
+            }}
+          >
+            <div className="nav-heading">Избранное</div>
+            {favKeys.map((k) => objRow(k, 'fav'))}
+            {!favKeys.length && <div className="nav-empty nav-drop-hint">Перетащите сюда, чтобы закрепить</div>}
+          </div>
+        )}
         {NAV_GROUPS.map((g) => {
           const items = g.ids.map(section).filter(Boolean);
           return items.length ? (
@@ -330,6 +484,24 @@ export function Navigator() {
             </div>
           ) : null;
         })}
+        {/* Недавние — под разделами: появляясь, они не сдвигают строки, по которым щёлкают. */}
+        {!q && recentKeys.length > 0 && (
+          <div className={`nav-block nav-sec nav-recent${recentOpen ? ' open' : ''}`}>
+            <button
+              type="button"
+              className="nav-heading nav-heading-btn"
+              aria-expanded={recentOpen}
+              onClick={() => updateSettings({ navRecent: !recentOpen })}
+              title={recentOpen ? 'Свернуть' : 'Недавно открытые'}
+            >
+              Недавние
+              <span className="nav-chev">
+                <Icon name="right" size={12} />
+              </span>
+            </button>
+            {recentOpen && <div className="nav-list flat">{recentKeys.map((k) => objRow(k, 'rec'))}</div>}
+          </div>
+        )}
         {q && !NAV_GROUPS.some((g) => g.ids.some((id) => sectionList(id).list.some(Boolean))) && <div className="nav-empty">Ничего не найдено</div>}
       </div>
       <nav className="nav-bottom">

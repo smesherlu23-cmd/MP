@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { pathTo, plural, summarizeUnits, type Id, type Ruleset, type Scenario, type SideUnitRef, type UnitNode } from '../../engine';
 import { createForcesFromTemplate, historyStep, toast, updateScenario, useApp } from '../store';
-import { Btn, Check, Info, Modal, Num, Seg, fmt0 } from './ui';
+import { Chev, Btn, Check, Info, Modal, Num, Seg, fmt0 } from './ui';
 
 const keyOf = (rootId: string, nodeId: string) => `${rootId}/${nodeId}`;
 
@@ -109,7 +109,7 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
             onClick={() => setOpen((prev) => new Set(prev.has(key) ? [...prev].filter((x) => x !== key) : [...prev, key]))}
             title={canOpen ? (isOpen ? 'Скрыть части' : 'Показать части — можно взять только некоторые') : undefined}
           >
-            {canOpen ? (isOpen ? '▾' : '▸') : ''}
+            {canOpen ? <Chev open={isOpen} /> : ''}
           </button>
           <Check value={!!pick} onChange={(v) => !taken && toggle(root, n.id, v)}>
             <span className="pick-name">{n.name}</span>
@@ -149,7 +149,7 @@ export function AddUnitsModal({ sc, side, rs, onClose }: { sc: Scenario; side: n
             {count
               ? `Выбрано: ${count} · ${fmt0(total)} чел.`
               : mode === 'forces'
-                ? 'Отметьте силы или их части (▸ — раскрыть)'
+                ? 'Отметьте силы или их части (стрелка — раскрыть)'
                 : 'Отметьте шаблоны — по ним будут созданы новые силы'}
           </span>
           <Btn onClick={onClose}>Отмена</Btn>

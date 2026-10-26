@@ -1,6 +1,6 @@
 // Мост между окном и главным процессом: только операции с данными, без доступа к Node.
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 contextBridge.exposeInMainWorld('warsim', {
   list: (col: string) => ipcRenderer.invoke('storage:list', col),
@@ -24,4 +24,6 @@ contextBridge.exposeInMainWorld('warsim', {
   material: process.argv.includes('--material=mica') ? 'mica' : '',
   setWindowTheme: (theme: 'dark' | 'light') => ipcRenderer.send('window:theme', theme),
   appInfo: () => ipcRenderer.invoke('app:info'),
+  /** Масштаб интерфейса (1 — обычный): как масштаб страницы, со всеми меню и окнами. */
+  setZoom: (f: number) => webFrame.setZoomFactor(f),
 });

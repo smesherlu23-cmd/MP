@@ -4681,3 +4681,351 @@ tr[tabindex]:focus-visible {
     transition-duration: 1ms !important;
   }
 }
+
+/* ================================================================
+   Гибкость: меню по правому щелчку, переименование на месте, избранное и недавние,
+   инспектор свойств, быстрый просмотр, импорт перетаскиванием, настройка окна
+   ================================================================ */
+
+/* ---------- меню: пункты-переключатели и стрелки раскрытия */
+
+.menu-item.checkable {
+  padding-left: 6px;
+  gap: 0;
+}
+.menu-item.checkable .kbd {
+  margin-left: 24px;
+}
+.menu-check {
+  display: inline-flex;
+  align-items: center;
+  width: 20px;
+  flex-shrink: 0;
+  align-self: center;
+}
+.chev-ico {
+  flex-shrink: 0;
+  vertical-align: -1px;
+  transition: transform var(--dur-2) var(--ease);
+}
+.chev-ico.open {
+  transform: rotate(90deg);
+}
+
+/* ---------- переименование на месте */
+
+.rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  min-height: 0;
+  margin: -2px 0;
+  padding: 0 6px;
+  font: inherit;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--focus);
+  border-radius: 5px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 30%, transparent);
+  outline: none;
+}
+.tb-rename {
+  width: min(320px, 40cqw);
+  font-weight: 600;
+}
+.tb-name.renamable {
+  cursor: default;
+}
+
+/* ---------- боковая панель: избранное, недавние, места для перетаскивания */
+
+.side-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--accent-fg);
+}
+.side-item.active .side-icon {
+  color: var(--text);
+}
+.side-item.drop-inside {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--focus);
+}
+.nav-favs {
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-1);
+}
+.nav-favs.drop-over {
+  background: var(--accent-soft);
+}
+.nav-drop-hint {
+  margin: 2px 0 4px;
+  padding: 8px;
+  text-align: center;
+  border: 1px dashed var(--border2);
+  border-radius: var(--radius-sm);
+}
+.nav-heading-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  font-family: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.nav-heading-btn .nav-chev {
+  width: auto;
+  height: auto;
+  opacity: 0;
+  transform: none;
+  transition:
+    opacity var(--dur-1),
+    transform var(--dur-2) var(--ease);
+}
+.nav-recent.open .nav-heading-btn .nav-chev {
+  transform: rotate(90deg);
+}
+.nav-heading-btn:hover .nav-chev,
+.nav-heading-btn:focus-visible .nav-chev {
+  opacity: 1;
+}
+.nav-list.flat {
+  padding-left: 0;
+}
+
+/* ---------- панель инструментов: масштаб */
+
+.tb-zoom {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.tb-zoom .tb-icon {
+  width: 24px;
+  min-width: 24px;
+}
+.tb-zoom-val {
+  min-width: 40px;
+  padding: 0 2px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.tb-zoom-val:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.tb-setup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 18px;
+}
+
+/* ---------- страница с инспектором (шаблоны и силы): схема слева, свойства справа */
+
+.split-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.split-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 24px 32px 48px;
+}
+.split-main .org-scroll {
+  max-height: max(360px, calc(100vh - 300px));
+}
+.inspector-scroll {
+  height: 100%;
+  overflow: auto;
+  padding: 14px 14px 32px;
+}
+/* В инспекторе карточки — это разделы панели: без рамок и теней, разделены линией. */
+.inspector-scroll > .stack {
+  gap: 0;
+}
+.inspector-scroll .card {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--sep);
+  border-radius: 0;
+  box-shadow: none;
+}
+.inspector-scroll .card-head {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+.inspector-scroll .card-body {
+  padding-left: 2px;
+  padding-right: 2px;
+}
+.inspector-scroll .stack > .stack {
+  gap: 0;
+}
+
+/* ---------- выпадающие списки в строке сведений — кнопками со стрелкой, как всплывающие меню macOS */
+
+.meta .inline-select,
+.meta .inline-input {
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  background-color: var(--control);
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+}
+.meta .inline-select {
+  padding-right: 22px;
+  background-image: var(--chev);
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 10px;
+}
+.meta .inline-select:hover,
+.meta .inline-input:hover {
+  background-color: var(--control-hover, var(--hover));
+}
+.meta .inline-input:focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 30%, transparent);
+}
+
+/* ---------- быстрый просмотр */
+
+.ql-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.ql-title .icon {
+  color: var(--accent-fg);
+}
+.ql-kind {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--faint);
+}
+.ql-body {
+  gap: 14px;
+}
+.ql-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 18px;
+  margin: 0;
+}
+.ql-facts dt {
+  font-size: var(--fs-xs);
+  color: var(--faint);
+}
+.ql-facts dd {
+  margin: 1px 0 0;
+}
+.ql-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.ql-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: var(--panel2);
+  border-left: 3px solid;
+  border-radius: 6px;
+}
+.ql-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow: auto;
+}
+.ql-list > div {
+  display: flex;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 5px;
+}
+.ql-list > div:nth-child(odd) {
+  background: var(--stripe);
+}
+
+/* ---------- импорт перетаскиванием файла на окно */
+
+.file-drop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  animation: fade-in var(--dur-1) var(--ease);
+}
+.file-drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 40px;
+  text-align: center;
+  background: var(--pop-bg);
+  border: 2px dashed var(--border2);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+/* ---------- каталог: строка в фокусе (пробел — быстрый просмотр) */
+
+.catalog-row:focus-within {
+  background: var(--hover);
+}
+
+/* Страница с инспектором уже окна: блок боеготовности перестраивается по ширине самой страницы. */
+.split-main {
+  container-type: inline-size;
+}
+@container (max-width: 1000px) {
+  .readiness {
+    grid-template-columns: minmax(140px, auto) minmax(0, 1fr);
+  }
+  .readiness > .fc-stats,
+  .readiness > .force-actions,
+  .readiness > .force-actions-ok {
+    grid-column: 2;
+    min-width: 0;
+  }
+}
+.nav-recent:not(.open) .nav-heading-btn .nav-chev {
+  opacity: 0.7;
+}
+
+.side-item > .side-icon + span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Шапка журнала в узком инспекторе: заголовок не сжимается под переключатель — тот переносится на строку ниже. */
+.log-head h3 {
+  flex: 1 0 auto;
+}
+/* «Между боями…» — во всю ширину и без выделения (в каталоге сил выделенной кнопки нет). */
+.force-actions > .btn:first-child {
+  grid-column: 1 / -1;
+}

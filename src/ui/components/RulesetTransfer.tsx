@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { TRANSFER_KINDS, TRANSFER_LABELS, transferFromRuleset, type Id, type Ruleset, type TransferKind } from '../../engine';
 import { historyStep, replaceRuleset, toastUndoable, useApp } from '../store';
-import { Btn, Check, Modal, Sel } from './ui';
+import { Chev, Btn, Check, Modal, Sel } from './ui';
 
 const itemsOf = (r: Ruleset, k: TransferKind): { id: Id; name: string }[] =>
   ((r as unknown as Record<string, { id: Id; name: string }[]>)[k] ?? []).map((x) => ({ id: x.id, name: x.name }));
@@ -66,7 +66,9 @@ export function TransferModal({ target, onClose }: { target: Ruleset; onClose: (
                 <div key={k} className="transfer-kind">
                   <div className="row" style={{ gap: 8 }}>
                     <button type="button" className="sec-toggle" onClick={() => setOpen(open === k ? null : k)}>
-                      <span className="chev">{open === k ? '▾' : '▸'}</span>
+                      <span className="chev">
+                        <Chev open={open === k} />
+                      </span>
                       <h4>{TRANSFER_LABELS[k]}</h4>
                     </button>
                     <span className="faint small">{picked.size ? `выбрано ${picked.size} из ${items.length}` : `${items.length}`}</span>

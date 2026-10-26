@@ -6,7 +6,7 @@ import { navSec, openApp, openFromNav, startBattle } from './helpers';
 test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
 const turnMeta = (page: Page) => page.locator('.battle-head .meta');
-const stepBtn = (page: Page) => page.getByRole('button', { name: '▶ Ход' });
+const stepBtn = (page: Page) => page.getByRole('button', { name: 'Ход', exact: true });
 
 test('откат: кнопка ↶, Ctrl+Z / Ctrl+Y и «Вернуться к ходу…»', async ({ page }) => {
   const errors = await openApp(page);

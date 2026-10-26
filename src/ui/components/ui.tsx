@@ -180,6 +180,40 @@ export function Txt(props: {
   );
 }
 
+/**
+ * Поле переименования на месте (строка списка, заголовок окна): Enter или уход с поля — сохранить,
+ * Esc — отменить (onDone(null)).
+ */
+export function RenameInput({ value, onDone, className }: { value: string; onDone: (v: string | null) => void; className?: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+  useLayoutEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const finish = (v: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(v);
+  };
+  return (
+    <input
+      ref={ref}
+      className={`rename-input${className ? ` ${className}` : ''}`}
+      defaultValue={value}
+      aria-label="Новое название"
+      onBlur={(e) => finish(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') finish(e.currentTarget.value);
+        else if (e.key === 'Escape') finish(null);
+      }}
+    />
+  );
+}
+
 export function Area(props: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number }) {
   return (
     <textarea
@@ -254,6 +288,11 @@ export function Info({ text }: { text: string }) {
   );
 }
 
+/** Стрелка раскрытия (▸/▾): поворачивается при раскрытии. */
+export function Chev({ open, size = 12 }: { open: boolean; size?: number }) {
+  return <Icon name="right" size={size} className={`chev-ico${open ? ' open' : ''}`} />;
+}
+
 export interface MenuItem {
   label: ReactNode;
   onClick: () => void;
@@ -262,6 +301,8 @@ export interface MenuItem {
   tip?: string;
   /** Сочетание клавиш — показывается справа. */
   kbd?: string;
+  /** Пункт-переключатель: галочка слева, если включён. */
+  checked?: boolean;
 }
 
 /**
@@ -355,11 +396,13 @@ function MenuItems({ items, onPick }: { items: (MenuItem | 'sep')[]; onPick: () 
             <hr key={i} className="menu-sep" />
           ) : null
         ) : (
+          // biome-ignore lint/a11y/useAriaPropsSupportedByRole: роль задаётся выражением — menuitemcheckbox у пунктов-переключателей
           <button
             key={i}
             type="button"
-            role="menuitem"
-            className={`menu-item${it.danger ? ' danger' : ''}`}
+            role={it.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+            aria-checked={it.checked}
+            className={`menu-item${it.danger ? ' danger' : ''}${it.checked === undefined ? '' : ' checkable'}`}
             disabled={it.disabled}
             data-tip={it.tip}
             onClick={() => {
@@ -367,6 +410,7 @@ function MenuItems({ items, onPick }: { items: (MenuItem | 'sep')[]; onPick: () 
               it.onClick();
             }}
           >
+            {it.checked !== undefined && <span className="menu-check">{it.checked && <Icon name="tick" size={13} />}</span>}
             {it.label}
             {it.kbd && <span className="kbd">{it.kbd}</span>}
           </button>
@@ -382,7 +426,7 @@ const useContextMenu = create<{ at: { x: number; y: number } | null; items: (Men
 const closeContextMenu = () => useContextMenu.setState({ at: null });
 
 /** Открыть меню у указателя мыши (правый щелчок). */
-export function openContextMenu(e: React.MouseEvent, items: (MenuItem | 'sep' | false | null | undefined)[]) {
+export function openContextMenu(e: React.MouseEvent | MouseEvent, items: (MenuItem | 'sep' | false | null | undefined)[]) {
   e.preventDefault();
   e.stopPropagation();
   useContextMenu.setState({ at: { x: e.clientX, y: e.clientY }, items: items.filter(Boolean) as (MenuItem | 'sep')[] });
@@ -391,6 +435,13 @@ export function openContextMenu(e: React.MouseEvent, items: (MenuItem | 'sep' | 
 export function ContextMenuHost() {
   const { at, items } = useContextMenu();
   const pop = useRef<HTMLDivElement>(null);
+  // Меню не выходит за край окна: у нижнего края открывается вверх от указателя.
+  useLayoutEffect(() => {
+    const el = pop.current;
+    if (!at || !el) return;
+    const h = el.offsetHeight;
+    if (at.y + h > window.innerHeight - 8) el.style.top = `${Math.max(8, at.y - h)}px`;
+  }, [at]);
   useEffect(() => {
     if (!at) return;
     pop.current?.querySelector<HTMLButtonElement>('.menu-item:not(:disabled)')?.focus();

@@ -548,7 +548,8 @@ export function BetweenModal({ force, onClose }: { force: UnitNode; onClose: () 
  * Действия между боями. На карточке и панели — «Между боями…» и только те действия, для которых есть дело
  * (остальных не видно); compact — одна кнопка «Между боями…» (для заметки в сценарии).
  */
-export function ForceActions({ force, grid, compact }: { force: UnitNode; grid?: boolean; compact?: boolean }) {
+/** quiet — без главной (выделенной) кнопки: в каталоге карточек много, выделенная кнопка должна быть одна на экран. */
+export function ForceActions({ force, grid, compact, quiet }: { force: UnitNode; grid?: boolean; compact?: boolean; quiet?: boolean }) {
   const rs = useRuleset(force);
   const [modal, setModal] = useState<'between' | 'rest' | 'replenish' | SupplyKey | null>(null);
   const n = betweenNeeds(force, rs);
@@ -565,7 +566,12 @@ export function ForceActions({ force, grid, compact }: { force: UnitNode; grid?:
   );
   if (!any) return grid ? <div className="force-actions-ok faint small">Состояние в норме — действия не нужны</div> : null;
   const between = (
-    <Btn sm kind="primary" onClick={() => setModal('between')} title="Лечить, чинить, пополнить, отдых, боезапас и топливо — в одном окне">
+    <Btn
+      sm
+      kind={quiet ? undefined : 'primary'}
+      onClick={() => setModal('between')}
+      title="Лечить, чинить, пополнить, отдых, боезапас и топливо — в одном окне"
+    >
       <Icon name="restore" size={14} /> Между боями…
     </Btn>
   );

@@ -1,6 +1,7 @@
 // Сравнение вариантов в массовом моделировании: перебор одного параметра («как исход зависит от X») или
 // сравнение с другим сценарием. Все варианты считаются с одними и теми же случайностями — разница от параметра.
 
+import { Icon } from './Icon';
 import { useState } from 'react';
 import { create } from 'zustand';
 import {
@@ -241,7 +242,7 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
           </Btn>
         ) : (
           <Btn kind="primary" onClick={() => void run()}>
-            ▶ Сравнить
+            <Icon name="play" size={13} /> Сравнить
           </Btn>
         )}
         {state?.running && (

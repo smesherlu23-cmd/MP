@@ -23,6 +23,8 @@ import { Crumbs } from '../components/Crumbs';
 import { LogView } from '../components/LogView';
 import { Inspector, InspectorToggle } from '../components/Inspector';
 import { Btn, Menu, pressable, ToolbarSlot } from '../components/ui';
+import { Icon } from '../components/Icon';
+import { applyResultsToForces, battleForces } from '../postBattle';
 import { useTabState } from '../hooks';
 import { nextBattleName } from './ScenarioPage';
 import {
@@ -134,6 +136,8 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
   const lastAction = lastBattleAction(b);
   const undoLabel = !lastAction ? '' : lastAction.kind === 'turn' ? `ход ${lastAction.turn}` : lastAction.label;
   const scenarioExists = !!useApp.getState().scenarios[b.scenarioId];
+  // Итоги окончённого боя ещё не перенесены в силы — это главное действие после боя.
+  const canRecord = b.finished && !b.appliedToForces && battleForces(b).length > 0;
 
   return (
     <div className="page fill">
@@ -148,21 +152,31 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
         <ToolbarSlot>
           {b.finished ? (
             <>
+              <Btn onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
+                Переиграть
+              </Btn>
               <Btn
-                kind="primary"
+                kind={canRecord ? undefined : 'primary'}
                 onClick={() => copyText(formatReport(b))}
                 title="Полный отчёт для ГМ: все цифры обеих сторон. Донесения для игроков — в меню «⋯» и на вкладке «Итоги»."
               >
                 Скопировать отчёт
               </Btn>
-              <Btn onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
-                Переиграть
-              </Btn>
+              {/* Главное после боя — перенести потери в силы; пока не сделано, это основная кнопка. */}
+              {canRecord && (
+                <Btn
+                  kind="primary"
+                  onClick={() => void applyResultsToForces(b)}
+                  title="Потери, раненые, техника в ремонте, мораль и боезапас — в силы, участвовавшие в бою"
+                >
+                  Записать итоги в силы
+                </Btn>
+              )}
             </>
           ) : (
             <>
               <Btn kind="primary" onClick={() => step(1)} title="Рассчитать один ход">
-                ▶ Ход
+                <Icon name="play" size={13} /> Ход
               </Btn>
               <Btn
                 onClick={untilEvent}
@@ -170,10 +184,10 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
                   Object.entries(rules).filter(([k, v]) => k !== 'lossPct' && v).length
                 } видов событий${rules.lossPct ? `, потери за ход ≥ ${rules.lossPct}%` : ''}. Настроить — в меню «⋯».`}
               >
-                ⏭ До события
+                <Icon name="skip" size={13} /> До события
               </Btn>
               <Btn onClick={() => step(5)} title="Рассчитать пять ходов">
-                ▶▶ 5
+                <Icon name="forward" size={14} /> 5
               </Btn>
               <Btn onClick={toEnd} title="Рассчитать бой до конца">
                 До конца
@@ -188,7 +202,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
           )}
           {undoLabel && (
             <Btn icon onClick={() => undoBattle(b.id)} title={`Отменить: ${undoLabel} (Ctrl+Z). Бой повторяется с теми же бросками.`}>
-              ↶
+              <Icon name="undo" size={16} />
             </Btn>
           )}
           <Menu
@@ -230,6 +244,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
               },
               'sep',
               !b.finished && { label: 'Скопировать отчёт', onClick: () => copyText(formatReport(b)) },
+              b.finished && !!b.appliedToForces && { label: 'Записать итоги в силы ещё раз…', onClick: () => void applyResultsToForces(b) },
               ...SIDES.map((sd) => ({
                 label: `Донесение для «${b.sides[sd].name}»`,
                 onClick: () => copyText(formatSideReport(b, sd)),
@@ -248,7 +263,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
               { label: 'Удалить бой', danger: true, onClick: () => deleteBattle(b.id) },
             ]}
           />
-          <InspectorToggle label="Журнал" />
+          <InspectorToggle id="log" label="Журнал" />
         </ToolbarSlot>
         <div className="meta" style={{ width: '100%' }}>
           <span>
@@ -339,7 +354,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             {view === 'result' && <Result b={b} result={result} onElement={setElModal} />}
           </div>
         </div>
-        <Inspector label="Журнал">
+        <Inspector id="log" label="Журнал">
           <div className="battle-log">
             <LogView
               b={b}

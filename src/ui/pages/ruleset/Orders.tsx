@@ -3,7 +3,7 @@
 import { BEHAVIOR_LABELS, BEHAVIORS, newId, type Behavior, type LevelDef, type OptionDef, type Ruleset } from '../../../engine';
 import { EffectsEditor } from '../../components/EffectsEditor';
 import { Btn, Card, Info, Menu, Num, Sel, Txt } from '../../components/ui';
-import { confirmDialog } from '../../store';
+import { toastUndoable } from '../../store';
 import type { Upd } from './common';
 
 export function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
@@ -44,9 +44,9 @@ export function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                       label: 'Удалить приказ',
                       danger: true,
                       disabled: r.orders.length <= 1,
-                      onClick: async () => {
-                        if (await confirmDialog(`Удалить приказ «${o.name}»?`, 'Элементы с этим приказом получат приказ своего формирования.', 'Удалить', true))
-                          upd((d) => void (d.orders = d.orders.filter((x) => x.id !== o.id)));
+                      onClick: () => {
+                        upd((d) => void (d.orders = d.orders.filter((x) => x.id !== o.id)));
+                        toastUndoable(`Приказ «${o.name}» удалён: элементы с ним получат приказ своего формирования.`);
                       },
                     },
                   ]}
@@ -191,8 +191,9 @@ export function ConditionsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                   {
                     label: 'Удалить категорию',
                     danger: true,
-                    onClick: async () => {
-                      if (await confirmDialog(`Удалить категорию «${cat.name}»?`, undefined, 'Удалить', true)) upd((d) => void d.conditions.splice(ci, 1));
+                    onClick: () => {
+                      upd((d) => void d.conditions.splice(ci, 1));
+                      toastUndoable(`Категория «${cat.name}» удалена.`);
                     },
                   },
                 ]}

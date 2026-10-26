@@ -10,7 +10,6 @@ test('удалённый сценарий лежит в корзине и воз
   await openFromNav(page, 'атака на высоту');
   await page.locator('.tb-actions .btn.icon').click();
   await menu(page, 'Удалить сценарий');
-  await page.locator('.modal-foot .btn.danger').click();
   await expect(page.locator('.toast').last()).toContainText('в корзине');
   await expect(page.locator('.sidebar .side-item', { hasText: 'атака на высоту' })).toHaveCount(0);
 
@@ -29,7 +28,6 @@ test('удалённый сценарий лежит в корзине и воз
   await startBattle(page);
   await page.locator('.tb-actions .btn.icon').last().click();
   await menu(page, 'Удалить бой');
-  await page.locator('.modal-foot .btn.danger').click();
   await page.locator('.toast-action', { hasText: 'Вернуть' }).click();
   await navSec(page, 'Бои');
   await expect(page.locator('.nav-sec[data-sec="battles"] .side-item')).toHaveCount(1);
@@ -121,7 +119,7 @@ test('пример «Линейной тактики»: бой у перепра
   await openFromNav(page, 'бой у переправы');
   await expect(page.locator('.page-head .title-input')).toHaveValue(/линейная тактика/);
   await startBattle(page);
-  await page.getByRole('button', { name: '▶ Ход' }).click();
+  await page.getByRole('button', { name: 'Ход', exact: true }).click();
   await expect(page.locator('.log-turn').first()).toContainText('Ход 1');
   await navSec(page, 'Шаблоны');
   await expect(page.locator('.nav-sec[data-sec="units"] .nav-group-title', { hasText: 'Линейная тактика' })).toHaveCount(1);
@@ -148,7 +146,6 @@ test('у кого «Линейная тактика» уже была, прим�
   await openFromNav(page, 'бой у переправы');
   await page.locator('.tb-actions .btn.icon').click();
   await menu(page, 'Удалить сценарий');
-  await page.locator('.modal-foot .btn.danger').click();
   await page.reload();
   await navSec(page, 'Сценарии');
   await expect(page.locator('.nav-sec[data-sec="scenarios"] .side-item')).toHaveCount(1);

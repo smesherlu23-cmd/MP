@@ -79,6 +79,7 @@ export interface WindowBridge {
   material: string;
   setWindowTheme(theme: 'dark' | 'light'): void;
   appInfo(): Promise<{ version: string; dataDir: string }>;
+  setZoom(f: number): void;
 }
 
 declare global {

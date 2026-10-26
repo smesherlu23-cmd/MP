@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Btn, Card, Field, Modal, Num, Seg } from '../components/ui';
+import { Btn, Card, Field, Modal, Num, Seg, Sel } from '../components/ui';
+import { ZOOM_OPTIONS, openToolbarSetup } from '../components/ToolbarSetup';
+import { setZoom, zoomOf } from '../prefs';
 import { storage, storageKind, type BackupInfo, type TrashItem } from '../storage';
 import { confirmDialog, deleteBattles, fmtDate, installExamples, restoreBackup, restoreFromTrash, toast, updateSettings, useApp } from '../store';
 
@@ -58,6 +60,14 @@ export function SettingsPage() {
                 ]}
               />
             </Field>
+            <Field label="Масштаб" hint="Ctrl+плюс и Ctrl+минус — крупнее и мельче, Ctrl+0 — обычный.">
+              <Sel value={String(zoomOf(s))} width={180} onChange={(v) => setZoom(Number(v))} options={ZOOM_OPTIONS} />
+            </Field>
+            <Field label="Панель инструментов" hint="Можно и правым щелчком по свободному месту панели инструментов.">
+              <div>
+                <Btn onClick={openToolbarSetup}>Настроить кнопки…</Btn>
+              </div>
+            </Field>
           </div>
         </Card>
         <Card title="Бой и прогоны">
@@ -87,11 +97,9 @@ export function SettingsPage() {
                 <Btn
                   sm
                   disabled={!finished.length}
-                  onClick={() =>
-                    deleteBattles(
-                      finished.map((b) => b.id),
-                      'Удалить завершённые бои?',
-                    )
+                  onClick={async () =>
+                    (await confirmDialog('Удалить завершённые бои?', `Боёв: ${finished.length}. Они попадут в корзину.`, 'Удалить', true)) &&
+                    deleteBattles(finished.map((b) => b.id))
                   }
                 >
                   Удалить завершённые
@@ -100,11 +108,9 @@ export function SettingsPage() {
                   sm
                   kind="danger"
                   disabled={!battles.length}
-                  onClick={() =>
-                    deleteBattles(
-                      battles.map((b) => b.id),
-                      'Удалить все бои?',
-                    )
+                  onClick={async () =>
+                    (await confirmDialog('Удалить все бои?', `Боёв: ${battles.length}. Они попадут в корзину.`, 'Удалить', true)) &&
+                    deleteBattles(battles.map((b) => b.id))
                   }
                 >
                   Удалить все

@@ -23,6 +23,7 @@ import { Link } from '../components/Link';
 import { TypeMapModal } from '../components/RulesetTransfer';
 import { ForceHistory } from '../components/ForceCampaign';
 import { Card, Info, Menu, Seg, ToolbarSlot } from '../components/ui';
+import { Inspector, InspectorToggle, inspectorShown, toggleInspector } from '../components/Inspector';
 import { openUnit, useTabState } from '../hooks';
 import {
   defaultRulesetId,
@@ -88,7 +89,14 @@ export function FormationPage({ tab }: { tab: Tab }) {
       const t = e.target as HTMLElement;
       if (t.closest('input, textarea, select, [contenteditable]') || document.querySelector('.backdrop, .menu-pop')) return;
       // Enter и пробел на кнопке или ссылке — их собственное действие.
-      if ((e.key === 'Enter' || e.key === ' ') && t.closest('button, a')) return;
+      if ((e.key === 'Enter' || e.key === ' ') && t.closest('button, a, [role="button"]')) return;
+      // Переименовать (F2, Enter) — в инспекторе: скрыт — показать.
+      if ((e.key === 'F2' || e.key === 'Enter') && !inspectorShown('unit')) {
+        toggleInspector('unit');
+        e.preventDefault();
+        requestAnimationFrame(() => treeKey(ctx, e, viewRef.current));
+        return;
+      }
       if (treeKey(ctx, e, viewRef.current)) e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
@@ -190,203 +198,199 @@ export function FormationPage({ tab }: { tab: Tab }) {
   ].sort((a, b) => a.localeCompare(b, 'ru'));
 
   return (
-    <div className="page">
-      <Crumbs
-        items={isLib ? [{ label: 'Шаблоны', section: 'units' }] : [{ label: 'Силы', section: 'forces' }, ...(root.faction ? [{ label: root.faction }] : [])]}
-      />
-      <div className="page-head">
-        <input className="title-input" value={root.name} onChange={(e) => ctx.upd((d) => void (d.name = e.target.value))} />
-        <ToolbarSlot>
-          <Seg
-            value={view}
-            onChange={setView}
-            options={[
-              { value: 'chart', label: 'Схема', title: 'Штатная схема блоками' },
-              { value: 'list', label: 'Список', title: 'Компактное дерево' },
-            ]}
+    <div className="page fill">
+      <div className="split-body">
+        <div className="split-main">
+          <Crumbs
+            items={
+              isLib ? [{ label: 'Шаблоны', section: 'units' }] : [{ label: 'Силы', section: 'forces' }, ...(root.faction ? [{ label: root.faction }] : [])]
+            }
           />
-          <Menu
-            items={[
-              { label: 'Развернуть всё', onClick: () => setCollapsed([]) },
-              'sep',
-              ...(isLib
-                ? [
-                    {
-                      label: 'Создать силы по шаблону…',
-                      tip: 'Конкретные подразделения с этим устройством и штатом — у каждого будут свои потери',
-                      onClick: async () => {
-                        const v = await promptDialog(
-                          'Сколько подразделений сил создать?',
-                          '1',
-                          `По шаблону «${root.name}». Названия — с номерами по порядку; их можно поменять.`,
-                        );
-                        const n = Math.round(Number(v));
-                        if (!v || !Number.isFinite(n) || n < 1) return;
-                        const ids = createForcesFromTemplate(root.id, { count: n, open: n === 1 });
-                        if (n > 1) toast(`Создано сил: ${ids.length} — они в разделе «Силы».`, 'good');
-                      },
-                    },
-                    { label: 'Дублировать шаблон', onClick: () => duplicateFormation(root.id) },
-                    { label: 'Сохранить в файл…', onClick: () => exportJson('template', root.name, root) },
-                    'sep' as const,
-                    { label: 'Удалить шаблон', danger: true, onClick: () => deleteFormation(root.id) },
-                  ]
-                : [
-                    {
-                      label: 'Восстановить полностью',
-                      onClick: () => restoreForces([root.id]),
-                      tip: 'Раненые и техника возвращаются, недостающее — до штата из резерва, состояние — к норме',
-                    },
-                    'sep' as const,
-                    !!tpl && { label: `Открыть шаблон «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
-                    { label: 'Сохранить как шаблон', onClick: () => saveAsTemplate(root, rs) },
-                    { label: 'Дублировать', onClick: () => duplicateForce(root.id) },
-                    { label: 'Сохранить в файл…', onClick: () => exportJson('force', root.name, { ...root, faction: root.faction ?? '' }) },
-                    'sep' as const,
-                    { label: 'Удалить силы', danger: true, onClick: () => deleteForce(root.id) },
-                  ]),
-            ]}
-          />
-        </ToolbarSlot>
-      </div>
+          <div className="page-head">
+            <input className="title-input" value={root.name} onChange={(e) => ctx.upd((d) => void (d.name = e.target.value))} />
+            <ToolbarSlot>
+              <InspectorToggle id="unit" label="Свойства" />
+              <Seg
+                value={view}
+                onChange={setView}
+                options={[
+                  { value: 'chart', label: 'Схема', title: 'Штатная схема блоками' },
+                  { value: 'list', label: 'Список', title: 'Компактное дерево' },
+                ]}
+              />
+              <Menu
+                items={[
+                  { label: 'Развернуть всё', onClick: () => setCollapsed([]) },
+                  'sep',
+                  ...(isLib
+                    ? [
+                        {
+                          label: 'Создать силы по шаблону…',
+                          tip: 'Конкретные подразделения с этим устройством и штатом — у каждого будут свои потери',
+                          onClick: async () => {
+                            const v = await promptDialog(
+                              'Сколько подразделений сил создать?',
+                              '1',
+                              `По шаблону «${root.name}». Названия — с номерами по порядку; их можно поменять.`,
+                            );
+                            const n = Math.round(Number(v));
+                            if (!v || !Number.isFinite(n) || n < 1) return;
+                            const ids = createForcesFromTemplate(root.id, { count: n, open: n === 1 });
+                            if (n > 1) toast(`Создано сил: ${ids.length} — они в разделе «Силы».`, 'good');
+                          },
+                        },
+                        { label: 'Дублировать шаблон', onClick: () => duplicateFormation(root.id) },
+                        { label: 'Сохранить в файл…', onClick: () => exportJson('template', root.name, root) },
+                        'sep' as const,
+                        { label: 'Удалить шаблон', danger: true, onClick: () => deleteFormation(root.id) },
+                      ]
+                    : [
+                        {
+                          label: 'Восстановить полностью',
+                          onClick: () => restoreForces([root.id]),
+                          tip: 'Раненые и техника возвращаются, недостающее — до штата из резерва, состояние — к норме',
+                        },
+                        'sep' as const,
+                        !!tpl && { label: `Открыть шаблон «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
+                        { label: 'Сохранить как шаблон', onClick: () => saveAsTemplate(root, rs) },
+                        { label: 'Дублировать', onClick: () => duplicateForce(root.id) },
+                        { label: 'Сохранить в файл…', onClick: () => exportJson('force', root.name, { ...root, faction: root.faction ?? '' }) },
+                        'sep' as const,
+                        { label: 'Удалить силы', danger: true, onClick: () => deleteForce(root.id) },
+                      ]),
+                ]}
+              />
+            </ToolbarSlot>
+          </div>
 
-      <div className="meta" style={{ marginTop: -8, marginBottom: 14 }}>
-        <span>
-          набор правил:{' '}
-          <select
-            className="inline-select"
-            value={rs.id}
-            onChange={(e) => changeRuleset(e.target.value)}
-            title="По какому набору правил считается это подразделение: каталог типов, уровни"
-          >
-            {Object.values(st.rulesets).map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </span>
-        {!isLib && (
-          <span>
-            <span className="team-dot sm" style={{ background: teamColor(root.faction ?? '') }} /> команда:{' '}
-            <input
-              className="inline-input"
-              list="force-factions"
-              value={root.faction ?? ''}
-              placeholder="чьи это силы"
-              onChange={(e) => ctx.upd((d) => void (d.faction = e.target.value || undefined))}
-              title="Сторона, армия, отряд — силы сгруппированы по командам, у команды свой цвет (раздел «Силы»)"
-            />
-            <datalist id="force-factions">
-              {factions.map((f) => (
-                <option key={f} value={f} />
-              ))}
-            </datalist>
-          </span>
-        )}
-        {!isLib && tpl && (
-          <span>
-            по шаблону{' '}
-            <Link kind="formation" refId={`lib:${tpl.id}`}>
-              {tpl.name}
-            </Link>
-            {isOutdated(root, tpl) && (
-              <>
-                {' '}
-                — <span className="warn">шаблон изменён</span>{' '}
-                <a
-                  href="#"
-                  onClick={(e) => (e.preventDefault(), updateCopy(ref, root.id))}
-                  title="Устройство и штат — из шаблона; названия, потери и состояние сил сохраняются"
-                >
-                  обновить
-                </a>
-              </>
+          <div className="meta" style={{ marginTop: -8, marginBottom: 14 }}>
+            <span>
+              набор правил:{' '}
+              <select
+                className="inline-select"
+                value={rs.id}
+                onChange={(e) => changeRuleset(e.target.value)}
+                title="По какому набору правил считается это подразделение: каталог типов, уровни"
+              >
+                {Object.values(st.rulesets).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </span>
+            {!isLib && (
+              <span>
+                <span className="team-dot sm" style={{ background: teamColor(root.faction ?? '') }} /> команда:{' '}
+                <input
+                  className="inline-input"
+                  list="force-factions"
+                  value={root.faction ?? ''}
+                  placeholder="чьи это силы"
+                  onChange={(e) => ctx.upd((d) => void (d.faction = e.target.value || undefined))}
+                  title="Сторона, армия, отряд — силы сгруппированы по командам, у команды свой цвет (раздел «Силы»)"
+                />
+                <datalist id="force-factions">
+                  {factions.map((f) => (
+                    <option key={f} value={f} />
+                  ))}
+                </datalist>
+              </span>
             )}
-          </span>
-        )}
-        {!isLib && (
-          <span data-tip={scenariosUsing.map((x) => x.name).join('\n') || undefined}>
-            {scenariosUsing.length ? (
-              <>
-                в сценариях: <b>{scenariosUsing.length}</b>
-              </>
-            ) : (
-              <span className="faint">ни в одном сценарии</span>
+            {!isLib && tpl && (
+              <span>
+                по шаблону{' '}
+                <Link kind="formation" refId={`lib:${tpl.id}`}>
+                  {tpl.name}
+                </Link>
+                {isOutdated(root, tpl) && (
+                  <>
+                    {' '}
+                    — <span className="warn">шаблон изменён</span>{' '}
+                    <a
+                      href="#"
+                      onClick={(e) => (e.preventDefault(), updateCopy(ref, root.id))}
+                      title="Устройство и штат — из шаблона; названия, потери и состояние сил сохраняются"
+                    >
+                      обновить
+                    </a>
+                  </>
+                )}
+              </span>
             )}
-          </span>
-        )}
-        {isLib && usages.length > 0 && (
-          <span data-tip={[...new Set(usages.map((u) => u.owner))].join('\n')}>
-            по шаблону создано сил: <b>{forceCopies}</b>
-            {usages.length > forceCopies ? `, в других шаблонах: ${usages.length - forceCopies}` : ''}
-            {outdatedUsages > 0 && (
-              <>
-                {' '}
-                · <span className="warn">отличаются от шаблона: {outdatedUsages}</span>{' '}
-                <a href="#" onClick={(e) => (e.preventDefault(), updateAllCopies(root.id))}>
-                  обновить все
-                </a>
-              </>
+            {!isLib && (
+              <span data-tip={scenariosUsing.map((x) => x.name).join('\n') || undefined}>
+                {scenariosUsing.length ? (
+                  <>
+                    в сценариях: <b>{scenariosUsing.length}</b>
+                  </>
+                ) : (
+                  <span className="faint">ни в одном сценарии</span>
+                )}
+              </span>
             )}
-          </span>
-        )}
-        {issues.length > 0 && (
-          <span data-tip={issues.map((x) => `• ${x.text}`).join('\n')}>
-            <span className="warn">⚠</span> замечаний: {issues.length}
-          </span>
-        )}
-        <span className="faint">
-          мышь и клавиши
-          <Info text={`Перетаскивайте подразделения мышью — в том числе из боковой панели слева.\n\n${KEYS_HELP}`} />
-        </span>
-      </div>
+            {isLib && usages.length > 0 && (
+              <span data-tip={[...new Set(usages.map((u) => u.owner))].join('\n')}>
+                по шаблону создано сил: <b>{forceCopies}</b>
+                {usages.length > forceCopies ? `, в других шаблонах: ${usages.length - forceCopies}` : ''}
+                {outdatedUsages > 0 && (
+                  <>
+                    {' '}
+                    · <span className="warn">отличаются от шаблона: {outdatedUsages}</span>{' '}
+                    <a href="#" onClick={(e) => (e.preventDefault(), updateAllCopies(root.id))}>
+                      обновить все
+                    </a>
+                  </>
+                )}
+              </span>
+            )}
+            {issues.length > 0 && (
+              <span data-tip={issues.map((x) => `• ${x.text}`).join('\n')}>
+                <span className="warn">⚠</span> замечаний: {issues.length}
+              </span>
+            )}
+            <span className="faint">
+              мышь и клавиши
+              <Info text={`Перетаскивайте подразделения мышью — в том числе из боковой панели слева.\n\n${KEYS_HELP}`} />
+            </span>
+          </div>
 
-      {!isLib && (root.children.length > 0 || root.composition.length > 0) && <ForceReadiness force={root} />}
-      {!root.children.length && !root.composition.length && <EmptyStart ctx={ctx} />}
-      {view === 'chart' ? (
-        <div className="stack">
-          <Card tight className="org-card">
-            <OrgChart ctx={ctx} />
+          {!isLib && (root.children.length > 0 || root.composition.length > 0) && <ForceReadiness force={root} />}
+          {!root.children.length && !root.composition.length && <EmptyStart ctx={ctx} />}
+          <Card tight className={view === 'chart' ? 'org-card' : undefined}>
+            {view === 'chart' ? <OrgChart ctx={ctx} /> : <TreeList ctx={ctx} />}
           </Card>
-          <div className="grid align-start" style={{ gridTemplateColumns: 'minmax(0, 2fr) minmax(260px, 1fr)' }}>
+          {insert && <InsertDialog ctx={ctx} targetId={insert.id} attach={insert.attach} onClose={() => setInsert(null)} />}
+          {transfer && (
+            <TransferDialog
+              nodeId={transfer}
+              onClose={() => setTransfer(null)}
+              onDone={(forceId) => {
+                // Часть ушла в другие силы — открыть её там; внутри тех же сил — выбрать старшего.
+                if (`force:${forceId}` !== ref) openUnit(`force:${forceId}`, transfer);
+                else setSel(transfer);
+              }}
+            />
+          )}
+          {!isLib && <ForceHistory force={root} />}
+          {typeMap && st.rulesets[typeMap.to] && (
+            <TypeMapModal
+              from={rs}
+              to={st.rulesets[typeMap.to]}
+              ids={typeMap.ids}
+              onClose={() => setTypeMap(null)}
+              onApply={(map, copy) => applyTypeMap(typeMap.to, map, copy)}
+            />
+          )}
+        </div>
+        {/* Свойства выбранного подразделения — справа, рядом со схемой: правка без прокрутки вниз. */}
+        <Inspector id="unit" label="Свойства" def={460}>
+          <div className="inspector-scroll stack">
             <NodeEditor key={sel.id} ctx={ctx} node={sel} />
             <SummaryCard node={sel} rs={rs} resolved={resolved} template={isLib} />
           </div>
-        </div>
-      ) : (
-        <div className="split wide-left">
-          <div className="stack">
-            <Card tight>
-              <TreeList ctx={ctx} />
-            </Card>
-            <SummaryCard node={sel} rs={rs} resolved={resolved} template={isLib} />
-          </div>
-          <NodeEditor key={sel.id} ctx={ctx} node={sel} />
-        </div>
-      )}
-      {insert && <InsertDialog ctx={ctx} targetId={insert.id} attach={insert.attach} onClose={() => setInsert(null)} />}
-      {transfer && (
-        <TransferDialog
-          nodeId={transfer}
-          onClose={() => setTransfer(null)}
-          onDone={(forceId) => {
-            // Часть ушла в другие силы — открыть её там; внутри тех же сил — выбрать старшего.
-            if (`force:${forceId}` !== ref) openUnit(`force:${forceId}`, transfer);
-            else setSel(transfer);
-          }}
-        />
-      )}
-      {!isLib && <ForceHistory force={root} />}
-      {typeMap && st.rulesets[typeMap.to] && (
-        <TypeMapModal
-          from={rs}
-          to={st.rulesets[typeMap.to]}
-          ids={typeMap.ids}
-          onClose={() => setTypeMap(null)}
-          onApply={(map, copy) => applyTypeMap(typeMap.to, map, copy)}
-        />
-      )}
+        </Inspector>
+      </div>
     </div>
   );
 }

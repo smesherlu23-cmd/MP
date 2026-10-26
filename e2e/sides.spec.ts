@@ -70,14 +70,14 @@ test('главная: «продолжить» незавершённый бой
   await openFromNav(page, 'атака на высоту');
   await page.locator('.page-head .title-input').fill('Высота 212 — мой вариант');
   await startBattle(page);
-  await page.getByRole('button', { name: '▶ Ход' }).click();
+  await page.getByRole('button', { name: 'Ход', exact: true }).click();
   await page.locator('.nav-home .nav-item').click();
   const cont = page.locator('.card', { hasText: 'Продолжить' });
   await expect(cont).toContainText('ход 1');
   await expect(page.locator('.card', { hasText: 'С чего начать' })).toHaveCount(0);
   await expect(page.locator('.card', { hasText: 'Недавно изменено' })).toContainText('Высота 212 — мой вариант');
-  await cont.getByRole('button', { name: 'Продолжить ▶' }).click();
-  await expect(page.getByRole('button', { name: '▶ Ход' })).toBeVisible();
+  await cont.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Ход', exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 

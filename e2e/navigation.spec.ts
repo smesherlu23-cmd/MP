@@ -77,7 +77,7 @@ test('штаб, каталоги разделов и «+» (создать)', as
   await expect(page.locator('.catalog-row')).toHaveCount(2);
   await page.locator('.catalog-search').fill('переправ');
   await expect(page.locator('.catalog-row')).toHaveCount(1);
-  await page.locator('.catalog-row').getByRole('button', { name: '▶ Бой' }).click();
+  await page.locator('.catalog-row').getByRole('button', { name: 'Бой', exact: true }).click();
   await expect(pageTitle(page)).toContainText('бой 1');
   // Крошка раздела открывает его каталог.
   await page.locator('.breadcrumbs a', { hasText: 'Бои' }).click();

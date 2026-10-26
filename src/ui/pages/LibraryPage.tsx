@@ -4,37 +4,20 @@ import { useState, type ReactNode } from 'react';
 import { resolveScenario, sideUnits, summarizeUnits, type UnitNode } from '../../engine';
 import { Icon } from '../components/Icon';
 import { createIn } from '../components/Navigator';
-import { Btn, Menu, fmt0, type MenuItem, ToolbarSlot } from '../components/ui';
+import { Btn, Menu, fmt0, openContextMenu, ToolbarSlot } from '../components/ui';
+import { objKey, objKeys, objMenu, openObj, type Obj } from '../objects';
 import { sectionMeta } from '../nav';
-import {
-  createForcesFromTemplate,
-  createRuleset,
-  defaultRulesetId,
-  deleteBattle,
-  deleteBattles,
-  deleteFormation,
-  deleteRuleset,
-  deleteScenario,
-  duplicateFormation,
-  duplicateScenario,
-  exportJson,
-  importFile,
-  openTab,
-  useApp,
-  type NavSection,
-  type Tab,
-} from '../store';
+import { createForcesFromTemplate, defaultRulesetId, deleteBattles, importFile, openTab, useApp, type NavSection, type Tab } from '../store';
 import { fmtWhen } from './HomePage';
-import { exportScenario, startBattle } from './ScenarioPage';
+import { startBattle } from './ScenarioPage';
 import { computeStats } from './unit/model';
 
 interface Row {
   id: string;
   name: string;
-  open: () => void;
+  obj: Obj;
   cells: ReactNode[];
   actions?: ReactNode;
-  menu?: (MenuItem | 'sep' | false)[];
 }
 
 interface Group {
@@ -70,24 +53,18 @@ function useCatalog(sec: NavSection, q: string): { head: string[]; groups: Group
         return {
           id: x.id,
           name: x.name,
-          open: () => openTab('scenario', x.id),
+          obj: { kind: 'scenario', id: x.id },
           cells: [rs?.name ?? <span className="bad">набор не найден</span>, sides.join(' : '), battlesBy.get(x.id) ?? '—', fmtWhen(x.updatedAt)],
           actions: (
             <>
               <Btn sm kind="primary" disabled={!rs} onClick={() => rs && void startBattle(x, rs)} title="Новый бой по этому сценарию">
-                ▶ Бой
+                <Icon name="play" size={13} /> Бой
               </Btn>
               <Btn sm disabled={!rs} onClick={() => openTab('montecarlo', x.id)} title="Массовые прогоны: вероятности исходов">
-                ∑ Прогоны
+                <Icon name="sigma" size={13} /> Прогоны
               </Btn>
             </>
           ),
-          menu: [
-            { label: 'Дублировать', onClick: () => duplicateScenario(x.id) },
-            { label: 'Сохранить в файл…', onClick: () => exportScenario(x) },
-            'sep',
-            { label: 'Удалить сценарий', danger: true, onClick: () => deleteScenario(x.id) },
-          ],
         };
       });
     return {
@@ -107,24 +84,14 @@ function useCatalog(sec: NavSection, q: string): { head: string[]; groups: Group
       return {
         title: scName,
         action: (
-          <Btn
-            sm
-            kind="ghost"
-            title={`Удалить все бои этого сценария (${items.length})`}
-            onClick={() =>
-              void deleteBattles(
-                items.map((b) => b.id),
-                `Удалить все бои сценария «${scName}»?`,
-              )
-            }
-          >
+          <Btn sm kind="ghost" title={`Удалить все бои этого сценария (${items.length})`} onClick={() => void deleteBattles(items.map((b) => b.id))}>
             Удалить все
           </Btn>
         ),
         rows: items.map((b) => ({
           id: b.id,
           name: b.name.startsWith(`${scName} · `) ? b.name.slice(scName.length + 3) : b.name,
-          open: () => openTab('battle', b.id),
+          obj: { kind: 'battle', id: b.id },
           cells: [
             <span key="st" className={`badge${b.finished ? '' : ' good'}`}>
               {b.finished ? 'окончен' : `идёт · ход ${b.turn}`}
@@ -134,17 +101,16 @@ function useCatalog(sec: NavSection, q: string): { head: string[]; groups: Group
           ],
           actions: (
             <Btn sm kind={b.finished ? undefined : 'primary'} onClick={() => openTab('battle', b.id)}>
-              {b.finished ? 'Открыть' : 'Продолжить ▶'}
+              {b.finished ? 'Открыть' : 'Продолжить'}
             </Btn>
           ),
-          menu: [{ label: 'Удалить бой', danger: true, onClick: () => void deleteBattle(b.id) }],
         })),
       };
     });
     return {
       head: ['Состояние', 'Итог', 'Изменён'],
       groups,
-      empty: 'Боёв пока нет. Бой начинается со страницы сценария — кнопка «▶ Начать бой».',
+      empty: 'Боёв пока нет. Бой начинается со страницы сценария — кнопка «Начать бой».',
     };
   }
   if (sec === 'units') {
@@ -160,19 +126,13 @@ function useCatalog(sec: NavSection, q: string): { head: string[]; groups: Group
           .map((x) => ({
             id: x.id,
             name: x.name,
-            open: () => openTab('formation', `lib:${x.id}`),
+            obj: { kind: 'template', id: x.id },
             cells: [persons(x), fmtWhen(x.updatedAt)],
             actions: (
               <Btn sm onClick={() => createForcesFromTemplate(x.id, { open: true })} title="Конкретное подразделение с этим устройством и штатом">
                 + Силы
               </Btn>
             ),
-            menu: [
-              { label: 'Дублировать', onClick: () => duplicateFormation(x.id) },
-              { label: 'Сохранить в файл…', onClick: () => exportJson('template', x.name, x) },
-              'sep',
-              { label: 'Удалить шаблон', danger: true, onClick: () => void deleteFormation(x.id) },
-            ],
           })),
       }),
     );
@@ -190,14 +150,8 @@ function useCatalog(sec: NavSection, q: string): { head: string[]; groups: Group
       return {
         id: x.id,
         name: x.name,
-        open: () => openTab('ruleset', x.id),
+        obj: { kind: 'ruleset', id: x.id },
         cells: [x.era ?? '', x.componentTypes.length, used || '—', fmtWhen(x.updatedAt)],
-        menu: [
-          { label: 'Дублировать', onClick: () => createRuleset(x.id) },
-          { label: 'Сохранить в файл…', onClick: () => exportJson('ruleset', x.name, x) },
-          'sep',
-          { label: 'Удалить набор правил', danger: true, onClick: () => void deleteRuleset(x.id) },
-        ],
       };
     });
   return { head: ['Эпоха', 'Типов', 'Сценариев', 'Изменён'], groups: [{ title: '', rows }], empty: 'Наборов правил нет.' };
@@ -275,9 +229,22 @@ export function LibraryPage({ tab }: { tab: Tab }) {
                   </thead>
                   <tbody>
                     {g.rows.map((r) => (
-                      <tr key={r.id} className="catalog-row" onDoubleClick={r.open}>
+                      <tr
+                        key={r.id}
+                        className="catalog-row"
+                        tabIndex={-1}
+                        data-obj={objKey(r.obj)}
+                        onDoubleClick={() => openObj(r.obj)}
+                        onContextMenu={(e) => openContextMenu(e, objMenu(r.obj))}
+                      >
                         <td className="catalog-name">
-                          <button type="button" className="link" onClick={r.open} title="Открыть">
+                          <button
+                            type="button"
+                            className="link"
+                            onClick={() => openObj(r.obj)}
+                            onKeyDown={(e) => e.key !== 'Enter' && objKeys(r.obj, e)}
+                            title="Открыть · пробел — быстрый просмотр · правый щелчок — действия"
+                          >
                             {r.name}
                           </button>
                         </td>
@@ -289,7 +256,7 @@ export function LibraryPage({ tab }: { tab: Tab }) {
                         <td className="catalog-actions">
                           <span className="row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                             {r.actions}
-                            {r.menu && <Menu sm items={r.menu} />}
+                            <Menu sm items={objMenu(r.obj)} />
                           </span>
                         </td>
                       </tr>

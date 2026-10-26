@@ -1,7 +1,7 @@
 // Каркас окна в духе macOS: боковая панель слева (на всю высоту), справа — панель инструментов
 // (назад/вперёд, заголовок, действия страницы, поиск) и открытая страница. Вкладок нет: переходы — как в Finder.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BattlePage } from './pages/BattlePage';
 import { FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
@@ -18,13 +18,18 @@ import { Palette, openPalette } from './components/Palette';
 import { goBack, goForward, sectionMeta, setNavFilter, useNav, useNavFilter } from './nav';
 import logo from './assets/logo.png';
 import { Icon, type IconName } from './components/Icon';
-import { Btn, ContextMenuHost, Menu, Splitter } from './components/ui';
+import { Btn, ContextMenuHost, Menu, RenameInput, Splitter, openContextMenu } from './components/ui';
 import { CREATE_ITEMS } from './components/Navigator';
+import { QuickLookHost } from './components/QuickLook';
+import { ToolbarSetupHost, openToolbarSetup } from './components/ToolbarSetup';
+import { objFromKey, objMenu, objName, renameObj, startRename, stopRename, useRenaming } from './objects';
+import { TOOLBAR_ITEMS, applyZoom, setTbShown, setZoom, tbShown, zoomBy, zoomOf } from './prefs';
 import { desktop } from './storage';
 import {
   openTab,
   alertDialog,
   dismissToast,
+  importContent,
   importFile,
   redo,
   redoBattle,
@@ -246,6 +251,7 @@ export function App() {
   const battles = useBattles((x) => x.battles);
   const hist = useHistory();
   const nav = useNav();
+  const rename = useRenaming();
   const active = useMemo(() => s.tabs.find((t) => t.key === s.active) ?? s.tabs[0], [s.tabs, s.active]);
   // Ширина боковой панели меняется перетаскиванием края; сохраняется, когда отпустили.
   const [sideW, setSideW] = useState<number | null>(null);
@@ -255,6 +261,68 @@ export function App() {
     const t = setTimeout(() => updateSettings({ sideWidth: sideW }), 300);
     return () => clearTimeout(t);
   }, [sideW]);
+
+  // Правый щелчок по свободному месту панели инструментов — какие кнопки показывать. Обработчик — на самом
+  // элементе: путь и действия страницы попадают в панель порталом, и их события не всплывают к ней в React.
+  const toolbarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) return;
+    const on = (e: MouseEvent) => {
+      if ((e.target as Element).closest('button, input, a, .menu-pop, .tb-name.renamable')) return;
+      const st = useApp.getState().settings;
+      openContextMenu(e, [
+        ...TOOLBAR_ITEMS.map((x) => ({ label: x.label, checked: tbShown(st, x.id), onClick: () => setTbShown(x.id, !tbShown(st, x.id)) })),
+        'sep',
+        { label: 'Настроить окно…', onClick: openToolbarSetup },
+      ]);
+    };
+    el.addEventListener('contextmenu', on);
+    return () => el.removeEventListener('contextmenu', on);
+  }, []);
+
+  const zoom = zoomOf(s.settings);
+  useEffect(() => applyZoom(zoom), [zoom]);
+
+  // Файлы JSON, брошенные на окно, импортируются — как «Импорт из файла…».
+  const [fileOver, setFileOver] = useState(false);
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth++;
+      setFileOver(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (hasFiles(e) && --depth <= 0) {
+        depth = 0;
+        setFileOver(false);
+      }
+    };
+    const over = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'copy';
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setFileOver(false);
+      for (const f of e.dataTransfer!.files) void f.text().then((t) => importContent(t, f.name));
+    };
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('dragover', over);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('drop', drop);
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = s.settings.theme;
@@ -291,6 +359,11 @@ export function App() {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         updateSettings({ sidebar: !st.settings.sidebar });
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && ['Equal', 'NumpadAdd', 'Minus', 'NumpadSubtract', 'Digit0', 'Numpad0'].includes(e.code)) {
+        // Масштаб интерфейса: Ctrl+плюс / минус, Ctrl+0 — обычный.
+        e.preventDefault();
+        if (e.code === 'Digit0' || e.code === 'Numpad0') setZoom(1);
+        else zoomBy(e.code === 'Equal' || e.code === 'NumpadAdd' ? 0.1 : -0.1);
       } else if ((e.ctrlKey || e.metaKey) && e.code === 'Comma') {
         e.preventDefault();
         openTab('settings');
@@ -327,6 +400,13 @@ export function App() {
   const sidebar = s.settings.sidebar;
   const toggleSidebar = () => updateSettings({ sidebar: !sidebar });
   const title = active ? tabTitle(active, s, battles) : '';
+  const st = s.settings;
+  const show = (id: Parameters<typeof tbShown>[1]) => tbShown(st, id);
+  const toggleTheme = () => updateSettings({ theme: st.theme === 'dark' ? 'light' : 'dark' });
+  // Заголовок окна — название открытого объекта: двойной щелчок переименовывает, правый — меню объекта.
+  const obj = objFromKey(active?.key);
+  const objOk = !!obj && objName(obj) !== undefined;
+  const renamingTitle = objOk && rename.key === active?.key && rename.where === 'title';
   return (
     <div className={`app${sidebar ? '' : ' side-hidden'}`} style={{ '--side-w': `${sideWidth}px` } as React.CSSProperties}>
       <aside className="sidebar-col" aria-hidden={!sidebar} inert={!sidebar}>
@@ -343,55 +423,113 @@ export function App() {
         <Splitter side="left" label="Ширина боковой панели" width={sideWidth} min={SIDE_W.min} max={SIDE_W.max} def={SIDE_W.def} onChange={setSideW} />
       </aside>
       <div className="main-col">
-        <header className="toolbar-win">
+        <header className="toolbar-win" ref={toolbarRef}>
           {!sidebar && (
             <button type="button" className="tb-icon" title="Показать боковую панель (Ctrl+B)" onClick={toggleSidebar}>
               <Icon name="sidebar" size={17} />
             </button>
           )}
-          <div className="tb-nav">
-            <button type="button" className="tb-icon" disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
-              <Icon name="left" size={17} />
-            </button>
-            <button type="button" className="tb-icon" disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
-              <Icon name="right" size={17} />
-            </button>
-          </div>
+          {show('nav') && (
+            <div className="tb-nav">
+              <button type="button" className="tb-icon" disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
+                <Icon name="left" size={17} />
+              </button>
+              <button type="button" className="tb-icon" disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
+                <Icon name="right" size={17} />
+              </button>
+            </div>
+          )}
           <div className="tb-title">
-            <span className="tb-name" title={title}>
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: двойной щелчок по заголовку — переименовать (есть и в меню объекта) */}
+            <span
+              className={`tb-name${objOk ? ' renamable' : ''}`}
+              title={renamingTitle ? undefined : objOk ? `${title}\nДвойной щелчок — переименовать; правый щелчок — действия` : title}
+              onDoubleClick={() => objOk && startRename(obj, { where: 'title' })}
+              onContextMenu={(e) => objOk && openContextMenu(e, objMenu(obj, { open: false }))}
+            >
               <span className="tb-name-icon">{active && <Icon name={tabIconName(active)} size={15} />}</span>
-              <span className="tb-name-text">{title}</span>
+              {renamingTitle ? (
+                <RenameInput
+                  className="tb-rename"
+                  value={objName(obj) ?? ''}
+                  onDone={(v) => {
+                    stopRename();
+                    if (v !== null) renameObj(obj, v);
+                  }}
+                />
+              ) : (
+                <span className="tb-name-text">{title}</span>
+              )}
             </span>
             <div id="tb-crumbs" className="tb-crumbs" />
           </div>
           <div id="tb-actions" className="tb-actions" />
           <div className="tb-global">
-            <Menu
-              sm
-              label={<Icon name="plus" size={17} />}
-              className="tb-icon tb-create"
-              title="Создать: сценарий, силы, шаблон или набор правил"
-              items={CREATE_ITEMS()}
-            />
-            <button
-              type="button"
-              className="tb-icon"
-              disabled={!hist.undo}
-              onClick={undo}
-              title={hist.undo ? `Отменить: ${hist.undo} (Ctrl+Z)` : 'Отменить (Ctrl+Z)'}
-            >
-              <Icon name="undo" size={17} />
-            </button>
-            <button
-              type="button"
-              className="tb-icon"
-              disabled={!hist.redo}
-              onClick={redo}
-              title={hist.redo ? `Повторить: ${hist.redo} (Ctrl+Y)` : 'Повторить (Ctrl+Y)'}
-            >
-              <Icon name="redo" size={17} />
-            </button>
-            <ToolbarSearch />
+            {show('create') && (
+              <Menu
+                sm
+                label={<Icon name="plus" size={17} />}
+                className="tb-icon tb-create"
+                title="Создать: сценарий, силы, шаблон или набор правил"
+                items={CREATE_ITEMS()}
+              />
+            )}
+            {show('import') && (
+              <button type="button" className="tb-icon" onClick={() => importFile()} title="Импорт из файла (или перетащите файл на окно)">
+                <Icon name="import" size={17} />
+              </button>
+            )}
+            {show('undo') && (
+              <>
+                <button
+                  type="button"
+                  className="tb-icon tb-undo"
+                  disabled={!hist.undo}
+                  onClick={undo}
+                  title={hist.undo ? `Отменить: ${hist.undo} (Ctrl+Z)` : 'Отменить (Ctrl+Z)'}
+                >
+                  <Icon name="undo" size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="tb-icon tb-undo"
+                  disabled={!hist.redo}
+                  onClick={redo}
+                  title={hist.redo ? `Повторить: ${hist.redo} (Ctrl+Y)` : 'Повторить (Ctrl+Y)'}
+                >
+                  <Icon name="redo" size={17} />
+                </button>
+              </>
+            )}
+            {show('zoom') && (
+              <div className="tb-zoom" title="Масштаб интерфейса (Ctrl+плюс / минус, Ctrl+0 — обычный)">
+                <button type="button" className="tb-icon" onClick={() => zoomBy(-0.1)} aria-label="Мельче">
+                  <Icon name="minus" size={15} />
+                </button>
+                <button type="button" className="tb-zoom-val" onClick={() => setZoom(1)} aria-label="Обычный масштаб">
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button type="button" className="tb-icon" onClick={() => zoomBy(0.1)} aria-label="Крупнее">
+                  <Icon name="plus" size={15} />
+                </button>
+              </div>
+            )}
+            {show('theme') && (
+              <button type="button" className="tb-icon" onClick={toggleTheme} title={st.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}>
+                <Icon name={st.theme === 'dark' ? 'sun' : 'moon'} size={17} />
+              </button>
+            )}
+            {show('help') && (
+              <button type="button" className="tb-icon" onClick={() => openTab('help')} title="Справка">
+                <Icon name="help" size={17} />
+              </button>
+            )}
+            {show('find') && (
+              <button type="button" className="tb-icon" onClick={() => openPalette()} title="Найти что угодно (Ctrl+K)">
+                <Icon name="search" size={17} />
+              </button>
+            )}
+            {show('search') && <ToolbarSearch />}
             <Menu
               sm
               className="tb-icon"
@@ -401,13 +539,15 @@ export function App() {
                 { label: 'Повторить', kbd: 'Ctrl+Y', disabled: !hist.redo, tip: hist.redo ?? undefined, onClick: redo },
                 'sep',
                 { label: 'Найти…', kbd: 'Ctrl+K', onClick: () => openPalette() },
-                { label: 'Импорт из файла…', onClick: () => importFile(), tip: 'Набор правил, подразделение, сценарий или бой в формате JSON' },
-                'sep',
                 {
-                  label: s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема',
-                  onClick: () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }),
+                  label: 'Импорт из файла…',
+                  onClick: () => importFile(),
+                  tip: 'Набор правил, подразделение, сценарий или бой в формате JSON. Файл можно и просто перетащить на окно.',
                 },
+                'sep',
+                { label: st.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', onClick: toggleTheme },
                 { label: sidebar ? 'Скрыть боковую панель' : 'Показать боковую панель', kbd: 'Ctrl+B', onClick: toggleSidebar },
+                { label: 'Настроить окно…', onClick: openToolbarSetup, tip: 'Кнопки панели инструментов и масштаб интерфейса' },
                 'sep',
                 { label: 'Справка', onClick: () => openTab('help') },
                 { label: 'Настройки', kbd: 'Ctrl+,', onClick: () => openTab('settings') },
@@ -418,8 +558,19 @@ export function App() {
         </header>
         <main className="content">{active && <Page key={active.key} t={active} />}</main>
       </div>
+      {fileOver && (
+        <div className="file-drop">
+          <div className="file-drop-card">
+            <Icon name="import" size={28} />
+            <b>Отпустите, чтобы импортировать</b>
+            <span className="muted small">Набор правил, шаблон, силы, сценарий или бой — файл JSON</span>
+          </div>
+        </div>
+      )}
       <DialogHost />
       <Palette />
+      <QuickLookHost />
+      <ToolbarSetupHost />
       <Toasts />
       <TooltipHost />
       <ContextMenuHost />

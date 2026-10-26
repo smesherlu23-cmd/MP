@@ -75,14 +75,13 @@ export async function deleteRuleset(id: Id) {
     toast('Нельзя удалить единственный набор правил.', 'bad');
     return;
   }
+  // Подтверждение — только когда набор нужен сценариям; иначе удаление сразу, с «Отменить» в уведомлении.
   const users = Object.values(s.scenarios).filter((x) => x.rulesetId === id).length;
-  const ok = await confirmDialog(
-    `Удалить набор правил «${r.name}»?`,
-    users ? `Его используют сценарии: ${users}. Их придётся перевести на другой набор.` : undefined,
-    'Удалить',
-    true,
-  );
-  if (!ok) return;
+  if (
+    users &&
+    !(await confirmDialog(`Удалить набор правил «${r.name}»?`, `Его используют сценарии: ${users}. Их придётся перевести на другой набор.`, 'Удалить', true))
+  )
+    return;
   await flushSave('rulesets', id);
   record('rulesets', id, 'delete');
   set((st) => {
@@ -180,15 +179,13 @@ export function duplicateFormation(id: Id): Id | undefined {
 export async function deleteFormation(id: Id) {
   const f = get().formations[id];
   if (!f) return;
-  if (!(await confirmDialog(`Удалить шаблон «${f.name}»?`, 'Силы, созданные по нему, останутся — просто перестанут обновляться по шаблону.', 'Удалить', true)))
-    return;
   await flushSave('formations', id);
   record('formations', id, 'delete');
   set((s) => {
     const { [id]: _, ...rest } = s.formations;
     return { formations: rest };
   });
-  toastUndoable(`Шаблон «${f.name}» удалён (он в корзине).`);
+  toastUndoable(`Шаблон «${f.name}» удалён (он в корзине). Силы по нему остались.`);
   await storage.remove('formations', id);
   closeTabsWhere((t) => t.kind === 'formation' && t.ref === `lib:${id}`);
 }

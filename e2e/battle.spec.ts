@@ -7,7 +7,7 @@ test('сводка сторон, окно элемента (просмотр и 
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
-  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: '▶ Ход' }).click();
+  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Ход', exact: true }).click();
   // Над таблицей сил — компактная сводка; «подробнее» — полное сравнение сторон.
   await expect(page.locator('.side-strip-row')).toHaveCount(2);
   await page.locator('.side-strip-more').click();
@@ -75,7 +75,8 @@ test('все бои сценария удаляются разом', async ({ pa
   await expect(page.locator('.nav-sec[data-sec="battles"] .side-item')).toHaveCount(2);
   await page.locator('.nav-sec[data-sec="battles"] .nav-group-title').hover();
   await page.locator('.nav-sec[data-sec="battles"] .nav-group-del').click();
-  await page.locator('.modal').getByRole('button', { name: 'Удалить' }).click();
+  // Без подтверждения: в уведомлении — «Вернуть» (из корзины).
+  await expect(page.locator('.toast').last()).toContainText('Удалено боёв: 2');
   await expect(page.locator('.nav-sec[data-sec="battles"] .side-item')).toHaveCount(0);
   await expect(page.locator('.nav-sec[data-sec="battles"] .nav-empty')).toContainText('Боёв пока нет');
   expect(errors).toEqual([]);

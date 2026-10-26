@@ -73,5 +73,5 @@ export const pageTitle = (page: Page) => page.locator('.tb-name-text');
 /** Начать бой со страницы открытого сценария и дождаться экрана боя. */
 export async function startBattle(page: Page) {
   await page.getByRole('button', { name: /Начать бой/ }).click();
-  await expect(page.getByRole('button', { name: '▶ Ход' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ход', exact: true })).toBeVisible();
 }
