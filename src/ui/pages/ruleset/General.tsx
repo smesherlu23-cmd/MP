@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { COEFFICIENT_GROUPS, COEFFICIENTS, FEATURE_LABELS, newId, normalizeRuleset, type Features, type Ruleset } from '../../../engine';
 import { EffectsEditor } from '../../components/EffectsEditor';
 import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Txt } from '../../components/ui';
-import { confirmDialog, replaceRuleset, toast, useApp } from '../../store';
+import { replaceRuleset, toast, toastUndoable, useApp } from '../../store';
 import type { Upd } from './common';
 
 export const FEATURE_HINTS: Record<keyof Features, string> = {
@@ -198,9 +198,9 @@ export function CoefficientsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
           <Btn
             sm
             kind="ghost"
-            onClick={async () => {
-              if (await confirmDialog('Сбросить все коэффициенты к стандартным значениям?', undefined, 'Сбросить', true))
-                upd((d) => void (d.coefficients = Object.fromEntries(COEFFICIENTS.map((m) => [m.key, m.default]))));
+            onClick={() => {
+              upd((d) => void (d.coefficients = Object.fromEntries(COEFFICIENTS.map((m) => [m.key, m.default]))));
+              toastUndoable('Коэффициенты сброшены к стандартным.');
             }}
           >
             Сбросить все

@@ -37,16 +37,16 @@ test('шаблон: вставка ×3 с номерами и обновлени
 
   // шаблон изменился — копии в батальоне помечены
   await openFromNav(page, '1-й мотострелковый батальон');
-  await expect(page.locator('.badge', { hasText: 'шаблон ⟳' })).toHaveCount(3);
+  await expect(page.locator('.badge', { hasText: 'шаблон изменён' })).toHaveCount(3);
   await openFromNav(page, 'Мотострелковая рота');
   await page.locator('.meta a', { hasText: 'обновить все' }).click();
   // Роты обновлены; изменился и шаблон батальона (в нём те же роты) — силы предлагают обновиться и по нему.
   await openFromNav(page, '1-й мотострелковый батальон');
   await expect(page.locator('.org-box')).toHaveCount(17);
-  const meta = page.locator('.page > .meta').first();
+  const meta = page.locator('.split-main > .meta').first();
   await expect(meta).toContainText('шаблон изменён');
   await meta.locator('a', { hasText: 'обновить' }).click();
-  await expect(page.locator('.badge', { hasText: 'шаблон ⟳' })).toHaveCount(0);
+  await expect(page.locator('.badge', { hasText: 'шаблон изменён' })).toHaveCount(0);
   await expect(page.locator('.org-box')).toHaveCount(17);
   expect(errors).toEqual([]);
 });

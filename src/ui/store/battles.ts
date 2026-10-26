@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { clone, newId, restoreBattleLog, rewindBattle, trimBattleForStorage, undoBattleAction, lastBattleAction, type Battle, type Id } from '../../engine';
 import { battleMeta, storage } from '../storage';
-import { chooseDialog, closeTabsWhere, confirmDialog, flushSave, get, openTab, scheduleSave, set, toast } from './core';
+import { chooseDialog, closeTabsWhere, flushSave, get, openTab, scheduleSave, set, toast } from './core';
 import { restoreFromTrash } from './data';
 
 export interface BattlesState {
@@ -41,11 +41,10 @@ export function ensureFullLog(b: Battle): boolean {
   return ok;
 }
 
-/** Удалить несколько боёв одним подтверждением. */
-export async function deleteBattles(ids: Id[], title: string): Promise<boolean> {
+/** Удалить несколько боёв сразу; уведомление — с кнопкой «Вернуть» (из корзины). */
+export async function deleteBattles(ids: Id[]): Promise<boolean> {
   if (!ids.length) return false;
-  if (!(await confirmDialog(title, `Будет удалено боёв: ${ids.length}. Сценарии и подразделения не затрагиваются.`, 'Удалить', true))) return false;
-  for (const id of ids) await deleteBattle(id, false, true);
+  for (const id of ids) await deleteBattle(id, true);
   toast(`Удалено боёв: ${ids.length} (они в корзине).`, 'good', {
     label: 'Вернуть',
     run: () => void restoreFromTrash(ids.map((key) => ({ col: 'battles', key }))),
@@ -165,9 +164,8 @@ export async function loadBattle(id: Id): Promise<Battle | null> {
   return b;
 }
 
-export async function deleteBattle(id: Id, ask = true, quiet = false) {
+export async function deleteBattle(id: Id, quiet = false) {
   const meta = get().battleIndex[id];
-  if (ask && !(await confirmDialog(`Удалить бой «${meta?.name ?? id}»?`, 'Бой попадёт в корзину и хранится там 30 дней.', 'Удалить', true))) return;
   await flushSave('battles', id);
   useBattles.setState((s) => {
     const { [id]: _, ...rest } = s.battles;

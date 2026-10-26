@@ -3,7 +3,7 @@
 import { KIND_LABELS, clone, newId, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
 import { Btn, Card, Check, Field, Info, Menu, Num, Sel, Seg, Tags, Txt, pressable } from '../../components/ui';
 import { useTabState } from '../../hooks';
-import { confirmDialog, openTab, useApp } from '../../store';
+import { openTab, toastUndoable, useApp } from '../../store';
 import type { Upd } from './common';
 
 export function typeUsage(typeId: string): number {
@@ -127,17 +127,9 @@ export function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Co
             {
               label: 'Удалить тип',
               danger: true,
-              onClick: async () => {
-                if (
-                  !(await confirmDialog(
-                    `Удалить тип «${t.name}»?`,
-                    used ? `Он используется в ${used} элементах — там он перестанет учитываться.` : undefined,
-                    'Удалить',
-                    true,
-                  ))
-                )
-                  return;
+              onClick: () => {
                 upd((d) => void (d.componentTypes = d.componentTypes.filter((y) => y.id !== t.id)));
+                toastUndoable(`Тип «${t.name}» удалён${used ? ` — в элементах (${used}) он больше не учитывается` : ''}.`);
               },
             },
           ]}
@@ -353,16 +345,8 @@ export function ClassesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                   icon
                   title="Удалить класс"
                   disabled={r.targetClasses.length <= 1}
-                  onClick={async () => {
-                    if (
-                      !(await confirmDialog(
-                        `Удалить класс «${c.name}»?`,
-                        'Огневая мощь по этому классу будет удалена из всех типов; типы этого класса перейдут в первый оставшийся класс.',
-                        'Удалить',
-                        true,
-                      ))
-                    )
-                      return;
+                  onClick={() => {
+                    toastUndoable(`Класс «${c.name}» удалён: его огневая мощь убрана из типов, типы этого класса перешли в первый оставшийся.`);
                     upd((d) => {
                       d.targetClasses = d.targetClasses.filter((x) => x.id !== c.id);
                       const fallback = d.targetClasses[0]?.id ?? '';
@@ -457,8 +441,8 @@ export function BandsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                       label: 'Удалить',
                       danger: true,
                       disabled: r.rangeBands.length <= 1,
-                      onClick: async () => {
-                        if (!(await confirmDialog(`Удалить дистанцию «${b.name}»?`, undefined, 'Удалить', true))) return;
+                      onClick: () => {
+                        toastUndoable(`Дистанция «${b.name}» удалена.`);
                         upd((d) => {
                           d.rangeBands = d.rangeBands.filter((x) => x.id !== b.id);
                           for (const t of d.componentTypes) for (const c of Object.keys(t.firepower)) delete t.firepower[c][b.id];

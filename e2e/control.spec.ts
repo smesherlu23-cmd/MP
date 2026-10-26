@@ -2,22 +2,22 @@
 // участки боя, события по условию, силы между боями, перебор параметра, перенос между наборами правил.
 
 import { expect, test } from '@playwright/test';
-import { menu, openApp, openFromNav, startBattle } from './helpers';
+import { menu, openApp, openFromNav, startBattle, pageTitle } from './helpers';
 
 test('бой: «до события», прогноз и ветка боя', async ({ page }) => {
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
-  await page.getByRole('button', { name: '⏭ До события' }).click();
+  await page.getByRole('button', { name: 'До события', exact: true }).click();
   await expect(page.locator('.pause-note, .bignum').first()).toBeVisible();
   await page.getByRole('button', { name: 'Прогноз' }).click();
   const modal = page.locator('.modal');
   await expect(modal.locator('table.forecast')).toContainText('Победа: Синие', { timeout: 20000 });
   await modal.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.locator('.battle-head button[aria-haspopup="menu"]').click();
+  await page.locator('.tb-actions button[aria-haspopup="menu"]').click();
   await menu(page, 'Ответвить бой');
   await page.locator('.modal .modal-foot').getByRole('button', { name: 'Выбрать' }).click();
-  await expect(page.locator('.tab.active .tab-title')).toContainText('ветка с хода');
+  await expect(pageTitle(page)).toContainText('ветка с хода');
   await expect(page.locator('.battle-head .meta')).toContainText('ветка боя');
   expect(errors).toEqual([]);
 });
@@ -48,7 +48,7 @@ test('бой: групповой приказ, эффект на выбранн�
   await m.getByRole('button', { name: 'Вызвать удар' }).click();
   await expect(page.locator('.support-panel')).toContainText('в начале 1-го хода');
   await expect(page.locator('.support-panel')).toContainText('2 из 3');
-  await page.getByRole('button', { name: '▶ Ход' }).click();
+  await page.getByRole('button', { name: 'Ход', exact: true }).click();
   await expect(page.locator('.battle-log')).toContainText('удар «Артдивизион полка»');
   expect(errors).toEqual([]);
 });
@@ -98,7 +98,7 @@ test('сценарий: участки боя, событие по услови�
   await expect(page.locator('.battle-head .meta')).toContainText('0 мин из 2 ч');
   await expect(page.locator('.battle-head .meta')).toContainText('Участок 2:');
   await expect(page.locator('.battle-head .meta')).toContainText('Средняя');
-  await page.getByRole('button', { name: '▶ Ход' }).click();
+  await page.getByRole('button', { name: 'Ход', exact: true }).click();
   await expect(page.locator('.battle-log')).toContainText('удар «Артдивизион полка»');
   expect(errors).toEqual([]);
 });
@@ -108,7 +108,7 @@ test('силы между боями: итоги в боевой путь, от�
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
   await page.getByRole('button', { name: 'До конца' }).click();
-  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).first().click();
   await openFromNav(page, '1-й мотострелковый батальон');
   const hist = page.locator('.section', { hasText: 'Боевой путь' });
   await expect(hist).toContainText('боёв: 1');
@@ -142,7 +142,7 @@ test('силы между боями: итоги в боевой путь, от�
   await expect(hist).toContainText('Пополнение до штата');
   await expect(panel.getByRole('button', { name: 'Пополнить…' })).toHaveCount(0);
   // Всё сразу — «Восстановить полностью» в меню «⋯».
-  await page.locator('.page-head button[aria-haspopup="menu"]').click();
+  await page.locator('.tb-actions button[aria-haspopup="menu"]').click();
   await menu(page, 'Восстановить полностью');
   await expect(panel.locator('.badge')).toHaveText('Боеготовы');
   await expect(hist).toContainText('Полное восстановление');
@@ -156,7 +156,7 @@ test('между боями — одно окно: часть раненых, р
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
   await page.getByRole('button', { name: 'До конца' }).click();
-  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).first().click();
   await openFromNav(page, '1-й мотострелковый батальон');
   const hist = page.locator('.section', { hasText: 'Боевой путь' });
   const panel = page.locator('.readiness');
@@ -182,7 +182,7 @@ test('прогоны: перебор параметра — по строке н
   const runs = cmp.locator('.field', { hasText: 'Прогонов на вариант' }).locator('input');
   await runs.fill('20');
   await runs.blur();
-  await cmp.getByRole('button', { name: '▶ Сравнить' }).click();
+  await cmp.getByRole('button', { name: 'Сравнить', exact: true }).click();
   await expect(cmp.locator('tbody tr')).toHaveCount(3, { timeout: 30000 });
   await expect(cmp.locator('tbody')).toContainText('Полные');
   expect(errors).toEqual([]);
@@ -193,7 +193,7 @@ test('набор правил: временные эффекты, перенос
   await openFromNav(page, 'Линейная');
   await page.locator('.vnav button', { hasText: 'Временные эффекты' }).click();
   await expect(page.locator('.kpi')).toHaveCount(4);
-  await page.locator('.page-head button[aria-haspopup="menu"]').click();
+  await page.locator('.tb-actions button[aria-haspopup="menu"]').click();
   await menu(page, 'Перенести из другого набора');
   const m = page.locator('.modal');
   await m.getByRole('checkbox', { name: 'Танк', exact: true }).check();

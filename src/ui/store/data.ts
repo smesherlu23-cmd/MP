@@ -104,12 +104,10 @@ export async function initApp() {
     scheduleSave('rulesets', r.id, () => get().rulesets[r.id]);
   }
   const saved = loadLocal<{ tabs: Tab[]; active: string }>('warsim-tabs', { tabs: [], active: '' });
-  const valid = saved.tabs.filter((t) => tabExists(t));
-  set({
-    loaded: true,
-    tabs: valid.length ? valid : [{ key: 'home', kind: 'home' }],
-    active: valid.some((t) => t.key === saved.active) ? saved.active : (valid[0]?.key ?? 'home'),
-  });
+  // Вкладок больше нет: открывается страница, на которой закончили (из прежних вкладок — активная).
+  const last = saved.tabs.find((t) => t.key === saved.active && tabExists(t));
+  const page: Tab = last ? { key: last.key, kind: last.kind, ref: last.ref, ...(last.sub ? { sub: last.sub } : {}) } : { key: 'home', kind: 'home' };
+  set({ loaded: true, tabs: [page], active: page.key });
   if (problems.length) void reportProblems(problems);
   // Пока программа открыта, копия делается раз в час (если что-то изменилось).
   setInterval(
@@ -447,12 +445,16 @@ export async function exportText(name: string, text: string, ext = 'txt') {
 
 export async function importFile() {
   const file = await storage.importFile();
-  if (!file) return;
+  if (file) importContent(file.content);
+}
+
+/** Импорт содержимого файла JSON (выбранного в окне или брошенного на окно программы). */
+export function importContent(content: string, fileName?: string) {
   let data: any;
   try {
-    data = JSON.parse(file.content);
+    data = JSON.parse(content);
   } catch {
-    toast('Файл не является JSON.', 'bad');
+    toast(fileName ? `«${fileName}» — не файл JSON.` : 'Файл не является JSON.', 'bad');
     return;
   }
   const s = get();

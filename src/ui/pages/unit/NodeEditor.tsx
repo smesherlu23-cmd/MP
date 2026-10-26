@@ -1,5 +1,6 @@
 // Редактор узла подразделения: уровень, эшелон, состав, состояние; вставка из шаблонов.
 
+import { Icon } from '../../components/Icon';
 import { useState } from 'react';
 import {
   ECHELON_LABELS,
@@ -44,7 +45,7 @@ export function InheritRange(props: {
               onClick={(e) => (e.preventDefault(), props.onClear())}
               data-tip={props.isRoot ? 'Вернуть значение по умолчанию' : 'Брать значение у старшего'}
             >
-              ↺
+              <Icon name="undo" size={12} />
             </a>
           ) : (
             <span className="faint small">{props.isRoot ? '· по умолчанию' : '· как у старшего'}</span>

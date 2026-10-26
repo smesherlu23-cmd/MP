@@ -49,7 +49,7 @@ import { PartialButton, type PartialLimit, PartialModal, partialCount } from '..
 import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
 import { SectorSelect, SectorsEditor } from '../components/SectorsEditor';
 import { SideSupport } from '../components/SupportEditor';
-import { Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable } from '../components/ui';
+import { Chev, openContextMenu, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable, ToolbarSlot } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import {
   confirmDialog,
@@ -69,6 +69,7 @@ import {
   type Tab,
 } from '../store';
 import { DND_FORCE, DND_LIB, DND_NODE, computeStats, statsLine, statsTip } from './unit/model';
+import { quickLook, toggleQuickLook } from '../objects';
 
 /** Название нового боя: «Сценарий · бой N» (N — следующий номер для этого сценария). */
 export function nextBattleName(sc: Scenario): string {
@@ -180,26 +181,28 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
   return (
     <div className="page">
       <Crumbs items={[{ label: 'Сценарии', section: 'scenarios' }]} />
-      <div className="page-head sticky-head">
+      <div className="page-head">
         <input className="title-input" value={sc.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
-        <Btn kind="primary" onClick={start} disabled={!rs}>
-          ▶ Начать бой
-        </Btn>
-        <Btn onClick={() => openTab('montecarlo', sc.id)} disabled={!rs} title="Сотни прогонов для оценки вероятностей исходов">
-          Прогоны
-        </Btn>
-        <Menu
-          items={[
-            { label: 'Дублировать', onClick: () => duplicateScenario(sc.id) },
-            {
-              label: 'Сохранить в файл…',
-              tip: 'Вместе с подразделениями сторон — чтобы сценарий можно было открыть у другого ГМ',
-              onClick: () => exportScenario(sc),
-            },
-            'sep',
-            { label: 'Удалить сценарий', danger: true, onClick: () => deleteScenario(sc.id) },
-          ]}
-        />
+        <ToolbarSlot>
+          <Btn kind="primary" onClick={start} disabled={!rs}>
+            <Icon name="play" size={13} /> Начать бой
+          </Btn>
+          <Btn onClick={() => openTab('montecarlo', sc.id)} disabled={!rs} title="Сотни прогонов для оценки вероятностей исходов">
+            Прогоны
+          </Btn>
+          <Menu
+            items={[
+              { label: 'Дублировать', onClick: () => duplicateScenario(sc.id) },
+              {
+                label: 'Сохранить в файл…',
+                tip: 'Вместе с подразделениями сторон — чтобы сценарий можно было открыть у другого ГМ',
+                onClick: () => exportScenario(sc),
+              },
+              'sep',
+              { label: 'Удалить сценарий', danger: true, onClick: () => deleteScenario(sc.id) },
+            ]}
+          />
+        </ToolbarSlot>
       </div>
 
       {errors.length > 0 && (
@@ -369,7 +372,7 @@ function WornForces({ ids }: { ids: Id[] }) {
  * Галочка — участвует ли часть в этом бою (снятая исключает её вместе с подчинёнными).
  */
 const SIDE_HELP = [
-  'Структура ▸ — какие части подразделения участвуют в этом бою: галочка — участвует, снимите — воюет без неё. Приказ, участок и «насмерть» можно задать и отдельным частям.',
+  'Структура (стрелка слева) — какие части подразделения участвуют в этом бою: галочка — участвует, снимите — воюет без неё. Приказ, участок и «насмерть» можно задать и отдельным частям.',
   'Щелчок по численности — в бой идёт только часть состава, вплоть до одного бойца или машины.',
   'Перетащите подразделение на другое подразделение стороны — оно будет придано ему на этот бой; на другую сторону — перейдёт к ней.',
 ].join('\n\n');
@@ -412,9 +415,9 @@ function SideTree(props: {
           key={n.id}
           className={`side-node${off ? ' off' : ''}`}
           style={{ paddingLeft: 4 + (depth - 1) * 16 }}
-          onClick={(e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey)}
+          onClick={() => openUnit(refId, n.id)}
           title="Открыть в конструкторе"
-          {...pressable((e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey))}
+          {...pressable(() => openUnit(refId, n.id))}
         >
           {onToggle && (
             <input
@@ -631,7 +634,20 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
             if (over !== `${ri}`) setOver(`${ri}`);
           }}
           onDrop={(e) => onRowDrop(e, root)}
-          data-tip="Перетащите на другое подразделение стороны, чтобы придать его на этот бой; на другую сторону — чтобы перевести"
+          onContextMenu={(e) =>
+            openContextMenu(e, [
+              { label: 'Открыть в «Силах»', onClick: () => openUnit(`force:${r.forceId}`, root) },
+              { label: 'Быстрый просмотр сил', kbd: 'Пробел', onClick: () => quickLook({ kind: 'force', id: r.forceId }) },
+              node.children.length > 0 && {
+                label: isOpen ? 'Скрыть структуру' : 'Показать структуру',
+                onClick: () => setOpenIds(isOpen ? openIds.filter((y) => y !== `${ri}:${root}`) : [...openIds, `${ri}:${root}`]),
+              },
+              !!attachedTo && { label: 'Отделить', onClick: () => upd((d) => void delete d.units![ri].attachTo) },
+              'sep',
+              { label: 'Убрать из сценария', danger: true, onClick: () => remove(ri, node.name) },
+            ])
+          }
+          data-tip="Перетащите на другое подразделение стороны, чтобы придать его на этот бой; на другую сторону — чтобы перевести. Правый щелчок — действия"
         >
           <button
             type="button"
@@ -640,13 +656,14 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
             onClick={() => setOpenIds(isOpen ? openIds.filter((y) => y !== `${ri}:${root}`) : [...openIds, `${ri}:${root}`])}
             title={node.children.length ? (isOpen ? 'Скрыть структуру' : 'Структура: какие части участвуют и их приказы на этот бой') : undefined}
           >
-            {node.children.length ? (isOpen ? '▾' : '▸') : ''}
+            {node.children.length ? <Chev open={isOpen} /> : ''}
           </button>
           <div className="grow" style={{ minWidth: 0 }}>
             <a
               href="#"
-              onClick={(e) => (e.preventDefault(), openUnit(`force:${r.forceId}`, root, e.ctrlKey || e.metaKey))}
-              title="Открыть в «Силах»: состояние, потери, состав"
+              onClick={(e) => (e.preventDefault(), openUnit(`force:${r.forceId}`, root))}
+              onKeyDown={(e) => e.key === ' ' && (e.preventDefault(), toggleQuickLook({ kind: 'force', id: r.forceId }))}
+              title="Открыть в «Силах»: состояние, потери, состав; пробел — быстрый просмотр"
             >
               {node.name}
             </a>
@@ -665,12 +682,12 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
               </span>
             )}
             {out > 0 && (
-              <span className="badge warn" data-tip="Часть подразделения в этом бою не участвует — раскройте ▸, чтобы изменить">
+              <span className="badge warn" data-tip="Часть подразделения в этом бою не участвует — раскройте структуру, чтобы изменить">
                 без {out} {out === 1 ? 'части' : 'частей'}
               </span>
             )}
             {partN > 0 && (
-              <span className="badge warn" data-tip="У части подразделений в бою не весь состав — раскройте ▸, чтобы изменить">
+              <span className="badge warn" data-tip="У части подразделений в бою не весь состав — раскройте структуру, чтобы изменить">
                 неполный состав: {partN} {plural(partN, 'часть', 'части', 'частей')}
               </span>
             )}
@@ -768,7 +785,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
           ))}
           {!refs.length && (
             <div className="muted" style={{ padding: '6px 4px' }}>
-              Нет подразделений — добавьте ниже или перетащите из «Сил» (или шаблон) в навигаторе слева
+              Нет подразделений — добавьте ниже или перетащите из «Сил» (или шаблон) в боковой панели слева
             </div>
           )}
           {refs.length > 1 && (
@@ -935,7 +952,9 @@ function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset })
     <div>
       <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
         <button type="button" className="sec-toggle" onClick={() => setOpen(!open)}>
-          <span className="chev">{open ? '▾' : '▸'}</span>
+          <span className="chev">
+            <Chev open={open} />
+          </span>
           <h4>Командиры в начале боя</h4>
         </button>
         <Info text="Командир есть у каждого формирования — у подразделения целиком и у каждого звена с подчинёнными. Насколько он хорош в этом сражении (или что командира нет) — задаётся здесь; это учитывают и бой, и прогоны. По ходу боя ГМ меняет уровень в таблице сил — по обстановке." />

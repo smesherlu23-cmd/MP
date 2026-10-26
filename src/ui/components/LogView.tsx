@@ -5,7 +5,7 @@ import { displayNames, formatFactor, type Battle, type LogEntry, type Phase } fr
 import { useTabState } from '../hooks';
 import { ensureFullLog } from '../store';
 import { Icon, type IconName } from './Icon';
-import { pressable, Seg } from './ui';
+import { Chev, pressable, Seg } from './ui';
 
 const PHASES: { id: Phase; label: string; icon: IconName }[] = [
   { id: 'detection', label: 'Обнаружение', icon: 'eye' },
@@ -201,7 +201,9 @@ function SummaryRow({ s, b, open, onToggle, onElement }: { s: Summary; b: Battle
         {...pressable(onToggle)}
         aria-expanded={open}
       >
-        <span className="ph">{open ? '▾' : '▸'}</span>
+        <span className="ph">
+          <Chev open={open} />
+        </span>
         <span>
           <b style={{ color }}>{names.f.get(s.fid) ?? s.fid}</b>: {parts.join(' · ')} <span className="faint small">— записей: {s.entries.length}</span>
         </span>

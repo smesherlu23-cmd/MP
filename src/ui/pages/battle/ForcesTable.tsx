@@ -17,7 +17,7 @@ import {
 } from '../../../engine';
 import { SupportPanel, type Target } from '../../components/BattleControls';
 import { CommanderSelect } from '../../components/CommanderSelect';
-import { Btn, Card, Check, Meter, Sel, fmt0, pct } from '../../components/ui';
+import { Chev, Btn, Card, Check, Meter, Sel, fmt0, pct } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { type Iv, SIDES } from './common';
 import { SideCompare } from './Result';
@@ -373,7 +373,7 @@ export function FormationRows(props: {
               />
             )}
             <button type="button" className="fold-btn" onClick={props.onToggle} title={props.folded ? 'Развернуть' : 'Свернуть'}>
-              {props.folded ? '▸' : '▾'}
+              <Chev open={!props.folded} />
             </button>
             <a
               href="#"

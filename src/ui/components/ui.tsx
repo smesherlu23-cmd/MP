@@ -1,6 +1,6 @@
 // Базовые элементы интерфейса.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import { Icon } from './Icon';
@@ -180,6 +180,40 @@ export function Txt(props: {
   );
 }
 
+/**
+ * Поле переименования на месте (строка списка, заголовок окна): Enter или уход с поля — сохранить,
+ * Esc — отменить (onDone(null)).
+ */
+export function RenameInput({ value, onDone, className }: { value: string; onDone: (v: string | null) => void; className?: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+  useLayoutEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const finish = (v: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(v);
+  };
+  return (
+    <input
+      ref={ref}
+      className={`rename-input${className ? ` ${className}` : ''}`}
+      defaultValue={value}
+      aria-label="Новое название"
+      onBlur={(e) => finish(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') finish(e.currentTarget.value);
+        else if (e.key === 'Escape') finish(null);
+      }}
+    />
+  );
+}
+
 export function Area(props: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number }) {
   return (
     <textarea
@@ -254,6 +288,11 @@ export function Info({ text }: { text: string }) {
   );
 }
 
+/** Стрелка раскрытия (▸/▾): поворачивается при раскрытии. */
+export function Chev({ open, size = 12 }: { open: boolean; size?: number }) {
+  return <Icon name="right" size={size} className={`chev-ico${open ? ' open' : ''}`} />;
+}
+
 export interface MenuItem {
   label: ReactNode;
   onClick: () => void;
@@ -262,6 +301,8 @@ export interface MenuItem {
   tip?: string;
   /** Сочетание клавиш — показывается справа. */
   kbd?: string;
+  /** Пункт-переключатель: галочка слева, если включён. */
+  checked?: boolean;
 }
 
 /**
@@ -355,11 +396,13 @@ function MenuItems({ items, onPick }: { items: (MenuItem | 'sep')[]; onPick: () 
             <hr key={i} className="menu-sep" />
           ) : null
         ) : (
+          // biome-ignore lint/a11y/useAriaPropsSupportedByRole: роль задаётся выражением — menuitemcheckbox у пунктов-переключателей
           <button
             key={i}
             type="button"
-            role="menuitem"
-            className={`menu-item${it.danger ? ' danger' : ''}`}
+            role={it.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+            aria-checked={it.checked}
+            className={`menu-item${it.danger ? ' danger' : ''}${it.checked === undefined ? '' : ' checkable'}`}
             disabled={it.disabled}
             data-tip={it.tip}
             onClick={() => {
@@ -367,6 +410,7 @@ function MenuItems({ items, onPick }: { items: (MenuItem | 'sep')[]; onPick: () 
               it.onClick();
             }}
           >
+            {it.checked !== undefined && <span className="menu-check">{it.checked && <Icon name="tick" size={13} />}</span>}
             {it.label}
             {it.kbd && <span className="kbd">{it.kbd}</span>}
           </button>
@@ -382,7 +426,7 @@ const useContextMenu = create<{ at: { x: number; y: number } | null; items: (Men
 const closeContextMenu = () => useContextMenu.setState({ at: null });
 
 /** Открыть меню у указателя мыши (правый щелчок). */
-export function openContextMenu(e: React.MouseEvent, items: (MenuItem | 'sep' | false | null | undefined)[]) {
+export function openContextMenu(e: React.MouseEvent | MouseEvent, items: (MenuItem | 'sep' | false | null | undefined)[]) {
   e.preventDefault();
   e.stopPropagation();
   useContextMenu.setState({ at: { x: e.clientX, y: e.clientY }, items: items.filter(Boolean) as (MenuItem | 'sep')[] });
@@ -391,6 +435,13 @@ export function openContextMenu(e: React.MouseEvent, items: (MenuItem | 'sep' | 
 export function ContextMenuHost() {
   const { at, items } = useContextMenu();
   const pop = useRef<HTMLDivElement>(null);
+  // Меню не выходит за край окна: у нижнего края открывается вверх от указателя.
+  useLayoutEffect(() => {
+    const el = pop.current;
+    if (!at || !el) return;
+    const h = el.offsetHeight;
+    if (at.y + h > window.innerHeight - 8) el.style.top = `${Math.max(8, at.y - h)}px`;
+  }, [at]);
   useEffect(() => {
     if (!at) return;
     pop.current?.querySelector<HTMLButtonElement>('.menu-item:not(:disabled)')?.focus();
@@ -459,7 +510,9 @@ export function Section(props: {
     <div className={`card section${isOpen ? ' open' : ''}`}>
       {/* Щелчок по «?» у заголовка раздел не сворачивает. */}
       <div className="card-head" onClick={(e) => (e.target as HTMLElement).closest('.hint-icon') || toggle()}>
-        <span className="chev">{isOpen ? '▾' : '▸'}</span>
+        <span className="chev">
+          <Icon name="right" size={13} />
+        </span>
         <h3>
           {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: роль button и фокус — из pressable() */}
           <span {...pressable(toggle)} aria-expanded={isOpen}>
@@ -598,6 +651,71 @@ export function Modal(props: { title: ReactNode; onClose: () => void; children: 
         {props.footer && <div className="modal-foot">{props.footer}</div>}
       </div>
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ панель инструментов и инспектор
+
+/** Место в панели инструментов окна для действий текущей страницы (главное действие — справа). */
+export function ToolbarSlot({ children }: { children: ReactNode }) {
+  const [host, setHost] = useState<Element | null>(null);
+  useLayoutEffect(() => setHost(document.getElementById('tb-actions')), []);
+  return host ? createPortal(children, host) : null;
+}
+
+/**
+ * Перетаскиваемый край панели: ширина меняется мышью (и стрелками с клавиатуры), двойной щелчок —
+ * ширина по умолчанию. side — с какой стороны от края находится панель.
+ */
+export function Splitter(props: {
+  width: number;
+  min: number;
+  max: number;
+  def: number;
+  side: 'left' | 'right';
+  onChange: (w: number) => void;
+  label: string;
+}) {
+  const clamp = (w: number) => Math.round(Math.max(props.min, Math.min(props.max, w)));
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: перетаскиваемый разделитель панелей (window splitter) — не <hr>
+    <div
+      className={`splitter ${props.side}`}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={props.label}
+      aria-valuenow={props.width}
+      aria-valuemin={props.min}
+      aria-valuemax={props.max}
+      tabIndex={0}
+      title={`${props.label}: перетащите край; двойной щелчок — как было`}
+      onDoubleClick={() => props.onChange(props.def)}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const d = (e.key === 'ArrowRight') === (props.side === 'left') ? 16 : -16;
+        props.onChange(clamp(props.width + d));
+      }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const x0 = e.clientX;
+        const w0 = props.width;
+        const el = e.currentTarget;
+        el.setPointerCapture(e.pointerId);
+        document.documentElement.classList.add('resizing');
+        const move = (ev: PointerEvent) => props.onChange(clamp(w0 + (props.side === 'left' ? ev.clientX - x0 : x0 - ev.clientX)));
+        const up = () => {
+          document.documentElement.classList.remove('resizing');
+          el.removeEventListener('pointermove', move);
+          el.removeEventListener('pointerup', up);
+          el.removeEventListener('pointercancel', up);
+        };
+        el.addEventListener('pointermove', move);
+        el.addEventListener('pointerup', up);
+        el.addEventListener('pointercancel', up);
+      }}
+    />
   );
 }
 

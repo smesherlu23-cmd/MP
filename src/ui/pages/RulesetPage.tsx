@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { Ruleset } from '../../engine';
 import { TransferModal } from '../components/RulesetTransfer';
-import { Menu } from '../components/ui';
+import { Menu, ToolbarSlot } from '../components/ui';
 import { Crumbs } from '../components/Crumbs';
 import { createRuleset, deleteRuleset, exportJson, setTabSub, updateRuleset, useApp, type Tab } from '../store';
 import type { Upd } from './ruleset/common';
@@ -46,20 +46,22 @@ export function RulesetPage({ tab }: { tab: Tab }) {
       <Crumbs items={[{ label: 'Наборы правил', section: 'rulesets' }]} />
       <div className="page-head">
         <input className="title-input" value={r.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
-        <Menu
-          items={[
-            { label: 'Дублировать', onClick: () => createRuleset(r.id), tip: 'Копия для экспериментов с балансом' },
-            {
-              label: 'Перенести из другого набора…',
-              onClick: () => setTransfer(true),
-              tip: 'Скопировать типы, приказы, условия, правила или эффекты из другого набора правил',
-            },
-            { label: 'Сохранить в файл…', onClick: () => exportJson('ruleset', r.name, r) },
-            { label: 'Редактировать как JSON', onClick: () => setTabSub(tab.key, 'json') },
-            'sep',
-            { label: 'Удалить набор правил', danger: true, onClick: () => deleteRuleset(r.id) },
-          ]}
-        />
+        <ToolbarSlot>
+          <Menu
+            items={[
+              { label: 'Дублировать', onClick: () => createRuleset(r.id), tip: 'Копия для экспериментов с балансом' },
+              {
+                label: 'Перенести из другого набора…',
+                onClick: () => setTransfer(true),
+                tip: 'Скопировать типы, приказы, условия, правила или эффекты из другого набора правил',
+              },
+              { label: 'Сохранить в файл…', onClick: () => exportJson('ruleset', r.name, r) },
+              { label: 'Редактировать как JSON', onClick: () => setTabSub(tab.key, 'json') },
+              'sep',
+              { label: 'Удалить набор правил', danger: true, onClick: () => deleteRuleset(r.id) },
+            ]}
+          />
+        </ToolbarSlot>
       </div>
       <div className="split" style={{ gridTemplateColumns: '190px minmax(0, 1fr)' }}>
         <nav className="vnav">

@@ -50,7 +50,7 @@ test('дивизия: схема и список удобны на 157 подр�
   // с третьего уровня свёрнуто: дивизия, 3 полка, 9 батальонов
   await expect(page.locator('.org-box')).toHaveCount(13);
   await page.locator('.seg button', { hasText: 'Список' }).click();
-  await page.locator('.page-head button[title="Ещё"]').click();
+  await page.locator('.tb-actions button[title="Ещё"]').click();
   await page.locator('.menu-pop .menu-item', { hasText: 'Развернуть всё' }).click();
   await expect(page.locator('.unit-row')).toHaveCount(157);
   // имя взвода видно целиком (не обрезано многоточием)
@@ -66,7 +66,7 @@ test('бой дивизий: свёрнутая таблица сил, свод�
   await navSec(page, 'Сценарии');
   await page.locator('.nav-sec[data-sec="scenarios"] .side-item', { hasText: 'Дивизия на дивизию' }).click();
   await page.getByRole('button', { name: /Начать бой/ }).click();
-  await page.getByRole('button', { name: '▶ Ход' }).click();
+  await page.getByRole('button', { name: 'Ход', exact: true }).click();
 
   // таблица сил: батальоны свёрнуты, у групп — итоги
   await expect(page.locator('.tbl.forces tr.group')).toHaveCount(26);

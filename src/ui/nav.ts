@@ -1,4 +1,4 @@
-// Навигация: разделы программы, «где я» для каждой вкладки, история переходов (назад / вперёд).
+// Навигация: разделы программы, «где я» для каждой страницы, история переходов (назад / вперёд).
 
 import { create } from 'zustand';
 import type { IconName } from './components/Icon';
@@ -42,7 +42,7 @@ export function setNavOpen(id: NavSection, on: boolean) {
   updateSettings({ navOpen: { ...s.navOpen, [id]: on } });
 }
 
-/** Раздел, к которому относится вкладка: «lib:» — шаблоны, «force:» — силы. */
+/** Раздел, к которому относится страница: «lib:» — шаблоны, «force:» — силы. */
 export function sectionOf(t: Pick<Tab, 'kind' | 'ref'> | undefined): NavSection | null {
   switch (t?.kind) {
     case 'scenario':
@@ -79,12 +79,10 @@ const sync = () => useNav.setState({ back: back.length > 0, fwd: fwd.length > 0 
 
 useApp.subscribe((s, prev) => {
   if (s.active === prev.active || !prev.loaded) return;
-  // Навигатор следует за переходами: раздел открытого объекта разворачивается. Когда вкладка просто
-  // закрылась (в том числе при удалении объекта), навигатор не меняется.
-  const closed = !s.tabs.some((t) => t.key === prev.active);
+  // Боковая панель следует за переходами: раздел открытого объекта разворачивается.
   const tab = s.tabs.find((t) => t.key === s.active);
   const sec = tab?.kind === 'library' ? null : sectionOf(tab);
-  if (!closed && sec) setNavOpen(sec, true);
+  if (sec) setNavOpen(sec, true);
   if (jumping || !prev.active) return;
   back.push(prev.active);
   if (back.length > 100) back.shift();
@@ -92,7 +90,7 @@ useApp.subscribe((s, prev) => {
   sync();
 });
 
-/** Ключ вкладки → вкладка (закрытую открываем заново, если объект ещё существует). */
+/** Ключ страницы → страница (если объект ещё существует). */
 function jumpTo(key: string): boolean {
   const s = useApp.getState();
   const i = key.indexOf(':');
@@ -139,3 +137,9 @@ export function goForward() {
   }
   sync();
 }
+
+// ------------------------------------------------------------------ поиск в панели инструментов
+
+/** Текст в поле поиска панели инструментов: он же фильтрует боковую панель. */
+export const useNavFilter = create<{ q: string }>(() => ({ q: '' }));
+export const setNavFilter = (q: string) => useNavFilter.setState({ q });

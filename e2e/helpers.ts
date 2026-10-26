@@ -27,9 +27,10 @@ const SEC_ID: Record<string, string> = { Сценарии: 'scenarios', Бои: 
 
 /** Раздел навигатора (дерево): разворачивается, если свёрнут. */
 export async function navSec(page: Page, label: string): Promise<Locator> {
-  // Поле поиска навигатора могло остаться заполненным — тогда видны только совпадения.
-  const search = page.locator('.nav-search input');
-  if (await search.inputValue()) await search.fill('');
+  // Поле поиска могло остаться заполненным — тогда в боковой панели видны только совпадения.
+  const search = page.locator('.tb-search input');
+  // В узком окне поле свёрнуто до значка — очищается без проверки видимости.
+  if (await search.inputValue()) await search.fill('', { force: true });
   const sec = page.locator(`.nav-sec[data-sec="${SEC_ID[label]}"]`);
   if (!(await sec.evaluate((e) => e.classList.contains('open')))) await sec.locator('.nav-chev').click();
   await expect(sec).toHaveClass(/open/);
@@ -42,14 +43,14 @@ export async function navItem(page: Page, text: string, section?: string): Promi
   const sec = await navSec(page, label);
   const item = sec.locator('.side-item', { hasText: text }).first();
   if (await item.count()) return item;
-  // В длинном разделе видны не все — остальные находятся полем поиска навигатора.
-  await page.locator('.nav-search input').fill(text);
+  // В длинном разделе видны не все — остальные находятся полем поиска (оно фильтрует боковую панель).
+  await page.locator('.tb-search input').fill(text, { force: true });
   return page.locator(`.nav-sec[data-sec="${SEC_ID[label]}"] .side-item`, { hasText: text }).first();
 }
 
 export async function openFromNav(page: Page, text: string, section?: string) {
   await (await navItem(page, text, section)).click();
-  await page.locator('.nav-search input').fill('');
+  await page.locator('.tb-search input').fill('', { force: true });
 }
 
 /** Пункт открытого меню «⋯». */
@@ -66,10 +67,11 @@ export async function dnd(page: Page, src: Locator, dst: Locator) {
   await dst.dispatchEvent('drop', { dataTransfer: dt });
 }
 
-export const activeTabTitle = (page: Page) => page.locator('.tab.active .tab-title');
+/** Название открытой страницы (заголовок окна в панели инструментов). */
+export const pageTitle = (page: Page) => page.locator('.tb-name-text');
 
 /** Начать бой со страницы открытого сценария и дождаться экрана боя. */
 export async function startBattle(page: Page) {
   await page.getByRole('button', { name: /Начать бой/ }).click();
-  await expect(page.getByRole('button', { name: '▶ Ход' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ход', exact: true })).toBeVisible();
 }

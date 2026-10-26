@@ -29,7 +29,6 @@ import {
   plural,
   returnUnit,
   transferUnit,
-  walkUnits,
   type ForceCondition,
   type ForcesPatch,
   type UnitNode,
@@ -40,7 +39,6 @@ import { storage } from '../storage';
 import {
   chooseDialog,
   closeTabsWhere,
-  confirmDialog,
   flushSave,
   get,
   historyStep,
@@ -326,16 +324,6 @@ export async function deleteForce(id: Id) {
   const f = get().forces[id];
   if (!f) return;
   const used = forceUsage(id);
-  let foreign = 0;
-  walkUnits(f, (n) => void (n !== f && n.transfer && foreign++));
-  const text =
-    [
-      used.length ? `Оно участвует в сценариях: ${used.map((x) => `«${x.name}»`).join(', ')} — там его не станет.` : '',
-      foreign ? `Внутри — переданные из других подразделений части (${foreign}): они удалятся вместе с ним. Чтобы сохранить, сначала верните их.` : '',
-    ]
-      .filter(Boolean)
-      .join('\n') || undefined;
-  if (!(await confirmDialog(`Удалить силы «${f.name}»?`, text, 'Удалить', true))) return;
   await flushSave('forces', id);
   historyStep(`удаление сил «${f.name}»`);
   record('forces', id, 'delete');
@@ -344,7 +332,7 @@ export async function deleteForce(id: Id) {
     return { forces: rest };
   });
   for (const sc of used) updateScenario(sc.id, (d) => d.sides.forEach((sd) => (sd.units = (sd.units ?? []).filter((u) => u.forceId !== id))));
-  toastUndoable(`Силы «${f.name}» удалены (они в корзине).`);
+  toastUndoable(`Силы «${f.name}» удалены${used.length ? ` и убраны из сценариев (${used.length})` : ''}.`);
   await storage.remove('forces', id);
   closeTabsWhere((t) => t.kind === 'formation' && t.ref === `force:${id}`);
 }
@@ -455,14 +443,13 @@ export function duplicateScenario(id: Id): Id | undefined {
 export async function deleteScenario(id: Id) {
   const sc = get().scenarios[id];
   if (!sc) return;
-  if (!(await confirmDialog(`Удалить сценарий «${sc.name}»?`, 'Сохранённые бои по нему останутся.', 'Удалить', true))) return;
   await flushSave('scenarios', id);
   record('scenarios', id, 'delete');
   set((s) => {
     const { [id]: _, ...rest } = s.scenarios;
     return { scenarios: rest };
   });
-  toastUndoable(`Сценарий «${sc.name}» удалён (он в корзине).`);
+  toastUndoable(`Сценарий «${sc.name}» удалён (он в корзине). Бои по нему остались.`);
   await storage.remove('scenarios', id);
   closeTabsWhere((t) => ((t.kind === 'scenario' || t.kind === 'montecarlo') && t.ref === id) || (t.kind === 'formation' && !!t.ref?.startsWith(`sc:${id}:`)));
 }

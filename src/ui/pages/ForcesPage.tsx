@@ -5,25 +5,10 @@ import { useState } from 'react';
 import { plural, ROOT_STATE, type ForceCondition, type UnitNode } from '../../engine';
 import { ForceActions, LEVEL_LABEL } from '../components/ForceCampaign';
 import { Icon } from '../components/Icon';
-import { Btn, Check, Field, Menu, Modal, Seg, Txt, fmt0 } from '../components/ui';
+import { Btn, Check, Field, Menu, Modal, Seg, Txt, fmt0, openContextMenu, ToolbarSlot } from '../components/ui';
+import { objKey, objKeys, objMenu } from '../objects';
 import { sectionMeta } from '../nav';
-import {
-  canRestore,
-  deleteForce,
-  duplicateForce,
-  editTeam,
-  exportJson,
-  forceStatus,
-  forceUsage,
-  importFile,
-  newForceDialog,
-  openTab,
-  restoreForces,
-  TEAM_PALETTE,
-  teamColor,
-  teamSides,
-  useApp,
-} from '../store';
+import { editTeam, forceStatus, forceUsage, importFile, newForceDialog, openTab, TEAM_PALETTE, teamColor, teamSides, useApp } from '../store';
 import { fmtWhen } from './HomePage';
 
 type Filter = 'all' | ForceCondition['level'];
@@ -136,37 +121,36 @@ export function TeamModal({ team, onClose }: { team: string; onClose: () => void
 export function ForceCard({ f }: { f: UnitNode }) {
   const s = useApp();
   const c = forceStatus(f);
-  const can = canRestore(f);
   const lv = LEVEL_LABEL[c.level];
   const tpl = f.templateId ? s.formations[f.templateId] : undefined;
   const used = forceUsage(f.id);
   const last = [...(f.history ?? [])].reverse().find((h) => h.kind === 'battle' && h.battleId);
   const open = () => openTab('formation', `force:${f.id}`);
+  const obj = { kind: 'force', id: f.id } as const;
   return (
-    <div key={f.id} className="force-card" style={{ borderLeftColor: teamColor(f.faction ?? '') }}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: правый щелчок по карточке — действия с силами (есть и кнопка «⋯»)
+    <div
+      key={f.id}
+      className="force-card"
+      data-obj={objKey(obj)}
+      style={{ borderLeftColor: teamColor(f.faction ?? '') }}
+      onContextMenu={(e) => !(e.target as Element).closest('button, a, input') && openContextMenu(e, objMenu(obj))}
+    >
       <div className="fc-head">
-        <button type="button" className="link fc-name" onClick={open} title="Открыть подразделение">
+        <button
+          type="button"
+          className="link fc-name"
+          onClick={open}
+          onKeyDown={(e) => e.key !== 'Enter' && objKeys(obj, e)}
+          onContextMenu={(e) => openContextMenu(e, objMenu(obj))}
+          title="Открыть · пробел — быстрый просмотр · правый щелчок — действия"
+        >
           {f.name}
         </button>
         <span className={`badge ${lv.cls}`} data-tip={c.issues.length ? `Что не так: ${c.issues.join(', ')}` : 'Полный состав, состояние в норме'}>
           {lv.text}
         </span>
-        <Menu
-          sm
-          items={[
-            { label: 'Открыть', onClick: open },
-            {
-              label: 'Восстановить полностью',
-              disabled: !can,
-              onClick: () => restoreForces([f.id]),
-              tip: 'Раненые и техника возвращаются, недостающее — до штата из резерва, состояние — к норме',
-            },
-            { label: 'Дублировать', onClick: () => duplicateForce(f.id) },
-            { label: 'Сохранить в файл…', onClick: () => exportJson('force', f.name, { ...f, faction: f.faction ?? '' }) },
-            'sep',
-            { label: 'Удалить силы', danger: true, onClick: () => void deleteForce(f.id) },
-          ]}
-        />
+        <Menu sm items={objMenu(obj)} />
       </div>
       <div className="faint small fc-sub">
         {tpl ? `по шаблону «${tpl.name}»` : 'без шаблона'}
@@ -189,7 +173,7 @@ export function ForceCard({ f }: { f: UnitNode }) {
           <span className="faint nowrap">{fmtWhen(last.at)}</span>
         </div>
       )}
-      <ForceActions force={f} grid />
+      <ForceActions force={f} grid quiet />
     </div>
   );
 }
@@ -223,12 +207,14 @@ export function ForcesPage() {
           <h1>{meta.label}</h1>
           <div className="page-sub">{meta.about}</div>
         </div>
-        <Btn kind="primary" onClick={() => void newForceDialog()}>
-          + {meta.create}
-        </Btn>
-        <Btn onClick={() => importFile()} title="Набор правил, подразделение, сценарий или бой в формате JSON">
-          Импорт…
-        </Btn>
+        <ToolbarSlot>
+          <Btn onClick={() => importFile()} title="Набор правил, подразделение, сценарий или бой в формате JSON">
+            Импорт…
+          </Btn>
+          <Btn kind="primary" onClick={() => void newForceDialog()}>
+            + {meta.create}
+          </Btn>
+        </ToolbarSlot>
       </div>
 
       <div className="catalog-bar">

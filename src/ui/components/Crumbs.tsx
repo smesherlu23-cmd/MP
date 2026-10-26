@@ -1,6 +1,7 @@
-// «Хлебные крошки» над заголовком страницы: раздел и старшие объекты — куда вернуться.
+// Путь к странице (раздел и старшие объекты — куда вернуться): показывается в панели инструментов под заголовком окна.
 
-import { Fragment } from 'react';
+import { Fragment, useLayoutEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { showSection } from '../nav';
 import { openTab, type NavSection, type TabKind } from '../store';
 
@@ -13,7 +14,10 @@ export interface Crumb {
 }
 
 export function Crumbs({ items }: { items: Crumb[] }) {
-  return (
+  const [host, setHost] = useState<Element | null>(null);
+  useLayoutEffect(() => setHost(document.getElementById('tb-crumbs')), []);
+  if (!host) return null;
+  return createPortal(
     <nav className="breadcrumbs">
       {items.map((c, i) => (
         <Fragment key={i}>
@@ -35,6 +39,7 @@ export function Crumbs({ items }: { items: Crumb[] }) {
           )}
         </Fragment>
       ))}
-    </nav>
+    </nav>,
+    host,
   );
 }

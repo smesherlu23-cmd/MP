@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { findParent, findUnit, locateNode, plural, type Id, type UnitNode } from '../../engine';
 import { transferPart, useApp } from '../store';
-import { Btn, Info, Modal } from './ui';
+import { Chev, Btn, Info, Modal } from './ui';
 
 export function TransferDialog({ nodeId, onDone, onClose }: { nodeId: Id; onDone: (forceId: Id) => void; onClose: () => void }) {
   const forces = useApp((s) => s.forces);
@@ -43,7 +43,7 @@ export function TransferDialog({ nodeId, onDone, onClose }: { nodeId: Id; onDone
             disabled={!canOpen}
             onClick={() => setOpen((prev) => new Set(prev.has(n.id) ? [...prev].filter((x) => x !== n.id) : [...prev, n.id]))}
           >
-            {canOpen ? (isOpen ? '▾' : '▸') : ''}
+            {canOpen ? <Chev open={isOpen} /> : ''}
           </button>
           <label className="check">
             <input type="radio" name="transfer-target" checked={pick === n.id} disabled={inside || same} onChange={() => setPick(n.id)} />

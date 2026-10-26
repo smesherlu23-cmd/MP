@@ -2,7 +2,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import { makeDemoBattalion, makeDemoScenario } from '../src/engine';
-import { menu, navSec, openApp, openFromNav, startBattle } from './helpers';
+import { menu, navSec, openApp, openFromNav, startBattle, pageTitle } from './helpers';
 
 const blueStart = async (page: Page) => Number((await page.locator('.side-strip-row').first().locator('b').nth(1).textContent())!.replace(/\s/g, ''));
 
@@ -41,7 +41,7 @@ test('шаблон без приказа и состояния; силы по ш
   await expect(page.locator('.card-head', { hasText: 'Состояние' })).toHaveCount(0);
   await expect(page.locator('.comp-table th', { hasText: 'В строю' })).toHaveCount(0);
 
-  await page.locator('.page-head .btn.icon').last().click();
+  await page.locator('.tb-actions .btn.icon').last().click();
   await page.locator('.menu-pop .menu-item', { hasText: 'Создать силы по шаблону' }).click();
   await page.locator('.modal input').fill('2');
   await page.locator('.modal-foot .btn.primary').click();
@@ -104,7 +104,7 @@ test('часть сил передаётся в другое подраздел�
   await modal.locator('.pick-row', { hasText: 'Оборонительный узел' }).locator('input[type=radio]').check();
   await modal.getByRole('button', { name: 'Передать' }).click();
   // Открылись силы, куда передано: рота там с отметкой «передано».
-  await expect(page.locator('.tab.active .tab-title')).toContainText('Оборонительный узел');
+  await expect(pageTitle(page)).toContainText('Оборонительный узел');
   const moved = page.locator('.org-box', { hasText: 'Танковая рота' });
   await expect(moved.locator('.badge', { hasText: 'передано' })).toHaveCount(1);
   await moved.locator('.org-menu button').click();
@@ -121,7 +121,7 @@ test('раздел «Силы»: команды с цветом и назван�
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
   await page.getByRole('button', { name: 'До конца' }).click();
-  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).first().click();
 
   // В сценарии — напоминание и действия прямо у сил.
   await openFromNav(page, 'атака на высоту');
@@ -183,13 +183,13 @@ test('незаписанные итоги: значок у боя, список 
   await expect(page.locator('.home-unrecorded')).toContainText('бой 1');
   // Новый бой тех же сил — с вопросом; отказ — боя нет.
   await openFromNav(page, 'атака на высоту');
-  await page.getByRole('button', { name: '▶ Начать бой' }).click();
+  await page.getByRole('button', { name: 'Начать бой', exact: true }).click();
   await expect(page.locator('.modal')).toContainText('Итоги прошлого боя не записаны');
   await page.locator('.modal').getByRole('button', { name: 'Отмена' }).click();
   await expect(page.locator('.nav-sec[data-sec="battles"] .side-item')).toHaveCount(1);
   // Записали — напоминание пропадает.
   await page.locator('.nav-sec[data-sec="battles"] .side-item').first().click();
-  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).first().click();
   await expect(page.locator('.nav-sec[data-sec="battles"] .side-item .side-warn')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -199,7 +199,7 @@ test('страница команды: численность, бои и бое�
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
   await page.getByRole('button', { name: 'До конца' }).click();
-  await page.getByRole('button', { name: 'Записать итоги в силы' }).click();
+  await page.getByRole('button', { name: 'Записать итоги в силы' }).first().click();
   await (await navSec(page, 'Силы')).locator('.nav-group-link', { hasText: 'Синие' }).click();
   await expect(page.locator('.page-head h1')).toHaveText('Синие');
   await expect(page.locator('.team-kpis')).toContainText('Потери за всё время');

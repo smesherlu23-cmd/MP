@@ -1,4 +1,5 @@
-// Каркас: вкладки-«окна» сверху, навигатор слева, содержимое активной вкладки.
+// Каркас окна в духе macOS: боковая панель слева (на всю высоту), справа — панель инструментов
+// (назад/вперёд, заголовок, действия страницы, поиск) и открытая страница. Вкладок нет: переходы — как в Finder.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BattlePage } from './pages/BattlePage';
@@ -14,23 +15,22 @@ import { ScenarioPage } from './pages/ScenarioPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { Navigator } from './components/Navigator';
 import { Palette, openPalette } from './components/Palette';
-import { goBack, goForward, sectionMeta, useNav } from './nav';
+import { goBack, goForward, sectionMeta, setNavFilter, useNav, useNavFilter } from './nav';
 import logo from './assets/logo.png';
 import { Icon, type IconName } from './components/Icon';
-import { Btn, ContextMenuHost, Menu, openContextMenu } from './components/ui';
+import { Btn, ContextMenuHost, Menu, RenameInput, Splitter, openContextMenu } from './components/ui';
+import { CREATE_ITEMS } from './components/Navigator';
+import { QuickLookHost } from './components/QuickLook';
+import { ToolbarSetupHost, openToolbarSetup } from './components/ToolbarSetup';
+import { objFromKey, objMenu, objName, renameObj, startRename, stopRename, useRenaming } from './objects';
+import { TOOLBAR_ITEMS, applyZoom, setTbShown, setZoom, tbShown, zoomBy, zoomOf } from './prefs';
 import { desktop } from './storage';
 import {
-  activateTab,
   openTab,
   alertDialog,
-  closeAllTabs,
-  closeOtherTabs,
-  closeTab,
-  keepTab,
-  pinTab,
   dismissToast,
+  importContent,
   importFile,
-  moveTab,
   redo,
   redoBattle,
   resolveFormation,
@@ -61,13 +61,6 @@ const ICONS: Record<TabKind, IconName> = {
 /** Значок вкладки: силы и шаблоны открываются в одном конструкторе, но различаются. */
 const tabIconName = (t: Tab): IconName =>
   t.kind === 'formation' && t.ref?.startsWith('force:') ? 'forces' : t.kind === 'library' && t.ref ? sectionMeta(t.ref as NavSection).icon : ICONS[t.kind];
-const tabIcon = (t: Tab) => <Icon name={tabIconName(t)} size={14} />;
-
-function useTabTitle(t: Tab): string {
-  const s = useApp();
-  const battles = useBattles((x) => x.battles);
-  return tabTitle(t, s, battles);
-}
 
 function tabTitle(t: Tab, s: ReturnType<typeof useApp.getState>, battles: ReturnType<typeof useBattles.getState>['battles']): string {
   switch (t.kind) {
@@ -95,138 +88,9 @@ function tabTitle(t: Tab, s: ReturnType<typeof useApp.getState>, battles: Return
       const b = battles[t.ref!];
       const m = s.battleIndex[t.ref!];
       const name = b?.name ?? m?.name ?? 'Бой';
-      const turn = b ? ` · ход ${b.turn}` : '';
-      // Отличающаяся часть — вперёд: вкладки боёв одного сценария иначе выглядят одинаково.
-      const i = name.lastIndexOf(' · ');
-      return i > 0 ? `${name.slice(i + 3)}${turn} — ${name.slice(0, i)}` : `${name}${turn}`;
+      return b ? `${name} · ход ${b.turn}` : name;
     }
   }
-}
-
-/**
- * Полоса вкладок: вкладки сжимаются, как в браузере; если и так не помещаются — прокручиваются,
- * активная всегда видна, а кнопка «▾» справа показывает список всех вкладок.
- */
-function Tabs({ tabs, active }: { tabs: Tab[]; active?: string }) {
-  const ref = useRef<HTMLElement>(null);
-  const [overflow, setOverflow] = useState(false);
-  const s = useApp();
-  const battles = useBattles((x) => x.battles);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: размеры полосы вкладок пересчитываются, когда меняется число вкладок
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const check = () => setOverflow(el.scrollWidth > el.clientWidth + 1);
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [tabs.length]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: прокрутка к активной вкладке при её смене и при изменении полосы
-  useEffect(() => {
-    ref.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [active, tabs.length, overflow]);
-  return (
-    <>
-      <nav className="tabs" ref={ref}>
-        {tabs.map((t) => (
-          <TabItem key={t.key} t={t} active={t.key === active} />
-        ))}
-      </nav>
-      {overflow && (
-        <div className="tabs-more">
-          <Menu
-            sm
-            label={`▾ ${tabs.length}`}
-            title="Все открытые вкладки"
-            items={[
-              ...tabs.map((t) => ({
-                label: (
-                  <span className="menu-ico">
-                    {tabIcon(t)}
-                    {t.pinned ? '(закреплена) ' : ''}
-                    {tabTitle(t, s, battles)}
-                  </span>
-                ),
-                onClick: () => activateTab(t.key),
-                kbd: t.key === active ? '●' : undefined,
-              })),
-              'sep' as const,
-              { label: 'Закрыть все, кроме закреплённых', onClick: closeAllTabs },
-            ]}
-          />
-        </div>
-      )}
-    </>
-  );
-}
-
-function TabItem({ t, active }: { t: Tab; active: boolean }) {
-  const title = useTabTitle(t);
-  const tabs = useApp((s) => s.tabs);
-  const i = tabs.findIndex((x) => x.key === t.key);
-  return (
-    <div
-      className={`tab${active ? ' active' : ''}${t.preview ? ' preview' : ''}${t.pinned ? ' pinned' : ''}`}
-      title={
-        t.preview
-          ? `${title}\nПросмотр: следующий объект из навигатора откроется на месте этой вкладки. Начните работать с ней или дважды щёлкните — останется.`
-          : t.pinned
-            ? `${title}\nЗакреплена — правый щелчок, чтобы открепить`
-            : title
-      }
-      onDoubleClick={() => keepTab(t.key)}
-      onContextMenu={(e) =>
-        openContextMenu(e, [
-          t.preview && { label: 'Оставить открытой', onClick: () => keepTab(t.key), tip: 'Не заменять следующим объектом из навигатора' },
-          { label: t.pinned ? 'Открепить' : 'Закрепить', onClick: () => pinTab(t.key, !t.pinned), tip: 'Закреплённые — слева, не закрываются сами' },
-          'sep',
-          { label: 'Закрыть', kbd: 'Ctrl+W', onClick: () => closeTab(t.key) },
-          { label: 'Закрыть другие', onClick: () => closeOtherTabs(t.key), disabled: tabs.every((x) => x.key === t.key || x.pinned) },
-          {
-            label: 'Закрыть вкладки справа',
-            onClick: () => closeOtherTabs(t.key, true),
-            disabled: !tabs.slice(i + 1).some((x) => !x.pinned),
-          },
-          { label: 'Закрыть все, кроме закреплённых', onClick: closeAllTabs },
-        ])
-      }
-      draggable
-      onDragStart={(e) => e.dataTransfer.setData('text/tab', t.key)}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        const from = e.dataTransfer.getData('text/tab');
-        if (from && from !== t.key) moveTab(from, t.key);
-      }}
-      onMouseDown={(e) => {
-        if (e.button === 1) {
-          e.preventDefault();
-          closeTab(t.key);
-        }
-      }}
-      onClick={() => activateTab(t.key)}
-    >
-      <span className="tab-icon">{tabIcon(t)}</span>
-      <span className="tab-title">{title}</span>
-      {t.pinned ? (
-        <span className="tab-pin" title="Закреплена">
-          <Icon name="pin" size={13} />
-        </span>
-      ) : (
-        <button
-          type="button"
-          className="tab-close"
-          title="Закрыть (Ctrl+W)"
-          onClick={(e) => {
-            e.stopPropagation();
-            closeTab(t.key);
-          }}
-        >
-          <Icon name="close" size={13} />
-        </button>
-      )}
-    </div>
-  );
 }
 
 async function showAbout() {
@@ -354,11 +218,111 @@ function Page({ t }: { t: Tab }) {
   }
 }
 
+const SIDE_W = { min: 200, max: 420, def: 260 };
+
+/** Поле поиска в панели инструментов: ввод фильтрует боковую панель, Enter (или Ctrl+K) — найти что угодно. */
+function ToolbarSearch() {
+  const q = useNavFilter((x) => x.q);
+  return (
+    <label className="tb-search" title="Фильтр боковой панели; Enter или Ctrl+K — найти что угодно, включая вложенные части и команды">
+      <Icon name="search" size={14} />
+      <input
+        type="search"
+        placeholder="Поиск"
+        value={q}
+        onChange={(e) => {
+          setNavFilter(e.target.value);
+          if (e.target.value && !useApp.getState().settings.sidebar) updateSettings({ sidebar: true });
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            openPalette(q);
+          } else if (e.key === 'Escape') setNavFilter('');
+        }}
+      />
+      {!q && <span className="kbd">Ctrl+K</span>}
+    </label>
+  );
+}
+
 export function App() {
   const s = useApp();
+  const battles = useBattles((x) => x.battles);
   const hist = useHistory();
   const nav = useNav();
+  const rename = useRenaming();
   const active = useMemo(() => s.tabs.find((t) => t.key === s.active) ?? s.tabs[0], [s.tabs, s.active]);
+  // Ширина боковой панели меняется перетаскиванием края; сохраняется, когда отпустили.
+  const [sideW, setSideW] = useState<number | null>(null);
+  const sideWidth = sideW ?? s.settings.sideWidth ?? SIDE_W.def;
+  useEffect(() => {
+    if (sideW === null) return;
+    const t = setTimeout(() => updateSettings({ sideWidth: sideW }), 300);
+    return () => clearTimeout(t);
+  }, [sideW]);
+
+  // Правый щелчок по свободному месту панели инструментов — какие кнопки показывать. Обработчик — на самом
+  // элементе: путь и действия страницы попадают в панель порталом, и их события не всплывают к ней в React.
+  const toolbarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) return;
+    const on = (e: MouseEvent) => {
+      if ((e.target as Element).closest('button, input, a, .menu-pop, .tb-name.renamable')) return;
+      const st = useApp.getState().settings;
+      openContextMenu(e, [
+        ...TOOLBAR_ITEMS.map((x) => ({ label: x.label, checked: tbShown(st, x.id), onClick: () => setTbShown(x.id, !tbShown(st, x.id)) })),
+        'sep',
+        { label: 'Настроить окно…', onClick: openToolbarSetup },
+      ]);
+    };
+    el.addEventListener('contextmenu', on);
+    return () => el.removeEventListener('contextmenu', on);
+  }, []);
+
+  const zoom = zoomOf(s.settings);
+  useEffect(() => applyZoom(zoom), [zoom]);
+
+  // Файлы JSON, брошенные на окно, импортируются — как «Импорт из файла…».
+  const [fileOver, setFileOver] = useState(false);
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      depth++;
+      setFileOver(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (hasFiles(e) && --depth <= 0) {
+        depth = 0;
+        setFileOver(false);
+      }
+    };
+    const over = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = 'copy';
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setFileOver(false);
+      for (const f of e.dataTransfer!.files) void f.text().then((t) => importContent(t, f.name));
+    };
+    window.addEventListener('dragenter', enter);
+    window.addEventListener('dragleave', leave);
+    window.addEventListener('dragover', over);
+    window.addEventListener('drop', drop);
+    return () => {
+      window.removeEventListener('dragenter', enter);
+      window.removeEventListener('dragleave', leave);
+      window.removeEventListener('dragover', over);
+      window.removeEventListener('drop', drop);
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = s.settings.theme;
@@ -369,39 +333,47 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const st = useApp.getState();
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'w') {
-        e.preventDefault();
-        closeTab(st.active);
-      } else if (e.ctrlKey && e.key === 'Tab') {
-        e.preventDefault();
-        const i = st.tabs.findIndex((t) => t.key === st.active);
-        const n = st.tabs.length;
-        activateTab(st.tabs[(i + (e.shiftKey ? n - 1 : 1)) % n].key);
-      } else if ((e.ctrlKey || e.metaKey) && /^[1-9]$/.test(e.key)) {
-        const t = st.tabs[Number(e.key) - 1];
-        if (t) {
-          e.preventDefault();
-          activateTab(t.key);
-        }
-      } else if (e.altKey && !e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      if (e.altKey && !e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         const t = e.target as HTMLElement;
         if (t.closest('input, textarea, select')) return;
         e.preventDefault();
         if (e.key === 'ArrowLeft') goBack();
         else goForward();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '[') {
+        e.preventDefault();
+        goBack();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === ']') {
+        e.preventDefault();
+        goForward();
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.code === 'KeyK' || e.code === 'KeyP')) {
         e.preventDefault();
         openPalette();
+      } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyF' && !e.shiftKey) {
+        // Поиск в панели инструментов — как Cmd+F в Finder.
+        const el = document.querySelector<HTMLInputElement>('.tb-search input');
+        if (el) {
+          e.preventDefault();
+          el.focus();
+          el.select();
+        }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         updateSettings({ sidebar: !st.settings.sidebar });
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && ['Equal', 'NumpadAdd', 'Minus', 'NumpadSubtract', 'Digit0', 'Numpad0'].includes(e.code)) {
+        // Масштаб интерфейса: Ctrl+плюс / минус, Ctrl+0 — обычный.
+        e.preventDefault();
+        if (e.code === 'Digit0' || e.code === 'Numpad0') setZoom(1);
+        else zoomBy(e.code === 'Equal' || e.code === 'NumpadAdd' ? 0.1 : -0.1);
+      } else if ((e.ctrlKey || e.metaKey) && e.code === 'Comma') {
+        e.preventDefault();
+        openTab('settings');
       } else if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
         // Отмена своя для всей программы (и в полях ввода): незаконченный ввод сначала применяется.
         if (st.dialog || document.querySelector('.backdrop')) return;
         e.preventDefault();
         const a = document.activeElement as HTMLElement | null;
         if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur();
-        // На вкладке боя отменяются ходы и решения ГМ в этом бою.
+        // На странице боя отменяются ходы и решения ГМ в этом бою.
         const tab = st.tabs.find((t) => t.key === st.active);
         if (tab?.kind === 'battle' && tab.ref) {
           if (e.code === 'KeyY' || e.shiftKey) redoBattle(tab.ref);
@@ -425,99 +397,180 @@ export function App() {
     };
   }, []);
 
+  const sidebar = s.settings.sidebar;
+  const toggleSidebar = () => updateSettings({ sidebar: !sidebar });
+  const title = active ? tabTitle(active, s, battles) : '';
+  const st = s.settings;
+  const show = (id: Parameters<typeof tbShown>[1]) => tbShown(st, id);
+  const toggleTheme = () => updateSettings({ theme: st.theme === 'dark' ? 'light' : 'dark' });
+  // Заголовок окна — название открытого объекта: двойной щелчок переименовывает, правый — меню объекта.
+  const obj = objFromKey(active?.key);
+  const objOk = !!obj && objName(obj) !== undefined;
+  const renamingTitle = objOk && rename.key === active?.key && rename.where === 'title';
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className={`brand${s.settings.sidebar ? '' : ' slim'}`}>
-          <button
-            type="button"
-            className="brand-toggle"
-            title="Показать/скрыть навигатор (Ctrl+B)"
-            onClick={() => updateSettings({ sidebar: !s.settings.sidebar })}
-          >
-            <Icon name="sidebar" size={17} />
-          </button>
+    <div className={`app${sidebar ? '' : ' side-hidden'}`} style={{ '--side-w': `${sideWidth}px` } as React.CSSProperties}>
+      <aside className="sidebar-col" aria-hidden={!sidebar} inert={!sidebar}>
+        <div className="side-top">
           <button type="button" className="brand-name" title="Главное" onClick={() => openTab('home')}>
             <img src={logo} alt="" className="brand-logo" />
-            {s.settings.sidebar && (
-              <span>
-                Echelon <b>Commander</b>
-              </span>
-            )}
+            <span>Echelon Commander</span>
+          </button>
+          <button type="button" className="tb-icon" title="Скрыть боковую панель (Ctrl+B)" onClick={toggleSidebar}>
+            <Icon name="sidebar" size={17} />
           </button>
         </div>
-        <div className="nav-arrows">
-          <button type="button" disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
-            <Icon name="left" />
-          </button>
-          <button type="button" disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
-            <Icon name="right" />
-          </button>
-        </div>
-        <Tabs tabs={s.tabs} active={active?.key} />
-        <div className="topbar-right">
-          {!s.settings.sidebar && (
-            <button type="button" className="find-btn" onClick={() => openPalette()} title="Быстрый переход к любому объекту и команде">
-              <Icon name="search" size={14} />
-              <span>Найти…</span>
-              <span className="kbd">Ctrl+K</span>
+        <Navigator />
+        <Splitter side="left" label="Ширина боковой панели" width={sideWidth} min={SIDE_W.min} max={SIDE_W.max} def={SIDE_W.def} onChange={setSideW} />
+      </aside>
+      <div className="main-col">
+        <header className="toolbar-win" ref={toolbarRef}>
+          {!sidebar && (
+            <button type="button" className="tb-icon" title="Показать боковую панель (Ctrl+B)" onClick={toggleSidebar}>
+              <Icon name="sidebar" size={17} />
             </button>
           )}
-          <button
-            type="button"
-            className="top-icon"
-            disabled={!hist.undo}
-            onClick={undo}
-            title={hist.undo ? `Отменить: ${hist.undo} (Ctrl+Z)` : 'Отменить (Ctrl+Z)'}
-          >
-            <Icon name="undo" />
-          </button>
-          <button
-            type="button"
-            className="top-icon"
-            disabled={!hist.redo}
-            onClick={redo}
-            title={hist.redo ? `Повторить: ${hist.redo} (Ctrl+Y)` : 'Повторить (Ctrl+Y)'}
-          >
-            <Icon name="redo" />
-          </button>
-          <Menu
-            sm
-            title="Меню"
-            items={[
-              { label: 'Отменить', kbd: 'Ctrl+Z', disabled: !hist.undo, tip: hist.undo ?? undefined, onClick: undo },
-              { label: 'Повторить', kbd: 'Ctrl+Y', disabled: !hist.redo, tip: hist.redo ?? undefined, onClick: redo },
-              'sep',
-              { label: 'Импорт из файла…', onClick: () => importFile(), tip: 'Набор правил, подразделение, сценарий или бой в формате JSON' },
-              {
-                label: s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема',
-                onClick: () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }),
-              },
-              {
-                label: s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор',
-                kbd: 'Ctrl+B',
-                onClick: () => updateSettings({ sidebar: !s.settings.sidebar }),
-              },
-              'sep',
-              { label: 'Справка', onClick: () => openTab('help') },
-              { label: 'Настройки', onClick: () => openTab('settings') },
-              { label: 'О программе', onClick: () => void showAbout() },
-            ]}
-          />
+          {show('nav') && (
+            <div className="tb-nav">
+              <button type="button" className="tb-icon" disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
+                <Icon name="left" size={17} />
+              </button>
+              <button type="button" className="tb-icon" disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
+                <Icon name="right" size={17} />
+              </button>
+            </div>
+          )}
+          <div className="tb-title">
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: двойной щелчок по заголовку — переименовать (есть и в меню объекта) */}
+            <span
+              className={`tb-name${objOk ? ' renamable' : ''}`}
+              title={renamingTitle ? undefined : objOk ? `${title}\nДвойной щелчок — переименовать; правый щелчок — действия` : title}
+              onDoubleClick={() => objOk && startRename(obj, { where: 'title' })}
+              onContextMenu={(e) => objOk && openContextMenu(e, objMenu(obj, { open: false }))}
+            >
+              <span className="tb-name-icon">{active && <Icon name={tabIconName(active)} size={15} />}</span>
+              {renamingTitle ? (
+                <RenameInput
+                  className="tb-rename"
+                  value={objName(obj) ?? ''}
+                  onDone={(v) => {
+                    stopRename();
+                    if (v !== null) renameObj(obj, v);
+                  }}
+                />
+              ) : (
+                <span className="tb-name-text">{title}</span>
+              )}
+            </span>
+            <div id="tb-crumbs" className="tb-crumbs" />
+          </div>
+          <div id="tb-actions" className="tb-actions" />
+          <div className="tb-global">
+            {show('create') && (
+              <Menu
+                sm
+                label={<Icon name="plus" size={17} />}
+                className="tb-icon tb-create"
+                title="Создать: сценарий, силы, шаблон или набор правил"
+                items={CREATE_ITEMS()}
+              />
+            )}
+            {show('import') && (
+              <button type="button" className="tb-icon" onClick={() => importFile()} title="Импорт из файла (или перетащите файл на окно)">
+                <Icon name="import" size={17} />
+              </button>
+            )}
+            {show('undo') && (
+              <>
+                <button
+                  type="button"
+                  className="tb-icon tb-undo"
+                  disabled={!hist.undo}
+                  onClick={undo}
+                  title={hist.undo ? `Отменить: ${hist.undo} (Ctrl+Z)` : 'Отменить (Ctrl+Z)'}
+                >
+                  <Icon name="undo" size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="tb-icon tb-undo"
+                  disabled={!hist.redo}
+                  onClick={redo}
+                  title={hist.redo ? `Повторить: ${hist.redo} (Ctrl+Y)` : 'Повторить (Ctrl+Y)'}
+                >
+                  <Icon name="redo" size={17} />
+                </button>
+              </>
+            )}
+            {show('zoom') && (
+              <div className="tb-zoom" title="Масштаб интерфейса (Ctrl+плюс / минус, Ctrl+0 — обычный)">
+                <button type="button" className="tb-icon" onClick={() => zoomBy(-0.1)} aria-label="Мельче">
+                  <Icon name="minus" size={15} />
+                </button>
+                <button type="button" className="tb-zoom-val" onClick={() => setZoom(1)} aria-label="Обычный масштаб">
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button type="button" className="tb-icon" onClick={() => zoomBy(0.1)} aria-label="Крупнее">
+                  <Icon name="plus" size={15} />
+                </button>
+              </div>
+            )}
+            {show('theme') && (
+              <button type="button" className="tb-icon" onClick={toggleTheme} title={st.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}>
+                <Icon name={st.theme === 'dark' ? 'sun' : 'moon'} size={17} />
+              </button>
+            )}
+            {show('help') && (
+              <button type="button" className="tb-icon" onClick={() => openTab('help')} title="Справка">
+                <Icon name="help" size={17} />
+              </button>
+            )}
+            {show('find') && (
+              <button type="button" className="tb-icon" onClick={() => openPalette()} title="Найти что угодно (Ctrl+K)">
+                <Icon name="search" size={17} />
+              </button>
+            )}
+            {show('search') && <ToolbarSearch />}
+            <Menu
+              sm
+              className="tb-icon"
+              title="Меню"
+              items={[
+                { label: 'Отменить', kbd: 'Ctrl+Z', disabled: !hist.undo, tip: hist.undo ?? undefined, onClick: undo },
+                { label: 'Повторить', kbd: 'Ctrl+Y', disabled: !hist.redo, tip: hist.redo ?? undefined, onClick: redo },
+                'sep',
+                { label: 'Найти…', kbd: 'Ctrl+K', onClick: () => openPalette() },
+                {
+                  label: 'Импорт из файла…',
+                  onClick: () => importFile(),
+                  tip: 'Набор правил, подразделение, сценарий или бой в формате JSON. Файл можно и просто перетащить на окно.',
+                },
+                'sep',
+                { label: st.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', onClick: toggleTheme },
+                { label: sidebar ? 'Скрыть боковую панель' : 'Показать боковую панель', kbd: 'Ctrl+B', onClick: toggleSidebar },
+                { label: 'Настроить окно…', onClick: openToolbarSetup, tip: 'Кнопки панели инструментов и масштаб интерфейса' },
+                'sep',
+                { label: 'Справка', onClick: () => openTab('help') },
+                { label: 'Настройки', kbd: 'Ctrl+,', onClick: () => openTab('settings') },
+                { label: 'О программе', onClick: () => void showAbout() },
+              ]}
+            />
+          </div>
+        </header>
+        <main className="content">{active && <Page key={active.key} t={active} />}</main>
+      </div>
+      {fileOver && (
+        <div className="file-drop">
+          <div className="file-drop-card">
+            <Icon name="import" size={28} />
+            <b>Отпустите, чтобы импортировать</b>
+            <span className="muted small">Набор правил, шаблон, силы, сценарий или бой — файл JSON</span>
+          </div>
         </div>
-      </header>
-      <Navigator />
-      <main
-        className="content"
-        // Вкладка-просмотр остаётся открытой, как только с ней начали работать: правка, кнопка, выбор.
-        // После события — чтобы не мешать самому вводу.
-        onInputCapture={() => active?.preview && setTimeout(() => keepTab(active.key))}
-        onClickCapture={(e) => active?.preview && (e.target as Element).closest('button, select, [role=menuitem]') && setTimeout(() => keepTab(active.key))}
-      >
-        {active && <Page key={active.key} t={active} />}
-      </main>
+      )}
       <DialogHost />
       <Palette />
+      <QuickLookHost />
+      <ToolbarSetupHost />
       <Toasts />
       <TooltipHost />
       <ContextMenuHost />
