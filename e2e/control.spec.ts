@@ -2,7 +2,7 @@
 // участки боя, события по условию, силы между боями, перебор параметра, перенос между наборами правил.
 
 import { expect, test } from '@playwright/test';
-import { menu, openApp, openFromNav, startBattle } from './helpers';
+import { menu, openApp, openFromNav, startBattle, pageTitle } from './helpers';
 
 test('бой: «до события», прогноз и ветка боя', async ({ page }) => {
   const errors = await openApp(page);
@@ -14,10 +14,10 @@ test('бой: «до события», прогноз и ветка боя', asy
   const modal = page.locator('.modal');
   await expect(modal.locator('table.forecast')).toContainText('Победа: Синие', { timeout: 20000 });
   await modal.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.locator('.battle-head button[aria-haspopup="menu"]').click();
+  await page.locator('.tb-actions button[aria-haspopup="menu"]').click();
   await menu(page, 'Ответвить бой');
   await page.locator('.modal .modal-foot').getByRole('button', { name: 'Выбрать' }).click();
-  await expect(page.locator('.tab.active .tab-title')).toContainText('ветка с хода');
+  await expect(pageTitle(page)).toContainText('ветка с хода');
   await expect(page.locator('.battle-head .meta')).toContainText('ветка боя');
   expect(errors).toEqual([]);
 });
@@ -142,7 +142,7 @@ test('силы между боями: итоги в боевой путь, от�
   await expect(hist).toContainText('Пополнение до штата');
   await expect(panel.getByRole('button', { name: 'Пополнить…' })).toHaveCount(0);
   // Всё сразу — «Восстановить полностью» в меню «⋯».
-  await page.locator('.page-head button[aria-haspopup="menu"]').click();
+  await page.locator('.tb-actions button[aria-haspopup="menu"]').click();
   await menu(page, 'Восстановить полностью');
   await expect(panel.locator('.badge')).toHaveText('Боеготовы');
   await expect(hist).toContainText('Полное восстановление');
@@ -193,7 +193,7 @@ test('набор правил: временные эффекты, перенос
   await openFromNav(page, 'Линейная');
   await page.locator('.vnav button', { hasText: 'Временные эффекты' }).click();
   await expect(page.locator('.kpi')).toHaveCount(4);
-  await page.locator('.page-head button[aria-haspopup="menu"]').click();
+  await page.locator('.tb-actions button[aria-haspopup="menu"]').click();
   await menu(page, 'Перенести из другого набора');
   const m = page.locator('.modal');
   await m.getByRole('checkbox', { name: 'Танк', exact: true }).check();

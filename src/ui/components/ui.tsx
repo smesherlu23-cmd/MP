@@ -1,6 +1,6 @@
 // Базовые элементы интерфейса.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import { Icon } from './Icon';
@@ -459,7 +459,9 @@ export function Section(props: {
     <div className={`card section${isOpen ? ' open' : ''}`}>
       {/* Щелчок по «?» у заголовка раздел не сворачивает. */}
       <div className="card-head" onClick={(e) => (e.target as HTMLElement).closest('.hint-icon') || toggle()}>
-        <span className="chev">{isOpen ? '▾' : '▸'}</span>
+        <span className="chev">
+          <Icon name="right" size={13} />
+        </span>
         <h3>
           {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: роль button и фокус — из pressable() */}
           <span {...pressable(toggle)} aria-expanded={isOpen}>
@@ -598,6 +600,71 @@ export function Modal(props: { title: ReactNode; onClose: () => void; children: 
         {props.footer && <div className="modal-foot">{props.footer}</div>}
       </div>
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ панель инструментов и инспектор
+
+/** Место в панели инструментов окна для действий текущей страницы (главное действие — справа). */
+export function ToolbarSlot({ children }: { children: ReactNode }) {
+  const [host, setHost] = useState<Element | null>(null);
+  useLayoutEffect(() => setHost(document.getElementById('tb-actions')), []);
+  return host ? createPortal(children, host) : null;
+}
+
+/**
+ * Перетаскиваемый край панели: ширина меняется мышью (и стрелками с клавиатуры), двойной щелчок —
+ * ширина по умолчанию. side — с какой стороны от края находится панель.
+ */
+export function Splitter(props: {
+  width: number;
+  min: number;
+  max: number;
+  def: number;
+  side: 'left' | 'right';
+  onChange: (w: number) => void;
+  label: string;
+}) {
+  const clamp = (w: number) => Math.round(Math.max(props.min, Math.min(props.max, w)));
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: перетаскиваемый разделитель панелей (window splitter) — не <hr>
+    <div
+      className={`splitter ${props.side}`}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={props.label}
+      aria-valuenow={props.width}
+      aria-valuemin={props.min}
+      aria-valuemax={props.max}
+      tabIndex={0}
+      title={`${props.label}: перетащите край; двойной щелчок — как было`}
+      onDoubleClick={() => props.onChange(props.def)}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const d = (e.key === 'ArrowRight') === (props.side === 'left') ? 16 : -16;
+        props.onChange(clamp(props.width + d));
+      }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const x0 = e.clientX;
+        const w0 = props.width;
+        const el = e.currentTarget;
+        el.setPointerCapture(e.pointerId);
+        document.documentElement.classList.add('resizing');
+        const move = (ev: PointerEvent) => props.onChange(clamp(w0 + (props.side === 'left' ? ev.clientX - x0 : x0 - ev.clientX)));
+        const up = () => {
+          document.documentElement.classList.remove('resizing');
+          el.removeEventListener('pointermove', move);
+          el.removeEventListener('pointerup', up);
+          el.removeEventListener('pointercancel', up);
+        };
+        el.addEventListener('pointermove', move);
+        el.addEventListener('pointerup', up);
+        el.addEventListener('pointercancel', up);
+      }}
+    />
   );
 }
 

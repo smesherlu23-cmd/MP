@@ -22,7 +22,7 @@ import { Crumbs } from '../components/Crumbs';
 import { Link } from '../components/Link';
 import { TypeMapModal } from '../components/RulesetTransfer';
 import { ForceHistory } from '../components/ForceCampaign';
-import { Card, Info, Menu, Seg } from '../components/ui';
+import { Card, Info, Menu, Seg, ToolbarSlot } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import {
   defaultRulesetId,
@@ -196,56 +196,58 @@ export function FormationPage({ tab }: { tab: Tab }) {
       />
       <div className="page-head">
         <input className="title-input" value={root.name} onChange={(e) => ctx.upd((d) => void (d.name = e.target.value))} />
-        <Seg
-          value={view}
-          onChange={setView}
-          options={[
-            { value: 'chart', label: 'Схема', title: 'Штатная схема блоками' },
-            { value: 'list', label: 'Список', title: 'Компактное дерево' },
-          ]}
-        />
-        <Menu
-          items={[
-            { label: 'Развернуть всё', onClick: () => setCollapsed([]) },
-            'sep',
-            ...(isLib
-              ? [
-                  {
-                    label: 'Создать силы по шаблону…',
-                    tip: 'Конкретные подразделения с этим устройством и штатом — у каждого будут свои потери',
-                    onClick: async () => {
-                      const v = await promptDialog(
-                        'Сколько подразделений сил создать?',
-                        '1',
-                        `По шаблону «${root.name}». Названия — с номерами по порядку; их можно поменять.`,
-                      );
-                      const n = Math.round(Number(v));
-                      if (!v || !Number.isFinite(n) || n < 1) return;
-                      const ids = createForcesFromTemplate(root.id, { count: n, open: n === 1 });
-                      if (n > 1) toast(`Создано сил: ${ids.length} — они в разделе «Силы».`, 'good');
+        <ToolbarSlot>
+          <Seg
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'chart', label: 'Схема', title: 'Штатная схема блоками' },
+              { value: 'list', label: 'Список', title: 'Компактное дерево' },
+            ]}
+          />
+          <Menu
+            items={[
+              { label: 'Развернуть всё', onClick: () => setCollapsed([]) },
+              'sep',
+              ...(isLib
+                ? [
+                    {
+                      label: 'Создать силы по шаблону…',
+                      tip: 'Конкретные подразделения с этим устройством и штатом — у каждого будут свои потери',
+                      onClick: async () => {
+                        const v = await promptDialog(
+                          'Сколько подразделений сил создать?',
+                          '1',
+                          `По шаблону «${root.name}». Названия — с номерами по порядку; их можно поменять.`,
+                        );
+                        const n = Math.round(Number(v));
+                        if (!v || !Number.isFinite(n) || n < 1) return;
+                        const ids = createForcesFromTemplate(root.id, { count: n, open: n === 1 });
+                        if (n > 1) toast(`Создано сил: ${ids.length} — они в разделе «Силы».`, 'good');
+                      },
                     },
-                  },
-                  { label: 'Дублировать шаблон', onClick: () => duplicateFormation(root.id) },
-                  { label: 'Сохранить в файл…', onClick: () => exportJson('template', root.name, root) },
-                  'sep' as const,
-                  { label: 'Удалить шаблон', danger: true, onClick: () => deleteFormation(root.id) },
-                ]
-              : [
-                  {
-                    label: 'Восстановить полностью',
-                    onClick: () => restoreForces([root.id]),
-                    tip: 'Раненые и техника возвращаются, недостающее — до штата из резерва, состояние — к норме',
-                  },
-                  'sep' as const,
-                  !!tpl && { label: `Открыть шаблон «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
-                  { label: 'Сохранить как шаблон', onClick: () => saveAsTemplate(root, rs) },
-                  { label: 'Дублировать', onClick: () => duplicateForce(root.id) },
-                  { label: 'Сохранить в файл…', onClick: () => exportJson('force', root.name, { ...root, faction: root.faction ?? '' }) },
-                  'sep' as const,
-                  { label: 'Удалить силы', danger: true, onClick: () => deleteForce(root.id) },
-                ]),
-          ]}
-        />
+                    { label: 'Дублировать шаблон', onClick: () => duplicateFormation(root.id) },
+                    { label: 'Сохранить в файл…', onClick: () => exportJson('template', root.name, root) },
+                    'sep' as const,
+                    { label: 'Удалить шаблон', danger: true, onClick: () => deleteFormation(root.id) },
+                  ]
+                : [
+                    {
+                      label: 'Восстановить полностью',
+                      onClick: () => restoreForces([root.id]),
+                      tip: 'Раненые и техника возвращаются, недостающее — до штата из резерва, состояние — к норме',
+                    },
+                    'sep' as const,
+                    !!tpl && { label: `Открыть шаблон «${tpl.name}»`, onClick: () => openTab('formation', `lib:${tpl.id}`) },
+                    { label: 'Сохранить как шаблон', onClick: () => saveAsTemplate(root, rs) },
+                    { label: 'Дублировать', onClick: () => duplicateForce(root.id) },
+                    { label: 'Сохранить в файл…', onClick: () => exportJson('force', root.name, { ...root, faction: root.faction ?? '' }) },
+                    'sep' as const,
+                    { label: 'Удалить силы', danger: true, onClick: () => deleteForce(root.id) },
+                  ]),
+            ]}
+          />
+        </ToolbarSlot>
       </div>
 
       <div className="meta" style={{ marginTop: -8, marginBottom: 14 }}>
@@ -336,7 +338,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
         )}
         <span className="faint">
           мышь и клавиши
-          <Info text={`Перетаскивайте подразделения мышью — в том числе из навигатора слева.\n\n${KEYS_HELP}`} />
+          <Info text={`Перетаскивайте подразделения мышью — в том числе из боковой панели слева.\n\n${KEYS_HELP}`} />
         </span>
       </div>
 

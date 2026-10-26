@@ -21,7 +21,8 @@ import {
 import { EffectModal, ForecastModal, GroupEditModal, PauseSettingsModal, StrikeModal, usePauseRules, type Target } from '../components/BattleControls';
 import { Crumbs } from '../components/Crumbs';
 import { LogView } from '../components/LogView';
-import { Btn, Menu, pressable } from '../components/ui';
+import { Inspector, InspectorToggle } from '../components/Inspector';
+import { Btn, Menu, pressable, ToolbarSlot } from '../components/ui';
 import { useTabState } from '../hooks';
 import { nextBattleName } from './ScenarioPage';
 import {
@@ -52,7 +53,7 @@ export function BattlePage({ tab }: { tab: Tab }) {
   const b = useBattles((s) => s.battles[id]);
   const rev = useBattles((s) => s.rev[id] ?? 0);
   const [missing, setMissing] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: бой загружается один раз на вкладку
+  // biome-ignore lint/correctness/useExhaustiveDependencies: бой загружается один раз на страницу
   useEffect(() => {
     if (!b) loadBattle(id).then((x) => !x && setMissing(true));
   }, [id]);
@@ -137,113 +138,118 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
   return (
     <div className="page fill">
       <div className="battle-head">
-        <div style={{ width: '100%', marginBottom: -6 }}>
-          <Crumbs
-            items={[
-              { label: 'Бои', section: 'battles' },
-              scenarioExists ? { label: b.scenario.name, open: ['scenario', b.scenarioId] } : { label: b.scenario.name },
-            ]}
-          />
-        </div>
-        <input className="title-input" value={b.name} onChange={(e) => renameBattle(b.id, e.target.value)} />
-        {b.finished ? (
-          <>
-            <Btn
-              kind="primary"
-              onClick={() => copyText(formatReport(b))}
-              title="Полный отчёт для ГМ: все цифры обеих сторон. Донесения для игроков — в меню «⋯» и на вкладке «Итоги»."
-            >
-              Скопировать отчёт
-            </Btn>
-            <Btn onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
-              Переиграть
-            </Btn>
-          </>
-        ) : (
-          <>
-            <Btn kind="primary" onClick={() => step(1)} title="Рассчитать один ход">
-              ▶ Ход
-            </Btn>
-            <Btn
-              onClick={untilEvent}
-              title={`Считать ходы, пока не случится важное: ${
-                Object.entries(rules).filter(([k, v]) => k !== 'lossPct' && v).length
-              } видов событий${rules.lossPct ? `, потери за ход ≥ ${rules.lossPct}%` : ''}. Настроить — в меню «⋯».`}
-            >
-              ⏭ До события
-            </Btn>
-            <Btn onClick={() => step(5)} title="Рассчитать пять ходов">
-              ▶▶ 5
-            </Btn>
-            <Btn onClick={toEnd} title="Рассчитать бой до конца">
-              До конца
-            </Btn>
-            <Btn
-              onClick={() => setForecastOpen(true)}
-              title="Что дальше? Сотни продолжений боя с этого хода — вероятности исходов и потерь. Если вы только что приняли решения — рядом прогноз без них."
-            >
-              Прогноз
-            </Btn>
-          </>
-        )}
-        {undoLabel && (
-          <Btn icon onClick={() => undoBattle(b.id)} title={`Отменить: ${undoLabel} (Ctrl+Z). Бой повторяется с теми же бросками.`}>
-            ↶
-          </Btn>
-        )}
-        <Menu
+        <Crumbs
           items={[
-            !!undoLabel && { label: `Отменить: ${undoLabel}`, kbd: 'Ctrl+Z', onClick: () => undoBattle(b.id) },
-            b.turn > 0 && {
-              label: 'Вернуться к ходу…',
-              onClick: () => rewindBattleDialog(b.id),
-              tip: 'Повторить бой до выбранного хода с теми же бросками и вашими решениями',
-            },
-            {
-              label: 'Ответвить бой…',
-              onClick: () => branchBattleDialog(b.id),
-              tip: 'Копия боя с выбранного хода — сыграть иначе и сравнить; этот бой не меняется',
-            },
-            'sep',
-            !b.finished && { label: 'Прогноз с этого хода…', onClick: () => setForecastOpen(true) },
-            !b.finished && { label: 'Настроить «до события»…', onClick: () => setPauseModal(true) },
-            'sep',
-            !b.finished && { label: 'Изменить условия и дистанцию…', onClick: () => setCondModal(true) },
-            !b.finished && {
-              label: 'Завершить бой сейчас',
-              onClick: () => iv('endBattle', { reason: 'Бой остановлен ГМ' }),
-              tip: 'Подвести итоги на текущем ходу',
-            },
-            'sep',
-            { label: 'Открыть сценарий', onClick: () => openTab('scenario', b.scenarioId) },
-            'sep',
-            { label: 'Переиграть (новый бой)', onClick: () => restart(false), tip: 'Тот же сценарий, другие случайности' },
-            { label: 'Повторить этот же бой', onClick: () => restart(true), tip: 'Те же броски кубиков: без ваших решений бой пойдёт точно так же, как этот' },
-            b.interventions.length > 0 && {
-              label: 'Повторить с решениями ГМ',
-              onClick: () => restart(true, true),
-              tip: 'Воспроизвести этот бой вместе с вашими вмешательствами до текущего хода',
-            },
-            'sep',
-            !b.finished && { label: 'Скопировать отчёт', onClick: () => copyText(formatReport(b)) },
-            ...SIDES.map((sd) => ({
-              label: `Донесение для «${b.sides[sd].name}»`,
-              onClick: () => copyText(formatSideReport(b, sd)),
-              tip: b.finished ? 'Для игроков стороны: свои силы и потери — точно, противник — оценкой по разведданным' : 'Донесения готовятся по итогам боя',
-              disabled: !b.finished,
-            })),
-            {
-              label: 'Сохранить отчёт с журналом…',
-              onClick: () => {
-                if (settings.logLevel === 2) ensureFullLog(b);
-                exportText(`${b.name} — отчёт`, formatReport(b, { includeLog: true, logLevel: settings.logLevel }), 'txt');
-              },
-            },
-            { label: 'Сохранить бой в файл…', onClick: () => exportJson('battle', b.name, b), tip: 'JSON — можно передать другому ГМ и импортировать' },
-            'sep',
-            { label: 'Удалить бой', danger: true, onClick: () => deleteBattle(b.id) },
+            { label: 'Бои', section: 'battles' },
+            scenarioExists ? { label: b.scenario.name, open: ['scenario', b.scenarioId] } : { label: b.scenario.name },
           ]}
         />
+        <input className="title-input" value={b.name} onChange={(e) => renameBattle(b.id, e.target.value)} />
+        <ToolbarSlot>
+          {b.finished ? (
+            <>
+              <Btn
+                kind="primary"
+                onClick={() => copyText(formatReport(b))}
+                title="Полный отчёт для ГМ: все цифры обеих сторон. Донесения для игроков — в меню «⋯» и на вкладке «Итоги»."
+              >
+                Скопировать отчёт
+              </Btn>
+              <Btn onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
+                Переиграть
+              </Btn>
+            </>
+          ) : (
+            <>
+              <Btn kind="primary" onClick={() => step(1)} title="Рассчитать один ход">
+                ▶ Ход
+              </Btn>
+              <Btn
+                onClick={untilEvent}
+                title={`Считать ходы, пока не случится важное: ${
+                  Object.entries(rules).filter(([k, v]) => k !== 'lossPct' && v).length
+                } видов событий${rules.lossPct ? `, потери за ход ≥ ${rules.lossPct}%` : ''}. Настроить — в меню «⋯».`}
+              >
+                ⏭ До события
+              </Btn>
+              <Btn onClick={() => step(5)} title="Рассчитать пять ходов">
+                ▶▶ 5
+              </Btn>
+              <Btn onClick={toEnd} title="Рассчитать бой до конца">
+                До конца
+              </Btn>
+              <Btn
+                onClick={() => setForecastOpen(true)}
+                title="Что дальше? Сотни продолжений боя с этого хода — вероятности исходов и потерь. Если вы только что приняли решения — рядом прогноз без них."
+              >
+                Прогноз
+              </Btn>
+            </>
+          )}
+          {undoLabel && (
+            <Btn icon onClick={() => undoBattle(b.id)} title={`Отменить: ${undoLabel} (Ctrl+Z). Бой повторяется с теми же бросками.`}>
+              ↶
+            </Btn>
+          )}
+          <Menu
+            items={[
+              !!undoLabel && { label: `Отменить: ${undoLabel}`, kbd: 'Ctrl+Z', onClick: () => undoBattle(b.id) },
+              b.turn > 0 && {
+                label: 'Вернуться к ходу…',
+                onClick: () => rewindBattleDialog(b.id),
+                tip: 'Повторить бой до выбранного хода с теми же бросками и вашими решениями',
+              },
+              {
+                label: 'Ответвить бой…',
+                onClick: () => branchBattleDialog(b.id),
+                tip: 'Копия боя с выбранного хода — сыграть иначе и сравнить; этот бой не меняется',
+              },
+              'sep',
+              !b.finished && { label: 'Прогноз с этого хода…', onClick: () => setForecastOpen(true) },
+              !b.finished && { label: 'Настроить «до события»…', onClick: () => setPauseModal(true) },
+              'sep',
+              !b.finished && { label: 'Изменить условия и дистанцию…', onClick: () => setCondModal(true) },
+              !b.finished && {
+                label: 'Завершить бой сейчас',
+                onClick: () => iv('endBattle', { reason: 'Бой остановлен ГМ' }),
+                tip: 'Подвести итоги на текущем ходу',
+              },
+              'sep',
+              { label: 'Открыть сценарий', onClick: () => openTab('scenario', b.scenarioId) },
+              'sep',
+              { label: 'Переиграть (новый бой)', onClick: () => restart(false), tip: 'Тот же сценарий, другие случайности' },
+              {
+                label: 'Повторить этот же бой',
+                onClick: () => restart(true),
+                tip: 'Те же броски кубиков: без ваших решений бой пойдёт точно так же, как этот',
+              },
+              b.interventions.length > 0 && {
+                label: 'Повторить с решениями ГМ',
+                onClick: () => restart(true, true),
+                tip: 'Воспроизвести этот бой вместе с вашими вмешательствами до текущего хода',
+              },
+              'sep',
+              !b.finished && { label: 'Скопировать отчёт', onClick: () => copyText(formatReport(b)) },
+              ...SIDES.map((sd) => ({
+                label: `Донесение для «${b.sides[sd].name}»`,
+                onClick: () => copyText(formatSideReport(b, sd)),
+                tip: b.finished ? 'Для игроков стороны: свои силы и потери — точно, противник — оценкой по разведданным' : 'Донесения готовятся по итогам боя',
+                disabled: !b.finished,
+              })),
+              {
+                label: 'Сохранить отчёт с журналом…',
+                onClick: () => {
+                  if (settings.logLevel === 2) ensureFullLog(b);
+                  exportText(`${b.name} — отчёт`, formatReport(b, { includeLog: true, logLevel: settings.logLevel }), 'txt');
+                },
+              },
+              { label: 'Сохранить бой в файл…', onClick: () => exportJson('battle', b.name, b), tip: 'JSON — можно передать другому ГМ и импортировать' },
+              'sep',
+              { label: 'Удалить бой', danger: true, onClick: () => deleteBattle(b.id) },
+            ]}
+          />
+          <InspectorToggle label="Журнал" />
+        </ToolbarSlot>
         <div className="meta" style={{ width: '100%' }}>
           <span>
             Ход <b>{b.turn}</b> из {b.scenario.maxTurns} · {fmtDuration(elapsed / 60)} из {fmtDuration((b.scenario.maxTurns * rs.turnMinutes) / 60)}
@@ -333,9 +339,19 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
             {view === 'result' && <Result b={b} result={result} onElement={setElModal} />}
           </div>
         </div>
-        <div className="battle-log">
-          <LogView b={b} rev={rev} tabKey={tab.key} defaultLevel={settings.logLevel} focus={focus} onElement={setElModal} onClearFocus={() => setFocus(null)} />
-        </div>
+        <Inspector label="Журнал">
+          <div className="battle-log">
+            <LogView
+              b={b}
+              rev={rev}
+              tabKey={tab.key}
+              defaultLevel={settings.logLevel}
+              focus={focus}
+              onElement={setElModal}
+              onClearFocus={() => setFocus(null)}
+            />
+          </div>
+        </Inspector>
       </div>
 
       {elModal && (

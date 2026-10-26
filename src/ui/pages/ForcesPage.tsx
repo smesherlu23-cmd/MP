@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { plural, ROOT_STATE, type ForceCondition, type UnitNode } from '../../engine';
 import { ForceActions, LEVEL_LABEL } from '../components/ForceCampaign';
 import { Icon } from '../components/Icon';
-import { Btn, Check, Field, Menu, Modal, Seg, Txt, fmt0 } from '../components/ui';
+import { Btn, Check, Field, Menu, Modal, Seg, Txt, fmt0, ToolbarSlot } from '../components/ui';
 import { sectionMeta } from '../nav';
 import {
   canRestore,
@@ -223,12 +223,14 @@ export function ForcesPage() {
           <h1>{meta.label}</h1>
           <div className="page-sub">{meta.about}</div>
         </div>
-        <Btn kind="primary" onClick={() => void newForceDialog()}>
-          + {meta.create}
-        </Btn>
-        <Btn onClick={() => importFile()} title="Набор правил, подразделение, сценарий или бой в формате JSON">
-          Импорт…
-        </Btn>
+        <ToolbarSlot>
+          <Btn onClick={() => importFile()} title="Набор правил, подразделение, сценарий или бой в формате JSON">
+            Импорт…
+          </Btn>
+          <Btn kind="primary" onClick={() => void newForceDialog()}>
+            + {meta.create}
+          </Btn>
+        </ToolbarSlot>
       </div>
 
       <div className="catalog-bar">

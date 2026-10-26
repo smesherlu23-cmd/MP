@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('warsim', {
   backup: (kind: string) => ipcRenderer.invoke('backup:make', kind),
   restoreBackup: (id: string) => ipcRenderer.invoke('backup:restore', id),
   platform: process.platform,
+  /** Системный материал окна (Mica на Windows 11) — тогда боковая панель полупрозрачная. */
+  material: process.argv.includes('--material=mica') ? 'mica' : '',
   setWindowTheme: (theme: 'dark' | 'light') => ipcRenderer.send('window:theme', theme),
   appInfo: () => ipcRenderer.invoke('app:info'),
 });

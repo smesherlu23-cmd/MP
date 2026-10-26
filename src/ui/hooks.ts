@@ -26,14 +26,14 @@ export function useTabState<T>(key: string, init: T): [T, (v: T | ((prev: T) => 
   return [v, set];
 }
 
-/** Задать состояние вкладки снаружи (например, выделить узел перед открытием). */
+/** Задать состояние страницы снаружи (например, выделить узел перед открытием). */
 export function setTabState<T>(key: string, v: T) {
   mem.set(key, v);
   listeners.get(key)?.forEach((fn) => fn(v));
 }
 
 /** Открыть подразделение (ref: «lib:<id>» или «sc:<сценарий>:<id>») с выделенным узлом. */
-export function openUnit(ref: string, nodeId: string, background = false) {
+export function openUnit(ref: string, nodeId: string) {
   setTabState(`${tabKey('formation', ref)}:sel`, nodeId);
-  openTab('formation', ref, { background });
+  openTab('formation', ref);
 }

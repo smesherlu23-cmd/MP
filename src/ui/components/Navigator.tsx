@@ -1,15 +1,14 @@
-// Навигатор слева: поиск и «Создать» сверху, ниже — разделы деревом в порядке работы (игра, подготовка).
-// Каждый раздел разворачивается на месте; щелчок по названию раздела открывает его каталог.
-// Раздел открытой вкладки подсвечен — всегда видно, где находишься.
+// Боковая панель (как в Finder): разделы деревом в порядке работы (игра, подготовка). Поиск и «Создать» —
+// в панели инструментов окна. Каждый раздел разворачивается на месте; щелчок по названию раздела открывает
+// его каталог. Раздел открытой страницы подсвечен — всегда видно, где находишься.
 
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { Icon, type IconName } from './Icon';
-import { arrowNav, Menu, pressable } from './ui';
-import { openPalette } from './Palette';
+import { arrowNav, pressable } from './ui';
 
 /** Сколько объектов раздела видно в навигаторе без фильтра (остальные — в каталоге). */
 const NAV_LIMIT = 6;
-import { NAV_GROUPS, isNavOpen, sectionMeta, sectionOf, setNavOpen, showSection } from '../nav';
+import { NAV_GROUPS, isNavOpen, sectionMeta, sectionOf, setNavOpen, showSection, useNavFilter } from '../nav';
 import { LEVEL_LABEL } from './ForceCampaign';
 import { DND_FORCE, DND_LIB } from '../pages/unit/model';
 import {
@@ -42,7 +41,7 @@ const withIcon = (icon: IconName, text: string) => (
   </span>
 );
 
-/** Пункты меню «+ Создать» — в навигаторе и на главной. */
+/** Пункты меню «+» (создать) — в панели инструментов и на главной. */
 export const CREATE_ITEMS = () => [
   { label: withIcon('scenario', 'Сценарий'), onClick: () => createIn('scenarios'), tip: 'Обстановка и две стороны' },
   { label: withIcon('forces', 'Силы'), onClick: () => createIn('forces'), tip: 'Конкретное подразделение по шаблону' },
@@ -68,7 +67,7 @@ export function Navigator() {
   const s = useApp();
   const activeTab = s.tabs.find((t) => t.key === s.active);
   const here = sectionOf(activeTab);
-  const [filter, setFilter] = useState('');
+  const filter = useNavFilter((x) => x.q);
   const listRef = useRef<HTMLDivElement>(null);
   const q = filter.trim().toLowerCase();
   const match = (name: string) => !q || name.toLowerCase().includes(q);
@@ -84,7 +83,7 @@ export function Navigator() {
   const row = (
     key: string,
     name: string,
-    onOpen: (o: { background?: boolean; preview?: boolean }) => void,
+    onOpen: () => void,
     opts: {
       sub?: string;
       hint?: string;
@@ -114,11 +113,8 @@ export function Navigator() {
         else return;
         e.dataTransfer.effectAllowed = 'copy';
       }}
-      // Щелчок — просмотр (заменяет прежний просмотр, вкладки не копятся); двойной щелчок или Enter — обычная вкладка.
-      onClick={(e) => onOpen(e.ctrlKey || e.metaKey ? { background: true } : { preview: true })}
-      onDoubleClick={() => onOpen({})}
-      onAuxClick={(e) => e.button === 1 && onOpen({ background: true })}
-      {...pressable((e) => onOpen({ background: e.ctrlKey || e.metaKey }))}
+      onClick={onOpen}
+      {...pressable(onOpen)}
     >
       {opts.color && <span className="team-dot sm" style={{ background: opts.color }} aria-hidden />}
       <span>{name}</span>
@@ -185,7 +181,7 @@ export function Navigator() {
         .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
       const { shown, hidden } = capped(all, (x) => activeTab?.ref === x.id || !!activeTab?.ref?.startsWith(`sc:${x.id}:`));
       const list = shown.map((x) =>
-        row(x.id, x.name, (o) => openTab('scenario', x.id, o), {
+        row(x.id, x.name, () => openTab('scenario', x.id), {
           // Число боёв — в подсказке: справа от названия подпись только обрезала бы его.
           hint: battlesBy.get(x.id) ? `боёв: ${battlesBy.get(x.id)}` : undefined,
           active:
@@ -203,7 +199,7 @@ export function Navigator() {
       );
       const rsIds = [...new Set(units.map((u) => u.rulesetId ?? ''))];
       const item = (x: (typeof units)[number]) =>
-        row(x.id, x.name, (o) => openTab('formation', `lib:${x.id}`, o), {
+        row(x.id, x.name, () => openTab('formation', `lib:${x.id}`), {
           sub: x.level,
           active: isOpen('formation', `lib:${x.id}`),
           dragLib: x.id,
@@ -224,7 +220,7 @@ export function Navigator() {
       );
       const factions = [...new Set(units.map((u) => u.faction?.trim() || ''))].sort((a, b) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'ru')));
       const item = (x: (typeof units)[number]) =>
-        row(x.id, x.name, (o) => openTab('formation', `force:${x.id}`, o), {
+        row(x.id, x.name, () => openTab('formation', `force:${x.id}`), {
           sub: x.level,
           active: isOpen('formation', `force:${x.id}`),
           dragForce: x.id,
@@ -256,7 +252,7 @@ export function Navigator() {
         return group(
           scName,
           items.map((b) =>
-            row(b.id, b.name.startsWith(`${scName} · `) ? b.name.slice(scName.length + 3) : b.name, (o) => openTab('battle', b.id, o), {
+            row(b.id, b.name.startsWith(`${scName} · `) ? b.name.slice(scName.length + 3) : b.name, () => openTab('battle', b.id), {
               sub: b.finished ? (b.headline ?? 'итог') : `ход ${b.turn}`,
               active: isOpen('battle', b.id),
               warn: b.unrecorded ? { cls: 'warn', text: 'Итоги не записаны в силы' } : undefined,
@@ -275,7 +271,7 @@ export function Navigator() {
     const list = Object.values(s.rulesets)
       .filter((x) => match(x.name))
       .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-      .map((x) => row(x.id, x.name, (o) => openTab('ruleset', x.id, o), { active: isOpen('ruleset', x.id) }));
+      .map((x) => row(x.id, x.name, () => openTab('ruleset', x.id), { active: isOpen('ruleset', x.id) }));
     return { list, empty: 'Наборов правил нет.' };
   };
 
@@ -320,28 +316,7 @@ export function Navigator() {
   };
 
   return (
-    <aside className={`sidebar nav${s.settings.sidebar ? '' : ' hidden'}`}>
-      <div className="nav-tools">
-        {/* Одно поле: ввод сразу фильтрует дерево, Enter (или Ctrl+K) — полный поиск по всему, включая части и команды. */}
-        <label className="nav-search" title="Фильтр навигатора; Enter или Ctrl+K — найти что угодно, включая вложенные части и команды">
-          <Icon name="search" size={15} />
-          <input
-            type="search"
-            className="grow"
-            placeholder="Найти…"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                openPalette(filter);
-              } else if (e.key === 'Escape') setFilter('');
-            }}
-          />
-          <span className="kbd">Ctrl+K</span>
-        </label>
-        <Menu alignLeft className="primary nav-create" label="+ Создать" title="Создать сценарий, силы, шаблон или набор правил" items={CREATE_ITEMS()} />
-      </div>
+    <div className="sidebar nav">
       <div className="nav-scroll" ref={listRef} onKeyDown={(e) => arrowNav(e, listRef.current, '.side-item')}>
         <div className="nav-home">
           <NavItem icon="home" label="Главное" here={activeTab?.kind === 'home'} onClick={() => openTab('home')} title="Что продолжить, с чего начать" />
@@ -361,6 +336,6 @@ export function Navigator() {
         <NavItem icon="help" label="Справка" here={activeTab?.kind === 'help'} onClick={() => openTab('help')} />
         <NavItem icon="settings" label="Настройки" here={activeTab?.kind === 'settings'} onClick={() => openTab('settings')} />
       </nav>
-    </aside>
+    </div>
   );
 }

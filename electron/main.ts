@@ -2,8 +2,9 @@
 // Данные — JSON-файлы в папке: rulesets/, formations/ (шаблоны), forces/ (силы), scenarios/, battles/; резервные копии,
 // корзина и повреждённые файлы — в backups/, trash/, damaged/ (см. protect.ts).
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron';
 import { existsSync, promises as fs } from 'node:fs';
+import { release } from 'node:os';
 import path from 'node:path';
 import { DataStore, type BackupKind } from './protect';
 
@@ -62,7 +63,10 @@ function battleMeta(b: any) {
 
 function registerIpc() {
   ipcMain.on('window:theme', (_e, theme: 'dark' | 'light') => {
-    if (process.platform !== 'darwin' && win) win.setTitleBarOverlay(OVERLAY[theme === 'light' ? 'light' : 'dark']);
+    const t = theme === 'light' ? 'light' : 'dark';
+    // Цвет системной заливки (Mica) и кнопок окна — по теме программы, а не Windows.
+    nativeTheme.themeSource = t;
+    if (process.platform !== 'darwin' && win) win.setTitleBarOverlay(overlay(t));
   });
   ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataDir }));
   ipcMain.handle('storage:list', (_e, col: string) => store.list(col, col === 'battles' ? battleMeta : undefined));
@@ -146,10 +150,20 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// Кнопки окна — на цвете панели инструментов (высота — как у неё).
 const OVERLAY = {
-  dark: { color: '#0f151c', symbolColor: '#e4eaf0', height: 44 },
-  light: { color: '#e8edf2', symbolColor: '#17212b', height: 44 },
+  dark: { color: '#262628', symbolColor: '#e5e5e7', height: 52 },
+  light: { color: '#f4f4f5', symbolColor: '#1d1d1f', height: 52 },
 };
+// Под Mica — прозрачная подложка: сквозь боковую панель видна системная «матовая» заливка окна.
+const OVERLAY_MICA = {
+  dark: { color: '#00000000', symbolColor: '#e5e5e7', height: 52 },
+  light: { color: '#00000000', symbolColor: '#1d1d1f', height: 52 },
+};
+
+/** Материал Mica — с Windows 11 22H2 (сборка 22621); на Windows 10 окно обычное, без прозрачности. */
+const MICA = process.platform === 'win32' && Number(release().split('.')[2] ?? 0) >= 22621;
+const overlay = (theme: 'dark' | 'light') => (MICA ? OVERLAY_MICA : OVERLAY)[theme];
 
 async function createWindow() {
   win = new BrowserWindow({
@@ -157,12 +171,13 @@ async function createWindow() {
     height: 900,
     minWidth: 980,
     minHeight: 620,
-    backgroundColor: '#0b1016',
+    backgroundColor: MICA ? '#00000000' : '#1e1e1f',
+    backgroundMaterial: MICA ? 'mica' : undefined,
     title: APP_NAME,
     icon: process.platform === 'linux' ? path.join(__dirname, '..', 'dist', 'favicon.ico') : undefined,
     // Без системной шапки: кнопки «свернуть / развернуть / закрыть» рисуются поверх верхней полосы программы.
     titleBarStyle: 'hidden',
-    titleBarOverlay: process.platform === 'darwin' ? true : OVERLAY.dark,
+    titleBarOverlay: process.platform === 'darwin' ? true : overlay('dark'),
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
@@ -171,6 +186,7 @@ async function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      additionalArguments: MICA ? ['--material=mica'] : [],
     },
   });
   win.setMenuBarVisibility(false);

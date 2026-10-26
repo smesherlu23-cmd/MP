@@ -1,18 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Btn, Card, Field, Modal, Num, Seg } from '../components/ui';
 import { storage, storageKind, type BackupInfo, type TrashItem } from '../storage';
-import {
-  DEFAULT_MAX_TABS,
-  confirmDialog,
-  deleteBattles,
-  fmtDate,
-  installExamples,
-  restoreBackup,
-  restoreFromTrash,
-  toast,
-  updateSettings,
-  useApp,
-} from '../store';
+import { confirmDialog, deleteBattles, fmtDate, installExamples, restoreBackup, restoreFromTrash, toast, updateSettings, useApp } from '../store';
 
 export function SettingsPage() {
   const s = useApp((x) => x.settings);
@@ -30,7 +19,7 @@ export function SettingsPage() {
     storage.getDataDir().then(setDir);
     refresh();
   }, [refresh]);
-  // Удаление в другой вкладке тоже должно появиться в корзине.
+  // Удаление на другой странице тоже должно появиться в корзине.
   const libSize = useApp(
     (x) =>
       Object.keys(x.rulesets).length +
@@ -67,19 +56,6 @@ export function SettingsPage() {
                   { value: 'normal', label: 'Обычная' },
                   { value: 'compact', label: 'Компактная' },
                 ]}
-              />
-            </Field>
-            <Field
-              label="Вкладок не больше"
-              hint="Когда вкладок больше, давно не используемые закрываются сами (закреплённые — никогда). Щелчок в навигаторе открывает вкладку-просмотр: следующий объект откроется на её месте, пока вы не начали с ней работать (двойной щелчок — сразу обычная вкладка). 0 — без предела."
-            >
-              <Num
-                value={s.maxTabs ?? DEFAULT_MAX_TABS}
-                onChange={(v) => updateSettings({ maxTabs: Math.max(0, Math.round(v)) })}
-                min={0}
-                max={100}
-                integer
-                width={120}
               />
             </Field>
           </div>

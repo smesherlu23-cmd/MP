@@ -75,6 +75,8 @@ export interface Bridge {
 /** Окно настольной программы: платформа, цвет кнопок окна, сведения о программе. */
 export interface WindowBridge {
   platform: string;
+  /** «mica» — окно с системным материалом Windows 11 (полупрозрачная боковая панель). */
+  material: string;
   setWindowTheme(theme: 'dark' | 'light'): void;
   appInfo(): Promise<{ version: string; dataDir: string }>;
 }
@@ -307,4 +309,5 @@ export const desktop: Partial<WindowBridge> | null = window.warsim ?? null;
 if (desktop?.platform) {
   document.documentElement.classList.add('desktop');
   document.documentElement.dataset.platform = desktop.platform;
+  if (desktop.material) document.documentElement.dataset.material = desktop.material;
 }

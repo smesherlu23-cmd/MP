@@ -1,7 +1,7 @@
-// Стороны сценария: несколько подразделений и их части; командиры — в сценарии; главная; вкладки.
+// Стороны сценария: несколько подразделений и их части; командиры — в сценарии; главная; узкое окно.
 
 import { expect, test } from '@playwright/test';
-import { navSec, openApp, openFromNav, startBattle } from './helpers';
+import { openApp, openFromNav, startBattle } from './helpers';
 
 test('на сторону — силы целиком и частями, новые силы из шаблона; лишние части не воюют', async ({ page }) => {
   const errors = await openApp(page);
@@ -81,30 +81,26 @@ test('главная: «продолжить» незавершённый бой
   expect(errors).toEqual([]);
 });
 
-test('узкое окно: вкладки сжимаются, лишние — в списке «▾»', async ({ page }) => {
+test('узкое окно: панель инструментов помещается, поиск раскрывается по Ctrl+F', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 700 });
   const errors = await openApp(page);
-  await navSec(page, 'Шаблоны');
-  const items = page.locator('.nav-sec[data-sec="units"] .side-item');
-  const n = await items.count();
-  // Щелчок открывает вкладку-просмотр (она заменяется следующей), двойной щелчок — обычную вкладку.
-  await items.nth(0).click();
-  await items.nth(1).click();
-  await expect(page.locator('.tab')).toHaveCount(2);
-  await expect(page.locator('.tab.preview')).toHaveCount(1);
-  for (let i = 0; i < n; i++) await items.nth(i).dblclick();
-  await expect(page.locator('.tab.preview')).toHaveCount(0);
-  const more = page.locator('.tabs-more .btn');
-  await expect(more).toBeVisible();
-  // Кнопки справа не перекрывают полосу вкладок.
-  const tabs = (await page.locator('.tabs').boundingBox())!;
-  const right = (await page.locator('.topbar-right').boundingBox())!;
-  expect(tabs.x + tabs.width).toBeLessThanOrEqual(right.x + 1);
-  await more.click();
-  // Все вкладки и «Закрыть все, кроме закреплённых».
-  await expect(page.locator('.menu-pop .menu-item')).toHaveCount(n + 2);
-  await page.locator('.menu-pop .menu-item', { hasText: 'Главное' }).click();
-  await expect(page.locator('.tab.active .tab-title')).toHaveText('Главное');
+  await openFromNav(page, 'атака на высоту');
+  await startBattle(page);
+  // Кнопки боя и общие кнопки — в пределах окна, без наложения.
+  const bar = (await page.locator('.toolbar-win').boundingBox())!;
+  const actions = (await page.locator('.tb-actions').boundingBox())!;
+  const global = (await page.locator('.tb-global').boundingBox())!;
+  expect(actions.x + actions.width).toBeLessThanOrEqual(global.x + 1);
+  expect(global.x + global.width).toBeLessThanOrEqual(bar.x + bar.width + 1);
+  // Поле поиска свёрнуто до значка; Ctrl+F раскрывает его, ввод фильтрует боковую панель.
+  const search = page.locator('.tb-search');
+  expect((await search.boundingBox())!.width).toBeLessThan(40);
+  await page.keyboard.press('Control+F');
+  await expect(page.locator('.tb-search input')).toBeFocused();
+  await page.keyboard.type('Танковая');
+  await expect(page.locator('.nav-sec[data-sec="units"] .side-item')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.tb-search input')).toHaveValue('');
   expect(errors).toEqual([]);
 });
 

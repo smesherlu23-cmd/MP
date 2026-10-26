@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { flushSaves, initApp, useApp } from './store';
+import '@fontsource-variable/inter/opsz.css';
 import './styles.css';
 
 function Boot() {

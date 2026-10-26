@@ -6,7 +6,7 @@ import { plural, type ForceRecord, type UnitNode } from '../../engine';
 import { KIND_ICON, LEVEL_LABEL, signed } from '../components/ForceCampaign';
 import { Crumbs } from '../components/Crumbs';
 import { Icon } from '../components/Icon';
-import { Btn, Card, Kpi, fmt0 } from '../components/ui';
+import { Btn, Card, Kpi, fmt0, ToolbarSlot } from '../components/ui';
 import { showSection } from '../nav';
 import { fmtDate, forceStatus, newForceDialog, openTab, teamColor, useApp } from '../store';
 import { ForceCard, TeamModal } from './ForcesPage';
@@ -62,12 +62,14 @@ export function TeamPage({ team }: { team: string }) {
             {levels.map((x) => `${LEVEL_LABEL[x.lv].text.toLowerCase()}: ${x.n}`).join(', ')}
           </div>
         </div>
-        <Btn onClick={() => setEdit(true)} title="Переименовать команду, выбрать цвет">
-          <Icon name="pencil" size={14} /> Название и цвет
-        </Btn>
-        <Btn kind="primary" onClick={() => void newForceDialog(team || undefined)}>
-          + Силы
-        </Btn>
+        <ToolbarSlot>
+          <Btn onClick={() => setEdit(true)} title="Переименовать команду, выбрать цвет">
+            <Icon name="pencil" size={14} /> Название и цвет
+          </Btn>
+          <Btn kind="primary" onClick={() => void newForceDialog(team || undefined)}>
+            + Силы
+          </Btn>
+        </ToolbarSlot>
       </div>
 
       <div className="team-kpis card">

@@ -1,14 +1,14 @@
 // Защита данных: корзина, резервные копии, повреждённые записи; пример «Линейной тактики».
 
 import { expect, test } from '@playwright/test';
-import { activeTabTitle, menu, navSec, openApp, openFromNav, startBattle } from './helpers';
+import { pageTitle, menu, navSec, openApp, openFromNav, startBattle } from './helpers';
 
 const openSettings = (page: import('@playwright/test').Page) => page.locator('.nav-bottom .nav-item', { hasText: 'Настройки' }).click();
 
 test('удалённый сценарий лежит в корзине и возвращается оттуда', async ({ page }) => {
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
-  await page.locator('.page-head .btn.icon').click();
+  await page.locator('.tb-actions .btn.icon').click();
   await menu(page, 'Удалить сценарий');
   await page.locator('.modal-foot .btn.danger').click();
   await expect(page.locator('.toast').last()).toContainText('в корзине');
@@ -27,7 +27,7 @@ test('удалённый сценарий лежит в корзине и воз
   // Удалённые бои — тоже в корзину, с кнопкой «Вернуть» в уведомлении.
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
-  await page.locator('.battle-head .btn.icon').last().click();
+  await page.locator('.tb-actions .btn.icon').last().click();
   await menu(page, 'Удалить бой');
   await page.locator('.modal-foot .btn.danger').click();
   await page.locator('.toast-action', { hasText: 'Вернуть' }).click();
@@ -46,7 +46,7 @@ test('резервная копия возвращает прежнее сост
 
   await openFromNav(page, 'атака на высоту');
   await page.locator('.page-head .title-input').fill('Переименованный сценарий');
-  await expect(activeTabTitle(page)).toHaveText('Переименованный сценарий');
+  await expect(pageTitle(page)).toHaveText('Переименованный сценарий');
   await page.waitForTimeout(600); // отложенное сохранение
 
   await openSettings(page);
@@ -90,9 +90,9 @@ test('клавиатура: навигатор, меню «⋯» и подска
   await page.keyboard.press('ArrowDown');
   await expect(items.nth(1)).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(activeTabTitle(page)).toHaveText((await items.nth(1).locator('span').first().textContent())!);
+  await expect(pageTitle(page)).toHaveText((await items.nth(1).locator('span').first().textContent())!);
 
-  const more = page.locator('.page-head .btn.icon');
+  const more = page.locator('.tb-actions .btn.icon');
   await more.focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('.menu-pop .menu-item').first()).toBeFocused();
@@ -146,7 +146,7 @@ test('у кого «Линейная тактика» уже была, прим�
   expect([k.casualtyScale, k.moralePerLossPct]).toEqual([3, 2]);
   // Удалённый пример не возвращается при следующем запуске.
   await openFromNav(page, 'бой у переправы');
-  await page.locator('.page-head .btn.icon').click();
+  await page.locator('.tb-actions .btn.icon').click();
   await menu(page, 'Удалить сценарий');
   await page.locator('.modal-foot .btn.danger').click();
   await page.reload();

@@ -89,6 +89,12 @@ const ICONS = {
       <path d="M9 3v18" />
     </>
   ),
+  inspector: (
+    <>
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M15 3v18" />
+    </>
+  ),
   undo: (
     <>
       <path d="M9 14 4 9l5-5" />

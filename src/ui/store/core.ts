@@ -1,5 +1,5 @@
-// Ядро состояния программы: данные и вкладки, уведомления и диалоги, сохранение с задержкой,
-// отмена и повтор правок (Ctrl+Z / Ctrl+Y), вкладки.
+// Ядро состояния программы: данные и открытая страница, уведомления и диалоги, сохранение с задержкой,
+// отмена и повтор правок (Ctrl+Z / Ctrl+Y).
 
 import { create } from 'zustand';
 import type { PauseRules, UnitNode, Id, Ruleset, Scenario } from '../../engine';
@@ -14,12 +14,6 @@ export interface Tab {
   kind: TabKind;
   ref?: string;
   sub?: string;
-  /** Просмотр: следующий объект, открытый из навигатора или поиска, заменит эту вкладку (пока с ней не начали работать). */
-  preview?: boolean;
-  /** Закреплена: слева, не закрывается сама и не заменяется. */
-  pinned?: boolean;
-  /** Когда вкладкой пользовались в последний раз (для закрытия давно не используемых). */
-  used?: number;
 }
 
 export interface Settings {
@@ -34,8 +28,12 @@ export interface Settings {
   pauseRules?: PauseRules;
   /** Прогонов в прогнозе боя. */
   forecastRuns?: number;
-  /** Сколько вкладок держать открытыми (давно не используемые закрываются сами); 0 — без предела. */
-  maxTabs?: number;
+  /** Ширина боковой панели, px. */
+  sideWidth?: number;
+  /** Ширина инспектора справа, px. */
+  inspectorWidth?: number;
+  /** Инспектор справа показан. */
+  inspector?: boolean;
   /** Цвета команд (принадлежность сил): название → цвет. Не задано — по одноимённой стороне сценария или из палитры. */
   teamColors?: Record<string, string>;
 }
@@ -382,117 +380,63 @@ export function tabExists(t: Tab): boolean {
   }
 }
 
-export const DEFAULT_MAX_TABS = 12;
-
-/** Закреплённые — первыми, остальные в прежнем порядке. */
-const orderTabs = (tabs: Tab[]) => [...tabs.filter((t) => t.pinned), ...tabs.filter((t) => !t.pinned)];
-
-let trimNoticeShown = false;
-
-/** Вкладок больше предела — закрыть давно не используемые (не закреплённые и не keep). */
-function trimTabs(tabs: Tab[], keep: string, max: number): Tab[] {
-  if (max <= 0 || tabs.length <= max) return tabs;
-  const out = [...tabs];
-  const victims = out.filter((t) => !t.pinned && t.key !== keep).sort((a, b) => (a.preview === b.preview ? (a.used ?? 0) - (b.used ?? 0) : a.preview ? -1 : 1));
-  let closed = 0;
-  while (out.length > max && victims.length) {
-    const v = victims.shift()!;
-    out.splice(out.indexOf(v), 1);
-    closed++;
+/** Куда уйти, когда открытый объект удалён: в его раздел (или к старшему объекту). */
+function parentOf(t: Tab): Tab {
+  const lib = (ref: NavSection): Tab => ({ key: tabKey('library', ref), kind: 'library', ref });
+  switch (t.kind) {
+    case 'scenario':
+      return lib('scenarios');
+    case 'montecarlo':
+      return tabExists({ key: '', kind: 'scenario', ref: t.ref }) ? { key: tabKey('scenario', t.ref), kind: 'scenario', ref: t.ref } : lib('scenarios');
+    case 'formation': {
+      const sc = t.ref?.match(/^sc:([^:]+):/)?.[1];
+      if (sc && get().scenarios[sc]) return { key: tabKey('scenario', sc), kind: 'scenario', ref: sc };
+      return lib(t.ref?.startsWith('force:') ? 'forces' : t.ref?.startsWith('sc:') ? 'scenarios' : 'units');
+    }
+    case 'team':
+      return lib('forces');
+    case 'battle':
+      return lib('battles');
+    case 'ruleset':
+      return lib('rulesets');
+    default:
+      return { key: 'home', kind: 'home' };
   }
-  if (closed && !trimNoticeShown) {
-    trimNoticeShown = true;
-    queueMicrotask(() =>
-      toast(
-        `Открыто больше ${max} вкладок — давно не используемые закрываются сами. Нужную можно закрепить (правый щелчок по вкладке); предел — в Настройках.`,
-      ),
-    );
-  }
-  return out;
 }
+
+/** Состояние страницы (подраздел) запоминается, пока программа открыта: при возврате страница та же. */
+const subs = new Map<string, string>();
 
 /**
- * Открыть вкладку. preview — из навигатора и поиска: новый объект занимает место вкладки-просмотра
- * (а не добавляет ещё одну), пока с ней не начали работать. Уже открытая вкладка просто становится активной.
+ * Открыть страницу. Вкладок нет: страница занимает окно, прежняя уходит в историю «назад».
+ * Уже открытая страница остаётся (меняется только подраздел, если он задан).
  */
-export function openTab(kind: TabKind, ref?: string, opts: { background?: boolean; sub?: string; preview?: boolean } = {}) {
+export function openTab(kind: TabKind, ref?: string, opts: { sub?: string } = {}) {
   const key = tabKey(kind, ref);
   set((s) => {
-    const now = Date.now();
-    const preview = !!opts.preview && !opts.background;
-    const exists = s.tabs.find((t) => t.key === key);
-    let tabs: Tab[];
-    if (exists) {
-      tabs = s.tabs.map((t) => (t.key === key ? { ...t, sub: opts.sub ?? t.sub, preview: t.preview && preview ? true : undefined, used: now } : t));
-    } else {
-      const tab: Tab = { key, kind, ref, sub: opts.sub, used: now, ...(preview ? { preview: true } : {}) };
-      tabs = [...s.tabs];
-      const pi = preview ? tabs.findIndex((t) => t.preview) : -1;
-      if (pi >= 0) tabs[pi] = tab;
-      else tabs.splice(tabs.findIndex((t) => t.key === s.active) + 1, 0, tab);
-      tabs = trimTabs(orderTabs(tabs), opts.background ? s.active : key, s.settings.maxTabs ?? DEFAULT_MAX_TABS);
-    }
-    return { tabs, active: opts.background ? s.active : key };
+    const cur = s.tabs.find((t) => t.key === s.active);
+    if (cur?.sub) subs.set(cur.key, cur.sub);
+    if (cur?.key === key) return opts.sub && opts.sub !== cur.sub ? { tabs: [{ ...cur, sub: opts.sub }] } : {};
+    const sub = opts.sub ?? subs.get(key);
+    return { tabs: [{ key, kind, ref, ...(sub ? { sub } : {}) }], active: key };
   });
 }
 
-/** Вкладка-просмотр становится обычной (с ней начали работать). */
-export function keepTab(key: string) {
-  if (!get().tabs.some((t) => t.key === key && t.preview)) return;
-  set((s) => ({ tabs: s.tabs.map((t) => (t.key === key ? { ...t, preview: undefined } : t)) }));
-}
-
-export function pinTab(key: string, pinned: boolean) {
-  set((s) => ({ tabs: orderTabs(s.tabs.map((t) => (t.key === key ? { ...t, pinned: pinned || undefined, preview: undefined } : t))) }));
-}
-
-/** Закрыть другие вкладки (кроме закреплённых); right — только справа от этой. */
-export function closeOtherTabs(key: string, right = false) {
-  const tabs = get().tabs;
-  const i = tabs.findIndex((t) => t.key === key);
-  closeTabsWhere((t) => !t.pinned && t.key !== key && (!right || tabs.indexOf(t) > i));
-  activateTab(key);
-}
-
-/** Закрыть все вкладки, кроме закреплённых. */
-export function closeAllTabs() {
-  closeTabsWhere((t) => !t.pinned);
-}
-
+/** Закрыть страницу: если она открыта — перейти в её раздел. */
 export function closeTab(key: string) {
-  set((s) => {
-    const idx = s.tabs.findIndex((t) => t.key === key);
-    if (idx < 0) return {};
-    const tabs = s.tabs.filter((t) => t.key !== key);
-    let active = s.active;
-    if (active === key) active = tabs[Math.min(idx, tabs.length - 1)]?.key ?? '';
-    if (!tabs.length) return { tabs: [{ key: 'home', kind: 'home' as const }], active: 'home' };
-    return { tabs, active };
-  });
+  const cur = get().tabs.find((t) => t.key === key);
+  subs.delete(key);
+  if (!cur) return;
+  const to = parentOf(cur);
+  set({ tabs: [to], active: to.key });
 }
 
 export function closeTabsWhere(pred: (t: Tab) => boolean) {
   for (const t of get().tabs.filter(pred)) closeTab(t.key);
 }
 
-export function activateTab(key: string) {
-  set((s) => ({ active: key, tabs: s.tabs.map((t) => (t.key === key ? { ...t, used: Date.now() } : t)) }));
-}
-
 export function setTabSub(key: string, sub: string) {
   set((s) => ({ tabs: s.tabs.map((t) => (t.key === key ? { ...t, sub } : t)) }));
-}
-
-export function moveTab(from: string, to: string) {
-  set((s) => {
-    const tabs = [...s.tabs];
-    const i = tabs.findIndex((t) => t.key === from);
-    const j = tabs.findIndex((t) => t.key === to);
-    if (i < 0 || j < 0) return {};
-    const [t] = tabs.splice(i, 1);
-    tabs.splice(j, 0, t);
-    return { tabs };
-  });
 }
 
 // ------------------------------------------------------------------ наборы правил

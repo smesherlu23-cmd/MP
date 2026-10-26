@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { resolveScenario, sideUnits, summarizeUnits, type UnitNode } from '../../engine';
 import { Icon } from '../components/Icon';
 import { createIn } from '../components/Navigator';
-import { Btn, Menu, fmt0, type MenuItem } from '../components/ui';
+import { Btn, Menu, fmt0, type MenuItem, ToolbarSlot } from '../components/ui';
 import { sectionMeta } from '../nav';
 import {
   createForcesFromTemplate,
@@ -221,14 +221,16 @@ export function LibraryPage({ tab }: { tab: Tab }) {
           <h1>{meta.label}</h1>
           <div className="page-sub">{meta.about}</div>
         </div>
-        {meta.create && (
-          <Btn kind="primary" onClick={() => createIn(sec)}>
-            + {meta.create}
+        <ToolbarSlot>
+          <Btn onClick={() => importFile()} title="Набор правил, подразделение, сценарий или бой в формате JSON">
+            Импорт…
           </Btn>
-        )}
-        <Btn onClick={() => importFile()} title="Набор правил, подразделение, сценарий или бой в формате JSON">
-          Импорт…
-        </Btn>
+          {meta.create && (
+            <Btn kind="primary" onClick={() => createIn(sec)}>
+              + {meta.create}
+            </Btn>
+          )}
+        </ToolbarSlot>
       </div>
 
       <div className="catalog-bar">

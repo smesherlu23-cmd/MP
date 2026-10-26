@@ -12,11 +12,11 @@ test('откат: кнопка ↶, Ctrl+Z / Ctrl+Y и «Вернуться к �
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
-  await expect(page.locator('.battle-head button[title^="Отменить"]')).toHaveCount(0);
+  await expect(page.locator('.tb-actions button[title^="Отменить"]')).toHaveCount(0);
   for (let i = 0; i < 3; i++) await stepBtn(page).click();
   await expect(turnMeta(page)).toContainText('Ход 3 из');
 
-  await page.locator('.battle-head button[title^="Отменить: ход 3"]').click();
+  await page.locator('.tb-actions button[title^="Отменить: ход 3"]').click();
   await expect(turnMeta(page)).toContainText('Ход 2 из');
   await expect(page.locator('.toast').last()).toContainText('Отменён ход 3');
   await page.keyboard.press('Control+z');
@@ -27,7 +27,7 @@ test('откат: кнопка ↶, Ctrl+Z / Ctrl+Y и «Вернуться к �
   await stepBtn(page).click();
   await stepBtn(page).click();
   await expect(turnMeta(page)).toContainText('Ход 4 из');
-  await page.locator('.battle-head .btn.icon').last().click();
+  await page.locator('.tb-actions .btn.icon').last().click();
   await page.locator('.menu-pop .menu-item', { hasText: 'Вернуться к ходу' }).click();
   await page.locator('.modal select').selectOption('1');
   await page.locator('.modal').getByRole('button', { name: 'Выбрать' }).click();

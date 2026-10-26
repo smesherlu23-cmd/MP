@@ -49,7 +49,7 @@ import { PartialButton, type PartialLimit, PartialModal, partialCount } from '..
 import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
 import { SectorSelect, SectorsEditor } from '../components/SectorsEditor';
 import { SideSupport } from '../components/SupportEditor';
-import { Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable } from '../components/ui';
+import { Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable, ToolbarSlot } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import {
   confirmDialog,
@@ -180,26 +180,28 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
   return (
     <div className="page">
       <Crumbs items={[{ label: 'Сценарии', section: 'scenarios' }]} />
-      <div className="page-head sticky-head">
+      <div className="page-head">
         <input className="title-input" value={sc.name} onChange={(e) => upd((d) => void (d.name = e.target.value))} />
-        <Btn kind="primary" onClick={start} disabled={!rs}>
-          ▶ Начать бой
-        </Btn>
-        <Btn onClick={() => openTab('montecarlo', sc.id)} disabled={!rs} title="Сотни прогонов для оценки вероятностей исходов">
-          Прогоны
-        </Btn>
-        <Menu
-          items={[
-            { label: 'Дублировать', onClick: () => duplicateScenario(sc.id) },
-            {
-              label: 'Сохранить в файл…',
-              tip: 'Вместе с подразделениями сторон — чтобы сценарий можно было открыть у другого ГМ',
-              onClick: () => exportScenario(sc),
-            },
-            'sep',
-            { label: 'Удалить сценарий', danger: true, onClick: () => deleteScenario(sc.id) },
-          ]}
-        />
+        <ToolbarSlot>
+          <Btn kind="primary" onClick={start} disabled={!rs}>
+            ▶ Начать бой
+          </Btn>
+          <Btn onClick={() => openTab('montecarlo', sc.id)} disabled={!rs} title="Сотни прогонов для оценки вероятностей исходов">
+            Прогоны
+          </Btn>
+          <Menu
+            items={[
+              { label: 'Дублировать', onClick: () => duplicateScenario(sc.id) },
+              {
+                label: 'Сохранить в файл…',
+                tip: 'Вместе с подразделениями сторон — чтобы сценарий можно было открыть у другого ГМ',
+                onClick: () => exportScenario(sc),
+              },
+              'sep',
+              { label: 'Удалить сценарий', danger: true, onClick: () => deleteScenario(sc.id) },
+            ]}
+          />
+        </ToolbarSlot>
       </div>
 
       {errors.length > 0 && (
@@ -412,9 +414,9 @@ function SideTree(props: {
           key={n.id}
           className={`side-node${off ? ' off' : ''}`}
           style={{ paddingLeft: 4 + (depth - 1) * 16 }}
-          onClick={(e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey)}
+          onClick={() => openUnit(refId, n.id)}
           title="Открыть в конструкторе"
-          {...pressable((e) => openUnit(refId, n.id, e.ctrlKey || e.metaKey))}
+          {...pressable(() => openUnit(refId, n.id))}
         >
           {onToggle && (
             <input
@@ -643,11 +645,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
             {node.children.length ? (isOpen ? '▾' : '▸') : ''}
           </button>
           <div className="grow" style={{ minWidth: 0 }}>
-            <a
-              href="#"
-              onClick={(e) => (e.preventDefault(), openUnit(`force:${r.forceId}`, root, e.ctrlKey || e.metaKey))}
-              title="Открыть в «Силах»: состояние, потери, состав"
-            >
+            <a href="#" onClick={(e) => (e.preventDefault(), openUnit(`force:${r.forceId}`, root))} title="Открыть в «Силах»: состояние, потери, состав">
               {node.name}
             </a>
             <span className="faint small" data-tip={s.equip.length ? s.equip.map((q) => `${q.name}: ${q.cur}`).join('\n') : undefined}>
@@ -768,7 +766,7 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
           ))}
           {!refs.length && (
             <div className="muted" style={{ padding: '6px 4px' }}>
-              Нет подразделений — добавьте ниже или перетащите из «Сил» (или шаблон) в навигаторе слева
+              Нет подразделений — добавьте ниже или перетащите из «Сил» (или шаблон) в боковой панели слева
             </div>
           )}
           {refs.length > 1 && (

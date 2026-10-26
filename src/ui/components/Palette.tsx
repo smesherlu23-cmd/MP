@@ -12,7 +12,7 @@ import { startBattle } from '../pages/ScenarioPage';
 import { createFormation, createScenario, importFile, newForceDialog, newRulesetDialog, openTab, redo, tabKey, undo, updateSettings, useApp } from '../store';
 
 export const usePalette = create<{ open: boolean; query: string }>(() => ({ open: false, query: '' }));
-/** Открыть быстрый переход; query — с чего начать поиск (из поля навигатора). */
+/** Открыть быстрый переход; query — с чего начать поиск (из поля поиска). */
 export const openPalette = (query = '') => usePalette.setState({ open: true, query: typeof query === 'string' ? query : '' });
 const closePalette = () => usePalette.setState({ open: false });
 
@@ -23,7 +23,7 @@ interface Item {
   sub?: string;
   /** Показывать без запроса. */
   top?: boolean;
-  run: (background: boolean) => void;
+  run: () => void;
 }
 
 const GROUP_ORDER = ['Сценарии', 'Подразделения', 'Команды сил', 'Бои', 'Наборы правил', 'Справка', 'Команды'];
@@ -42,7 +42,7 @@ function buildItems(): Item[] {
   cmd('Отменить', undo, 'Ctrl+Z');
   cmd('Повторить', redo, 'Ctrl+Y');
   cmd(s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }));
-  cmd(s.settings.sidebar ? 'Скрыть навигатор' : 'Показать навигатор', () => updateSettings({ sidebar: !s.settings.sidebar }), 'Ctrl+B');
+  cmd(s.settings.sidebar ? 'Скрыть боковую панель' : 'Показать боковую панель', () => updateSettings({ sidebar: !s.settings.sidebar }), 'Ctrl+B');
   cmd('Главное', () => openTab('home'));
   for (const sec of NAV_SECTIONS) cmd(`Каталог: ${sec.label}`, () => openTab('library', sec.id));
   cmd('Справка', () => openTab('help'));
@@ -50,12 +50,12 @@ function buildItems(): Item[] {
 
   const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name, 'ru');
   for (const team of [...new Set(Object.values(s.forces).map((f) => f.faction?.trim() || ''))].filter(Boolean).sort((a, b) => a.localeCompare(b, 'ru')))
-    items.push({ id: `team:${team}`, group: 'Команды сил', title: `Команда «${team}»`, run: (bg) => openTab('team', team, { background: bg }) });
+    items.push({ id: `team:${team}`, group: 'Команды сил', title: `Команда «${team}»`, run: () => openTab('team', team) });
   for (const sc of Object.values(s.scenarios).sort(byName)) {
-    items.push({ id: `sc:${sc.id}`, group: 'Сценарии', title: sc.name, top: true, run: (bg) => openTab('scenario', sc.id, { background: bg }) });
+    items.push({ id: `sc:${sc.id}`, group: 'Сценарии', title: sc.name, top: true, run: () => openTab('scenario', sc.id) });
     const rs = s.rulesets[sc.rulesetId];
     if (rs) items.push({ id: `bt:${sc.id}`, group: 'Сценарии', title: `Начать бой: ${sc.name}`, run: () => void startBattle(sc, rs) });
-    items.push({ id: `mc:${sc.id}`, group: 'Сценарии', title: `Прогоны: ${sc.name}`, run: (bg) => openTab('montecarlo', sc.id, { background: bg }) });
+    items.push({ id: `mc:${sc.id}`, group: 'Сценарии', title: `Прогоны: ${sc.name}`, run: () => openTab('montecarlo', sc.id) });
   }
 
   const units = (root: UnitNode, ref: string, where: string, top: boolean, group: string) =>
@@ -67,21 +67,21 @@ function buildItems(): Item[] {
         title: n.name,
         sub: isRoot ? where : `в «${root.name}»${where ? ` · ${where}` : ''}`,
         top: top && isRoot,
-        run: (bg) => openUnit(ref, n.id, bg),
+        run: () => openUnit(ref, n.id),
       });
     });
   for (const f of Object.values(s.forces).sort(byName)) units(f, `force:${f.id}`, f.faction ? `силы · ${f.faction}` : 'силы', true, 'Силы');
   for (const f of Object.values(s.formations).sort(byName)) units(f, `lib:${f.id}`, 'шаблон', true, 'Шаблоны');
 
   for (const r of Object.values(s.rulesets).sort(byName)) {
-    items.push({ id: `rs:${r.id}`, group: 'Наборы правил', title: r.name, top: true, run: (bg) => openTab('ruleset', r.id, { background: bg }) });
+    items.push({ id: `rs:${r.id}`, group: 'Наборы правил', title: r.name, top: true, run: () => openTab('ruleset', r.id) });
     for (const sec of SECTIONS)
       items.push({
         id: `rs:${r.id}:${sec.id}`,
         group: 'Наборы правил',
         title: sec.label,
         sub: r.name,
-        run: (bg) => openTab('ruleset', r.id, { background: bg, sub: sec.id }),
+        run: () => openTab('ruleset', r.id, { sub: sec.id }),
       });
     for (const t of r.componentTypes)
       items.push({
@@ -89,9 +89,9 @@ function buildItems(): Item[] {
         group: 'Наборы правил',
         title: t.name,
         sub: `тип · ${r.name}`,
-        run: (bg) => {
+        run: () => {
           setTabState(`${tabKey('ruleset', r.id)}:type`, t.id);
-          openTab('ruleset', r.id, { background: bg, sub: 'types' });
+          openTab('ruleset', r.id, { sub: 'types' });
         },
       });
   }
@@ -103,7 +103,7 @@ function buildItems(): Item[] {
         group: 'Справка',
         title: t.title,
         sub: g.title,
-        run: (bg) => openTab('help', undefined, { background: bg, sub: t.id }),
+        run: () => openTab('help', undefined, { sub: t.id }),
       });
 
   const battles = Object.values(s.battleIndex).sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
@@ -114,7 +114,7 @@ function buildItems(): Item[] {
       title: b.name,
       sub: b.finished ? 'итог' : `ход ${b.turn}`,
       top: i < 3,
-      run: (bg) => openTab('battle', b.id, { background: bg }),
+      run: () => openTab('battle', b.id),
     }),
   );
   return items;
@@ -159,10 +159,10 @@ function PaletteBody() {
   useEffect(() => {
     box.current?.querySelector('.pal-item.cur')?.scrollIntoView({ block: 'nearest' });
   }, [cur]);
-  const run = (it: Item | undefined, bg = false) => {
+  const run = (it: Item | undefined) => {
     if (!it) return;
     closePalette();
-    it.run(bg);
+    it.run();
   };
   return (
     <div className="backdrop pal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && closePalette()}>
@@ -183,7 +183,7 @@ function PaletteBody() {
               setCur((c) => Math.max(0, c - 1));
             } else if (e.key === 'Enter') {
               e.preventDefault();
-              run(ordered[cur], e.ctrlKey || e.metaKey);
+              run(ordered[cur]);
             }
           }}
         />
@@ -192,14 +192,14 @@ function PaletteBody() {
           {ordered.map((it, i) => (
             <div key={it.id}>
               {(i === 0 || ordered[i - 1].group !== it.group) && <div className="pal-group">{it.group}</div>}
-              <div className={`pal-item${i === cur ? ' cur' : ''}`} onMouseMove={() => i !== cur && setCur(i)} onClick={(e) => run(it, e.ctrlKey || e.metaKey)}>
+              <div className={`pal-item${i === cur ? ' cur' : ''}`} onMouseMove={() => i !== cur && setCur(i)} onClick={() => run(it)}>
                 <span className="pal-title">{it.title}</span>
                 {it.sub && <span className="pal-sub">{it.sub}</span>}
               </div>
             </div>
           ))}
         </div>
-        <div className="pal-foot">↑↓ выбор · Enter открыть · Ctrl+Enter в фоне · Esc закрыть</div>
+        <div className="pal-foot">↑↓ выбор · Enter открыть · Esc закрыть</div>
       </div>
     </div>
   );
