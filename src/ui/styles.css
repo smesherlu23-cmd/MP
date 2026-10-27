@@ -1,5 +1,7 @@
 :root {
-  /* Echelon Commander в духе macOS: нейтральные серые, один акцент — графит (как «Графит» в macOS).
+  /* Echelon Commander в духе macOS: нейтральные серые поверхности и два цвета, как раньше.
+     Латунь (жёлтый) — действия и выделенное: главная кнопка, флажки, выбранный блок.
+     Сталь (синий) — навигация: ссылки, значки, текущая страница, пункт меню, фокус.
      Цвета сторон и команд — только метки (точка, полоса); «плохо» — свой оттенок, не красный стороны. */
   --bg: #1e1e1f;
   --bg2: #232325;
@@ -20,14 +22,16 @@
   --text: #ececee;
   --muted: #a8a8ad;
   --faint: #8d8d93;
-  --accent: #6f6f74;
-  --accent-text: #ffffff;
-  --accent-fg: #b9b9be;
-  --accent-soft: rgba(160, 160, 166, 0.2);
-  --side-sel: rgba(255, 255, 255, 0.11);
-  --focus: rgba(170, 170, 176, 0.55);
-  --steel: var(--accent-fg);
-  --steel-soft: rgba(160, 160, 166, 0.12);
+  --accent: #e0a94b;
+  --accent-text: #1c1406;
+  --accent-fg: #e8b660;
+  --accent-soft: rgba(224, 169, 75, 0.16);
+  --blue: #3d7fc4;
+  --blue-text: #ffffff;
+  --side-sel: rgba(110, 165, 220, 0.22);
+  --focus: rgba(95, 168, 230, 0.55);
+  --steel: #8fb8d8;
+  --steel-soft: rgba(143, 184, 216, 0.13);
   --seg-bg: rgba(255, 255, 255, 0.07);
   --seg-on: #5c5c60;
   --good: #34c759;
@@ -37,7 +41,7 @@
   --warn: #ffa524;
   --warn-soft: rgba(255, 165, 36, 0.15);
   --info: #4cc8e6;
-  --link: #ececee;
+  --link: #85c4ff;
   --pop-bg: rgba(44, 44, 46, 0.86);
   --scroll: rgba(160, 160, 166, 0.35);
   --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12' fill='none' stroke='%23a8a8ad' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 4.5 4 2l2.5 2.5M1.5 7.5 4 10l2.5-2.5'/%3E%3C/svg%3E");
@@ -88,13 +92,16 @@
   --text: #1d1d1f;
   --muted: #5c5c61;
   --faint: #717177;
-  --accent: #636368;
+  --accent: #a8701a;
   --accent-text: #ffffff;
-  --accent-fg: #55555a;
-  --accent-soft: rgba(60, 60, 67, 0.13);
-  --side-sel: rgba(0, 0, 0, 0.09);
-  --focus: rgba(99, 99, 104, 0.45);
-  --steel-soft: rgba(60, 60, 67, 0.08);
+  --accent-fg: #9a6512;
+  --accent-soft: rgba(196, 138, 36, 0.14);
+  --blue: #2f74c0;
+  --blue-text: #ffffff;
+  --side-sel: rgba(47, 116, 192, 0.15);
+  --focus: rgba(47, 116, 192, 0.4);
+  --steel: #3c6e90;
+  --steel-soft: rgba(60, 110, 144, 0.1);
   --seg-bg: rgba(0, 0, 0, 0.06);
   --seg-on: #ffffff;
   --good: #1f8a3c;
@@ -104,7 +111,7 @@
   --warn: #b86400;
   --warn-soft: rgba(184, 100, 0, 0.11);
   --info: #0b7f9c;
-  --link: #1d1d1f;
+  --link: #1f6fbf;
   --pop-bg: rgba(248, 248, 250, 0.88);
   --scroll: rgba(60, 60, 67, 0.3);
   --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12' fill='none' stroke='%235c5c61' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 4.5 4 2l2.5 2.5M1.5 7.5 4 10l2.5-2.5'/%3E%3C/svg%3E");
@@ -4078,11 +4085,11 @@ input.invalid {
   border-radius: 5px;
   cursor: pointer;
 }
-/* Выделенный пункт — цветом акцента, как в меню macOS. */
+/* Выделенный пункт — синим, как в меню macOS. */
 .menu-item:hover:not(:disabled),
 .menu-item:focus-visible {
-  color: var(--accent-text);
-  background: var(--accent);
+  color: var(--blue-text);
+  background: var(--blue);
   outline: none;
 }
 .menu-item:hover:not(:disabled) :is(.kbd, .icon),
@@ -4214,8 +4221,8 @@ input.invalid {
   animation: sheet-in var(--dur-2) var(--ease-spring);
 }
 .pal-item.cur {
-  color: var(--accent-text);
-  background: var(--accent);
+  color: var(--blue-text);
+  background: var(--blue);
 }
 .pal-item.cur .pal-sub {
   color: inherit;
@@ -4325,7 +4332,7 @@ input.invalid {
   justify-content: center;
   width: 18px;
   flex-shrink: 0;
-  color: var(--accent-fg);
+  color: var(--steel);
 }
 .nav-item:hover,
 .nav-sec-head:hover {
@@ -4504,7 +4511,7 @@ input.invalid {
   letter-spacing: -0.015em;
 }
 .page-icon {
-  color: var(--accent-fg);
+  color: var(--steel);
   background: var(--steel-soft);
   border: none;
   border-radius: 10px;
@@ -4742,7 +4749,7 @@ tr[tabindex]:focus-visible {
 .side-icon {
   display: inline-flex;
   flex-shrink: 0;
-  color: var(--accent-fg);
+  color: var(--steel);
 }
 .side-item.active .side-icon {
   color: var(--text);
@@ -4910,7 +4917,7 @@ tr[tabindex]:focus-visible {
   gap: 10px;
 }
 .ql-title .icon {
-  color: var(--accent-fg);
+  color: var(--steel);
 }
 .ql-kind {
   display: block;
