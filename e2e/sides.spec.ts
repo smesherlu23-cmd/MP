@@ -92,6 +92,10 @@ test('узкое окно: панель инструментов помещае�
   const global = (await page.locator('.tb-global').boundingBox())!;
   expect(actions.x + actions.width).toBeLessThanOrEqual(global.x + 1);
   expect(global.x + global.width).toBeLessThanOrEqual(bar.x + bar.width + 1);
+  // ☰ не закрыт свёрнутым полем поиска: щелчок открывает меню программы.
+  await page.locator('.tb-appmenu').click();
+  await expect(page.locator('.menu-pop .menu-item', { hasText: 'Настройки' })).toBeVisible();
+  await page.keyboard.press('Escape');
   // Поле поиска свёрнуто до значка; Ctrl+F раскрывает его, ввод фильтрует боковую панель.
   // Поиск мог остаться в фокусе после перехода из боковой панели — тогда он сворачивается плавно (200 мс).
   const search = page.locator('.tb-search');

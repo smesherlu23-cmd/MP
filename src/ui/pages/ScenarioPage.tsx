@@ -453,40 +453,41 @@ function SideTree(props: {
               {arrivals.get(n.id) === 'cond' ? 'подойдёт по условию' : `с ${arrivals.get(n.id)}-го хода`}
             </span>
           )}
-          <span className="grow" />
-          {onHold && !off && <HoldToggle on={!!hold?.has(n.id)} inherited={holdUp} onChange={(v) => onHold(n.id, v)} />}
-          {sc && onSector && !off && <SectorSelect sc={sc} mini value={sectorOf?.[n.id]} onChange={(v) => onSector(n.id, v)} />}
-          {onOrder && !off && (
-            <select
-              className="order-mini"
-              value={setOrders?.[n.id] ?? ''}
-              title="Приказ этой части на этот бой"
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
-              onChange={(e) => onOrder(n.id, e.target.value)}
-            >
-              <option value="">как у старшего</option>
-              {rs.orders.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {onPartial && !off ? (
-            <PartialButton
-              node={n}
-              lim={partial?.[n.id]}
-              rs={rs}
-              onOpen={() => onPartial(n)}
-              text={statsLine(stats.get(n.id))}
-              tip={statsTip(stats.get(n.id))}
-            />
-          ) : (
-            <span className="faint small nowrap" data-tip={statsTip(stats.get(n.id))}>
-              {statsLine(stats.get(n.id))}
-            </span>
-          )}
+          <span className="side-node-ctl">
+            {onHold && !off && <HoldToggle on={!!hold?.has(n.id)} inherited={holdUp} onChange={(v) => onHold(n.id, v)} />}
+            {sc && onSector && !off && <SectorSelect sc={sc} mini value={sectorOf?.[n.id]} onChange={(v) => onSector(n.id, v)} />}
+            {onOrder && !off && (
+              <select
+                className="order-mini"
+                value={setOrders?.[n.id] ?? ''}
+                title="Приказ этой части на этот бой"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                onChange={(e) => onOrder(n.id, e.target.value)}
+              >
+                <option value="">как у старшего</option>
+                {rs.orders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {onPartial && !off ? (
+              <PartialButton
+                node={n}
+                lim={partial?.[n.id]}
+                rs={rs}
+                onOpen={() => onPartial(n)}
+                text={statsLine(stats.get(n.id))}
+                tip={statsTip(stats.get(n.id))}
+              />
+            ) : (
+              <span className="faint small nowrap" data-tip={statsTip(stats.get(n.id))}>
+                {statsLine(stats.get(n.id))}
+              </span>
+            )}
+          </span>
         </div>
       ))}
       {rows.length > LIMIT && (

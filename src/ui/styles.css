@@ -526,12 +526,17 @@ html.resizing .splitter::after {
   .tb-search:not(:focus-within) {
     width: 30px;
     padding: 0 8px;
+    overflow: hidden;
     background: none;
   }
-  .tb-search:not(:focus-within) input,
-  .tb-search:not(:focus-within) .kbd {
+  .tb-search:not(:focus-within) input {
     width: 0;
     opacity: 0;
+  }
+  /* «Ctrl+K» — строчный элемент, ширина 0 на него не действует: невидимый, он лежал поверх ☰
+     и перехватывал щелчок — меню программы в окне уже ~1340 px не открывалось. */
+  .tb-search:not(:focus-within) .kbd {
+    display: none;
   }
   /* Раскрывается сразу, сворачивается плавно: пока поле нулевой ширины, Chrome ставит курсор
      перед первой набранной буквой, и быстрый ввод после Ctrl+F выходит задом наперёд. */
@@ -860,12 +865,13 @@ input.invalid {
 .grid.two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+/* Карточки вариантов (местность, время суток, уровни опыта): столько столбцов, сколько помещается
+   по 280 px, — в окне ~1300 px подписи эффектов не обрезаются, во весь экран карточек в ряду больше. */
 .grid.three {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
 }
 @media (max-width: 1100px) {
-  .grid.two,
-  .grid.three {
+  .grid.two {
     grid-template-columns: 1fr;
   }
 }
@@ -1549,7 +1555,7 @@ table.tbl {
 /* условия своих правил */
 .cond-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1.2fr) minmax(80px, 0.7fr) minmax(120px, 1.6fr) auto;
+  grid-template-columns: minmax(140px, 1fr) minmax(96px, 0.5fr) minmax(130px, 2fr) auto;
   gap: 6px;
   align-items: start;
 }
@@ -1818,6 +1824,7 @@ h4 {
 }
 select.eff-add {
   align-self: flex-start;
+  max-width: 100%;
   background: transparent;
   border-color: transparent;
   color: var(--faint);
@@ -5393,7 +5400,9 @@ tr[tabindex]:focus-visible {
   }
   /* Имена переносятся по словам (не посреди слова); выбор командира и метки формирования — на следующей
      строке под именем, если рядом не помещаются. */
+  /* Не уже ~8 букв: с подробными столбцами таблица тогда прокручивается вбок, а не сжимает имена в столбик. */
   .tbl.forces td:first-child {
+    min-width: 152px;
     white-space: normal;
     overflow-wrap: anywhere;
   }
@@ -5513,16 +5522,26 @@ tr[tabindex]:focus-visible {
   text-align: left;
 }
 /* Структура подразделения в сценарии: численность справа — столбцом одной ширины, поэтому списки приказов
-   встают ровно; имя переносится на вторую строку, а не обрезается. */
-.side-node > :last-child {
-  flex: none;
-  min-width: 112px;
-  margin-left: 0;
-  text-align: right;
+   встают ровно; имя переносится по словам, а не обрезается. Если рядом с приказом и численностью имени
+   остаётся меньше ~7 букв (узкое окно), они уходят строкой ниже, к правому краю. */
+.side-node {
+  flex-wrap: wrap;
 }
 .side-node-name {
+  flex: 1 1 7em;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+.side-node-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.side-node-ctl > :last-child {
+  flex: none;
+  min-width: 112px;
+  text-align: right;
 }
 
 /* Имена сторон и элементов цветом стороны: цвет задаёт пользователь, поэтому яркость подправляется под тему —
