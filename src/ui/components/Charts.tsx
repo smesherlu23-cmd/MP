@@ -31,7 +31,22 @@ export interface Series {
   dashed?: boolean;
 }
 
-export function LineChart(props: { series: Series[]; labels?: (string | number)[]; height?: number; yMax?: number; yUnit?: string; xTitle?: string }) {
+/** Отметка события на оси X (индекс точки): вертикальная линия, при наведении — что произошло. */
+export interface ChartMark {
+  at: number;
+  label: string;
+  color?: string;
+}
+
+export function LineChart(props: {
+  series: Series[];
+  labels?: (string | number)[];
+  height?: number;
+  yMax?: number;
+  yUnit?: string;
+  xTitle?: string;
+  marks?: ChartMark[];
+}) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const h = props.height ?? 180;
   const pad = { l: 42, r: 10, t: 10, b: 22 };
@@ -60,6 +75,15 @@ export function LineChart(props: { series: Series[]; labels?: (string | number)[
             </text>
           ) : null,
         )}
+        {props.marks?.map((m) => (
+          <g key={`m${m.at}`} className="chart-mark">
+            <line x1={x(m.at)} x2={x(m.at)} y1={pad.t} y2={h - pad.b} stroke={m.color ?? 'currentColor'} />
+            <path d={`M${x(m.at) - 4},${pad.t - 1} h8 l-4,6 z`} fill={m.color ?? 'currentColor'} />
+            <rect x={x(m.at) - 6} y={pad.t - 2} width={12} height={h - pad.t - pad.b + 2} fill="transparent">
+              <title>{m.label}</title>
+            </rect>
+          </g>
+        ))}
         {props.series.map((s) => {
           const pts = s.values.map((v, i) => (v === null ? null : `${x(i)},${y(v)}`)).filter(Boolean);
           return (
@@ -91,6 +115,7 @@ export function LineChart(props: { series: Series[]; labels?: (string | number)[
             {s.name}
           </span>
         ))}
+        {props.marks?.length ? <span className="faint">▾ — события (наведите)</span> : null}
         {props.xTitle && <span className="faint">ось X: {props.xTitle}</span>}
       </div>
     </div>

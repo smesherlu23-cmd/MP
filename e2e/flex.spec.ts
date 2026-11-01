@@ -111,7 +111,7 @@ test('настройка окна: кнопки панели инструмен�
   await page.keyboard.press('Control+Digit0');
   await expect(page.locator('.tb-zoom-val')).toHaveText('100%');
   // То же — в окне «Настроить окно…».
-  await page.locator('.tb-global > .tb-icon[title="Меню"]').click();
+  await page.locator('.tb-global > .tb-appmenu').click();
   await menu(page, 'Настроить окно…');
   await page.locator('.modal .check', { hasText: 'Отменить и повторить' }).locator('input').check();
   await page.locator('.modal').getByRole('button', { name: 'Готово' }).click();

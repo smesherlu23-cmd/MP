@@ -1,7 +1,19 @@
 // Итоги и оценка боя, сравнение сторон, графики, запись итогов в силы.
 
-import { dec, explainResult, fmtDuration, formatReport, formatSideReport, plural, type Battle, type BattleResult, type SideResult } from '../../../engine';
-import { LineChart } from '../../components/Charts';
+import {
+  dec,
+  explainResult,
+  fmtDuration,
+  formatReport,
+  formatSideReport,
+  plural,
+  resolveRefs,
+  type Battle,
+  type BattleResult,
+  type LogEntry,
+  type SideResult,
+} from '../../../engine';
+import { type ChartMark, LineChart } from '../../components/Charts';
 import { RichText } from '../../components/LogView';
 import { Btn, Card, Menu, Section, fmt0, pct } from '../../components/ui';
 import { applyResultsToForces, battleForces } from '../../postBattle';
@@ -285,6 +297,29 @@ export function ForcesCard({ b }: { b: Battle }) {
   );
 }
 
+/**
+ * Ключевые события боя на графиках: план боя (ввод резерва, отход, подход), вмешательства ГМ, паника и выход из боя.
+ * Один ход — одна отметка со всеми его событиями; цвет — стороны, если все события одной стороны.
+ */
+function chartMarks(b: Battle): ChartMark[] {
+  const at = new Map(b.history.map((x, i) => [x.turn, i]));
+  const byTurn = new Map<number, LogEntry[]>();
+  for (const e of b.log) {
+    if (e.level !== 0 || e.phase === 'setup' || e.phase === 'turn' || e.phase === 'end') continue;
+    if (!at.has(e.turn)) continue;
+    const list = byTurn.get(e.turn) ?? [];
+    list.push(e);
+    byTurn.set(e.turn, list);
+  }
+  return [...byTurn].map(([turn, list]) => {
+    const sides = new Set(list.map((e) => e.side).filter(Boolean));
+    const side = sides.size === 1 ? [...sides][0] : undefined;
+    const lines = list.slice(0, 6).map((e) => `• ${resolveRefs(e.text, b)}`);
+    if (list.length > 6) lines.push(`… и ещё ${list.length - 6}`);
+    return { at: at.get(turn)!, label: `Ход ${turn}:\n${lines.join('\n')}`, color: side ? b.sides[side].color : undefined };
+  });
+}
+
 export function Charts({ b }: { b: Battle }) {
   const h = b.history;
   if (h.length < 2) return <div className="empty">Графики появятся после первого хода.</div>;
@@ -295,22 +330,23 @@ export function Charts({ b }: { b: Battle }) {
       return { name: b.sides[s].name, color: b.sides[s].color, values: h.map((x) => (fn(x.sides[s]) / base) * (norm ? 100 : 1)) };
     });
   const hasVehicles = h[0].sides.A.vehicles + h[0].sides.B.vehicles > 0;
+  const marks = chartMarks(b);
   return (
     <div className="grid two">
       <Card title="Личный состав">
-        <LineChart series={ser((x) => x.personnel)} labels={labels} xTitle="ход" />
+        <LineChart series={ser((x) => x.personnel)} labels={labels} xTitle="ход" marks={marks} />
       </Card>
       <Card title="Боеспособность, %">
-        <LineChart series={ser((x) => x.ce, true)} labels={labels} yMax={100} yUnit="%" xTitle="ход" />
+        <LineChart series={ser((x) => x.ce, true)} labels={labels} yMax={100} yUnit="%" xTitle="ход" marks={marks} />
       </Card>
       {b.ruleset.features.morale && (
         <Card title="Мораль">
-          <LineChart series={ser((x) => x.morale)} labels={labels} yMax={100} xTitle="ход" />
+          <LineChart series={ser((x) => x.morale)} labels={labels} yMax={100} xTitle="ход" marks={marks} />
         </Card>
       )}
       {hasVehicles && (
         <Card title="Техника в строю">
-          <LineChart series={ser((x) => x.vehicles)} labels={labels} xTitle="ход" />
+          <LineChart series={ser((x) => x.vehicles)} labels={labels} xTitle="ход" marks={marks} />
         </Card>
       )}
     </div>
