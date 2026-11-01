@@ -13,7 +13,11 @@ import { DataStore, type BackupKind } from './protect';
 const APP_NAME = 'Echelon Commander';
 const LEGACY_NAME = 'WarSim';
 const legacyUserData = path.join(app.getPath('appData'), LEGACY_NAME);
-if (existsSync(legacyUserData)) app.setPath('userData', legacyUserData);
+// ECHELON_PROFILE_DIR — отдельный «профиль» (настройки окна и данные в одной папке): для проверки
+// настоящего приложения (npm run test:app), чтобы не трогать данные пользователя.
+const PROFILE_DIR = process.env.ECHELON_PROFILE_DIR;
+if (PROFILE_DIR) app.setPath('userData', path.join(PROFILE_DIR, 'user'));
+else if (existsSync(legacyUserData)) app.setPath('userData', legacyUserData);
 
 let dataDir = '';
 let store = new DataStore('');
@@ -35,6 +39,7 @@ async function writeSettings(s: { dataDir?: string }) {
 }
 
 function defaultDataDir(): string {
+  if (PROFILE_DIR) return path.join(PROFILE_DIR, 'data');
   // Портативная версия хранит данные рядом с .exe, установленная — в «Документах».
   const portable = process.env.PORTABLE_EXECUTABLE_DIR;
   const base = portable || app.getPath('documents');
@@ -184,6 +189,40 @@ async function createWindow() {
   });
   win.setMenuBarVisibility(false);
   win.once('ready-to-show', () => win?.show());
+  // Перед закрытием окно дописывает отложенные сохранения (последняя правка — за 0,4 с до закрытия)
+  // и сообщает «готово»; не ответило за 3 с (зависло) — закрываем всё равно.
+  let closing = false;
+  win.on('close', (e) => {
+    if (closing || !win || win.webContents.isCrashed()) return;
+    e.preventDefault();
+    closing = true;
+    const w = win;
+    const done = () => {
+      clearTimeout(timer);
+      ipcMain.removeListener('app:flushed', onFlushed);
+      if (!w.isDestroyed()) w.destroy();
+    };
+    const onFlushed = (ev: Electron.IpcMainEvent) => {
+      if (ev.sender === w.webContents) done();
+    };
+    const timer = setTimeout(done, 3000);
+    ipcMain.on('app:flushed', onFlushed);
+    w.webContents.send('app:flush');
+  });
+  // Окно упало (нехватка памяти, сбой отрисовки) — предложить перезапустить его, а не оставлять белым.
+  win.webContents.on('render-process-gone', async (_e, details) => {
+    if (details.reason === 'clean-exit' || !win || win.isDestroyed()) return;
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'error',
+      title: APP_NAME,
+      message: 'Окно программы перестало отвечать.',
+      detail: `Причина: ${details.reason}. Сохранённые данные не пострадали.`,
+      buttons: ['Перезапустить окно', 'Закрыть программу'],
+      defaultId: 0,
+    });
+    if (response === 0) win?.reload();
+    else app.quit();
+  });
   // Ссылки наружу — в системный браузер, переходы внутри окна запрещены.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);

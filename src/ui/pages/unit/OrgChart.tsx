@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { isOutdated, type DropPos, type UnitNode } from '../../../engine';
 import { Chev, Menu, openContextMenu } from '../../components/ui';
+import { Icon } from '../../components/Icon';
 import { type Ctx, acceptsDrop, addChild, canInsertTemplate, dragStart, isStacked, nodeActions, riskOf, statsLine, statsTip } from './model';
 
 export function EmptyStart({ ctx }: { ctx: Ctx }) {
@@ -73,7 +74,8 @@ export function OrgChart({ ctx }: { ctx: Ctx }) {
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
   zoomRef.current = zoom;
-  // Широкая схема уменьшается, чтобы помещаться по ширине (не мельче 85% — надписи остаются читаемыми), дальше — прокрутка.
+  // Широкая схема уменьшается, чтобы помещаться по ширине (не мельче 75% — надписи остаются читаемыми), дальше — прокрутка
+  // со стрелками у краёв: видно, что схема продолжается.
   // biome-ignore lint/correctness/useExhaustiveDependencies: масштаб подгоняется при смене подразделения и свёртывании ветвей
   useLayoutEffect(() => {
     const box = ref.current;
@@ -81,7 +83,7 @@ export function OrgChart({ ctx }: { ctx: Ctx }) {
     if (!box || !el) return;
     const fit = () => {
       const natural = el.getBoundingClientRect().width / zoomRef.current;
-      const next = Math.max(0.85, Math.min(1, (box.clientWidth - 16) / Math.max(1, natural)));
+      const next = Math.max(0.75, Math.min(1, (box.clientWidth - 16) / Math.max(1, natural)));
       if (Math.abs(next - zoomRef.current) > 0.01) setZoom(Math.round(next * 100) / 100);
     };
     fit();
@@ -101,13 +103,47 @@ export function OrgChart({ ctx }: { ctx: Ctx }) {
     if (br.left < cr.left || br.right > cr.right || ctx.sel === ctx.root.id) el.scrollLeft += br.left + br.width / 2 - (cr.left + cr.width / 2);
     if (br.top < cr.top || br.bottom > cr.bottom) el.scrollTop += br.top - cr.top - 20;
   }, [ctx.sel, zoom]);
+  // Схема шире окна — стрелки у скрытых краёв (прокрутка колесом с Shift тоже работает).
+  const [edges, setEdges] = useState({ left: false, right: false });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: края пересчитываются при смене схемы и масштаба
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const upd = () => {
+      const left = el.scrollLeft > 4;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+      setEdges((e) => (e.left === left && e.right === right ? e : { left, right }));
+    };
+    upd();
+    el.addEventListener('scroll', upd, { passive: true });
+    const ro = new ResizeObserver(upd);
+    ro.observe(el);
+    if (org.current) ro.observe(org.current);
+    return () => {
+      el.removeEventListener('scroll', upd);
+      ro.disconnect();
+    };
+  }, [ctx.root, ctx.collapsed.size, zoom]);
+  const scrollBy = (dir: number) => ref.current?.scrollBy({ left: dir * ref.current.clientWidth * 0.7, behavior: 'smooth' });
   return (
-    <div className="org-scroll" ref={ref}>
-      <div className="org" ref={org} style={zoom < 1 ? { zoom } : undefined}>
-        <ul>
-          <OrgNode ctx={ctx} node={ctx.root} />
-        </ul>
+    <div className="org-wrap">
+      <div className="org-scroll" ref={ref}>
+        <div className="org" ref={org} style={zoom < 1 ? { zoom } : undefined}>
+          <ul>
+            <OrgNode ctx={ctx} node={ctx.root} />
+          </ul>
+        </div>
       </div>
+      {edges.left && (
+        <button type="button" className="org-edge left" onClick={() => scrollBy(-1)} title="Схема продолжается слева">
+          <Icon name="left" size={16} />
+        </button>
+      )}
+      {edges.right && (
+        <button type="button" className="org-edge right" onClick={() => scrollBy(1)} title="Схема продолжается справа">
+          <Icon name="right" size={16} />
+        </button>
+      )}
     </div>
   );
 }

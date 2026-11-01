@@ -270,7 +270,13 @@ export function applyShots(E: EngineContext, shots: Shot[]) {
     for (const [cls, pc] of perClass) {
       suppIn += pc.supp;
       const comps = t.comps.filter((c) => c.current > 0 && E.type(c.typeId).targetClass === cls);
-      const N = comps.reduce((a, c) => a + c.current, 0);
+      // Расчётное оружие принимает огонь по числу расчёта (миномёт с 4 номерами — как 4 бойца),
+      // иначе взвод из одних миномётов при том же огне теряет вдвое больше стрелкового.
+      const share = (c: (typeof comps)[number]) => {
+        const tt = E.type(c.typeId);
+        return k.crewAbsorbsFire && tt.kind === 'weapon' ? Math.max(1, tt.crew) : 1;
+      };
+      const N = comps.reduce((a, c) => a + c.current * share(c), 0);
       if (N <= 0 || pc.hits <= 0) continue;
       for (const c of comps) {
         const tt = E.type(c.typeId);

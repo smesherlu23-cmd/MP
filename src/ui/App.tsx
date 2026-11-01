@@ -22,6 +22,7 @@ import { Btn, ContextMenuHost, Menu, RenameInput, Splitter, openContextMenu } fr
 import { CREATE_ITEMS } from './components/Navigator';
 import { QuickLookHost } from './components/QuickLook';
 import { ToolbarSetupHost, openToolbarSetup } from './components/ToolbarSetup';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { objFromKey, objMenu, objName, renameObj, startRename, stopRename, useRenaming } from './objects';
 import { TOOLBAR_ITEMS, applyZoom, setTbShown, setZoom, tbShown, zoomBy, zoomOf } from './prefs';
 import { desktop } from './storage';
@@ -468,8 +469,13 @@ export function App() {
             {show('create') && (
               <Menu
                 sm
-                label={<Icon name="plus" size={17} />}
-                className="tb-icon tb-create"
+                label={
+                  <>
+                    <Icon name="plus" size={15} />
+                    <span className="tb-create-text">Создать</span>
+                  </>
+                }
+                className="tb-create"
                 title="Создать: сценарий, силы, шаблон или набор правил"
                 items={CREATE_ITEMS()}
               />
@@ -479,7 +485,8 @@ export function App() {
                 <Icon name="import" size={17} />
               </button>
             )}
-            {show('undo') && (
+            {/* В бою своя отмена хода (↶ и Ctrl+Z) — вторая пара стрелок рядом только путала бы. */}
+            {show('undo') && active?.kind !== 'battle' && (
               <>
                 <button
                   type="button"
@@ -532,8 +539,9 @@ export function App() {
             {show('search') && <ToolbarSearch />}
             <Menu
               sm
-              className="tb-icon"
-              title="Меню"
+              label={<Icon name="menu" size={17} />}
+              className="tb-icon tb-appmenu"
+              title="Меню программы"
               items={[
                 { label: 'Отменить', kbd: 'Ctrl+Z', disabled: !hist.undo, tip: hist.undo ?? undefined, onClick: undo },
                 { label: 'Повторить', kbd: 'Ctrl+Y', disabled: !hist.redo, tip: hist.redo ?? undefined, onClick: redo },
@@ -556,7 +564,13 @@ export function App() {
             />
           </div>
         </header>
-        <main className="content">{active && <Page key={active.key} t={active} />}</main>
+        <main className="content">
+          {active && (
+            <ErrorBoundary key={active.key} scope="page">
+              <Page t={active} />
+            </ErrorBoundary>
+          )}
+        </main>
       </div>
       {fileOver && (
         <div className="file-drop">

@@ -3,7 +3,9 @@
 // диапазон, это повод перепроверить калибровку, а не просто подвинуть границы.
 
 import { describe, expect, it } from 'vitest';
+import { applyShots } from '../src/engine/phases/fire';
 import {
+  clone,
   createBattle,
   EngineContext,
   makeDemoScenario,
@@ -103,11 +105,13 @@ describe('баланс', () => {
 
   it('пример «атака на высоту 212»: исход не предрешён, потери правдоподобны', () => {
     const r = runMany(makeDemoScenario(), rs, 150, 'D');
-    expect(r.winA).toBeGreaterThanOrEqual(35);
+    // С тех пор как расчётное оружие принимает огонь по числу расчёта (crewAbsorbsFire), оборона с пулемётами,
+    // ПТ-средствами и миномётами держится дольше: атака удаётся примерно в каждом четвёртом бою (было — в каждом втором).
+    expect(r.winA).toBeGreaterThanOrEqual(18);
     expect(r.winA).toBeLessThanOrEqual(65);
     expect(mean(r, 'A.personnelLossPct')).toBeGreaterThanOrEqual(6);
     expect(mean(r, 'A.personnelLossPct')).toBeLessThanOrEqual(22);
-    expect(mean(r, 'B.personnelLossPct')).toBeGreaterThanOrEqual(20);
+    expect(mean(r, 'B.personnelLossPct')).toBeGreaterThanOrEqual(15);
     expect(mean(r, 'B.personnelLossPct')).toBeLessThanOrEqual(45);
   }, 60_000);
 
@@ -117,4 +121,53 @@ describe('баланс', () => {
     expect(r.winA).toBeLessThanOrEqual(45);
     expect(mean(r, 'A.personnelLossPct')).toBeGreaterThan(10);
   }, 60_000);
+});
+
+describe('расчётное оружие под огнём', () => {
+  /** Доля потерянных единиц у стрелков и у миномётов при одинаковом огне на человека. */
+  function lossShares(crewAbsorbsFire: number) {
+    const r = clone(rs);
+    r.coefficients = { ...r.coefficients, crewAbsorbsFire };
+    const sc = newScenario(r, 'Миномёты', 'MOR');
+    sc.sides[0].formations = [rifles('Атака', 100, 'attack')];
+    sc.sides[1].formations = [
+      newRootUnit('Оборона', {
+        order: 'defend',
+        children: [
+          newUnit('Стрелки', { composition: [{ typeId: 'rifleman', authorized: 32, current: 32 }] }),
+          newUnit('Миномёты', { composition: [{ typeId: 'mortar', authorized: 4, current: 4 }] }),
+        ],
+      }),
+    ];
+    let rifl = 0;
+    let mort = 0;
+    const N = 300;
+    for (let i = 0; i < N; i++) {
+      const b = createBattle(sc, r, { seed: `M${i}`, silent: true });
+      const E = new EngineContext(b);
+      const el = (name: string) => b.elements.find((x) => x.name === name)!;
+      const shot = (t: ReturnType<typeof el>, persons: number) => ({
+        target: t,
+        cls: 'inf',
+        fire: 0.15 * persons,
+        lethality: 1,
+        suppressive: 0,
+        source: 'тест',
+      });
+      // Огонь пропорционален числу людей: 32 стрелка и 4 миномёта × 4 номера расчёта.
+      applyShots(E, [shot(el('Стрелки'), 32), shot(el('Миномёты'), 16)]);
+      rifl += 1 - el('Стрелки').comps[0].current / 32;
+      mort += 1 - el('Миномёты').comps[0].current / 4;
+    }
+    return { rifl: rifl / N, mort: mort / N };
+  }
+
+  it('миномёт принимает огонь по числу расчёта, а не как один боец', () => {
+    const now = lossShares(1);
+    expect(now.mort).toBeLessThan(now.rifl * 1.5);
+    expect(now.mort).toBeGreaterThan(now.rifl * 0.6);
+    // Прежний расчёт (старые бои воспроизводятся с ним): миномёты выбивались в разы быстрее.
+    const old = lossShares(0);
+    expect(old.mort).toBeGreaterThan(old.rifl * 2);
+  });
 });

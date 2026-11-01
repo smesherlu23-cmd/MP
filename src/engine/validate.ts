@@ -122,3 +122,90 @@ export function nodeSectors(sd: SideDef, fallback: Id): Map<Id, Id> {
   for (const f of sideUnits(sd)) walk(f, fallback);
   return out;
 }
+
+// ------------------------------------------------------------------ проверка импортируемых файлов
+
+const isStr = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Файл, который собирается импортировать ГМ, — после перевода из прежних форматов: всё ли на месте, чтобы
+ * программа не споткнулась о него позже, в бою или редакторе. Возвращает ошибки (не больше `limit`).
+ */
+export function importIssues(kind: 'ruleset' | 'unit' | 'scenario' | 'battle', data: unknown, limit = 5): string[] {
+  const out: string[] = [];
+  const add = (t: string) => out.length < limit && out.push(t);
+  if (!isObj(data)) return ['не объект JSON'];
+  if (kind === 'ruleset') {
+    const r = data as unknown as Ruleset;
+    if (!isStr(r.id)) add('нет id набора правил');
+    if (!isStr(r.name)) add('нет названия набора правил');
+    for (const key of ['targetClasses', 'rangeBands', 'componentTypes', 'orders', 'experienceLevels'] as const)
+      if (!Array.isArray(r[key])) add(`«${key}» — не список`);
+    if (out.length) return out;
+    const classes = new Set(r.targetClasses.map((c) => c?.id));
+    const ids = new Set<Id>();
+    r.componentTypes.forEach((t, i) => {
+      const at = `тип №${i + 1}${isStr(t?.name) ? ` «${t.name}»` : ''}`;
+      if (!isObj(t)) return add(`${at}: не объект`);
+      if (!isStr(t.id)) add(`${at}: нет id`);
+      else if (ids.has(t.id)) add(`${at}: id «${t.id}» повторяется`);
+      ids.add(t.id);
+      if (!['personnel', 'weapon', 'vehicle'].includes(t.kind)) add(`${at}: неизвестный вид «${String(t.kind)}»`);
+      if (!classes.has(t.targetClass)) add(`${at}: класс цели «${String(t.targetClass)}» не найден в наборе`);
+      for (const f of ['crew', 'value', 'protection'] as const) if (!isNum(t[f])) add(`${at}: «${f}» — не число`);
+      if (!isObj(t.firepower)) add(`${at}: нет огневой мощи`);
+    });
+    return out;
+  }
+  if (kind === 'unit') {
+    let n = 0;
+    const walk = (u: unknown, path: string) => {
+      if (out.length >= limit || ++n > 100000) return;
+      if (!isObj(u)) return add(`${path}: не объект`);
+      const node = u as unknown as UnitNode;
+      const at = isStr(node.name) ? `${path}«${node.name}»` : path || 'подразделение';
+      if (!isStr(node.id)) add(`${at}: нет id`);
+      if (!isStr(node.name)) add(`${at}: нет названия`);
+      if (!Array.isArray(node.composition)) add(`${at}: состав — не список`);
+      else
+        node.composition.forEach((c, i) => {
+          if (!isObj(c) || !isStr(c.typeId) || !isNum(c.current) || !isNum(c.authorized)) add(`${at}: строка состава №${i + 1} неполная`);
+        });
+      if (!Array.isArray(node.children)) add(`${at}: подчинённые — не список`);
+      else for (const ch of node.children) walk(ch, `${at} → `);
+    };
+    walk(data, '');
+    return out;
+  }
+  if (kind === 'scenario') {
+    const sc = data as unknown as Scenario;
+    if (!isStr(sc.id)) add('нет id сценария');
+    if (!isStr(sc.name)) add('нет названия сценария');
+    if (!isStr(sc.rulesetId)) add('не указан набор правил');
+    if (!Array.isArray(sc.sides) || sc.sides.length !== 2) add('сторон должно быть две');
+    else
+      sc.sides.forEach((sd, i) => {
+        if (!isObj(sd)) return add(`сторона ${i + 1}: не объект`);
+        if (!Array.isArray(sd.formations) && !Array.isArray(sd.units)) add(`сторона «${sd.name ?? i + 1}»: нет подразделений`);
+        for (const f of sd.formations ?? []) out.push(...importIssues('unit', f, limit - out.length).map((t) => `сторона «${sd.name}»: ${t}`));
+      });
+    if (!Array.isArray(sc.events ?? [])) add('план боя — не список');
+    return out.slice(0, limit);
+  }
+  const b = data as Record<string, unknown>;
+  if (!isStr(b.id)) add('нет id боя');
+  if (!Array.isArray(b.elements)) add('нет списка элементов');
+  if (!Array.isArray(b.log)) add('нет журнала');
+  if (!isObj(b.ruleset)) add('нет правил боя');
+  if (!isObj(b.sides) || !isObj((b.sides as Record<string, unknown>).A) || !isObj((b.sides as Record<string, unknown>).B)) add('нет сторон A и B');
+  if (!isNum(b.turn)) add('не указан ход');
+  return out;
+}
+
+/** Файл записан более новой версией программы (данные или схема новее, чем знает эта версия). */
+export function fromNewerVersion(x: unknown, dataVersion: number, schemaVersion: number): boolean {
+  if (!isObj(x)) return false;
+  return (isNum(x.dataVersion) && x.dataVersion > dataVersion) || (isNum(x.schemaVersion) && x.schemaVersion > schemaVersion);
+}

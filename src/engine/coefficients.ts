@@ -75,6 +75,14 @@ export const COEFFICIENTS: CoefficientMeta[] = [
     { min: 0, max: 1, step: 0.05 },
   ),
   c('Огонь и потери', 'crewLossDamaged', 0.15, 'Потери экипажа (повреждена)', 'То же при повреждении.', { min: 0, max: 1, step: 0.05 }),
+  c(
+    'Огонь и потери',
+    'crewAbsorbsFire',
+    1,
+    'Расчёт оружия принимает огонь',
+    '1 — расчётное оружие (миномёт, пулемёт, орудие) делит огонь по живой силе по числу расчёта: миномёт с расчётом из 4 человек принимает огонь как 4 бойца. 0 — как один боец (прежний расчёт: взвод из одних миномётов терял вдвое больше стрелкового).',
+    { min: 0, max: 1, step: 1 },
+  ),
   c('Огонь и потери', 'routAbandonShare', 0.25, 'Брошенная техника при бегстве', 'Доля исправной техники/вооружения, которую бегущий элемент бросает за ход.', {
     min: 0,
     max: 1,
@@ -521,7 +529,14 @@ export const COEFFICIENT_DEFAULTS: Record<string, number> = Object.fromEntries(C
  * Снимок правил боя, начатого в прежней версии, — недостающие ключи: механики, появившиеся позже, выключены,
  * изменённые калибровкой коэффициенты — прежние. Повтор, откат и продолжение такого боя идут так же, как шли.
  */
-export const COMPAT_NEUTRAL: Record<string, number> = { frontageOverlap: 0, sideLuck: 0, moralePerLossPct: 1.2, retreatLossPct: 50, holdOnTime: 0 };
+export const COMPAT_NEUTRAL: Record<string, number> = {
+  frontageOverlap: 0,
+  sideLuck: 0,
+  moralePerLossPct: 1.2,
+  retreatLossPct: 50,
+  holdOnTime: 0,
+  crewAbsorbsFire: 0,
+};
 
 /**
  * Значения по умолчанию, изменённые калибровкой, — [прежнее, новое]. В сохранённых наборах правил значение,

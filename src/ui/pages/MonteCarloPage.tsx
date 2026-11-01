@@ -9,14 +9,48 @@ import { Crumbs } from '../components/Crumbs';
 import { CompareSection } from '../components/McCompare';
 import { Btn, Card, Field, Info, Menu, Num, Section, fmt1, pressable } from '../components/ui';
 import { useTabState } from '../hooks';
-import { exportText, openTab, putBattle, scenarioForBattle, toast, useApp, type Tab } from '../store';
+import { exportText, fmtDate, openTab, putBattle, scenarioForBattle, toast, useApp, type Tab } from '../store';
 
 interface McState {
   runs: Record<string, { running: boolean; done: number; n: number; result?: MonteCarloResult; at?: string; cancel?: boolean }>;
 }
-const useMC = create<McState>(() => ({ runs: {} }));
-const setRun = (id: string, patch: Partial<McState['runs'][string]>) =>
+// Последний результат прогонов каждого сценария переживает перезапуск программы (до 12 сценариев).
+const MC_KEY = 'warsim-mc-results';
+const MC_KEEP = 12;
+type Saved = Record<string, { n: number; result: MonteCarloResult; at: string }>;
+
+function loadSaved(): McState['runs'] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MC_KEY) ?? '{}') as Saved;
+    return Object.fromEntries(Object.entries(saved).map(([id, x]) => [id, { running: false, done: x.n, n: x.n, result: x.result, at: x.at }]));
+  } catch {
+    return {};
+  }
+}
+
+function persist(runs: McState['runs']) {
+  const done = Object.entries(runs)
+    .filter(([, x]) => x.result && x.at && !x.running)
+    .sort(([, a], [, b]) => (b.at ?? '').localeCompare(a.at ?? ''))
+    .slice(0, MC_KEEP);
+  const saved: Saved = Object.fromEntries(done.map(([id, x]) => [id, { n: x.n, result: x.result!, at: x.at! }]));
+  try {
+    localStorage.setItem(MC_KEY, JSON.stringify(saved));
+  } catch {
+    // Не поместилось (очень большие прогоны) — храним меньше.
+    try {
+      localStorage.setItem(MC_KEY, JSON.stringify(Object.fromEntries(Object.entries(saved).slice(0, 3))));
+    } catch {
+      localStorage.removeItem(MC_KEY);
+    }
+  }
+}
+
+const useMC = create<McState>(() => ({ runs: loadSaved() }));
+const setRun = (id: string, patch: Partial<McState['runs'][string]>) => {
   useMC.setState((s) => ({ runs: { ...s.runs, [id]: { ...(s.runs[id] ?? { running: false, done: 0, n: 0 }), ...patch } } }));
+  if (patch.result) persist(useMC.getState().runs);
+};
 
 const SIDES: SideId[] = ['A', 'B'];
 
@@ -120,7 +154,7 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
 
       {r && (
         <div className="stack" style={{ marginTop: 16 }}>
-          <Card title={`Исходы · ${r.n} прогонов`}>
+          <Card title={`Исходы · ${r.n} прогонов${run?.at ? ` · ${fmtDate(run.at)}` : ''}`}>
             <div className="stat-row" style={{ marginBottom: 12 }}>
               <div className="stat">
                 <span className="k">Победа: {r.sideNames.A}</span>

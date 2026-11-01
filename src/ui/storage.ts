@@ -80,6 +80,8 @@ export interface WindowBridge {
   setWindowTheme(theme: 'dark' | 'light'): void;
   appInfo(): Promise<{ version: string; dataDir: string }>;
   setZoom(f: number): void;
+  /** Перед закрытием окна главный процесс ждёт, пока `flush` допишет сохранения. */
+  onBeforeClose(flush: () => Promise<void>): void;
 }
 
 declare global {

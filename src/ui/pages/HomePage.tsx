@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { fmtDuration, resolveScenario, sideUnits, summarizeUnits } from '../../engine';
 import { Icon, type IconName } from '../components/Icon';
 import { Link } from '../components/Link';
@@ -29,6 +30,48 @@ interface Recent {
   what: string;
   name: string;
   at: string;
+}
+
+const TIPS_KEY = 'warsim-tips-window-1';
+
+/** Приёмы работы в окне, которых не видно с первого взгляда, — один раз, пока не закроют. */
+function WindowTips() {
+  const [shown, setShown] = useState(() => !localStorage.getItem(TIPS_KEY));
+  if (!shown) return null;
+  const close = () => {
+    localStorage.setItem(TIPS_KEY, '1');
+    setShown(false);
+  };
+  return (
+    <section className="tips-card" aria-label="Приёмы работы">
+      <div className="tips-head">
+        <h2>Приёмы работы в окне</h2>
+        <button type="button" className="btn sm" onClick={close}>
+          Понятно
+        </button>
+      </div>
+      <ul className="tips-list">
+        <li>
+          <b>Правый щелчок</b> по объекту — его действия: открыть, переименовать, дублировать, в избранное, удалить.
+        </li>
+        <li>
+          <b>Пробел</b> на строке боковой панели или каталога — быстрый просмотр без перехода.
+        </li>
+        <li>
+          <b>F2</b> или двойной щелчок по названию — переименовать на месте.
+        </li>
+        <li>
+          <b>
+            <Icon name="inspector" size={13} />
+          </b>{' '}
+          справа вверху — панель свойств выбранного (в бою — журнал).
+        </li>
+        <li>
+          <b>Избранное</b> — перетащите объект в боковую панель; <b>Ctrl+K</b> — найти что угодно; <b>Ctrl+плюс/минус</b> — масштаб.
+        </li>
+      </ul>
+    </section>
+  );
 }
 
 export function HomePage() {
@@ -99,6 +142,8 @@ export function HomePage() {
           <div className="page-sub">Echelon Commander · симулятор боя для ГМ варгейма</div>
         </div>
       </div>
+
+      <WindowTips />
 
       <nav className="workflow" aria-label="Порядок работы">
         {SECTIONS.map((x, i) => {
@@ -207,7 +252,7 @@ export function HomePage() {
               </a>{' '}
               — конкретные подразделения по шаблонам: потери боёв записываются в них.
             </li>
-            <li>Создайте свой сценарий кнопкой «+» в панели инструментов и поставьте на стороны силы или их части.</li>
+            <li>Создайте свой сценарий кнопкой «+ Создать» в панели инструментов и поставьте на стороны силы или их части.</li>
           </ol>
         </Card>
       )}

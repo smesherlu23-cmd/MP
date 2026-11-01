@@ -26,4 +26,14 @@ contextBridge.exposeInMainWorld('warsim', {
   appInfo: () => ipcRenderer.invoke('app:info'),
   /** Масштаб интерфейса (1 — обычный): как масштаб страницы, со всеми меню и окнами. */
   setZoom: (f: number) => webFrame.setZoomFactor(f),
+  /** Перед закрытием окна: дописать сохранения и ответить «готово». */
+  onBeforeClose: (flush: () => Promise<void>) => {
+    ipcRenderer.on('app:flush', async () => {
+      try {
+        await flush();
+      } finally {
+        ipcRenderer.send('app:flushed');
+      }
+    });
+  },
 });

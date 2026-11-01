@@ -6,6 +6,7 @@
       "electron/**",
       "tests/**",
       "e2e/**",
+      "e2e-app/**",
       "scripts/**",
       "*.ts",
       "*.json",

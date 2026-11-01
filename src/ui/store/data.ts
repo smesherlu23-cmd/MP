@@ -2,6 +2,9 @@
 
 import {
   DATA_VERSION,
+  SCHEMA_VERSION,
+  fromNewerVersion,
+  importIssues,
   clone,
   cloneUnit,
   makeBlankRuleset,
@@ -77,6 +80,8 @@ export async function initApp() {
     }
     return out;
   };
+  // Данные из более новой версии программы (папку открыли старой версией) — предупредить, не трогая.
+  const newer = [...rs, ...sc].filter((x) => fromNewerVersion(x, DATA_VERSION, SCHEMA_VERSION)) as { name?: string }[];
   const rulesets = take('rulesets', rs, (r: Ruleset) => normalizeRuleset(r));
   // Старые файлы («формирование + элементы») переводятся в дерево подразделений при загрузке.
   const formations = take('formations', fs, (f: UnitNode) => migrateUnit(f));
@@ -108,7 +113,19 @@ export async function initApp() {
   const last = saved.tabs.find((t) => t.key === saved.active && tabExists(t));
   const page: Tab = last ? { key: last.key, kind: last.kind, ref: last.ref, ...(last.sub ? { sub: last.sub } : {}) } : { key: 'home', kind: 'home' };
   set({ loaded: true, tabs: [page], active: page.key });
-  if (problems.length) void reportProblems(problems);
+  // Окна по очереди: второе не должно закрыть первое.
+  void (async () => {
+    if (problems.length) await reportProblems(problems);
+    if (newer.length)
+      await alertDialog(
+        'Данные из более новой версии программы',
+        `${newer
+          .slice(0, 5)
+          .map((x) => `«${x.name ?? '?'}»`)
+          .join(', ')}${newer.length > 5 ? ` и ещё ${newer.length - 5}` : ''} записаны более новой версией Echelon Commander. ` +
+          'Эта версия может не знать части их настроек: при правке они сохранятся, но учитываться не будут. Лучше обновить программу.',
+      );
+  })();
   // Пока программа открыта, копия делается раз в час (если что-то изменилось).
   setInterval(
     () =>
@@ -445,11 +462,11 @@ export async function exportText(name: string, text: string, ext = 'txt') {
 
 export async function importFile() {
   const file = await storage.importFile();
-  if (file) importContent(file.content);
+  if (file) await importContent(file.content, file.name);
 }
 
 /** Импорт содержимого файла JSON (выбранного в окне или брошенного на окно программы). */
-export function importContent(content: string, fileName?: string) {
+export async function importContent(content: string, fileName?: string) {
   let data: any;
   try {
     data = JSON.parse(content);
@@ -457,10 +474,54 @@ export function importContent(content: string, fileName?: string) {
     toast(fileName ? `«${fileName}» — не файл JSON.` : 'Файл не является JSON.', 'bad');
     return;
   }
+  const what = fileName ? `«${fileName}»` : 'Файл';
+  const kind: 'ruleset' | 'battle' | 'scenario' | 'unit' | null =
+    data?.componentTypes && data?.rangeBands
+      ? 'ruleset'
+      : data?.log && data?.elements && data?.ruleset
+        ? 'battle'
+        : data?.sides && data?.rulesetId
+          ? 'scenario'
+          : (data?.elements && data?.subunits) || (data?.children && data?.composition)
+            ? 'unit'
+            : null;
+  if (!kind) {
+    toast(`${what}: не удалось распознать содержимое — это не набор правил, подразделение, сценарий или бой.`, 'bad');
+    return;
+  }
+  if (
+    fromNewerVersion(data, DATA_VERSION, SCHEMA_VERSION) &&
+    !(await confirmDialog(
+      'Файл из более новой версии программы',
+      `${what} записан более новой версией Echelon Commander. Эта версия может не знать части его настроек: при правке они сохранятся, но учитываться не будут.\n\nЛучше обновить программу. Импортировать всё равно?`,
+      'Импортировать',
+    ))
+  )
+    return;
+  // Прежние форматы переводятся в нынешний до проверки: проверяется то, с чем программа будет работать.
+  let prepared: unknown;
+  try {
+    prepared =
+      kind === 'ruleset'
+        ? normalizeRuleset(data as Ruleset)
+        : kind === 'scenario'
+          ? migrateScenario(data as Scenario)
+          : kind === 'unit'
+            ? migrateUnit(data)
+            : data;
+  } catch (e) {
+    await alertDialog(`${what} не импортирован`, `Файл повреждён или не подходит: ${(e as Error).message}`);
+    return;
+  }
+  const issues = importIssues(kind, prepared);
+  if (issues.length) {
+    await alertDialog(`${what} не импортирован`, `В файле не хватает нужного или есть ошибки:\n• ${issues.join('\n• ')}\n\nДанные программы не изменены.`);
+    return;
+  }
   const s = get();
-  if (data?.componentTypes && data?.rangeBands) {
+  if (kind === 'ruleset') {
     // Файл прежней версии — сразу к текущей (калибровка несменённых коэффициентов).
-    const r = upgradeRuleset(normalizeRuleset(data as Ruleset)).ruleset;
+    const r = upgradeRuleset(prepared as Ruleset).ruleset;
     if (s.rulesets[r.id]) {
       r.id = newId('rs');
       r.name = `${r.name} (импорт)`;
@@ -468,15 +529,14 @@ export function importContent(content: string, fileName?: string) {
     replaceRuleset(r);
     openTab('ruleset', r.id);
     toast(`Импортирован набор правил «${r.name}».`, 'good');
-  } else if (data?.log && data?.elements && data?.ruleset) {
+  } else if (kind === 'battle') {
     const b = data as Battle;
     if (s.battleIndex[b.id]) b.id = newId('bt');
     putBattle(b);
     openTab('battle', b.id);
     toast(`Импортирован бой «${b.name}».`, 'good');
-  } else if (data?.sides && data?.rulesetId) {
-    let sc = migrateScenario(data as Scenario);
-    sc = upgradeScenario(sc, s.rulesets[sc.rulesetId]);
+  } else if (kind === 'scenario') {
+    let sc = upgradeScenario(prepared as Scenario, s.rulesets[(prepared as Scenario).rulesetId]);
     if (s.scenarios[sc.id]) {
       sc.id = newId('sc');
       sc.name = `${sc.name} (импорт)`;
@@ -495,8 +555,8 @@ export function importContent(content: string, fileName?: string) {
     addScenario(sc);
     if (!s.rulesets[sc.rulesetId]) toast('Набор правил сценария не найден — выберите другой в сценарии.', 'bad');
     else toast(`Импортирован сценарий «${sc.name}»${n ? `, в «Силы» добавлено подразделений: ${n}` : ''}.`, 'good');
-  } else if ((data?.elements && data?.subunits) || (data?.children && data?.composition)) {
-    const f = migrateUnit(data);
+  } else {
+    const f = prepared as UnitNode;
     // С принадлежностью — это силы (конкретное подразделение), без неё — шаблон.
     const asForce = typeof data.faction === 'string';
     if ((asForce ? s.forces : s.formations)[f.id]) {
@@ -506,8 +566,6 @@ export function importContent(content: string, fileName?: string) {
     if (asForce) addForce(f);
     else addFormation(toTemplate(f));
     toast(`Импортировано: ${asForce ? 'силы' : 'шаблон'} «${f.name}».`, 'good');
-  } else {
-    toast('Не удалось распознать содержимое файла.', 'bad');
   }
 }
 

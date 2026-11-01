@@ -116,6 +116,7 @@ const ICONS = {
       <path d="m6 6 12 12" />
     </>
   ),
+  menu: <path d="M4 6h16M4 12h16M4 18h16" />,
   more: (
     <>
       <circle cx="12" cy="12" r="1" />

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DATA_VERSION,
+  SCHEMA_VERSION,
+  fromNewerVersion,
+  importIssues,
   applyIntervention,
   clone,
   canMove,
@@ -466,7 +470,7 @@ describe('бой', () => {
     const sc = makeLinearScenario();
     expect(validateScenario(sc, lr)).toHaveLength(0);
     const r = runMany(sc, lr, 60, 'lin');
-    expect(r.winA).toBeGreaterThan(15);
+    expect(r.winA).toBeGreaterThan(10);
     expect(r.winB).toBeGreaterThan(15);
   });
 
@@ -1445,5 +1449,36 @@ describe('итоги в часах и «удержать позицию»', () =
     const hours = r.metrics.find((m) => m.key === 'hours')!.stats.mean;
     expect(hours).toBeCloseTo((turns * rs.turnMinutes) / 60);
     expect(r.runs[0].hours).toBeCloseTo((r.runs[0].turns * 15) / 60);
+  });
+});
+
+describe('импорт файлов', () => {
+  it('свои файлы проходят проверку, испорченные — нет', () => {
+    const rs = makeUniversalRuleset();
+    expect(importIssues('ruleset', rs)).toEqual([]);
+    expect(importIssues('scenario', makeDemoScenario())).toEqual([]);
+    expect(importIssues('unit', makeDemoBattalion())).toEqual([]);
+    const b = createBattle(makeDemoScenario(), rs, { seed: 'imp' });
+    expect(importIssues('battle', JSON.parse(JSON.stringify(b)))).toEqual([]);
+
+    const badRs = clone(rs);
+    badRs.componentTypes[0].targetClass = 'нет-такого';
+    (badRs.componentTypes[1] as { crew: unknown }).crew = 'два';
+    const issues = importIssues('ruleset', badRs);
+    expect(issues.join('\n')).toContain('класс цели «нет-такого»');
+    expect(issues.join('\n')).toContain('«crew» — не число');
+
+    const unit = makeDemoBattalion();
+    (unit.children[0] as { composition: unknown }).composition = [{ typeId: 'rifleman' }];
+    expect(importIssues('unit', unit)[0]).toContain('строка состава №1 неполная');
+    expect(importIssues('scenario', { id: 'x', name: 'x', rulesetId: 'r', sides: [] })).toContain('сторон должно быть две');
+    expect(importIssues('battle', { id: 'b' }).length).toBeGreaterThan(2);
+  });
+
+  it('файл из более новой версии узнаётся по версии данных или схемы', () => {
+    expect(fromNewerVersion({ dataVersion: DATA_VERSION }, DATA_VERSION, SCHEMA_VERSION)).toBe(false);
+    expect(fromNewerVersion({ dataVersion: DATA_VERSION + 1 }, DATA_VERSION, SCHEMA_VERSION)).toBe(true);
+    expect(fromNewerVersion({ schemaVersion: SCHEMA_VERSION + 1 }, DATA_VERSION, SCHEMA_VERSION)).toBe(true);
+    expect(fromNewerVersion({}, DATA_VERSION, SCHEMA_VERSION)).toBe(false);
   });
 });
