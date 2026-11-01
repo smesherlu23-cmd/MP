@@ -17,7 +17,7 @@ import {
 } from '../../../engine';
 import { SupportPanel, type Target } from '../../components/BattleControls';
 import { CommanderSelect } from '../../components/CommanderSelect';
-import { Chev, Btn, Card, Check, Meter, Sel, fmt0, pct } from '../../components/ui';
+import { Chev, Btn, Card, Check, Meter, ScrollX, Sel, fmt0, pct } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { type Iv, SIDES } from './common';
 import { SideCompare } from './Result';
@@ -270,42 +270,44 @@ export function Forces(props: {
           <span className="muted small">подробные столбцы</span>
         </Check>
       </div>
-      {SIDES.map((side) => (
-        <Card key={side} title={<span style={{ color: b.sides[side].color }}>{b.sides[side].name}</span>} tight>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="tbl compact forces">
-              <thead>
-                <tr>
-                  <th>Элемент</th>
-                  <th>Приказ</th>
-                  <th className="num">Люди</th>
-                  {b.ruleset.features.morale && <th>Мораль</th>}
-                  <th className="num" data-tip="Остаточная боеспособность">
-                    Боесп.
-                  </th>
-                  {details && <DetailHeaders b={b} />}
-                </tr>
-              </thead>
-              <tbody>
-                {rowsFor(side).map(({ f: fs, depth }) => (
-                  <FormationRows
-                    key={fs.id}
-                    {...props}
-                    fs={fs}
-                    depth={depth}
-                    details={details}
-                    folded={fold.has(fs.id)}
-                    onToggle={() => toggle(fs.id)}
-                    agg={agg.get(fs.id)}
-                    selected={selSet}
-                    onSelect={onSelect}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      ))}
+      <div className={details ? 'forces-sides details' : 'forces-sides'}>
+        {SIDES.map((side) => (
+          <Card key={side} title={<span style={{ color: b.sides[side].color }}>{b.sides[side].name}</span>} tight>
+            <ScrollX>
+              <table className="tbl compact forces">
+                <thead>
+                  <tr>
+                    <th>Элемент</th>
+                    <th className="c-order">Приказ</th>
+                    <th className="num c-pers">Люди</th>
+                    {b.ruleset.features.morale && <th className="c-morale">Мораль</th>}
+                    <th className="num c-ce" data-tip="Остаточная боеспособность">
+                      Боесп.
+                    </th>
+                    {details && <DetailHeaders b={b} />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rowsFor(side).map(({ f: fs, depth }) => (
+                    <FormationRows
+                      key={fs.id}
+                      {...props}
+                      fs={fs}
+                      depth={depth}
+                      details={details}
+                      folded={fold.has(fs.id)}
+                      onToggle={() => toggle(fs.id)}
+                      agg={agg.get(fs.id)}
+                      selected={selSet}
+                      onSelect={onSelect}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </ScrollX>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -314,11 +316,15 @@ export function DetailHeaders({ b }: { b: Battle }) {
   const f = b.ruleset.features;
   return (
     <>
-      <th className="num">Техн.</th>
-      {f.suppression && <th className="num">Подавл.</th>}
-      {f.fatigue && <th className="num">Устал.</th>}
-      {f.ammo && <th className="num">БК</th>}
-      {f.detection && <th data-tip="Обнаружен противником в этом ходу">Виден</th>}
+      <th className="num c-det">Техн.</th>
+      {f.suppression && <th className="num c-det">Подавл.</th>}
+      {f.fatigue && <th className="num c-det">Устал.</th>}
+      {f.ammo && <th className="num c-det">БК</th>}
+      {f.detection && (
+        <th className="c-det" data-tip="Обнаружен противником в этом ходу">
+          Виден
+        </th>
+      )}
     </>
   );
 }
@@ -361,7 +367,7 @@ export function FormationRows(props: {
   return (
     <>
       <tr className={`group${props.folded ? ' folded' : ''}`}>
-        <td colSpan={2} style={{ paddingLeft: 4 + depth * 14 }}>
+        <td colSpan={2} className="f-cell" style={{ '--depth': depth } as React.CSSProperties}>
           <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
             {!b.finished && subtree.length > 0 && (
               <input
@@ -375,26 +381,29 @@ export function FormationRows(props: {
             <button type="button" className="fold-btn" onClick={props.onToggle} title={props.folded ? 'Развернуть' : 'Свернуть'}>
               <Chev open={!props.folded} />
             </button>
-            <a
-              href="#"
-              className="nowrap"
-              onClick={(e) => (e.preventDefault(), props.onFormation(fs.id))}
-              data-tip={`${f.comms ? `связь ${Math.round(fs.comms)}%\n` : ''}снабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
-            >
-              {fs.name}
-            </a>
-            {f.command && (
-              <CommanderSelect
-                levels={b.ruleset.commandLevels}
-                allowNone
-                tip={CMD_TIP}
-                value={fs.commandLevel}
-                disabled={b.finished}
-                onChange={(v) => iv('setFormation', { formationId: fs.id, commandLevel: v })}
-              />
-            )}
-            {fs.hqLost && <span className="badge bad">штаб потерян</span>}
-            {fs.broken && <span className="badge bad">сломлено</span>}
+            {/* Имя, командир и метки — своим блоком: если рядом не помещаются, переносятся под имя, а не под флажок. */}
+            <span className="group-main">
+              <a
+                href="#"
+                className="group-name"
+                onClick={(e) => (e.preventDefault(), props.onFormation(fs.id))}
+                data-tip={`${f.comms ? `связь ${Math.round(fs.comms)}%\n` : ''}снабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
+              >
+                {fs.name}
+              </a>
+              {f.command && (
+                <CommanderSelect
+                  levels={b.ruleset.commandLevels}
+                  allowNone
+                  tip={CMD_TIP}
+                  value={fs.commandLevel}
+                  disabled={b.finished}
+                  onChange={(v) => iv('setFormation', { formationId: fs.id, commandLevel: v })}
+                />
+              )}
+              {fs.hqLost && <span className="badge bad">штаб потерян</span>}
+              {fs.broken && <span className="badge bad">сломлено</span>}
+            </span>
           </div>
         </td>
         <td className="num nowrap">
@@ -418,32 +427,38 @@ export function FormationRows(props: {
         const vehStart = veh.reduce((a, c) => a + c.start, 0);
         return (
           <tr key={el.id} className={el.status !== 'active' ? 'dim' : ''}>
-            <td style={{ paddingLeft: 24 + depth * 14 }}>
-              {!b.finished && (el.status === 'active' || el.status === 'pending') && (
-                <input
-                  type="checkbox"
-                  className="pick-check"
-                  checked={selected.has(el.id)}
-                  onChange={(e) => onSelect([el.id], e.target.checked)}
-                  title="Отметить — для группового решения"
-                />
-              )}
-              <span className={`status-dot ${st.cls}`} data-tip={st.label} />
-              <a href="#" onClick={(e) => (e.preventDefault(), props.onElement(el.id))}>
-                {el.name}
-              </a>
-              {el.isHQ && <span className="faint small"> · штаб</span>}
-              {sectorName(el) && <span className="badge sector-badge">{sectorName(el)}</span>}
-              {effectsNext(b, E, el).length > 0 && (
-                <span
-                  className="badge info fx-badge"
-                  data-tip={effectsNext(b, E, el)
-                    .map((x) => `«${x.name}» до ${x.until}-го хода`)
-                    .join('\n')}
-                >
-                  ◌ {effectsNext(b, E, el).length === 1 ? effectsNext(b, E, el)[0].name : `эффектов: ${effectsNext(b, E, el).length}`}
+            <td className="e-cell" style={{ '--depth': depth } as React.CSSProperties}>
+              {/* Флажок, точка и имя — отдельными столбиками: длинное имя переносится под само себя, а не под флажок. */}
+              <div className="el-cell">
+                {!b.finished && (el.status === 'active' || el.status === 'pending') && (
+                  <input
+                    type="checkbox"
+                    className="pick-check"
+                    checked={selected.has(el.id)}
+                    onChange={(e) => onSelect([el.id], e.target.checked)}
+                    title="Отметить — для группового решения"
+                  />
+                )}
+                <span className={`status-dot ${st.cls}`} data-tip={st.label} />
+                <span className="el-name">
+                  <a href="#" onClick={(e) => (e.preventDefault(), props.onElement(el.id))}>
+                    {el.name}
+                  </a>
+                  {el.isHQ && <span className="faint small"> · штаб</span>}
                 </span>
-              )}
+                {sectorName(el) && <span className="badge sector-badge">{sectorName(el)}</span>}
+                {/* Эффект — значком: метка с названием переносилась у длинных имён и сдвигала столбцы. */}
+                {effectsNext(b, E, el).length > 0 && (
+                  <span
+                    className="badge info fx-badge"
+                    data-tip={`Временные эффекты:\n${effectsNext(b, E, el)
+                      .map((x) => `«${x.name}» до ${x.until}-го хода`)
+                      .join('\n')}`}
+                  >
+                    ◌{effectsNext(b, E, el).length > 1 ? ` ${effectsNext(b, E, el).length}` : ''}
+                  </span>
+                )}
+              </div>
             </td>
             <td>
               {active && E.behavior(el) !== 'rout' ? (

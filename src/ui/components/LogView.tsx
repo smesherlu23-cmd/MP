@@ -42,7 +42,8 @@ export function RichText({ text, b, onElement }: { text: string; b: Battle; onEl
             <a
               key={i}
               href="#"
-              style={{ color: b.sides[el.side].color }}
+              className="side-c"
+              style={{ '--sc': b.sides[el.side].color } as React.CSSProperties}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -56,7 +57,7 @@ export function RichText({ text, b, onElement }: { text: string; b: Battle; onEl
         if (kind === 'f') return <b key={i}>{names.f.get(id) ?? id}</b>;
         const side = b.sides[id as 'A' | 'B'];
         return (
-          <b key={i} style={{ color: side?.color }}>
+          <b key={i} className="side-c" style={{ '--sc': side?.color } as React.CSSProperties}>
             «{side?.name ?? id}»
           </b>
         );
@@ -205,7 +206,10 @@ function SummaryRow({ s, b, open, onToggle, onElement }: { s: Summary; b: Battle
           <Chev open={open} />
         </span>
         <span>
-          <b style={{ color }}>{names.f.get(s.fid) ?? s.fid}</b>: {parts.join(' · ')} <span className="faint small">— записей: {s.entries.length}</span>
+          <b className="side-c" style={{ '--sc': color } as React.CSSProperties}>
+            {names.f.get(s.fid) ?? s.fid}
+          </b>
+          : {parts.join(' · ')} <span className="faint small">— записей: {s.entries.length}</span>
         </span>
       </div>
       {open &&

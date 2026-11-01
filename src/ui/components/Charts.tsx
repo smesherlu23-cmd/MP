@@ -48,21 +48,39 @@ export function LineChart(props: {
   marks?: ChartMark[];
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
   const h = props.height ?? 180;
-  const pad = { l: 42, r: 10, t: 10, b: 22 };
+  // Сверху — место под треугольники отметок, чтобы они не наезжали на подпись оси.
+  const pad = { l: 42, r: 10, t: props.marks?.length ? 16 : 10, b: 22 };
   const n = Math.max(1, ...props.series.map((s) => s.values.length));
   const maxV = props.yMax ?? niceMax(Math.max(0, ...props.series.flatMap((s) => s.values.filter((v): v is number => v !== null))));
   const x = (i: number) => pad.l + (n <= 1 ? 0 : (i / (n - 1)) * (width - pad.l - pad.r));
   const y = (v: number) => pad.t + (1 - v / maxV) * (h - pad.t - pad.b);
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => t * maxV);
   const xStep = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((width - pad.l) / 50))));
+  const fmtV = (v: number) => `${String(Math.round(v * 10) / 10).replace('.', ',')}${props.yUnit ?? ''}`;
+  // Подсказка — на всю полосу у точки: значение видно при наведении куда угодно над ходом, а не только на точку.
+  const tipAt = (i: number) =>
+    [
+      `${props.xTitle ? `${props.xTitle[0].toUpperCase()}${props.xTitle.slice(1)} ` : ''}${props.labels?.[i] ?? i}`,
+      ...props.series.flatMap((s) => (s.values[i] == null ? [] : [`${s.name}: ${fmtV(s.values[i] as number)}`])),
+      ...(props.marks ?? []).filter((m) => m.at === i).map((m) => `▾ ${m.label}`),
+    ].join('\n');
+  const half = n <= 1 ? (width - pad.l - pad.r) / 2 : (width - pad.l - pad.r) / (n - 1) / 2;
   return (
     <div ref={ref}>
-      <svg className="chart" width={width} height={h} role="img" aria-label={`График: ${props.series.map((x) => x.name).join(', ')}`}>
+      <svg
+        className="chart"
+        width={width}
+        height={h}
+        role="img"
+        aria-label={`График: ${props.series.map((x) => x.name).join(', ')}`}
+        onMouseLeave={() => setHover(null)}
+      >
         {ticks.map((t) => (
           <g key={t}>
             <line className="grid-line" x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} />
-            <text x={pad.l - 6} y={y(t) + 3} textAnchor="end">
+            <text x={pad.l - 8} y={y(t) + 3} textAnchor="end">
               {fmtTick(t)}
               {props.yUnit ?? ''}
             </text>
@@ -78,14 +96,13 @@ export function LineChart(props: {
         {props.marks?.map((m) => (
           <g key={`m${m.at}`} className="chart-mark">
             <line x1={x(m.at)} x2={x(m.at)} y1={pad.t} y2={h - pad.b} stroke={m.color ?? 'currentColor'} />
-            <path d={`M${x(m.at) - 4},${pad.t - 1} h8 l-4,6 z`} fill={m.color ?? 'currentColor'} />
-            <rect x={x(m.at) - 6} y={pad.t - 2} width={12} height={h - pad.t - pad.b + 2} fill="transparent">
-              <title>{m.label}</title>
-            </rect>
+            <path d={`M${x(m.at) - 4},${pad.t - 9} h8 l-4,6 z`} fill={m.color ?? 'currentColor'} />
           </g>
         ))}
+        {hover !== null && <line className="chart-hover" x1={x(hover)} x2={x(hover)} y1={pad.t} y2={h - pad.b} />}
         {props.series.map((s) => {
           const pts = s.values.map((v, i) => (v === null ? null : `${x(i)},${y(v)}`)).filter(Boolean);
+          const hv = hover === null ? null : s.values[hover];
           return (
             <g key={s.name}>
               <polyline
@@ -96,17 +113,24 @@ export function LineChart(props: {
                 strokeDasharray={s.dashed ? '5 4' : undefined}
                 strokeLinejoin="round"
               />
-              {s.values.length <= 40 &&
-                s.values.map((v, i) =>
-                  v === null ? null : (
-                    <circle key={i} cx={x(i)} cy={y(v)} r={2.5} fill={s.color}>
-                      <title>{`${s.name}: ${Math.round(v * 10) / 10}`}</title>
-                    </circle>
-                  ),
-                )}
+              {s.values.length <= 40 && s.values.map((v, i) => (v === null ? null : <circle key={i} cx={x(i)} cy={y(v)} r={2.5} fill={s.color} />))}
+              {hover !== null && hv != null && <circle className="chart-hover-dot" cx={x(hover)} cy={y(hv)} r={4} fill={s.color} />}
             </g>
           );
         })}
+        {Array.from({ length: n }, (_, i) => (
+          <rect
+            // biome-ignore lint/suspicious/noArrayIndexKey: полосы — по номерам точек
+            key={`h${i}`}
+            className="chart-hit"
+            x={Math.max(pad.l, x(i) - half)}
+            y={0}
+            width={Math.min(width - pad.r, x(i) + half) - Math.max(pad.l, x(i) - half) || 1}
+            height={h - pad.b}
+            data-tip={tipAt(i)}
+            onMouseEnter={() => setHover(i)}
+          />
+        ))}
       </svg>
       <div className="legend">
         {props.series.map((s) => (
@@ -172,9 +196,8 @@ export function Histogram(props: { series: { name: string; color: string; values
                 height={h - pad.b - y(v)}
                 fill={props.series[si].color}
                 opacity={0.85}
-              >
-                <title>{`${props.series[si].name}: ${fmtTick(min + i * bw)}–${fmtTick(min + (i + 1) * bw)}${props.unit ?? ''} — ${v} (${Math.round((v / totals[si]) * 100)}%)`}</title>
-              </rect>
+                data-tip={`${props.series[si].name}: ${fmtTick(min + i * bw)}–${fmtTick(min + (i + 1) * bw)}${props.unit ?? ''} — ${v} (${Math.round((v / totals[si]) * 100)}%)`}
+              />
             ) : null,
           ),
         )}

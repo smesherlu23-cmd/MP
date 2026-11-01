@@ -73,6 +73,7 @@ function registerIpc() {
     nativeTheme.themeSource = t;
     if (process.platform !== 'darwin' && win) win.setTitleBarOverlay(overlay(t));
   });
+  ipcMain.on('window:fullscreen', () => win?.setFullScreen(!win.isFullScreen()));
   ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataDir }));
   ipcMain.handle('storage:list', (_e, col: string) => store.list(col, col === 'battles' ? battleMeta : undefined));
   ipcMain.handle('storage:load', (_e, col: string, id: string) => store.load(col, id));
@@ -189,6 +190,10 @@ async function createWindow() {
   });
   win.setMenuBarVisibility(false);
   win.once('ready-to-show', () => win?.show());
+  // Во весь экран кнопок окна нет: окно убирает место под них на панели инструментов и меняет пункт меню.
+  const sendFullScreen = () => win?.webContents.send('window:fullscreen', win.isFullScreen());
+  win.on('enter-full-screen', sendFullScreen);
+  win.on('leave-full-screen', sendFullScreen);
   // Перед закрытием окно дописывает отложенные сохранения (последняя правка — за 0,4 с до закрытия)
   // и сообщает «готово»; не ответило за 3 с (зависло) — закрываем всё равно.
   let closing = false;

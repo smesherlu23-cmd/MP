@@ -271,8 +271,8 @@ export function EffectModal({ b, target, onClose, iv }: { b: Battle; target: Tar
         >
           <Sel value={preset} onChange={pick} options={[...presets.map((p) => ({ value: p.id, label: p.name })), { value: '', label: 'свой эффект' }]} />
         </Field>
-        <Field label={`Ходов (${fmtDuration((turns * b.ruleset.turnMinutes) / 60)})`}>
-          <Num value={turns} onChange={(v) => setTurns(Math.max(1, Math.round(v)))} min={1} max={50} integer width="100%" />
+        <Field label={`Длительность (${fmtDuration((turns * b.ruleset.turnMinutes) / 60)})`}>
+          <Num value={turns} onChange={(v) => setTurns(Math.max(1, Math.round(v)))} min={1} max={50} integer width={110} suffix="ход." />
         </Field>
         <Field label="Название (для журнала)">
           <Txt value={name} onChange={setName} />
@@ -354,7 +354,10 @@ export function StrikeModal({
                 onChange={setFid}
                 options={[
                   { value: '', label: `вся сторона «${b.sides[enemy].name}»` },
-                  ...formations.map((f) => ({ value: f.id, label: `${'  '.repeat(Math.max(0, depth(f.parentId)))}${resolveRefs(`[[f:${f.id}]]`, b)}` })),
+                  ...formations.map((f) => ({
+                    value: f.id,
+                    label: `${'\u00a0\u00a0\u00a0'.repeat(Math.max(0, depth(f.parentId)))}${resolveRefs(`[[f:${f.id}]]`, b)}`,
+                  })),
                 ]}
               />
             )}
@@ -390,14 +393,15 @@ export function SupportPanel({
   const support = b.support ?? [];
   const live = !b.finished;
   if (!live && !effects.length) return null;
+  // enemyTarget — цель удара (сторона противника), в дательном падеже: «удар по всей стороне „Красные“».
   const whom = (x: { side: SideId; formationId?: string; elementIds?: string[] }, enemyTarget = false) =>
     x.formationId
       ? resolveRefs(`[[f:${x.formationId}]]`, b)
       : x.elementIds?.length
         ? x.elementIds.length > 2
-          ? `${x.elementIds.length} ${plural(x.elementIds.length, 'элемент', 'элемента', 'элементов')}`
+          ? `${x.elementIds.length} ${enemyTarget ? plural(x.elementIds.length, 'элементу', 'элементам', 'элементам') : plural(x.elementIds.length, 'элемент', 'элемента', 'элементов')}`
           : x.elementIds.map((id) => resolveRefs(`[[e:${id}]]`, b)).join(', ')
-        : `вся сторона «${b.sides[enemyTarget ? other(x.side) : x.side].name}»`;
+        : `${enemyTarget ? 'всей стороне' : 'вся сторона'} «${b.sides[enemyTarget ? other(x.side) : x.side].name}»`;
   return (
     <div className="support-panel">
       {(['A', 'B'] as SideId[]).map((side) => {
@@ -424,14 +428,19 @@ export function SupportPanel({
             {assets.map((a) => {
               const t = b.ruleset.componentTypes.find((x) => x.id === a.typeId);
               return (
-                <div key={a.id} className="support-item">
-                  <span className="grow">
-                    ✦ {a.name}{' '}
-                    <span className="faint small">
-                      · {a.count} × {t?.name ?? '?'}
+                <div key={a.id} className="support-item asset">
+                  <span className="sup-icon" aria-hidden>
+                    ✦
+                  </span>
+                  <span className="sup-text">
+                    <span className="sup-title" title={a.name}>
+                      {a.name}
+                    </span>
+                    <span className="sup-sub faint small">
+                      {a.count} × {t?.name.toLowerCase() ?? '?'}
                     </span>
                   </span>
-                  <span className={`small ${a.left ? '' : 'faint'}`}>
+                  <span className={`small nowrap ${a.left ? '' : 'faint'}`} title="Осталось ударов из доступных за бой">
                     {a.left} из {a.missions}
                   </span>
                   {live && (

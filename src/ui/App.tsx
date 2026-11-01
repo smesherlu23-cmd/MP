@@ -1,7 +1,7 @@
 // Каркас окна в духе macOS: боковая панель слева (на всю высоту), справа — панель инструментов
 // (назад/вперёд, заголовок, действия страницы, поиск) и открытая страница. Вкладок нет: переходы — как в Finder.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BattlePage } from './pages/BattlePage';
 import { FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
@@ -21,11 +21,12 @@ import { Icon, type IconName } from './components/Icon';
 import { Btn, ContextMenuHost, Menu, RenameInput, Splitter, openContextMenu } from './components/ui';
 import { CREATE_ITEMS } from './components/Navigator';
 import { QuickLookHost } from './components/QuickLook';
+import { TooltipHost } from './components/Tooltip';
 import { ToolbarSetupHost, openToolbarSetup } from './components/ToolbarSetup';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { objFromKey, objMenu, objName, renameObj, startRename, stopRename, useRenaming } from './objects';
 import { TOOLBAR_ITEMS, applyZoom, setTbShown, setZoom, tbShown, zoomBy, zoomOf } from './prefs';
-import { desktop } from './storage';
+import { desktop, isFullScreen, subscribeFullScreen } from './storage';
 import {
   openTab,
   alertDialog,
@@ -400,6 +401,7 @@ export function App() {
 
   const sidebar = s.settings.sidebar;
   const toggleSidebar = () => updateSettings({ sidebar: !sidebar });
+  const fullScreen = useSyncExternalStore(subscribeFullScreen, isFullScreen);
   const title = active ? tabTitle(active, s, battles) : '';
   const st = s.settings;
   const show = (id: Parameters<typeof tbShown>[1]) => tbShown(st, id);
@@ -556,6 +558,9 @@ export function App() {
                 { label: st.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', onClick: toggleTheme },
                 { label: sidebar ? 'Скрыть боковую панель' : 'Показать боковую панель', kbd: 'Ctrl+B', onClick: toggleSidebar },
                 { label: 'Настроить окно…', onClick: openToolbarSetup, tip: 'Кнопки панели инструментов и масштаб интерфейса' },
+                ...(desktop?.toggleFullScreen
+                  ? [{ label: fullScreen ? 'Выйти из полноэкранного режима' : 'Во весь экран', kbd: 'F11', onClick: () => desktop?.toggleFullScreen?.() }]
+                  : []),
                 'sep',
                 { label: 'Справка', onClick: () => openTab('help') },
                 { label: 'Настройки', kbd: 'Ctrl+,', onClick: () => openTab('settings') },
@@ -588,56 +593,6 @@ export function App() {
       <Toasts />
       <TooltipHost />
       <ContextMenuHost />
-    </div>
-  );
-}
-
-/** Одна всплывающая подсказка на всё окно: показывается у любого элемента с атрибутом data-tip. */
-function TooltipHost() {
-  const [tip, setTip] = useState<{ text: string; left: number; top: number; above: boolean } | null>(null);
-  useEffect(() => {
-    let cur: Element | null = null;
-    const show = (t: Element | null) => {
-      if (t === cur) return;
-      cur = t;
-      const text = t?.getAttribute('data-tip');
-      if (!t || !text) return setTip(null);
-      const r = t.getBoundingClientRect();
-      const above = r.bottom + 90 > window.innerHeight;
-      setTip({ text, left: Math.min(Math.max(8, r.left + r.width / 2 - 170), window.innerWidth - 348), top: above ? r.top - 6 : r.bottom + 6, above });
-    };
-    const over = (e: MouseEvent) => show((e.target as Element)?.closest?.('[data-tip]') ?? null);
-    // С клавиатуры подсказка показывается, когда на элемент переходят клавишей Tab (не по щелчку);
-    // у значка «?» — и по щелчку: его для того и нажимают.
-    const focus = (e: FocusEvent) => {
-      const t = e.target as Element;
-      if (t?.matches?.(':focus-visible, .hint-icon')) show(t.closest('[data-tip]'));
-    };
-    const hide = () => {
-      cur = null;
-      setTip(null);
-    };
-    const down = (e: MouseEvent) => (e.target as Element)?.closest?.('.hint-icon') || hide();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && hide();
-    document.addEventListener('mouseover', over);
-    document.addEventListener('focusin', focus);
-    document.addEventListener('focusout', hide);
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('scroll', hide, true);
-    document.addEventListener('mousedown', down);
-    return () => {
-      document.removeEventListener('mouseover', over);
-      document.removeEventListener('focusin', focus);
-      document.removeEventListener('focusout', hide);
-      document.removeEventListener('keydown', onKey);
-      document.removeEventListener('scroll', hide, true);
-      document.removeEventListener('mousedown', down);
-    };
-  }, []);
-  if (!tip) return null;
-  return (
-    <div className="tooltip" style={{ left: tip.left, top: tip.top, transform: tip.above ? 'translateY(-100%)' : undefined }}>
-      {tip.text}
     </div>
   );
 }

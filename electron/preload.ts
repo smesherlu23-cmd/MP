@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld('warsim', {
   /** Системный материал окна (Mica на Windows 11) — тогда боковая панель полупрозрачная. */
   material: process.argv.includes('--material=mica') ? 'mica' : '',
   setWindowTheme: (theme: 'dark' | 'light') => ipcRenderer.send('window:theme', theme),
+  /** Во весь экран и обратно (как F11). */
+  toggleFullScreen: () => ipcRenderer.send('window:fullscreen'),
+  onFullScreen: (cb: (on: boolean) => void) => {
+    ipcRenderer.on('window:fullscreen', (_e, on: boolean) => cb(on));
+  },
   appInfo: () => ipcRenderer.invoke('app:info'),
   /** Масштаб интерфейса (1 — обычный): как масштаб страницы, со всеми меню и окнами. */
   setZoom: (f: number) => webFrame.setZoomFactor(f),

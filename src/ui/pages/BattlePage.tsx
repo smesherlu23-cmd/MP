@@ -200,11 +200,16 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
               </Btn>
             </>
           )}
-          {undoLabel && (
-            <Btn icon onClick={() => undoBattle(b.id)} title={`Отменить: ${undoLabel} (Ctrl+Z). Бой повторяется с теми же бросками.`}>
-              <Icon name="undo" size={16} />
-            </Btn>
-          )}
+          {/* Кнопка стоит всегда (неактивна, пока отменять нечего): иначе после первого хода все кнопки боя
+              сдвигаются влево и второй щелчок по «Ход» попадает в «До события». */}
+          <Btn
+            icon
+            disabled={!undoLabel}
+            onClick={() => undoBattle(b.id)}
+            title={undoLabel ? `Отменить: ${undoLabel} (Ctrl+Z). Бой повторяется с теми же бросками.` : 'Отменить (Ctrl+Z)'}
+          >
+            <Icon name="undo" size={16} />
+          </Btn>
           <Menu
             items={[
               !!undoLabel && { label: `Отменить: ${undoLabel}`, kbd: 'Ctrl+Z', onClick: () => undoBattle(b.id) },

@@ -52,7 +52,7 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   for (const f of sd?.formations ?? [])
     walkUnits(f, (u, _parent, depth) => {
       if (p.kind === 'commander' && depth > 0 && !u.children.length) return;
-      nodes.push({ value: u.id, label: `${'  '.repeat(depth)}${u.name}` });
+      nodes.push({ value: u.id, label: `${'\u00a0\u00a0\u00a0'.repeat(depth)}${u.name}` });
     });
   const others = Object.values(scenarios).filter((x) => x.id !== sc.id && x.rulesetId === sc.rulesetId);
 

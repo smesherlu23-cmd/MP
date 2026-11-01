@@ -375,6 +375,7 @@ const SIDE_HELP = [
   'Структура (стрелка слева) — какие части подразделения участвуют в этом бою: галочка — участвует, снимите — воюет без неё. Приказ, участок и «насмерть» можно задать и отдельным частям.',
   'Щелчок по численности — в бой идёт только часть состава, вплоть до одного бойца или машины.',
   'Перетащите подразделение на другое подразделение стороны — оно будет придано ему на этот бой; на другую сторону — перейдёт к ней.',
+  'Правый щелчок по подразделению — действия с ним.',
 ].join('\n\n');
 
 function SideTree(props: {
@@ -437,7 +438,9 @@ function SideTree(props: {
               onChange={(e) => onToggle(n.id, e.target.checked)}
             />
           )}
-          <span className="side-node-name">{n.name}</span>
+          <span className="side-node-name" title={n.name}>
+            {n.name}
+          </span>
           {n.transfer ? (
             <span className="badge info" data-tip={`Передано из «${n.transfer.fromName}» — вернуть можно в «Силах»`}>
               передано
@@ -647,7 +650,6 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
               { label: 'Убрать из сценария', danger: true, onClick: () => remove(ri, node.name) },
             ])
           }
-          data-tip="Перетащите на другое подразделение стороны, чтобы придать его на этот бой; на другую сторону — чтобы перевести. Правый щелчок — действия"
         >
           <button
             type="button"
@@ -1026,6 +1028,8 @@ function QuickForecast({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   return (
     <div className="card quick-forecast">
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        {/* Место под стрелку, как у соседних сворачиваемых разделов: заголовки стоят по одной линии. */}
+        <span className="qf-indent" aria-hidden />
         <b>Прогноз исхода</b>
         <Info text={`${QUICK_RUNS} прогонов сценария без вмешательства ГМ, с текущим состоянием сил. Подробно — «Прогоны».`} />
         {r && (

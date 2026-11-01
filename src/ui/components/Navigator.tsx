@@ -434,10 +434,13 @@ export function Navigator() {
             title={`${meta.about}\nЩелчок — каталог раздела`}
             onClick={() => showSection(sec)}
           />
-          {meta.create && (
+          {/* Без «+» (у «Боёв») — пустое место той же ширины: счётчики всех разделов стоят столбцом. */}
+          {meta.create ? (
             <button type="button" className="nav-add" title={meta.create} onClick={() => createIn(sec)}>
               <Icon name="plus" size={15} />
             </button>
+          ) : (
+            <span className="nav-add-gap" aria-hidden />
           )}
         </div>
         {open && <div className="nav-list">{has ? list : <div className="nav-empty">{empty}</div>}</div>}

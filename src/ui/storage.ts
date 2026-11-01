@@ -78,6 +78,10 @@ export interface WindowBridge {
   /** «mica» — окно с системным материалом Windows 11 (полупрозрачная боковая панель). */
   material: string;
   setWindowTheme(theme: 'dark' | 'light'): void;
+  /** Во весь экран и обратно (как F11). */
+  toggleFullScreen(): void;
+  /** Окно вошло во весь экран или вышло из него. */
+  onFullScreen(cb: (on: boolean) => void): void;
   appInfo(): Promise<{ version: string; dataDir: string }>;
   setZoom(f: number): void;
   /** Перед закрытием окна главный процесс ждёт, пока `flush` допишет сохранения. */
@@ -308,9 +312,25 @@ export const storage: Bridge = window.warsim ?? browserBridge;
 export const storageKind: 'electron' | 'browser' = window.warsim ? 'electron' : 'browser';
 export const desktop: Partial<WindowBridge> | null = window.warsim ?? null;
 
+// Окно во весь экран (F11): кнопок окна нет, в меню программы — «Выйти из полноэкранного режима».
+let fullScreen = false;
+const fullScreenSubs = new Set<() => void>();
+export const isFullScreen = () => fullScreen;
+export function subscribeFullScreen(f: () => void) {
+  fullScreenSubs.add(f);
+  return () => {
+    fullScreenSubs.delete(f);
+  };
+}
+
 // Окно без системной шапки: верхняя полоса программы служит заголовком окна.
 if (desktop?.platform) {
   document.documentElement.classList.add('desktop');
   document.documentElement.dataset.platform = desktop.platform;
   if (desktop.material) document.documentElement.dataset.material = desktop.material;
+  desktop.onFullScreen?.((on) => {
+    fullScreen = on;
+    document.documentElement.classList.toggle('fullscreen', on);
+    for (const f of fullScreenSubs) f();
+  });
 }

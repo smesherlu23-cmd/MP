@@ -1,34 +1,36 @@
 // Сводка подразделения с подчинёнными: численность, техника, огневая мощь, риск паники.
 
 import { summarizeUnits, type Id, type Resolved, type Ruleset, type UnitNode } from '../../../engine';
-import { Card, Info, Section, fmt0, fmt1 } from '../../components/ui';
+import { Card, Info, ScrollX, Section, fmt0, fmt1 } from '../../components/ui';
 
 export function FireTable({ fire, rs }: { fire: Record<string, Record<string, number>>; rs: Ruleset }) {
   return (
-    <table className="tbl compact">
-      <thead>
-        <tr>
-          <th>По классу цели</th>
-          {rs.rangeBands.map((b) => (
-            <th key={b.id} className="num">
-              {b.name}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rs.targetClasses.map((c) => (
-          <tr key={c.id}>
-            <td>{c.name}</td>
+    <ScrollX>
+      <table className="tbl compact fire-tbl">
+        <thead>
+          <tr>
+            <th>По классу цели</th>
             {rs.rangeBands.map((b) => (
-              <td key={b.id} className="num">
-                {fmt1(fire[c.id]?.[b.id] ?? 0)}
-              </td>
+              <th key={b.id} className="num">
+                {b.name}
+              </th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rs.targetClasses.map((c) => (
+            <tr key={c.id}>
+              <td>{c.name}</td>
+              {rs.rangeBands.map((b) => (
+                <td key={b.id} className="num">
+                  {fmt1(fire[c.id]?.[b.id] ?? 0)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </ScrollX>
   );
 }
 
