@@ -28,6 +28,18 @@ interface Group {
 
 const byName = <T extends { name: string }>(a: T, b: T) => a.name.localeCompare(b.name, 'ru');
 
+/** Ширина столбцов каталога (классы в CSS): короткие числа и дата — узкие, текстовые — по доле ширины. */
+const COL_CLS: Record<string, string> = {
+  'Набор правил': 'c-rs',
+  'Стороны, чел.': 'c-sides',
+  Боёв: 'c-num',
+  Типов: 'c-num',
+  Сценариев: 'c-num wide',
+  Изменён: 'c-date',
+  Состояние: 'c-state',
+};
+const isEmpty = (c: ReactNode) => c === '' || c === null || c === undefined;
+
 /** Сколько людей в подразделении (по набору правил подразделения). */
 function persons(root: UnitNode): string {
   const s = useApp.getState();
@@ -61,7 +73,8 @@ function useCatalog(sec: NavSection, q: string): { head: string[]; groups: Group
                 <Icon name="play" size={13} /> Бой
               </Btn>
               <Btn sm disabled={!rs} onClick={() => openTab('montecarlo', x.id)} title="Массовые прогоны: вероятности исходов">
-                <Icon name="sigma" size={13} /> Прогоны
+                <Icon name="sigma" size={13} />
+                <span className="btn-text">Прогоны</span>
               </Btn>
             </>
           ),
@@ -222,9 +235,11 @@ export function LibraryPage({ tab }: { tab: Tab }) {
                     <tr>
                       <th className="catalog-name">Название</th>
                       {head.map((h) => (
-                        <th key={h}>{h}</th>
+                        <th key={h} className={COL_CLS[h]}>
+                          {h}
+                        </th>
                       ))}
-                      <th className="catalog-actions" style={{ width: sec === 'scenarios' ? 230 : 160 }} />
+                      <th className={`catalog-actions${sec === 'scenarios' ? ' two' : ''}`} />
                     </tr>
                   </thead>
                   <tbody>
@@ -249,8 +264,12 @@ export function LibraryPage({ tab }: { tab: Tab }) {
                           </button>
                         </td>
                         {r.cells.map((c, i) => (
-                          <td key={i} className="muted">
-                            {c}
+                          <td
+                            key={i}
+                            className={`muted ${COL_CLS[head[i]] ?? ''}`}
+                            title={typeof c === 'string' || typeof c === 'number' ? String(c) : undefined}
+                          >
+                            {isEmpty(c) ? '—' : c}
                           </td>
                         ))}
                         <td className="catalog-actions">

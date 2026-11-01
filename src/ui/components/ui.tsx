@@ -356,17 +356,18 @@ export function Menu(props: {
       } else arrowNav(e, pop.current, '.menu-item');
     };
     const onResize = () => setPos(null);
-    // Прокрутили страницу — кнопка уехала, меню не должно висеть над чужими данными.
+    // Прокрутили страницу колесом — кнопка уехала, меню не должно висеть над чужими данными. Слушаем колесо,
+    // а не scroll: прокручивает и сама программа (к выбранному блоку), и от этого меню закрываться не должно.
     const onScroll = (e: Event) => !(e.target as Element).closest?.('.menu-pop') && setPos(null);
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('resize', onResize);
-    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('wheel', onScroll, { capture: true, passive: true });
     return () => {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('resize', onResize);
-      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('wheel', onScroll, { capture: true });
     };
   }, [pos]);
   const items = props.items.filter(Boolean) as (MenuItem | 'sep')[];
@@ -476,13 +477,13 @@ export function ContextMenuHost() {
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('resize', closeContextMenu);
     window.addEventListener('blur', closeContextMenu);
-    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('wheel', onScroll, { capture: true, passive: true });
     return () => {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('resize', closeContextMenu);
       window.removeEventListener('blur', closeContextMenu);
-      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('wheel', onScroll, { capture: true });
     };
   }, [at]);
   if (!at) return null;
@@ -741,5 +742,38 @@ export function Splitter(props: {
 }
 
 export const fmt0 = (v: number) => Math.round(v).toLocaleString('ru-RU');
+/**
+ * Область с прокруткой вбок (широкая таблица): у скрытого края — затенение, видно, что дальше есть столбцы.
+ */
+export function ScrollX({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ l: false, r: false });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const upd = () => {
+      const l = el.scrollLeft > 2;
+      const r = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+      setEdges((e) => (e.l === l && e.r === r ? e : { l, r }));
+    };
+    upd();
+    el.addEventListener('scroll', upd, { passive: true });
+    const ro = new ResizeObserver(upd);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener('scroll', upd);
+      ro.disconnect();
+    };
+  }, []);
+  return (
+    <div className={`scroll-x${edges.l ? ' more-left' : ''}${edges.r ? ' more-right' : ''}`}>
+      <div ref={ref} className="scroll-x-inner">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export const fmt1 = (v: number) => (Math.round(v * 10) / 10).toLocaleString('ru-RU');
 export const pct = (v: number) => `${Math.round(v)}%`;

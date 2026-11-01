@@ -184,7 +184,7 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                     min={1}
                     max={50}
                     integer
-                    suffix="ход"
+                    suffix="ход."
                     width={78}
                     title="Сколько ходов действует"
                   />
@@ -295,7 +295,7 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                     min={0}
                     max={20}
                     integer
-                    suffix="ход"
+                    suffix="ход."
                     width={78}
                     title="Через сколько ходов после выполнения условия событие наступит"
                   />
@@ -320,7 +320,7 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                     min={0}
                     max={20}
                     integer
-                    suffix="ход"
+                    suffix="ход."
                     width={84}
                   />
                 </>

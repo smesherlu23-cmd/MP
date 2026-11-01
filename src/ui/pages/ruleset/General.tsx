@@ -107,7 +107,7 @@ export function TempEffectsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                 min={1}
                 max={50}
                 integer
-                suffix="ход"
+                suffix="ход."
                 width={78}
                 title="Сколько ходов действует по умолчанию"
               />

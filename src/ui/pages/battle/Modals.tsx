@@ -227,7 +227,7 @@ export function ElementModal({
                       ) : (
                         <b>{c.current}</b>
                       )}{' '}
-                      <span className="faint">из {c.start}</span>
+                      <span className="faint of-total">из {c.start}</span>
                     </td>
                     <td
                       className="num"

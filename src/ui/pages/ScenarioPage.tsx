@@ -438,7 +438,9 @@ function SideTree(props: {
               onChange={(e) => onToggle(n.id, e.target.checked)}
             />
           )}
-          <span className="side-node-name">{n.name}</span>
+          <span className="side-node-name" title={n.name}>
+            {n.name}
+          </span>
           {n.transfer ? (
             <span className="badge info" data-tip={`Передано из «${n.transfer.fromName}» — вернуть можно в «Силах»`}>
               передано
@@ -1026,6 +1028,8 @@ function QuickForecast({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   return (
     <div className="card quick-forecast">
       <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+        {/* Место под стрелку, как у соседних сворачиваемых разделов: заголовки стоят по одной линии. */}
+        <span className="qf-indent" aria-hidden />
         <b>Прогноз исхода</b>
         <Info text={`${QUICK_RUNS} прогонов сценария без вмешательства ГМ, с текущим состоянием сил. Подробно — «Прогоны».`} />
         {r && (

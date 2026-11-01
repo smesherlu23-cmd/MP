@@ -39,7 +39,8 @@ test('бой: групповой приказ, эффект на выбранн�
   await bar.getByRole('button', { name: 'Эффект…' }).click();
   await page.locator('.modal').getByRole('button', { name: 'Наложить' }).click();
   await expect(page.locator('.support-panel')).toContainText('«Дымовая завеса»');
-  await expect(blue.locator('.badge', { hasText: 'Дымовая завеса' })).toHaveCount(2);
+  // Эффект в таблице — значком; название — в подсказке.
+  await expect(blue.locator('.fx-badge[data-tip*="Дымовая завеса"]')).toHaveCount(2);
 
   // Удар артиллерии Синих — по формированию Красных; наносится в начале следующего хода.
   await page.locator('.support-panel').getByRole('button', { name: 'Удар…' }).click();

@@ -276,7 +276,7 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
             </table>
           </div>
         )}
-        <div style={{ padding: '6px 14px 4px' }}>
+        <div className="comp-add-row">
           {types.size ? (
             <select
               className="comp-add"

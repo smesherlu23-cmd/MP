@@ -1,7 +1,7 @@
 // Набор правил: каталог типов (карточки и таблица), классы целей и дистанции.
 
 import { KIND_LABELS, clone, newId, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
-import { Btn, Card, Check, Field, Info, Menu, Num, Sel, Seg, Tags, Txt, pressable } from '../../components/ui';
+import { Btn, Card, Check, Field, Info, Menu, Num, ScrollX, Sel, Seg, Tags, Txt, pressable } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { openTab, toastUndoable, useApp } from '../../store';
 import type { Upd } from './common';
@@ -82,8 +82,12 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
                     .filter((x) => x.kind === k)
                     .map((x) => (
                       <div key={x.id} className={`tree-node${x.id === t?.id ? ' sel' : ''}`} onClick={() => setSel(x.id)} {...pressable(() => setSel(x.id))}>
-                        <span className="tn-name">{x.name}</span>
-                        <span className="tn-meta">{r.targetClasses.find((c) => c.id === x.targetClass)?.name ?? '?'}</span>
+                        <span className="tn-name" title={x.name}>
+                          {x.name}
+                        </span>
+                        <span className="tn-meta" title={r.targetClasses.find((c) => c.id === x.targetClass)?.name}>
+                          {r.targetClasses.find((c) => c.id === x.targetClass)?.name ?? '?'}
+                        </span>
                       </div>
                     ))}
                 </div>
@@ -202,8 +206,8 @@ export function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Co
         <h4>Огневая мощь одной единицы за ход</h4>
         <Info text="Пример: 0,04 — сто таких единиц за ход в идеальных условиях выводят из строя около 4 целей этого класса. Реальный результат умножается на состояние, условия, приказы и защищённость цели." />
       </div>
-      <div style={{ overflowX: 'auto' }}>
-        <table className="tbl matrix" style={{ width: 'auto' }}>
+      <ScrollX>
+        <table className="tbl matrix fire-tbl" style={{ width: 'auto' }}>
           <thead>
             <tr>
               <th>По классу цели</th>
@@ -237,7 +241,7 @@ export function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Co
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollX>
       {used > 0 && (
         <p className="faint small" style={{ margin: '8px 0 0' }}>
           Используется в элементах: {used}
@@ -247,22 +251,37 @@ export function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Co
   );
 }
 
+/** Число из набора правил как есть, но с запятой: 0,035. */
+const num = (v: number | undefined) => String(v ?? 0).replace('.', ',');
+
 export function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => void }) {
   return (
     <Card tight>
-      <div style={{ overflowX: 'auto' }}>
-        <table className="tbl compact">
+      <ScrollX>
+        <table className="tbl compact types-tbl">
           <thead>
+            {/* Огневая мощь — по классу цели, под ним дистанции: подписи целиком, а не «Живая·Дал». */}
             <tr>
-              <th>Тип</th>
-              <th>Вид</th>
-              <th>Класс</th>
-              <th className="num">Ценн.</th>
-              <th className="num">Защ.</th>
+              <th rowSpan={2}>Тип</th>
+              <th rowSpan={2}>Вид</th>
+              <th rowSpan={2}>Класс</th>
+              <th rowSpan={2} className="num">
+                Ценн.
+              </th>
+              <th rowSpan={2} className="num">
+                Защ.
+              </th>
+              {r.targetClasses.map((c) => (
+                <th key={c.id} colSpan={r.rangeBands.length} className="center fp-class">
+                  {c.name}
+                </th>
+              ))}
+            </tr>
+            <tr>
               {r.targetClasses.flatMap((c) =>
-                r.rangeBands.map((b) => (
-                  <th key={`${c.id}-${b.id}`} className="num" title={`${c.name}, ${b.name}`}>
-                    {c.name.slice(0, 6)}·{b.name.slice(0, 3)}
+                r.rangeBands.map((b, bi) => (
+                  <th key={`${c.id}-${b.id}`} className={`num fp-band${bi === 0 ? ' first' : ''}`}>
+                    {b.name}
                   </th>
                 )),
               )}
@@ -283,12 +302,12 @@ export function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => 
                 </td>
                 <td className="small">{KIND_LABELS[t.kind]}</td>
                 <td className="small">{r.targetClasses.find((c) => c.id === t.targetClass)?.name}</td>
-                <td className="num">{t.value}</td>
-                <td className="num">{t.protection}</td>
+                <td className="num">{num(t.value)}</td>
+                <td className="num">{num(t.protection)}</td>
                 {r.targetClasses.flatMap((c) =>
-                  r.rangeBands.map((b) => (
-                    <td key={`${c.id}-${b.id}`} className="num small">
-                      {t.firepower[c.id]?.[b.id] || <span className="faint">0</span>}
+                  r.rangeBands.map((b, bi) => (
+                    <td key={`${c.id}-${b.id}`} className={`num small${bi === 0 ? ' fp-first' : ''}`}>
+                      {t.firepower[c.id]?.[b.id] ? num(t.firepower[c.id][b.id]) : <span className="faint">0</span>}
                     </td>
                   )),
                 )}
@@ -296,7 +315,7 @@ export function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => 
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollX>
     </Card>
   );
 }

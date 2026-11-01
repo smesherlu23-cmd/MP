@@ -17,7 +17,7 @@ import {
 } from '../../../engine';
 import { SupportPanel, type Target } from '../../components/BattleControls';
 import { CommanderSelect } from '../../components/CommanderSelect';
-import { Chev, Btn, Card, Check, Meter, Sel, fmt0, pct } from '../../components/ui';
+import { Chev, Btn, Card, Check, Meter, ScrollX, Sel, fmt0, pct } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { type Iv, SIDES } from './common';
 import { SideCompare } from './Result';
@@ -272,7 +272,7 @@ export function Forces(props: {
       </div>
       {SIDES.map((side) => (
         <Card key={side} title={<span style={{ color: b.sides[side].color }}>{b.sides[side].name}</span>} tight>
-          <div style={{ overflowX: 'auto' }}>
+          <ScrollX>
             <table className="tbl compact forces">
               <thead>
                 <tr>
@@ -303,7 +303,7 @@ export function Forces(props: {
                 ))}
               </tbody>
             </table>
-          </div>
+          </ScrollX>
         </Card>
       ))}
     </div>
@@ -361,7 +361,7 @@ export function FormationRows(props: {
   return (
     <>
       <tr className={`group${props.folded ? ' folded' : ''}`}>
-        <td colSpan={2} style={{ paddingLeft: 4 + depth * 14 }}>
+        <td colSpan={2} className="f-cell" style={{ '--depth': depth } as React.CSSProperties}>
           <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
             {!b.finished && subtree.length > 0 && (
               <input
@@ -375,26 +375,29 @@ export function FormationRows(props: {
             <button type="button" className="fold-btn" onClick={props.onToggle} title={props.folded ? 'Развернуть' : 'Свернуть'}>
               <Chev open={!props.folded} />
             </button>
-            <a
-              href="#"
-              className="group-name"
-              onClick={(e) => (e.preventDefault(), props.onFormation(fs.id))}
-              data-tip={`${f.comms ? `связь ${Math.round(fs.comms)}%\n` : ''}снабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
-            >
-              {fs.name}
-            </a>
-            {f.command && (
-              <CommanderSelect
-                levels={b.ruleset.commandLevels}
-                allowNone
-                tip={CMD_TIP}
-                value={fs.commandLevel}
-                disabled={b.finished}
-                onChange={(v) => iv('setFormation', { formationId: fs.id, commandLevel: v })}
-              />
-            )}
-            {fs.hqLost && <span className="badge bad">штаб потерян</span>}
-            {fs.broken && <span className="badge bad">сломлено</span>}
+            {/* Имя, командир и метки — своим блоком: если рядом не помещаются, переносятся под имя, а не под флажок. */}
+            <span className="group-main">
+              <a
+                href="#"
+                className="group-name"
+                onClick={(e) => (e.preventDefault(), props.onFormation(fs.id))}
+                data-tip={`${f.comms ? `связь ${Math.round(fs.comms)}%\n` : ''}снабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
+              >
+                {fs.name}
+              </a>
+              {f.command && (
+                <CommanderSelect
+                  levels={b.ruleset.commandLevels}
+                  allowNone
+                  tip={CMD_TIP}
+                  value={fs.commandLevel}
+                  disabled={b.finished}
+                  onChange={(v) => iv('setFormation', { formationId: fs.id, commandLevel: v })}
+                />
+              )}
+              {fs.hqLost && <span className="badge bad">штаб потерян</span>}
+              {fs.broken && <span className="badge bad">сломлено</span>}
+            </span>
           </div>
         </td>
         <td className="num nowrap">
@@ -418,7 +421,7 @@ export function FormationRows(props: {
         const vehStart = veh.reduce((a, c) => a + c.start, 0);
         return (
           <tr key={el.id} className={el.status !== 'active' ? 'dim' : ''}>
-            <td style={{ paddingLeft: 24 + depth * 14 }}>
+            <td className="e-cell" style={{ '--depth': depth } as React.CSSProperties}>
               {/* Флажок, точка и имя — отдельными столбиками: длинное имя переносится под само себя, а не под флажок. */}
               <div className="el-cell">
                 {!b.finished && (el.status === 'active' || el.status === 'pending') && (

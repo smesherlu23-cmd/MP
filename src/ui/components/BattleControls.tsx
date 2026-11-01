@@ -271,8 +271,8 @@ export function EffectModal({ b, target, onClose, iv }: { b: Battle; target: Tar
         >
           <Sel value={preset} onChange={pick} options={[...presets.map((p) => ({ value: p.id, label: p.name })), { value: '', label: 'свой эффект' }]} />
         </Field>
-        <Field label={`Ходов (${fmtDuration((turns * b.ruleset.turnMinutes) / 60)})`}>
-          <Num value={turns} onChange={(v) => setTurns(Math.max(1, Math.round(v)))} min={1} max={50} integer width="100%" />
+        <Field label={`Длительность (${fmtDuration((turns * b.ruleset.turnMinutes) / 60)})`}>
+          <Num value={turns} onChange={(v) => setTurns(Math.max(1, Math.round(v)))} min={1} max={50} integer width={110} suffix="ход." />
         </Field>
         <Field label="Название (для журнала)">
           <Txt value={name} onChange={setName} />

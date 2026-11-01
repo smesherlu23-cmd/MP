@@ -77,7 +77,8 @@ export function TooltipHost() {
       const own = t.getAttribute('data-tip');
       const text = own || t.getAttribute('title') || t.getAttribute('data-tip-title') || '';
       if (mouse) take(t);
-      if (!text || (!own && redundant(t, text))) return setTip(null);
+      // У открытого меню подсказка кнопки («Ещё») только мешает.
+      if (!text || t.getAttribute('aria-expanded') === 'true' || (!own && redundant(t, text))) return setTip(null);
       const at = t.getAttribute('data-tip-at');
       setTip({ text, box: ((at && t.closest(at)) || t).getBoundingClientRect() });
     };

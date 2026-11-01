@@ -259,7 +259,9 @@ html.resizing * {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow: hidden;
+  /* clip, а не hidden: ручка ширины выступает за край на 4 px, и с hidden панель становилась областью
+     прокрутки — при открытии объекта из длинного раздела она съезжала на 4 px влево. */
+  overflow: clip;
   background: var(--side-bg);
   border-right: 1px solid var(--sep);
 }
@@ -536,7 +538,8 @@ html.resizing .splitter::after {
   .tb-search:focus-within {
     transition: box-shadow var(--dur-1);
   }
-  .tb-global > .tb-icon:not(.tb-create) {
+  /* ☰ (меню программы) остаётся всегда: через него доступны тема, импорт, «Настроить окно», отмена. */
+  .tb-global > .tb-icon:not(.tb-create):not(.tb-appmenu) {
     display: none;
   }
 }
@@ -548,7 +551,7 @@ html.resizing .splitter::after {
     gap: 4px;
   }
   .tb-actions {
-    gap: 2px;
+    gap: 4px;
   }
   .tb-actions .btn:not(.icon) {
     padding: 0 7px;
@@ -729,10 +732,11 @@ input.invalid {
   display: grid;
   gap: 10px 14px;
   /* Не уже 240px: подписи вида «Первый эшелон (по умолчанию)» в выпадающих списках не обрезаются. */
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
 }
+/* В узкой карточке (окно 1000 px) — один столбец во всю ширину карточки, а не за её краем. */
 .fields.two {
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
 }
 
 .range-field {
@@ -1032,10 +1036,19 @@ table.tbl {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Имя важнее подписи справа: сжимается (с многоточием) сначала подпись, потом имя. */
 .tree-node .tn-meta {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
   color: var(--faint);
   font-size: var(--fs-xs);
   white-space: nowrap;
+}
+.tree-node .tn-name:has(+ .tn-meta) {
+  flex: 0 1 auto;
 }
 .tree-node .tn-actions {
   display: none;
@@ -1383,8 +1396,14 @@ table.tbl {
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
+/* Фокус подсвечивает только рамку поиска (как у поиска на панели инструментов), без второй рамки у поля. */
 .help-search:focus-within {
   border-color: var(--accent-fg);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+.help-search input:focus {
+  border: none;
+  box-shadow: none;
 }
 .help-search input {
   flex: 1;
@@ -2707,9 +2726,11 @@ select.order-mini {
   align-items: start;
   gap: 10px;
 }
-@media (max-width: 900px) {
+/* Узкая область боя (окно 1000 px с журналом) — стороны друг под другом: в двух столбцах название средства
+   сжималось до «Артд…». */
+@container (max-width: 640px) {
   .support-panel {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .support-side {
@@ -2786,8 +2807,22 @@ select.order-mini {
 .el-cell > .el-name {
   min-width: 0;
 }
-/* Имя формирования переносится, а не растягивает столбец: метки «сломлено» и «штаб потерян» не выталкивают
-   «Боесп.» за край карточки. */
+/* Отступ строки — по глубине формирования. */
+.tbl.forces td.f-cell {
+  padding-left: calc(4px + var(--depth, 0) * 14px);
+}
+.tbl.forces td.e-cell {
+  padding-left: calc(24px + var(--depth, 0) * 14px);
+}
+/* Имя формирования переносится, а не растягивает столбец: выбор командира и метки «сломлено»,
+   «штаб потерян» уходят под имя и не выталкивают «Боесп.» за край карточки. */
+.tbl.forces .group-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 6px;
+  min-width: 0;
+}
 .tbl.forces .group-name {
   min-width: 0;
 }
@@ -3174,8 +3209,53 @@ span.wf-add {
   padding-top: 8px;
   padding-bottom: 8px;
 }
-.catalog-name {
-  width: 34%;
+/* Название — всё, что осталось; остальные столбцы — по содержимому: в узком окне «Набор правил» и «Стороны»
+   сжимались до 54 px. */
+.catalog-tbl .c-rs {
+  width: 20%;
+}
+.catalog-tbl .c-sides {
+  width: 22%;
+}
+.catalog-tbl .c-num {
+  width: 64px;
+}
+.catalog-tbl .c-num.wide {
+  width: 92px;
+}
+.catalog-tbl .c-date {
+  width: 120px;
+}
+.catalog-tbl .c-state {
+  width: 140px;
+}
+.catalog-tbl td:not(.catalog-name) {
+  white-space: nowrap;
+}
+.catalog-actions {
+  width: 160px;
+}
+.catalog-actions.two {
+  width: 230px;
+}
+@container main (max-width: 860px) {
+  .catalog-tbl .c-date {
+    display: none;
+  }
+  .catalog-tbl .c-rs,
+  .catalog-tbl .c-sides {
+    width: 24%;
+  }
+  .catalog-actions.two {
+    width: 150px;
+  }
+  .catalog-actions .btn-text {
+    display: none;
+  }
+  .catalog-tbl td.c-rs,
+  .catalog-tbl td.c-sides {
+    white-space: normal;
+  }
 }
 .catalog-name .link {
   color: var(--text);
@@ -3425,9 +3505,11 @@ span.wf-add {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Кнопки — по ширине надписи (не меньше 112 px), сколько поместится в ряд: в трёх равных столбцах
+   «Пополнить…» обрезалась. */
 .force-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
   gap: 6px;
   margin-top: 2px;
 }
@@ -3720,11 +3802,17 @@ button.team-dot:hover {
 .team-battles td {
   vertical-align: top;
 }
-.team-link {
+/* Название команды — заголовок обычным цветом (цвет команды — у точки слева), а не синяя ссылка:
+   «Красные», написанные синим, сбивают. */
+.team-link,
+.link.team-link {
+  color: var(--text);
   cursor: pointer;
 }
-.team-link:hover {
-  color: var(--accent-fg);
+.team-link:hover,
+.link.team-link:hover {
+  color: var(--link);
+  text-decoration: underline;
 }
 
 /* ---------- сценарий: быстрый прогноз исхода */
@@ -3779,6 +3867,8 @@ select {
   appearance: none;
   cursor: pointer;
   padding-right: 26px;
+  /* Длинный пункт в узком списке — с многоточием, а не обрезан посредине буквы. */
+  text-overflow: ellipsis;
   background-image: var(--chev);
   background-repeat: no-repeat;
   background-position: right 9px center;
@@ -3924,6 +4014,10 @@ input.invalid {
 }
 .btn.danger {
   color: var(--bad);
+}
+/* В тёмной теме красный текст на серой кнопке светлее: иначе контраст 3:1 при норме 4,5:1. */
+:root:not([data-theme="light"]) .btn.danger:not(:disabled) {
+  color: oklch(from var(--bad) max(l, 0.76) c h);
 }
 .btn.ghost {
   background: transparent;
@@ -4451,6 +4545,15 @@ input.invalid {
 }
 .nav-item.here .grow {
   font-weight: 600;
+}
+.nav-add-gap {
+  flex-shrink: 0;
+  width: 25px;
+}
+/* У выбранного раздела счётчик ярче: на подсветке бледный текст не читается. */
+.nav-item.selected .nav-count,
+.nav-item.here .nav-count {
+  color: var(--muted);
 }
 .nav-count {
   min-width: 20px;
@@ -5288,13 +5391,17 @@ tr[tabindex]:focus-visible {
     padding-left: 4px;
     padding-right: 4px;
   }
+  /* Имена переносятся по словам (не посреди слова); выбор командира и метки формирования — на следующей
+     строке под именем, если рядом не помещаются. */
   .tbl.forces td:first-child {
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  .tbl.forces tr.group a.nowrap {
-    min-width: 0;
-    white-space: normal;
+  .tbl.forces td.f-cell {
+    padding-left: calc(2px + var(--depth, 0) * 8px);
+  }
+  .tbl.forces td.e-cell {
+    padding-left: calc(10px + var(--depth, 0) * 8px);
   }
   .tbl.forces select {
     width: 96px !important;
@@ -5303,9 +5410,13 @@ tr[tabindex]:focus-visible {
   .tbl.forces td[style*="min-width"] {
     min-width: 0 !important;
   }
+  /* Шкала морали — тонкой полоской под числом: место отдаётся именам, чтобы они переносились по словам. */
   .tbl.forces .meter-cell {
-    grid-template-columns: 24px 28px;
-    gap: 4px;
+    grid-template-columns: 26px;
+    gap: 2px;
+  }
+  .tbl.forces .meter-cell .meter {
+    height: 3px;
   }
   .tbl.forces .meter {
     min-width: 0;
@@ -5339,4 +5450,127 @@ tr[tabindex]:focus-visible {
 .vnav,
 .help-toc {
   top: 24px;
+}
+
+/* Широкая таблица в узкой карточке: прокрутка вбок, у скрытого края — затенение. */
+.scroll-x {
+  position: relative;
+  min-width: 0;
+}
+.scroll-x-inner {
+  overflow-x: auto;
+}
+.scroll-x::before,
+.scroll-x::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 28px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-1);
+}
+.scroll-x::before {
+  left: 0;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.28), transparent);
+}
+.scroll-x::after {
+  right: 0;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.28), transparent);
+}
+.scroll-x.more-left::before,
+.scroll-x.more-right::after {
+  opacity: 1;
+}
+
+/* Таблица типов: класс цели над дистанциями, подписи переносятся; группы разделены линией. */
+.types-tbl th.fp-class {
+  border-left: 1px solid var(--sep);
+}
+.types-tbl th.fp-band,
+.fire-tbl th {
+  white-space: normal;
+  min-width: 64px;
+  max-width: 120px;
+  vertical-align: bottom;
+}
+.types-tbl th.fp-band.first,
+.types-tbl td.fp-first {
+  border-left: 1px solid var(--sep);
+}
+
+/* «из 84» — одной ширины: поля «В строю» встают ровным столбцом. */
+.of-total {
+  display: inline-block;
+  min-width: 4.5em;
+  text-align: left;
+}
+/* Структура подразделения в сценарии: численность справа — столбцом одной ширины, поэтому списки приказов
+   встают ровно; имя переносится на вторую строку, а не обрезается. */
+.side-node > :last-child {
+  flex: none;
+  min-width: 112px;
+  margin-left: 0;
+  text-align: right;
+}
+.side-node-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Имена сторон и элементов цветом стороны: цвет задаёт пользователь, поэтому яркость подправляется под тему —
+   иначе синий и красный на светлом фоне читаются плохо (контраст около 3:1 при норме 4,5:1). */
+.side-c {
+  color: oklch(from var(--sc) max(l, 0.68) c h);
+}
+[data-theme="light"] .side-c {
+  color: oklch(from var(--sc) min(l, 0.5) c h);
+}
+
+/* «+ Добавить из каталога…» под таблицей состава — вровень с ячейками; в панели свойств — вровень с полями. */
+.comp-add-row {
+  padding: 6px 14px 4px;
+}
+.inspector-scroll .comp-add-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Названия в полях ввода (шапка страницы, панель свойств) — с многоточием, а не обрезаны посредине буквы. */
+input.title-input,
+input.node-title,
+input[type="text"] {
+  text-overflow: ellipsis;
+}
+
+.qf-indent {
+  flex: none;
+  width: 14px;
+}
+
+/* Шапка журнала: переключатель «Главное / Обычно / Всё» той же высоты, что «Фильтр» (24 px), и компактнее —
+   в узкой панели журнала «Фильтр» не уходит на отдельную строку; совсем узко прячется слово «Журнал». */
+.battle-log {
+  container: battlelog / inline-size;
+}
+.log-head .seg {
+  padding: 1px;
+}
+.log-head .seg button {
+  min-height: 22px;
+  padding: 0 8px;
+}
+.log-head h3 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+@container battlelog (max-width: 330px) {
+  .log-head h3 {
+    display: none;
+  }
+  .log-head .seg {
+    margin-right: auto;
+  }
 }

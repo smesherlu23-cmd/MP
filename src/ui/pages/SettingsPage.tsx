@@ -95,7 +95,6 @@ export function SettingsPage() {
                   всего {battles.length}, завершённых {finished.length}
                 </span>
                 <Btn
-                  sm
                   disabled={!finished.length}
                   onClick={async () =>
                     (await confirmDialog('Удалить завершённые бои?', `Боёв: ${finished.length}. Они попадут в корзину.`, 'Удалить', true)) &&
@@ -105,7 +104,6 @@ export function SettingsPage() {
                   Удалить завершённые
                 </Btn>
                 <Btn
-                  sm
                   kind="danger"
                   disabled={!battles.length}
                   onClick={async () =>
@@ -152,7 +150,6 @@ export function SettingsPage() {
               <div className="row">
                 <span className="muted">{backups.length ? `последняя — ${fmtDate(backups[0].createdAt)} · всего ${backups.length}` : 'копий пока нет'}</span>
                 <Btn
-                  sm
                   onClick={async () => {
                     const b = await storage.backup('manual');
                     toast(
@@ -164,7 +161,7 @@ export function SettingsPage() {
                 >
                   Сделать копию сейчас
                 </Btn>
-                <Btn sm disabled={!backups.length} onClick={() => setModal('backups')}>
+                <Btn disabled={!backups.length} onClick={() => setModal('backups')}>
                   Восстановить из копии…
                 </Btn>
               </div>
@@ -172,7 +169,7 @@ export function SettingsPage() {
             <Field label="Корзина" hint="Удалённые наборы правил, подразделения, сценарии и бои хранятся здесь 30 дней, затем удаляются насовсем.">
               <div className="row">
                 <span className="muted">{trash.length ? `объектов: ${trash.length}` : 'пусто'}</span>
-                <Btn sm disabled={!trash.length} onClick={() => setModal('trash')}>
+                <Btn disabled={!trash.length} onClick={() => setModal('trash')}>
                   Открыть корзину…
                 </Btn>
               </div>
