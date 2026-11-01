@@ -5186,3 +5186,35 @@ tr[tabindex]:focus-visible {
   opacity: 1;
   stroke-width: 1.5;
 }
+
+/* Бой в узком окне (боковая панель и журнал открыты, окно ~1100 px): таблица сил помещается без прокрутки вбок —
+   имена переносятся, списки приказов и шкалы морали уже, отступы меньше. */
+@container (max-width: 680px) {
+  .tbl.forces th,
+  .tbl.forces td {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .tbl.forces td:first-child {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .tbl.forces tr.group a.nowrap {
+    min-width: 0;
+    white-space: normal;
+  }
+  .tbl.forces select {
+    width: 96px !important;
+    max-width: 96px;
+  }
+  .tbl.forces td[style*="min-width"] {
+    min-width: 0 !important;
+  }
+  .tbl.forces .meter-cell {
+    grid-template-columns: 24px 28px;
+    gap: 4px;
+  }
+  .tbl.forces .meter {
+    min-width: 0;
+  }
+}

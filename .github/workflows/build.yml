@@ -67,3 +67,40 @@ jobs:
           name: EchelonCommander-windows
           path: release/*.exe
           if-no-files-found: error
+      # Настоящая программа из установочной сборки: запуск, файлы данных, правка перед закрытием, перезапуск.
+      - name: Проверка собранной программы
+        run: npm run test:app
+        env:
+          ECHELON_EXE: ${{ github.workspace }}\release\win-unpacked\Echelon Commander.exe
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: app-test-report
+          path: test-results/
+          retention-days: 7
+
+  release:
+    name: Релиз на GitHub
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Версия тега совпадает с package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then echo "Тег v$tag, а в package.json $pkg"; exit 1; fi
+      - name: Описание из CHANGELOG.md
+        run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" > release-notes.md
+      - uses: actions/download-artifact@v4
+        with:
+          name: EchelonCommander-windows
+          path: release
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Echelon Commander ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: release/*.exe
