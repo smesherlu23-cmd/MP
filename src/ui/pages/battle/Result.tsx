@@ -298,14 +298,15 @@ export function ForcesCard({ b }: { b: Battle }) {
 }
 
 /**
- * Ключевые события боя на графиках: план боя (ввод резерва, отход, подход), вмешательства ГМ, паника и выход из боя.
+ * Поворотные события боя на графиках: план боя (ввод резерва, отход, подход), решения ГМ, паника и бегство.
  * Один ход — одна отметка со всеми его событиями; цвет — стороны, если все события одной стороны.
  */
 function chartMarks(b: Battle): ChartMark[] {
   const at = new Map(b.history.map((x, i) => [x.turn, i]));
   const byTurn = new Map<number, LogEntry[]>();
   for (const e of b.log) {
-    if (e.level !== 0 || e.phase === 'setup' || e.phase === 'turn' || e.phase === 'end') continue;
+    // Только поворотные события: план боя, решения ГМ и самое тяжёлое (паника, бегство) — не каждый отход.
+    if (e.level !== 0 || !(e.phase === 'plan' || e.phase === 'gm' || e.severity === 'critical')) continue;
     if (!at.has(e.turn)) continue;
     const list = byTurn.get(e.turn) ?? [];
     list.push(e);
