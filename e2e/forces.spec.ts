@@ -128,7 +128,7 @@ test('раздел «Силы»: команды с цветом и назван�
   const worn = page.locator('.worn-forces');
   await expect(worn).toHaveCount(2);
   await expect(worn.first()).toContainText('не восстановлены');
-  await expect(worn.first().getByRole('button', { name: 'Между боями…' })).toBeEnabled();
+  await expect(worn.first().getByRole('button', { name: 'Восстановить…' })).toBeEnabled();
   await expect(worn.first().locator('.chip-issue').first()).toBeVisible();
 
   // Раздел «Силы»: группы по командам, общего «Восстановить всех» нет.
@@ -162,11 +162,13 @@ test('раздел «Силы»: команды с цветом и назван�
   await expect(north.locator('.force-card')).toHaveCount(3);
   const card = north.locator('.force-card', { hasText: '1-й мотострелковый' });
   const persBefore = await card.locator('.fc-meter').first().locator('b').textContent();
-  await card.getByRole('button', { name: 'Пополнить…' }).click();
-  await page.locator('.modal').getByRole('button', { name: 'Из другого подразделения' }).click();
-  await expect(page.locator('.modal select')).toContainText('Мотострелковый батальон');
-  await expect(page.locator('.modal .note')).toContainText('Перейдёт');
-  await page.locator('.modal').getByRole('button', { name: 'Пополнить', exact: true }).click();
+  await card.getByRole('button', { name: 'Восстановить…' }).click();
+  const modal = page.locator('.modal');
+  await modal.locator('.between-row', { hasText: 'Пополнить до штата' }).getByRole('checkbox').first().check();
+  await modal.getByRole('button', { name: 'Из другого подразделения' }).click();
+  await expect(modal.locator('select')).toContainText('Мотострелковый батальон');
+  await expect(modal).toContainText('останется');
+  await modal.getByRole('button', { name: 'Восстановить', exact: true }).click();
   await expect(card.locator('.fc-meter').first().locator('b')).not.toHaveText(persBefore!);
   const donor = north.locator('.force-card', { hasText: /^Мотострелковый батальон/ });
   await expect(donor.locator('.badge')).not.toHaveText('Боеготовы');

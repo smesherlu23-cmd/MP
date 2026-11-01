@@ -59,10 +59,11 @@ export function SectorsEditor({ sc, rsc, rs }: { sc: Scenario; rsc: Scenario; rs
           <div className="plan-main">
             <Txt value={sec.name} onChange={(v) => setSec(i, (s) => void (s.name = v))} placeholder="название участка" width={170} />
             <span className="plan-label">дистанция</span>
+            {/* Каждая дистанция один раз: та, что в сценарии, помечена и выбирается как «как в сценарии». */}
             <Sel
-              value={sec.startBand ?? ''}
+              value={sec.startBand && sec.startBand !== sc.startBand ? sec.startBand : ''}
               onChange={(v) => setSec(i, (s) => void (v ? (s.startBand = v) : delete s.startBand))}
-              options={[{ value: '', label: `как в сценарии (${bandName().toLowerCase()})` }, ...rs.rangeBands.map((b) => ({ value: b.id, label: b.name }))]}
+              options={rs.rangeBands.map((b) => (b.id === sc.startBand ? { value: '', label: `${b.name} (как в сценарии)` } : { value: b.id, label: b.name }))}
               width={210}
             />
             <span className="plan-label">ширина, м</span>

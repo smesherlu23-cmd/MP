@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { plural, type ForceRecord, type UnitNode } from '../../engine';
-import { KIND_ICON, LEVEL_LABEL, signed } from '../components/ForceCampaign';
+import { KIND_ICON, LEVEL_LABEL, lossBreakdown, signed } from '../components/ForceCampaign';
 import { Crumbs } from '../components/Crumbs';
 import { Icon } from '../components/Icon';
 import { Btn, Card, Kpi, fmt0, ToolbarSlot } from '../components/ui';
@@ -26,18 +26,29 @@ export function TeamPage({ team }: { team: string }) {
 
   // Все записи боевого пути сил команды — новыми сверху; бои — по одному на бой (потери всех сил вместе).
   const records = mine.flatMap((f) => (f.history ?? []).map((r) => ({ r, f }))).sort((a, b) => b.r.at.localeCompare(a.r.at));
-  const battles = new Map<string, { r: ForceRecord; personnel: number; equipment: number; forces: string[] }>();
+  // Убитые/раненые/пропавшие есть только в новых записях боя; в старых — undefined.
+  type Row = { r: ForceRecord; personnel: number; equipment: number; killed?: number; wounded?: number; missing?: number; forces: string[] };
+  const add = (a: number | undefined, b: number | undefined) => (a === undefined || b === undefined ? undefined : a + b);
+  const battles = new Map<string, Row>();
   for (const { r, f } of records) {
-    if (r.kind !== 'battle') continue;
+    // «Опыт повышен» — тоже запись вида battle, но не бой: у неё нет ни боя, ни потерь.
+    if (r.kind !== 'battle' || (!r.battleId && r.personnel === undefined)) continue;
     const key = r.battleId ?? `${r.title}|${r.at}`;
-    const x = battles.get(key) ?? { r, personnel: 0, equipment: 0, forces: [] };
+    const x = battles.get(key) ?? { r, personnel: 0, equipment: 0, killed: 0, wounded: 0, missing: 0, forces: [] };
     x.personnel += r.personnel ?? 0;
     x.equipment += r.equipment ?? 0;
+    x.killed = add(x.killed, r.killed);
+    x.wounded = add(x.wounded, r.wounded);
+    x.missing = add(x.missing, r.missing);
     x.forces.push(f.name);
     battles.set(key, x);
   }
-  const lostPers = [...battles.values()].reduce((a, x) => a - Math.min(0, x.personnel), 0);
-  const lostEquip = [...battles.values()].reduce((a, x) => a - Math.min(0, x.equipment), 0);
+  const rows = [...battles.values()];
+  const lostPers = rows.reduce((a, x) => a - Math.min(0, x.personnel), 0);
+  const lostEquip = rows.reduce((a, x) => a - Math.min(0, x.equipment), 0);
+  const total = (k: 'killed' | 'wounded' | 'missing') => rows.reduce((a, x) => a + (x[k] ?? 0), 0);
+  const unknown = rows.filter((x) => x.personnel < 0 && x.wounded === undefined).length;
+
   const color = teamColor(team);
 
   if (!mine.length)
@@ -73,7 +84,7 @@ export function TeamPage({ team }: { team: string }) {
       </div>
 
       <div className="team-kpis card">
-        <Kpi k="Личный состав" v={`${fmt0(sum('persCur'))} / ${fmt0(sum('persAuth'))}`} s={sum('wounded') ? `раненых ${fmt0(sum('wounded'))}` : 'чел.'} />
+        <Kpi k="Личный состав" v={`${fmt0(sum('persCur'))} / ${fmt0(sum('persAuth'))}`} s="чел." />
         {sum('equipAuth') > 0 && (
           <Kpi k="Техника" v={`${fmt0(sum('equipCur'))} / ${fmt0(sum('equipAuth'))}`} s={sum('repair') ? `в ремонте ${fmt0(sum('repair'))}` : 'ед.'} />
         )}
@@ -81,8 +92,26 @@ export function TeamPage({ team }: { team: string }) {
         <Kpi
           k="Потери за всё время"
           v={`${fmt0(lostPers)} чел.`}
-          s={lostEquip ? `техника ${fmt0(lostEquip)} ед.` : undefined}
+          s={
+            [
+              total('killed') || total('missing') ? `убито ${fmt0(total('killed'))}, пропало ${fmt0(total('missing'))}` : '',
+              lostEquip ? `техника ${fmt0(lostEquip)} ед.` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ') || undefined
+          }
           color={lostPers ? 'var(--bad)' : undefined}
+          title="Люди: убитые, раненые и пропавшие без вести, включая экипажи техники"
+        />
+        <Kpi
+          k="Раненые за всё время"
+          v={`${fmt0(total('wounded'))} чел.`}
+          s={sum('wounded') ? `сейчас на лечении ${fmt0(sum('wounded'))}` : 'на лечении никого'}
+          title={
+            unknown
+              ? `Без ${unknown} ${plural(unknown, 'боя', 'боёв', 'боёв')}, записанных в прежних версиях: в них раненые отдельно не учитывались`
+              : undefined
+          }
         />
       </div>
 
@@ -94,6 +123,9 @@ export function TeamPage({ team }: { team: string }) {
                 <th>Когда</th>
                 <th>Бой</th>
                 <th>Исход</th>
+                <th className="num" title="Раненые из потерь людей">
+                  Ранено
+                </th>
                 <th className="num">Потери</th>
               </tr>
             </thead>
@@ -112,7 +144,8 @@ export function TeamPage({ team }: { team: string }) {
                     <div className="faint small">{x.forces.join(', ')}</div>
                   </td>
                   <td>{x.r.outcome ?? '—'}</td>
-                  <td className={`num nowrap ${x.personnel < 0 ? 'bad' : ''}`}>
+                  <td className="num nowrap">{x.wounded === undefined ? <span className="faint">—</span> : fmt0(x.wounded)}</td>
+                  <td className={`num nowrap ${x.personnel < 0 ? 'bad' : ''}`} data-tip={lossBreakdown(x)}>
                     {[signed(x.personnel, 'чел.'), signed(x.equipment, 'ед.')].filter(Boolean).join(', ') || '—'}
                   </td>
                 </tr>
@@ -147,7 +180,7 @@ export function TeamPage({ team }: { team: string }) {
                 {r.outcome && <span className="faint"> · {r.outcome}</span>}
                 {r.note && <span className="faint"> · {r.note}</span>}
               </span>
-              <span className={`small nowrap ${(r.personnel ?? 0) < 0 ? 'bad' : (r.personnel ?? 0) > 0 ? 'good' : 'faint'}`}>
+              <span className={`small nowrap ${(r.personnel ?? 0) < 0 ? 'bad' : (r.personnel ?? 0) > 0 ? 'good' : 'faint'}`} data-tip={lossBreakdown(r)}>
                 {[signed(r.personnel, 'чел.'), signed(r.equipment, 'ед.')].filter(Boolean).join(', ') || '—'}
               </span>
             </div>

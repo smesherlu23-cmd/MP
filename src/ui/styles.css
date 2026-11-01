@@ -2862,18 +2862,14 @@ select.order-mini {
 table.forecast td:first-child {
   white-space: nowrap;
 }
-/* Название и тип средства занимают всё свободное место, числа — сколько нужно. */
+/* «4 × тип, 3 уд.»: тип средства занимает всё свободное место, числа — сколько нужно. */
 .support-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.support-row > .sup-name {
-  flex: 5 1 120px;
-  min-width: 0;
-}
 .support-row > .sup-type {
-  flex: 4 1 110px;
+  flex: 1 1 140px;
   min-width: 0;
 }
 .support-row > .numwrap,
@@ -3685,7 +3681,7 @@ button.team-dot:hover {
   gap: 2px;
   margin-left: -6px;
 }
-.force-actions > .btn.primary {
+.force-actions > .btn {
   grid-column: 1 / -1;
 }
 .force-actions-ok {
@@ -5610,11 +5606,13 @@ input[type="text"] {
   padding-left: max(32px, calc((100% - var(--page-w)) / 2));
   padding-right: max(32px, calc((100% - var(--page-w)) / 2));
 }
+/* На очень широком экране (2560 и больше) колонка главной и каталогов растёт с окном — поля по бокам
+   не шире трети окна. */
 .page.home {
-  --page-w: 1116px;
+  --page-w: clamp(1116px, 68%, 1500px);
 }
 .page.catalog {
-  --page-w: 1176px;
+  --page-w: clamp(1176px, 72%, 1640px);
 }
 .page.settings-page {
   --page-w: 1100px;
@@ -5661,4 +5659,28 @@ html.desktop.fullscreen .toolbar-win {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: start;
   }
+}
+
+/* Каталог типов: эталонные значения — подпись под полем и под огневой мощью, выбор эталона. */
+.ref-line {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--faint);
+  white-space: nowrap;
+}
+.fire-tbl td .ref-line {
+  text-align: right;
+}
+.ref-pick {
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ref-pick select {
+  max-width: 260px;
+}
+
+/* Пока открыто окно, уведомления — слева внизу: справа они закрывали бы кнопки окна. */
+body:has(.backdrop) .toasts {
+  left: 16px;
+  right: auto;
 }

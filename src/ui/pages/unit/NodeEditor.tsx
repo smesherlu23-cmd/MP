@@ -73,6 +73,11 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
     });
   const inheritText = isRoot ? 'по умолчанию' : 'как у старшего';
   const expName = (lv: number) => `${lv}. ${rs.experienceLevels[lv - 1]?.name ?? ''}`;
+  // Каждый уровень опыта в списке один раз: унаследованный помечен и выбирается как «наследовать».
+  const expOptions = rs.experienceLevels.map((_, i) =>
+    i + 1 === pr.state.experience ? { value: 0, label: `${expName(i + 1)} (${inheritText})` } : { value: i + 1, label: expName(i + 1) },
+  );
+  if (!expOptions.some((o) => o.value === 0)) expOptions.unshift({ value: 0, label: `${expName(pr.state.experience)} (${inheritText})` });
   const types = new Map(rs.componentTypes.map((t) => [t.id, t]));
   let ownCur = 0;
   let ownAuth = 0;
@@ -153,13 +158,13 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
         )}
         <div className="fields">
           <Field label="Эшелон" hint="Насколько подразделение подставлено под прямой огонь.">
+            {/* Каждый эшелон в списке один раз: унаследованный помечен и выбирается как «наследовать». */}
             <Sel
-              value={node.echelon ?? ''}
+              value={node.echelon && node.echelon !== pr.echelon ? node.echelon : ''}
               onChange={(v) => un((n) => void (n.echelon = (v || null) as Echelon | null))}
-              options={[
-                { value: '', label: `${ECHELON_LABELS[pr.echelon]} (${inheritText})` },
-                ...(Object.keys(ECHELON_LABELS) as Echelon[]).map((k) => ({ value: k, label: ECHELON_LABELS[k] })),
-              ]}
+              options={(Object.keys(ECHELON_LABELS) as Echelon[]).map((k) =>
+                k === pr.echelon ? { value: '', label: `${ECHELON_LABELS[k]} (${inheritText})` } : { value: k, label: ECHELON_LABELS[k] },
+              )}
             />
           </Field>
         </div>
@@ -325,12 +330,9 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
           <div className="fields two">
             <Field label={<>Опыт{node.state.experience === undefined && <span className="faint small">· {inheritText}</span>}</>}>
               <Sel
-                value={node.state.experience ?? 0}
+                value={node.state.experience && node.state.experience !== pr.state.experience ? node.state.experience : 0}
                 onChange={(v) => setState('experience', v || undefined)}
-                options={[
-                  { value: 0, label: `${expName(pr.state.experience)} (${inheritText})` },
-                  ...rs.experienceLevels.map((_, i) => ({ value: i + 1, label: expName(i + 1) })),
-                ]}
+                options={expOptions}
               />
             </Field>
             {stateKeys.map((k) => (

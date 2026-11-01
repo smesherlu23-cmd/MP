@@ -808,6 +808,11 @@ describe('шаблоны и силы', () => {
     const { updated, changes } = applyBattleToForces(b, forces);
     expect(updated).toHaveLength(2);
     expect(changes.find((c) => c.forceId === scenario.sides[0].units![0].forceId)!.personnel).toBe(b.result!.sides.A.personnel.losses);
+    // В записи боя — потери людей по видам, как в итогах боя.
+    const rec = updated.find((f) => f.id === scenario.sides[0].units![0].forceId)!.history!.at(-1)!;
+    const pa = b.result!.sides.A.personnel;
+    expect([rec.killed, rec.wounded, rec.missing]).toEqual([pa.kia, pa.wia, pa.mia]);
+    expect(rec.personnel).toBe(-pa.losses);
     const next = { ...forces, ...Object.fromEntries(updated.map((f) => [f.id, f])) };
     const b2 = createBattle(resolveScenario(scenario, next), rs, { seed: 'F3' });
     const start = (x: Battle) => x.elements.filter((e) => e.side === 'A').reduce((s, e) => s + e.startPersonnel, 0);
@@ -1046,12 +1051,12 @@ describe('силы между боями, варианты прогонов, п�
     expect(betweenNeeds(halfHealed.force, rs).heal).toBe(needs.heal - halfHealed.count);
     expect(halfHealed.force.history!.at(-1)).toMatchObject({ kind: 'heal', title: 'Лечение раненых 50%' });
 
-    // Между боями — всё разом, одной записью в боевом пути.
+    // «Восстановить» — всё разом, одной записью в боевом пути.
     const len = (f.history ?? []).length;
     const prep = prepareForce(f, rs, { heal: 100, repair: 100, rest: { pct: 100 }, ammo: 100, fuel: 100, replenish: { personnel: true, equipment: true } });
     expect(prep.changed).toBe(true);
     expect(prep.force.history!.length).toBe(len + 1);
-    expect(prep.force.history!.at(-1)).toMatchObject({ kind: 'restore', title: 'Между боями' });
+    expect(prep.force.history!.at(-1)).toMatchObject({ kind: 'restore', title: 'Восстановление' });
     expect(prep.done.length).toBeGreaterThan(2);
     const after = betweenNeeds(prep.force, rs);
     expect(after.heal + after.repair + after.personnelMissing + after.equipmentMissing).toBe(0);
@@ -1089,6 +1094,18 @@ describe('силы между боями, варианты прогонов, п�
     expect(r.target.history!.at(-1)).toMatchObject({ kind: 'transfer', title: 'Пополнение из «Резервный батальон»' });
     expect(r.donor.history!.at(-1)!.kind).toBe('transfer');
     expect(transferStrength(target, donor, rs, { [typeId]: 0 }).changed).toBe(false);
+
+    // В окне «Восстановить»: после лечения — из донора, одной записью у сил; у донора — своя запись.
+    const len = (target.history ?? []).length;
+    const prep = prepareForce(target, rs, { heal: 100, transfer: { donor, amounts: { [typeId]: 1000 } } });
+    expect(prep.changed).toBe(true);
+    expect(prep.force.history!.length).toBe(len + 1);
+    expect(prep.force.history!.at(-1)).toMatchObject({ kind: 'restore', title: 'Восстановление' });
+    expect(prep.done.some((x) => x.startsWith('пополнение из «Резервный батальон»'))).toBe(true);
+    expect(strengthByType(prep.force).get(typeId)!.current).toBe(gap.get(typeId)!.authorized);
+    const moved = donorHad - strengthByType(prep.donor!).get(typeId)!.current;
+    expect(moved).toBe(want - Math.min(want, gap.get(typeId)!.recoverable));
+    expect(prep.donor!.history!.at(-1)).toMatchObject({ kind: 'transfer', title: `Передано в «${target.name}»` });
   });
 
   it('полное восстановление одной кнопкой: штат, раненые, состояние — к норме, опыт сохраняется', () => {

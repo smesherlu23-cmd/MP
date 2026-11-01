@@ -1,9 +1,26 @@
 // Запуск боя без интерфейса — показывает, что движок отделён от программы.
 //   npm run sim                         — демо-сценарий
-//   npm run sim -- scenario.json ruleset.json [--seed X] [--runs 100] [--log 0|1|2]
+//   npm run sim -- scenario.json ruleset.json [--forces папка] [--seed X] [--runs 100] [--log 0|1|2]
+// Сценарий из папки данных ссылается на силы: они берутся из --forces, иначе из папки forces рядом
+// с папкой сценариев (…/scenarios/x.json → …/forces/).
 
-import { readFileSync } from 'node:fs';
-import { createBattle, formatLog, formatReport, makeDemoScenario, makeUniversalRuleset, runMany, runToEnd, type Ruleset, type Scenario } from '../src/engine';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import {
+  createBattle,
+  formatLog,
+  formatReport,
+  makeDemoScenario,
+  makeUniversalRuleset,
+  migrateUnit,
+  normalizeRuleset,
+  resolveScenario,
+  runMany,
+  runToEnd,
+  type Ruleset,
+  type Scenario,
+  type UnitNode,
+} from '../src/engine';
 
 const args = process.argv.slice(2);
 const opt = (name: string) => {
@@ -11,8 +28,21 @@ const opt = (name: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const files = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
-const scenario: Scenario = files[0] ? JSON.parse(readFileSync(files[0], 'utf8')) : makeDemoScenario();
-const ruleset: Ruleset = files[1] ? JSON.parse(readFileSync(files[1], 'utf8')) : makeUniversalRuleset();
+const ruleset: Ruleset = files[1] ? normalizeRuleset(JSON.parse(readFileSync(files[1], 'utf8'))) : makeUniversalRuleset();
+let scenario: Scenario = files[0] ? JSON.parse(readFileSync(files[0], 'utf8')) : makeDemoScenario();
+if (scenario.sides.some((sd) => sd.units?.length)) {
+  const dir = opt('forces') ?? join(dirname(files[0]), '..', 'forces');
+  if (!existsSync(dir)) {
+    console.error(`Сценарий ссылается на силы, а папки сил нет: ${dir}. Укажите её: --forces <папка>.`);
+    process.exit(1);
+  }
+  const forces: Record<string, UnitNode> = {};
+  for (const f of readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+    const u = migrateUnit(JSON.parse(readFileSync(join(dir, f), 'utf8')));
+    forces[u.id] = u;
+  }
+  scenario = resolveScenario(scenario, forces);
+}
 const seed = opt('seed') ?? scenario.seed;
 const runs = Number(opt('runs') ?? 0);
 

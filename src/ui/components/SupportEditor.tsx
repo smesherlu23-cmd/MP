@@ -4,7 +4,7 @@
 import { newId, plural, type Ruleset, type Scenario, type SupportAsset } from '../../engine';
 import { useTabState } from '../hooks';
 import { updateScenario } from '../store';
-import { Chev, Btn, Info, Num, Sel, Txt } from './ui';
+import { Chev, Btn, Info, Num, Sel } from './ui';
 
 export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset }) {
   const side = sc.sides[i];
@@ -20,13 +20,19 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
   // Сначала — оружие с закрытых позиций: обычно поддержка — это они.
   const types = [...rs.componentTypes].sort((a, b) => Number(b.indirect) - Number(a.indirect) || a.name.localeCompare(b.name, 'ru'));
   const typeName = (id: string) => rs.componentTypes.find((t) => t.id === id)?.name ?? '?';
+  // Название средства — по типу (своё название было только у примеров прежних версий — его показываем как есть).
   const summary = list.length
-    ? list.map((a) => `${a.name}: ${a.count} × ${typeName(a.typeId).toLowerCase()}, ${a.missions} ${plural(a.missions, 'удар', 'удара', 'ударов')}`).join('; ')
+    ? list
+        .map((a) => {
+          const what = `${a.count} × ${typeName(a.typeId).toLowerCase()}, ${a.missions} ${plural(a.missions, 'удар', 'удара', 'ударов')}`;
+          return a.name && a.name !== typeName(a.typeId) ? `${a.name}: ${what}` : what;
+        })
+        .join('; ')
     : 'нет';
   const add = () => {
     const t = types[0];
     if (!t) return;
-    upd((l) => void l.push({ id: newId('sup'), name: t.indirect ? `${t.name} (поддержка)` : t.name, typeId: t.id, count: 4, missions: 3 }));
+    upd((l) => void l.push({ id: newId('sup'), name: t.name, typeId: t.id, count: 4, missions: 3 }));
     setOpen(true);
   };
   return (
@@ -47,9 +53,6 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
         <div className="cmd-list">
           {list.map((a, ai) => (
             <div key={a.id} className="cmd-row support-row">
-              <span className="sup-name">
-                <Txt value={a.name} onChange={(v) => upd((l) => void (l[ai].name = v))} placeholder="название" width="100%" />
-              </span>
               <Num
                 value={a.count}
                 onChange={(v) => upd((l) => void (l[ai].count = Math.max(1, Math.round(v))))}
@@ -63,9 +66,15 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
               <span className="sup-type">
                 <Sel
                   value={a.typeId}
-                  onChange={(v) => upd((l) => void (l[ai].typeId = v))}
+                  onChange={(v) =>
+                    upd((l) => {
+                      l[ai].typeId = v;
+                      l[ai].name = typeName(v);
+                    })
+                  }
                   options={types.map((t) => ({ value: t.id, label: t.name }))}
                   width="100%"
+                  title="Чем наносится удар: тип из каталога набора правил"
                 />
               </span>
               <Num
