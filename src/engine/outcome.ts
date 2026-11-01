@@ -352,8 +352,3 @@ export function explainResult(r: BattleResult): string {
     text += ` Потери у «${win.name}» больше (${Math.round(win.valueLossPct)}% против ${Math.round(lose.valueLossPct)}% боевой ценности), но исход решают задачи сторон.`;
   return text;
 }
-
-/** Итог «на текущий момент» для незавершённого боя (не меняет состояние). */
-export function provisionalResult(E: EngineContext): BattleResult {
-  return computeResult(E);
-}

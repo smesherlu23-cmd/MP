@@ -414,7 +414,7 @@ export function FormationRows(props: {
             </>
           ) : null}
         </td>
-        {f.morale && <td style={{ minWidth: 90 }}>{agg && agg.w > 0 ? <Meter value={morale} /> : null}</td>}
+        {f.morale && <td className="c-meter">{agg && agg.w > 0 ? <Meter value={morale} /> : null}</td>}
         <td className="num">{agg && agg.ceStart > 0 ? pct((agg.ce / agg.ceStart) * 100) : ''}</td>
         {detailCols > 0 && <td colSpan={detailCols} />}
       </tr>
@@ -460,10 +460,10 @@ export function FormationRows(props: {
                 )}
               </div>
             </td>
-            <td>
+            <td className="c-order-sel">
               {active && E.behavior(el) !== 'rout' ? (
                 <>
-                  <Sel value={el.orderId} width={124} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={orderOptions} />
+                  <Sel value={el.orderId} onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })} options={orderOptions} />
                   <PendingOrder E={E} el={el} />
                 </>
               ) : (
@@ -486,7 +486,7 @@ export function FormationRows(props: {
               <span className="faint">/{fmt0(el.startPersonnel)}</span>
             </td>
             {f.morale && (
-              <td style={{ minWidth: 90 }}>
+              <td className="c-meter">
                 <Meter value={el.morale} />
               </td>
             )}

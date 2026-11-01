@@ -3,14 +3,9 @@
 
 import type { ComponentKind, ComponentEntry, Echelon, Id, Ruleset, SideDef, StateKey, UnitNode, UnitState } from './types';
 import { STATE_KEYS } from './types';
+import { newId } from './ids';
 
-let idCounter = 0;
-function uid(prefix: string): string {
-  idCounter = (idCounter + 1) % 1679616;
-  return `${prefix}-${Date.now().toString(36)}${idCounter.toString(36).padStart(4, '0')}${Math.floor(Math.random() * 1296)
-    .toString(36)
-    .padStart(2, '0')}`;
-}
+const uid = newId;
 
 /** Значения корня по умолчанию: всё, что не задано ниже, наследуется отсюда. */
 export const ROOT_STATE: UnitState = {
@@ -74,12 +69,6 @@ export function newRootUnit(name = 'Новое подразделение', patc
 export function walkUnits(root: UnitNode, fn: (node: UnitNode, parent: UnitNode | null, depth: number) => void, parent: UnitNode | null = null, depth = 0) {
   fn(root, parent, depth);
   for (const ch of root.children) walkUnits(ch, fn, root, depth + 1);
-}
-
-export function allUnits(root: UnitNode): UnitNode[] {
-  const out: UnitNode[] = [];
-  walkUnits(root, (n) => out.push(n));
-  return out;
 }
 
 export function findUnit(roots: UnitNode | UnitNode[], id: Id): UnitNode | null {
@@ -552,8 +541,4 @@ export function ownPersonnel(n: UnitNode, rs: Ruleset): { cur: number; auth: num
     auth += c.authorized * crew;
   }
   return { cur, auth };
-}
-
-export function countComponents(entries: ComponentEntry[]): number {
-  return entries.reduce((a, c) => a + c.current, 0);
 }

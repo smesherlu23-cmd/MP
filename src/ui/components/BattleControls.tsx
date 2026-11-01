@@ -6,7 +6,6 @@ import {
   DEFAULT_PAUSE,
   EngineContext,
   PAUSE_LABELS,
-  STAT_LABELS,
   fmtDuration,
   forecastAsync,
   plural,
@@ -19,7 +18,6 @@ import {
   type MonteCarloResult,
   type PauseRules,
   type SideId,
-  type StatKey,
 } from '../../engine';
 import { updateSettings, useApp } from '../store';
 import { EffectsEditor, effectsText } from './EffectsEditor';
@@ -553,9 +551,4 @@ export function GroupEditModal({ b, ids, onClose, iv }: { b: Battle; ids: string
       </div>
     </Modal>
   );
-}
-
-/** Подпись множителей эффекта (для подсказок): «Огонь ×1.3, Инициатива ×1.5». */
-export function effectsShort(e: Effects): string {
-  return (Object.keys(e) as StatKey[]).map((k) => `${STAT_LABELS[k]} ×${e[k]}`).join(', ');
 }

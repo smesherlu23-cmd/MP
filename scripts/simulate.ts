@@ -56,7 +56,7 @@ if (runs > 0) {
     const s = m.stats;
     const side = m.side ? `${r.sideNames[m.side]}: ` : '';
     console.log(
-      `  ${side}${m.label} (${m.unit}) — среднее ${s.mean.toFixed(1)}, медиана ${s.median.toFixed(1)}, 10–90% [${s.p10.toFixed(1)} … ${s.p90.toFixed(1)}], мин–макс [${s.min.toFixed(1)} … ${s.max.toFixed(1)}]`,
+      `  ${side}${m.label}${m.unit ? ` (${m.unit})` : ''} — среднее ${s.mean.toFixed(1)}, медиана ${s.median.toFixed(1)}, 10–90% [${s.p10.toFixed(1)} … ${s.p90.toFixed(1)}], мин–макс [${s.min.toFixed(1)} … ${s.max.toFixed(1)}]`,
     );
   }
 } else {

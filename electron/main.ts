@@ -148,7 +148,9 @@ function buildMenu() {
     },
     {
       label: 'Вид',
-      submenu: [{ role: 'reload' }, { role: 'togglefullscreen' }, { role: 'toggleDevTools' }],
+      // Перезагрузка и инструменты разработчика — только при разработке: в выпущенной программе Ctrl+R и
+      // Ctrl+Shift+I ничего не делают (перезагрузка при ошибке — кнопкой в сообщении об ошибке).
+      submenu: [{ role: 'togglefullscreen' }, ...(app.isPackaged ? [] : [{ role: 'reload' as const }, { role: 'toggleDevTools' as const }])],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

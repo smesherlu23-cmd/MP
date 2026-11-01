@@ -742,11 +742,6 @@ html[data-material="mica"][data-theme="light"] .sidebar-col {
   border-color: var(--accent-fg);
   background: var(--panel);
 }
-.crumbs {
-  font-size: var(--fs-xs);
-  color: var(--muted);
-  margin-bottom: 2px;
-}
 
 .toolbar {
   display: flex;
@@ -989,12 +984,6 @@ table.tbl {
 .tbl.compact td {
   padding: 2px 6px;
 }
-
-.kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 8px;
-}
 .kpi .k {
   font-size: var(--fs-xs);
   color: var(--muted);
@@ -1053,12 +1042,8 @@ table.tbl {
   gap: 14px;
   align-items: start;
 }
-.split.wide-left {
-  grid-template-columns: minmax(380px, 0.9fr) minmax(0, 1fr);
-}
 @media (max-width: 1000px) {
-  .split,
-  .split.wide-left {
+  .split {
     grid-template-columns: 1fr;
   }
 }
@@ -1167,19 +1152,6 @@ table.tbl {
 }
 .tree-node .tn-name:has(+ .tn-meta) {
   flex: 0 1 auto;
-}
-.tree-node .tn-actions {
-  display: none;
-  gap: 2px;
-}
-.tree-node:hover .tn-actions,
-.tree-node.sel .tn-actions {
-  display: flex;
-}
-.tree-children {
-  margin-left: 14px;
-  border-left: 1px dashed var(--border2);
-  padding-left: 4px;
 }
 
 .subtabs {
@@ -1364,11 +1336,6 @@ table.tbl {
 .side-card {
   border-top: 3px solid var(--side, var(--accent));
 }
-.side-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 
 .status-active {
   color: var(--good);
@@ -1397,9 +1364,6 @@ table.tbl {
 .chart .grid-line {
   stroke: var(--border);
   stroke-width: 1;
-}
-.chart .axis {
-  stroke: var(--border2);
 }
 .legend {
   display: flex;
@@ -1624,14 +1588,6 @@ table.tbl {
   padding: 0 4px;
   font-size: var(--fs-xs);
 }
-
-.home-hero {
-  display: flex;
-  gap: 20px;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
 .steps {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
@@ -1656,12 +1612,6 @@ table.tbl {
 .matrix input {
   width: 72px;
   text-align: right;
-}
-
-.saving-ind {
-  font-size: var(--fs-xs);
-  color: var(--faint);
-  padding: 0 6px;
 }
 
 /* условия своих правил */
@@ -2684,9 +2634,6 @@ tr[tabindex]:focus-visible {
 .unit-row:focus-within .unit-menu {
   visibility: visible;
 }
-.tree-node:focus-within .tn-actions {
-  display: flex;
-}
 
 /* Итог боя: что решило исход */
 .result-why {
@@ -3406,18 +3353,7 @@ span.wf-add {
   color: var(--steel);
 }
 
-/* ---------- сценарий: шапка с «Начать бой» всегда на виду, быстрые переходы */
-
-.page-head.sticky-head {
-  position: sticky;
-  /* Прилипает к самому краю области прокрутки, а не к её отступу: над шапкой ничего не просвечивает. */
-  top: -22px;
-  z-index: 5;
-  margin: 0 -28px 8px;
-  padding: 8px 28px 10px;
-  background: var(--bg);
-  border-bottom: 1px solid transparent;
-}
+/* ---------- сценарий: быстрые переходы к разделам */
 .jump-nav {
   display: flex;
   flex-wrap: wrap;
@@ -3488,39 +3424,6 @@ span.wf-add {
 }
 
 /* ---------- силы: боеготовность */
-
-.forces-summary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 28px;
-  padding: 14px 18px;
-  margin-bottom: 16px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-}
-.fs-item {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
-.fs-v {
-  font-size: var(--fs-lg);
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-.fs-k {
-  font-size: var(--fs-xs);
-  color: var(--faint);
-}
-.fs-item.good .fs-v {
-  color: var(--good);
-}
-.fs-item.warn .fs-v {
-  color: var(--warn);
-}
 .force-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
@@ -3786,12 +3689,6 @@ button.team-dot:hover {
   gap: 2px;
   padding-top: 6px;
   border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
-}
-.worn-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  margin-left: -6px;
 }
 .force-actions > .btn {
   grid-column: 1 / -1;
@@ -5498,6 +5395,13 @@ tr[tabindex]:focus-visible {
   pointer-events: none;
 }
 
+/* Приказ элемента и шкала морали — своей ширины (в узкой области боя уже, см. ниже). */
+.tbl.forces .c-order-sel select {
+  width: 124px;
+}
+.tbl.forces td.c-meter {
+  min-width: 90px;
+}
 /* Бой в узком окне (боковая панель и журнал открыты, окно ~1100 px): таблица сил помещается без прокрутки вбок —
    имена переносятся, списки приказов и шкалы морали уже, отступы меньше. */
 @container (max-width: 680px) {
@@ -5525,12 +5429,13 @@ tr[tabindex]:focus-visible {
     display: block;
     font-size: var(--fs-xs);
   }
-  .tbl.forces select {
-    width: 90px !important;
+  .tbl.forces select,
+  .tbl.forces .c-order-sel select {
+    width: 90px;
     max-width: 90px;
   }
-  .tbl.forces td[style*="min-width"] {
-    min-width: 0 !important;
+  .tbl.forces td.c-meter {
+    min-width: 0;
   }
   /* Шкала морали — тонкой полоской под числом: место отдаётся именам, чтобы они переносились по словам. */
   .tbl.forces .meter-cell {

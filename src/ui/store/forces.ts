@@ -15,17 +15,9 @@ import {
   locateNode,
   relinkScenario,
   restoreForce,
-  restForce,
-  resupplyForce,
-  SUPPLY_LABEL,
-  type SupplyKey,
-  healForce,
   prepareForce,
   type BetweenPlan,
-  repairForce,
-  transferStrength,
   forceCondition,
-  type RestPart,
   plural,
   returnUnit,
   transferUnit,
@@ -144,76 +136,6 @@ export function restoreForces(ids: Id[]): number {
   return todo.length;
 }
 
-/** Действие над одним подразделением сил между боями: один шаг отмены, уведомление с «Отменить». */
-function betweenStep(id: Id, label: string, fn: (f: UnitNode) => { force: UnitNode; changed: boolean }, message: (name: string) => string, nothing: string) {
-  const f = get().forces[id];
-  if (!f) return false;
-  const r = fn(f);
-  if (!r.changed) {
-    toast(nothing);
-    return false;
-  }
-  historyStep(`${label} «${f.name}»`);
-  updateForce(id, (d) => void Object.assign(d, r.force));
-  toastUndoable(message(f.name), 'good');
-  return true;
-}
-
-/** Отдых: состояние бойцов в строю — к норме на pct%. */
-export function restForceStep(id: Id, pct: number, parts: RestPart[]) {
-  return betweenStep(
-    id,
-    'отдых',
-    (f) => restForce(f, pct, parts),
-    (n) => `«${n}»: отдых ${Math.round(pct)}% — состояние бойцов восстановлено.`,
-    'Отдыхать незачем: состояние в норме.',
-  );
-}
-
-/** Пополнить боезапас или топливо до level%. */
-export function resupplyForceStep(id: Id, key: SupplyKey, level: number) {
-  const what = SUPPLY_LABEL[key];
-  return betweenStep(
-    id,
-    `пополнение: ${what.name.toLowerCase()}`,
-    (f) => resupplyForce(f, key, level),
-    (n) => `«${n}»: ${what.done.toLowerCase()} до ${Math.round(level)}%.`,
-    `${what.name}: пополнять нечего — везде не меньше ${Math.round(level)}%.`,
-  );
-}
-
-/** Лечить: раненые возвращаются в строй (не сверх штата). */
-export function healForceStep(id: Id, pct = 100) {
-  let count = 0;
-  return betweenStep(
-    id,
-    'лечение',
-    (f) => {
-      const r = healForce(f, rulesetOf(f), pct);
-      count = r.count;
-      return r;
-    },
-    (n) => `«${n}»: в строй вернулись ${count} чел.`,
-    'Лечить некого: раненых нет или штат уже заполнен.',
-  );
-}
-
-/** Чинить: повреждённая техника и вооружение возвращаются в строй, состояние техники — к норме. */
-export function repairForceStep(id: Id, pct = 100) {
-  let count = 0;
-  return betweenStep(
-    id,
-    'ремонт',
-    (f) => {
-      const r = repairForce(f, rulesetOf(f), pct);
-      count = r.count;
-      return r;
-    },
-    (n) => (count ? `«${n}»: отремонтировано ${count} ед. техники и вооружения.` : `«${n}»: состояние техники — в норме.`),
-    'Чинить нечего: техника в строю и исправна.',
-  );
-}
-
 /** Между боями: всё, что отмечено в плане, — одним шагом отмены и одной записью в боевом пути. */
 export function prepareForceStep(id: Id, plan: BetweenPlan) {
   const f = get().forces[id];
@@ -229,25 +151,6 @@ export function prepareForceStep(id: Id, plan: BetweenPlan) {
   const donor = r.donor;
   if (donor) updateForce(donor.id, (d) => void Object.assign(d, donor));
   toastUndoable(`«${f.name}»: ${r.done.join('; ')}.`, 'good');
-  return true;
-}
-
-/** Пополнение из другого подразделения: по типам, сколько указано. Один шаг отмены на оба подразделения. */
-export function transferStrengthStep(targetId: Id, donorId: Id, amounts: Record<Id, number>) {
-  const s = get();
-  const t = s.forces[targetId];
-  const d = s.forces[donorId];
-  if (!t || !d || t.id === d.id) return false;
-  const r = transferStrength(t, d, rulesetOf(t), amounts);
-  if (!r.changed) {
-    toast('Передавать нечего.');
-    return false;
-  }
-  historyStep(`пополнение «${t.name}» из «${d.name}»`);
-  updateForce(t.id, (x) => void Object.assign(x, r.target));
-  updateForce(d.id, (x) => void Object.assign(x, r.donor));
-  const what = [r.personnel ? `${r.personnel} чел.` : '', r.equipment ? `${r.equipment} ед. техники и вооружения` : ''].filter(Boolean).join(' и ');
-  toastUndoable(`Из «${d.name}» в «${t.name}» передано ${what}.`, 'good');
   return true;
 }
 

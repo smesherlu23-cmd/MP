@@ -139,8 +139,6 @@ export const MODIFIER_FIELDS: {
   { field: 'enemy.losses', label: 'Потери противника (элемента), %', kind: 'number' },
 ];
 
-export const SIDE_IDS = ['A', 'B'] as const;
-
 export function plural(n: number, one: string, few: string, many: string): string {
   const a = Math.abs(n) % 100;
   const b = a % 10;
@@ -153,17 +151,6 @@ export function plural(n: number, one: string, few: string, many: string): strin
 /** Число с заданным числом знаков после запятой — по-русски, с запятой: 3,5. */
 export function dec(v: number, digits = 1): string {
   return v.toFixed(digits).replace('.', ',');
-}
-
-export function fmtPct(v: number, digits = 0): string {
-  return `${dec(v, digits)}%`;
-}
-
-export function fmtMult(v: number): string {
-  return `×${v
-    .toFixed(2)
-    .replace(/\.?0+$/, '')
-    .replace('.', ',')}`;
 }
 
 export const EVENT_KIND_LABELS: Record<ScenarioEventKind, string> = {
