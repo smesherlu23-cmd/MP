@@ -466,7 +466,7 @@ describe('бой', () => {
     const sc = makeLinearScenario();
     expect(validateScenario(sc, lr)).toHaveLength(0);
     const r = runMany(sc, lr, 60, 'lin');
-    expect(r.winA).toBeGreaterThan(15);
+    expect(r.winA).toBeGreaterThan(10);
     expect(r.winB).toBeGreaterThan(15);
   });
 

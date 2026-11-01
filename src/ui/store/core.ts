@@ -71,6 +71,8 @@ export interface Dialog {
 
 export interface AppState {
   loaded: boolean;
+  /** Загрузка данных при запуске не удалась — что сообщить (окно предложит повторить). */
+  loadError?: string;
   rulesets: Record<Id, Ruleset>;
   /** Шаблоны: устройство и штат подразделений (без приказов и состояния). */
   formations: Record<Id, UnitNode>;
@@ -160,6 +162,9 @@ export const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export const pendingSaves = new Map<string, () => Promise<void>>();
 
+/** Записи, которые уже идут на диск: перед закрытием окна ждём и их. */
+const inflight = new Set<Promise<void>>();
+
 export function scheduleSave(col: Collection, id: Id, getData: () => unknown, delay = 400) {
   const key = `${col}:${id}`;
   clearTimeout(timers.get(key));
@@ -169,13 +174,21 @@ export function scheduleSave(col: Collection, id: Id, getData: () => unknown, de
     timers.delete(key);
     if (!pendingSaves.has(key)) return;
     pendingSaves.delete(key);
+    const write = (async () => {
+      try {
+        const data = getData();
+        if (data) await storage.save(col, id, data);
+      } catch (e) {
+        toast(`Не удалось сохранить: ${(e as Error).message}`, 'bad');
+      } finally {
+        set((s) => ({ saving: Math.max(0, s.saving - 1) }));
+      }
+    })();
+    inflight.add(write);
     try {
-      const data = getData();
-      if (data) await storage.save(col, id, data);
-    } catch (e) {
-      toast(`Не удалось сохранить: ${(e as Error).message}`, 'bad');
+      await write;
     } finally {
-      set((s) => ({ saving: Math.max(0, s.saving - 1) }));
+      inflight.delete(write);
     }
   };
   pendingSaves.set(key, run);
@@ -187,9 +200,10 @@ export async function flushSave(col: Collection, id: Id) {
   await pendingSaves.get(`${col}:${id}`)?.();
 }
 
-/** Немедленно выполнить отложенные сохранения (перед закрытием окна). */
+/** Немедленно выполнить отложенные сохранения и дождаться всех записей (перед закрытием окна). */
 export async function flushSaves() {
   await Promise.all([...pendingSaves.values()].map((fn) => fn()));
+  await Promise.all([...inflight]);
 }
 
 // ------------------------------------------------------------------ отмена и повтор

@@ -22,6 +22,7 @@ import { Btn, ContextMenuHost, Menu, RenameInput, Splitter, openContextMenu } fr
 import { CREATE_ITEMS } from './components/Navigator';
 import { QuickLookHost } from './components/QuickLook';
 import { ToolbarSetupHost, openToolbarSetup } from './components/ToolbarSetup';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { objFromKey, objMenu, objName, renameObj, startRename, stopRename, useRenaming } from './objects';
 import { TOOLBAR_ITEMS, applyZoom, setTbShown, setZoom, tbShown, zoomBy, zoomOf } from './prefs';
 import { desktop } from './storage';
@@ -556,7 +557,13 @@ export function App() {
             />
           </div>
         </header>
-        <main className="content">{active && <Page key={active.key} t={active} />}</main>
+        <main className="content">
+          {active && (
+            <ErrorBoundary key={active.key} scope="page">
+              <Page t={active} />
+            </ErrorBoundary>
+          )}
+        </main>
       </div>
       {fileOver && (
         <div className="file-drop">

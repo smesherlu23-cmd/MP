@@ -5036,3 +5036,33 @@ tr[tabindex]:focus-visible {
 .force-actions > .btn:first-child {
   grid-column: 1 / -1;
 }
+
+/* Ошибка отрисовки страницы или окна — вместо пустого места. */
+.error-screen {
+  max-width: 640px;
+  margin: 72px auto;
+  padding: 24px 28px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.error-screen h2 {
+  margin: 0 0 8px;
+  font-size: var(--fs-lg);
+}
+.error-screen .error-message {
+  margin: 14px 0 18px;
+  padding: 10px 12px;
+  max-height: 160px;
+  overflow: auto;
+  font: var(--fs-sm) / 1.45 var(--mono);
+  white-space: pre-wrap;
+  color: var(--bad);
+  background: var(--bad-soft);
+  border-radius: var(--radius-sm);
+}
+.error-screen .row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
