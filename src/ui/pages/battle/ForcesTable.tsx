@@ -377,7 +377,7 @@ export function FormationRows(props: {
             </button>
             <a
               href="#"
-              className="nowrap"
+              className="group-name"
               onClick={(e) => (e.preventDefault(), props.onFormation(fs.id))}
               data-tip={`${f.comms ? `связь ${Math.round(fs.comms)}%\n` : ''}снабжение ${Math.round(fs.supply)}%\nЩелчок — приказ всем, связь, снабжение`}
             >
@@ -419,31 +419,37 @@ export function FormationRows(props: {
         return (
           <tr key={el.id} className={el.status !== 'active' ? 'dim' : ''}>
             <td style={{ paddingLeft: 24 + depth * 14 }}>
-              {!b.finished && (el.status === 'active' || el.status === 'pending') && (
-                <input
-                  type="checkbox"
-                  className="pick-check"
-                  checked={selected.has(el.id)}
-                  onChange={(e) => onSelect([el.id], e.target.checked)}
-                  title="Отметить — для группового решения"
-                />
-              )}
-              <span className={`status-dot ${st.cls}`} data-tip={st.label} />
-              <a href="#" onClick={(e) => (e.preventDefault(), props.onElement(el.id))}>
-                {el.name}
-              </a>
-              {el.isHQ && <span className="faint small"> · штаб</span>}
-              {sectorName(el) && <span className="badge sector-badge">{sectorName(el)}</span>}
-              {effectsNext(b, E, el).length > 0 && (
-                <span
-                  className="badge info fx-badge"
-                  data-tip={effectsNext(b, E, el)
-                    .map((x) => `«${x.name}» до ${x.until}-го хода`)
-                    .join('\n')}
-                >
-                  ◌ {effectsNext(b, E, el).length === 1 ? effectsNext(b, E, el)[0].name : `эффектов: ${effectsNext(b, E, el).length}`}
+              {/* Флажок, точка и имя — отдельными столбиками: длинное имя переносится под само себя, а не под флажок. */}
+              <div className="el-cell">
+                {!b.finished && (el.status === 'active' || el.status === 'pending') && (
+                  <input
+                    type="checkbox"
+                    className="pick-check"
+                    checked={selected.has(el.id)}
+                    onChange={(e) => onSelect([el.id], e.target.checked)}
+                    title="Отметить — для группового решения"
+                  />
+                )}
+                <span className={`status-dot ${st.cls}`} data-tip={st.label} />
+                <span className="el-name">
+                  <a href="#" onClick={(e) => (e.preventDefault(), props.onElement(el.id))}>
+                    {el.name}
+                  </a>
+                  {el.isHQ && <span className="faint small"> · штаб</span>}
                 </span>
-              )}
+                {sectorName(el) && <span className="badge sector-badge">{sectorName(el)}</span>}
+                {/* Эффект — значком: метка с названием переносилась у длинных имён и сдвигала столбцы. */}
+                {effectsNext(b, E, el).length > 0 && (
+                  <span
+                    className="badge info fx-badge"
+                    data-tip={`Временные эффекты:\n${effectsNext(b, E, el)
+                      .map((x) => `«${x.name}» до ${x.until}-го хода`)
+                      .join('\n')}`}
+                  >
+                    ◌{effectsNext(b, E, el).length > 1 ? ` ${effectsNext(b, E, el).length}` : ''}
+                  </span>
+                )}
+              </div>
             </td>
             <td>
               {active && E.behavior(el) !== 'rout' ? (

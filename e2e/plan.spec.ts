@@ -12,7 +12,7 @@ test('откат: кнопка ↶, Ctrl+Z / Ctrl+Y и «Вернуться к �
   const errors = await openApp(page);
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
-  await expect(page.locator('.tb-actions button[title^="Отменить"]')).toHaveCount(0);
+  await expect(page.locator('.tb-actions button[title^="Отменить"]')).toBeDisabled();
   for (let i = 0; i < 3; i++) await stepBtn(page).click();
   await expect(turnMeta(page)).toContainText('Ход 3 из');
 

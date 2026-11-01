@@ -47,7 +47,9 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
         <div className="cmd-list">
           {list.map((a, ai) => (
             <div key={a.id} className="cmd-row support-row">
-              <Txt value={a.name} onChange={(v) => upd((l) => void (l[ai].name = v))} placeholder="название" width={150} />
+              <span className="sup-name">
+                <Txt value={a.name} onChange={(v) => upd((l) => void (l[ai].name = v))} placeholder="название" width="100%" />
+              </span>
               <Num
                 value={a.count}
                 onChange={(v) => upd((l) => void (l[ai].count = Math.max(1, Math.round(v))))}
@@ -58,12 +60,14 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
                 title="Сколько единиц участвует в одном ударе"
               />
               <span className="faint small">×</span>
-              <Sel
-                value={a.typeId}
-                onChange={(v) => upd((l) => void (l[ai].typeId = v))}
-                options={types.map((t) => ({ value: t.id, label: t.name }))}
-                width={150}
-              />
+              <span className="sup-type">
+                <Sel
+                  value={a.typeId}
+                  onChange={(v) => upd((l) => void (l[ai].typeId = v))}
+                  options={types.map((t) => ({ value: t.id, label: t.name }))}
+                  width="100%"
+                />
+              </span>
               <Num
                 value={a.missions}
                 onChange={(v) => upd((l) => void (l[ai].missions = Math.max(0, Math.round(v))))}

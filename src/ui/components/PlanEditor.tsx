@@ -71,7 +71,8 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   const sideNodes = (side: SideId) => {
     const sd = sc.sides.find((x) => x.id === side);
     const out: { value: string; label: string }[] = [];
-    for (const f of sd?.formations ?? []) walkUnits(f, (n, _p, depth) => void out.push({ value: n.id, label: `${'  '.repeat(depth)}${n.name}` }));
+    for (const f of sd?.formations ?? [])
+      walkUnits(f, (n, _p, depth) => void out.push({ value: n.id, label: `${'\u00a0\u00a0\u00a0'.repeat(depth)}${n.name}` }));
     return out;
   };
   const sideName = (id?: SideId) => sc.sides.find((x) => x.id === id)?.name ?? '';
@@ -114,7 +115,7 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                   })
                 }
                 options={(Object.keys(EVENT_KIND_LABELS) as ScenarioEventKind[]).map((k) => ({ value: k, label: EVENT_KIND_LABELS[k], title: KIND_TIP[k] }))}
-                width={200}
+                width={228}
               />
               {ev.kind !== 'conditions' && (
                 <Sel
@@ -164,7 +165,7 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                   <Sel
                     value={ev.targetNodeId ?? ''}
                     onChange={(v) => set((e) => void (e.targetNodeId = v || undefined))}
-                    options={[{ value: '', label: `всей стороне ${sideName(enemyOf(side))}` }, ...sideNodes(enemyOf(side))]}
+                    options={[{ value: '', label: `всей стороне «${sideName(enemyOf(side))}»` }, ...sideNodes(enemyOf(side))]}
                     width={220}
                   />
                 </>

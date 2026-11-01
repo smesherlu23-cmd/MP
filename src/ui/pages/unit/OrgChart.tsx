@@ -136,12 +136,16 @@ export function OrgChart({ ctx }: { ctx: Ctx }) {
       </div>
       {edges.left && (
         <button type="button" className="org-edge left" onClick={() => scrollBy(-1)} title="Схема продолжается слева">
-          <Icon name="left" size={16} />
+          <span className="org-edge-btn">
+            <Icon name="left" size={14} />
+          </span>
         </button>
       )}
       {edges.right && (
         <button type="button" className="org-edge right" onClick={() => scrollBy(1)} title="Схема продолжается справа">
-          <Icon name="right" size={16} />
+          <span className="org-edge-btn">
+            <Icon name="right" size={14} />
+          </span>
         </button>
       )}
     </div>
@@ -172,12 +176,14 @@ export function OrgBox({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       }}
     >
       <div className="org-top">
-        <div className="org-name">{node.name}</div>
+        <div className="org-name" title={node.name}>
+          {node.name}
+        </div>
         <span className="org-menu" onClick={(e) => e.stopPropagation()}>
           <Menu sm items={nodeActions(ctx, node)} />
         </span>
       </div>
-      <div className="org-stats" data-tip={statsTip(st)}>
+      <div className="org-stats" data-tip={statsTip(st)} data-tip-at=".org-box">
         {statsLine(st)}
       </div>
       <div className="org-badges">

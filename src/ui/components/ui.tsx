@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import { Icon } from './Icon';
+import { placeAtPoint, placeNear } from './popup';
 
 export function Btn(props: {
   children?: ReactNode;
@@ -319,13 +320,25 @@ export function Menu(props: {
   /** Список — от левого края кнопки (для кнопок у левого края окна). */
   alignLeft?: boolean;
 }) {
-  const [pos, setPos] = useState<{ top: number; right?: number; left?: number } | null>(null);
+  const [pos, setPos] = useState<DOMRect | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   const close = (refocus: boolean) => {
     setPos(null);
     if (refocus) btn.current?.focus();
   };
+  // Меню открывается под кнопкой, а у нижнего края окна — над ней (размер известен после отрисовки).
+  useLayoutEffect(() => {
+    const el = pop.current;
+    if (!pos || !el) return;
+    el.style.left = '0px';
+    el.style.top = '0px';
+    const p = placeNear(pos, el.offsetWidth, el.offsetHeight, { align: props.alignLeft ? 'start' : 'end', gap: 4 });
+    el.style.left = `${p.left}px`;
+    el.style.top = `${p.top}px`;
+    el.style.transformOrigin = p.above ? 'bottom center' : '';
+    el.style.visibility = 'visible';
+  }, [pos, props.alignLeft]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: подписки — на время, пока меню открыто; close не зависит от состояния
   useEffect(() => {
     if (!pos) return;
@@ -343,20 +356,21 @@ export function Menu(props: {
       } else arrowNav(e, pop.current, '.menu-item');
     };
     const onResize = () => setPos(null);
+    // Прокрутили страницу — кнопка уехала, меню не должно висеть над чужими данными.
+    const onScroll = (e: Event) => !(e.target as Element).closest?.('.menu-pop') && setPos(null);
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('resize', onResize);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [pos]);
   const items = props.items.filter(Boolean) as (MenuItem | 'sep')[];
-  const open = () => {
-    const r = btn.current!.getBoundingClientRect();
-    setPos(props.alignLeft ? { top: r.bottom + 4, left: Math.max(8, r.left) } : { top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) });
-  };
+  const open = () => setPos(btn.current!.getBoundingClientRect());
   return (
     <>
       <button
@@ -378,7 +392,7 @@ export function Menu(props: {
       </button>
       {pos &&
         createPortal(
-          <div ref={pop} className="menu-pop" role="menu" style={{ top: pos.top, right: pos.right, left: pos.left }}>
+          <div ref={pop} className="menu-pop" role="menu" style={{ top: 0, left: 0, visibility: 'hidden' }}>
             <MenuItems items={items} onPick={() => close(true)} />
           </div>,
           document.body,
@@ -435,12 +449,16 @@ export function openContextMenu(e: React.MouseEvent | MouseEvent, items: (MenuIt
 export function ContextMenuHost() {
   const { at, items } = useContextMenu();
   const pop = useRef<HTMLDivElement>(null);
-  // Меню не выходит за край окна: у нижнего края открывается вверх от указателя.
+  // Меню не выходит за край окна: у нижнего края открывается вверх от указателя, у правого — влево.
   useLayoutEffect(() => {
     const el = pop.current;
     if (!at || !el) return;
-    const h = el.offsetHeight;
-    if (at.y + h > window.innerHeight - 8) el.style.top = `${Math.max(8, at.y - h)}px`;
+    el.style.left = '0px';
+    el.style.top = '0px';
+    const p = placeAtPoint(at.x, at.y, el.offsetWidth, el.offsetHeight);
+    el.style.left = `${p.left}px`;
+    el.style.top = `${p.top}px`;
+    el.style.visibility = 'visible';
   }, [at]);
   useEffect(() => {
     if (!at) return;
@@ -453,20 +471,23 @@ export function ContextMenuHost() {
         closeContextMenu();
       } else arrowNav(e, pop.current, '.menu-item');
     };
+    const onScroll = (e: Event) => !(e.target as Element).closest?.('.menu-pop') && closeContextMenu();
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('resize', closeContextMenu);
     window.addEventListener('blur', closeContextMenu);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('resize', closeContextMenu);
       window.removeEventListener('blur', closeContextMenu);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [at]);
   if (!at) return null;
   return createPortal(
-    <div ref={pop} className="menu-pop" role="menu" style={{ top: at.y, left: Math.max(8, Math.min(at.x, window.innerWidth - 260)) }}>
+    <div ref={pop} className="menu-pop" role="menu" style={{ top: 0, left: 0, visibility: 'hidden' }}>
       <MenuItems items={items} onPick={closeContextMenu} />
     </div>,
     document.body,
