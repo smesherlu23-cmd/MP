@@ -93,8 +93,9 @@ test('узкое окно: панель инструментов помещае�
   expect(actions.x + actions.width).toBeLessThanOrEqual(global.x + 1);
   expect(global.x + global.width).toBeLessThanOrEqual(bar.x + bar.width + 1);
   // Поле поиска свёрнуто до значка; Ctrl+F раскрывает его, ввод фильтрует боковую панель.
+  // Поиск мог остаться в фокусе после перехода из боковой панели — тогда он сворачивается плавно (200 мс).
   const search = page.locator('.tb-search');
-  expect((await search.boundingBox())!.width).toBeLessThan(40);
+  await expect.poll(async () => (await search.boundingBox())!.width).toBeLessThan(40);
   await page.keyboard.press('Control+F');
   await expect(page.locator('.tb-search input')).toBeFocused();
   await page.keyboard.type('Танковая');

@@ -531,6 +531,11 @@ html.resizing .splitter::after {
     width: 0;
     opacity: 0;
   }
+  /* Раскрывается сразу, сворачивается плавно: пока поле нулевой ширины, Chrome ставит курсор
+     перед первой набранной буквой, и быстрый ввод после Ctrl+F выходит задом наперёд. */
+  .tb-search:focus-within {
+    transition: box-shadow var(--dur-1);
+  }
   .tb-global > .tb-icon:not(.tb-create) {
     display: none;
   }
