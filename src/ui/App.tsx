@@ -1,7 +1,7 @@
 // Каркас окна в духе macOS: боковая панель слева (на всю высоту), справа — панель инструментов
 // (назад/вперёд, заголовок, действия страницы, поиск) и открытая страница. Вкладок нет: переходы — как в Finder.
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BattlePage } from './pages/BattlePage';
 import { FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
@@ -25,7 +25,8 @@ import { TooltipHost } from './components/Tooltip';
 import { ToolbarSetupHost, openToolbarSetup } from './components/ToolbarSetup';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { objFromKey, objMenu, objName, renameObj, startRename, stopRename, useRenaming } from './objects';
-import { TOOLBAR_ITEMS, applyZoom, setTbShown, setZoom, tbShown, zoomBy, zoomOf } from './prefs';
+import { TOOLBAR_ITEMS, applyZoom, setTbShown, setZoom, tbShown, useZoom, zoomBy } from './prefs';
+import { closePeek, isNarrow, NARROW, setSidebar, sidebarShown, toggleSidebar, useMainWidth, usePeek, useSidebarShown } from './layout';
 import { desktop, isFullScreen, subscribeFullScreen } from './storage';
 import {
   openTab,
@@ -234,7 +235,7 @@ function ToolbarSearch() {
         value={q}
         onChange={(e) => {
           setNavFilter(e.target.value);
-          if (e.target.value && !useApp.getState().settings.sidebar) updateSettings({ sidebar: true });
+          if (e.target.value && !sidebarShown()) setSidebar(true);
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
@@ -248,6 +249,14 @@ function ToolbarSearch() {
   );
 }
 
+/** Узкое окно: открыли объект или раздел из боковой панели поверх страницы — панель уезжает (и при повторном
+ * щелчке по уже открытому, когда страница не меняется). Стрелки, флажки и поля внутри строк — не переход. */
+function closeSideAfterOpen(e: React.SyntheticEvent) {
+  const t = e.target as Element;
+  if (!isNarrow(NARROW.side) || !t.closest('.side-item, .nav-item, .brand-name') || t.closest('input, .nav-chev, .side-item button')) return;
+  setSidebar(false);
+}
+
 export function App() {
   const s = useApp();
   const battles = useBattles((x) => x.battles);
@@ -255,6 +264,11 @@ export function App() {
   const nav = useNav();
   const rename = useRenaming();
   const active = useMemo(() => s.tabs.find((t) => t.key === s.active) ?? s.tabs[0], [s.tabs, s.active]);
+  // Переход на другую страницу закрывает то, что выехало поверх неё в узком окне (боковая панель, инспектор).
+  const activeKey = s.active;
+  useEffect(() => {
+    if (activeKey) closePeek();
+  }, [activeKey]);
   // Ширина боковой панели меняется перетаскиванием края; сохраняется, когда отпустили.
   const [sideW, setSideW] = useState<number | null>(null);
   const sideWidth = sideW ?? s.settings.sideWidth ?? SIDE_W.def;
@@ -283,7 +297,19 @@ export function App() {
     return () => el.removeEventListener('contextmenu', on);
   }, []);
 
-  const zoom = zoomOf(s.settings);
+  // Ширина области страницы: от неё зависит, рядом ли инспектор или поверх страницы.
+  const mainRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const set = (w: number) => useMainWidth.getState().w !== w && useMainWidth.setState({ w });
+    set(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver(([e]) => set(e.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const zoom = useZoom();
   useEffect(() => applyZoom(zoom), [zoom]);
 
   // Файлы JSON, брошенные на окно, импортируются — как «Импорт из файла…».
@@ -360,11 +386,14 @@ export function App() {
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
-        updateSettings({ sidebar: !st.settings.sidebar });
+        toggleSidebar();
+      } else if (e.key === 'Escape' && usePeek.getState().side && !st.dialog && !document.querySelector('.backdrop, .menu-pop')) {
+        // Боковая панель поверх страницы (узкое окно) закрывается, как всплывающее меню.
+        setSidebar(false);
       } else if ((e.ctrlKey || e.metaKey) && !e.altKey && ['Equal', 'NumpadAdd', 'Minus', 'NumpadSubtract', 'Digit0', 'Numpad0'].includes(e.code)) {
-        // Масштаб интерфейса: Ctrl+плюс / минус, Ctrl+0 — обычный.
+        // Масштаб интерфейса: Ctrl+плюс / минус, Ctrl+0 — снова авто (по экрану).
         e.preventDefault();
-        if (e.code === 'Digit0' || e.code === 'Numpad0') setZoom(1);
+        if (e.code === 'Digit0' || e.code === 'Numpad0') setZoom('auto');
         else zoomBy(e.code === 'Equal' || e.code === 'NumpadAdd' ? 0.1 : -0.1);
       } else if ((e.ctrlKey || e.metaKey) && e.code === 'Comma') {
         e.preventDefault();
@@ -399,8 +428,7 @@ export function App() {
     };
   }, []);
 
-  const sidebar = s.settings.sidebar;
-  const toggleSidebar = () => updateSettings({ sidebar: !sidebar });
+  const sidebar = useSidebarShown();
   const fullScreen = useSyncExternalStore(subscribeFullScreen, isFullScreen);
   const title = active ? tabTitle(active, s, battles) : '';
   const st = s.settings;
@@ -412,7 +440,14 @@ export function App() {
   const renamingTitle = objOk && rename.key === active?.key && rename.where === 'title';
   return (
     <div className={`app${sidebar ? '' : ' side-hidden'}`} style={{ '--side-w': `${sideWidth}px` } as React.CSSProperties}>
-      <aside className="sidebar-col" aria-hidden={!sidebar} inert={!sidebar}>
+      {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: щелчок и Enter ловятся у строк панели (всплытие) */}
+      <aside
+        className="sidebar-col"
+        aria-hidden={!sidebar}
+        inert={!sidebar}
+        onClick={closeSideAfterOpen}
+        onKeyDown={(e) => e.key === 'Enter' && closeSideAfterOpen(e)}
+      >
         <div className="side-top">
           <button type="button" className="brand-name" title="Главное" onClick={() => openTab('home')}>
             <img src={logo} alt="" className="brand-logo" />
@@ -425,7 +460,11 @@ export function App() {
         <Navigator />
         <Splitter side="left" label="Ширина боковой панели" width={sideWidth} min={SIDE_W.min} max={SIDE_W.max} def={SIDE_W.def} onChange={setSideW} />
       </aside>
-      <div className="main-col">
+      {/* Затемнение под боковой панелью в узком окне: щелчок мимо панели её закрывает (с клавиатуры — Escape). */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: только щелчок мышью мимо панели; Escape обрабатывается в окне */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: Escape закрывает панель в общем обработчике клавиш */}
+      {sidebar && <div className="side-scrim" aria-hidden="true" onClick={() => setSidebar(false)} />}
+      <div className="main-col" ref={mainRef}>
         <header className="toolbar-win" ref={toolbarRef}>
           {!sidebar && (
             <button type="button" className="tb-icon" title="Показать боковую панель (Ctrl+B)" onClick={toggleSidebar}>
@@ -511,11 +550,11 @@ export function App() {
               </>
             )}
             {show('zoom') && (
-              <div className="tb-zoom" title="Масштаб интерфейса (Ctrl+плюс / минус, Ctrl+0 — обычный)">
+              <div className="tb-zoom" title="Масштаб интерфейса (Ctrl+плюс / минус, Ctrl+0 — авто)">
                 <button type="button" className="tb-icon" onClick={() => zoomBy(-0.1)} aria-label="Мельче">
                   <Icon name="minus" size={15} />
                 </button>
-                <button type="button" className="tb-zoom-val" onClick={() => setZoom(1)} aria-label="Обычный масштаб">
+                <button type="button" className="tb-zoom-val" onClick={() => setZoom('auto')} aria-label="Масштаб по экрану (авто)">
                   {Math.round(zoom * 100)}%
                 </button>
                 <button type="button" className="tb-icon" onClick={() => zoomBy(0.1)} aria-label="Крупнее">

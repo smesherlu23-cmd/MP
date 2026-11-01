@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { walkUnits, type UnitNode } from '../../engine';
 import { openUnit, setTabState } from '../hooks';
+import { sidebarShown, toggleSidebar } from '../layout';
 import { SECTIONS as NAV_SECTIONS } from '../nav';
 import { HELP_GROUPS } from '../pages/HelpPage';
 import { SECTIONS } from '../pages/RulesetPage';
@@ -42,7 +43,7 @@ function buildItems(): Item[] {
   cmd('Отменить', undo, 'Ctrl+Z');
   cmd('Повторить', redo, 'Ctrl+Y');
   cmd(s.settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', () => updateSettings({ theme: s.settings.theme === 'dark' ? 'light' : 'dark' }));
-  cmd(s.settings.sidebar ? 'Скрыть боковую панель' : 'Показать боковую панель', () => updateSettings({ sidebar: !s.settings.sidebar }), 'Ctrl+B');
+  cmd(sidebarShown() ? 'Скрыть боковую панель' : 'Показать боковую панель', toggleSidebar, 'Ctrl+B');
   cmd('Главное', () => openTab('home'));
   for (const sec of NAV_SECTIONS) cmd(`Каталог: ${sec.label}`, () => openTab('library', sec.id));
   cmd('Справка', () => openTab('help'));

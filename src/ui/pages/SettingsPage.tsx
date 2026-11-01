@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Btn, Card, Field, Modal, Num, Seg, Sel } from '../components/ui';
-import { ZOOM_OPTIONS, openToolbarSetup } from '../components/ToolbarSetup';
-import { setZoom, zoomOf } from '../prefs';
+import { Btn, Card, Field, Modal, Num, Seg } from '../components/ui';
+import { ZOOM_HINT, ZoomSelect, openToolbarSetup } from '../components/ToolbarSetup';
 import { storage, storageKind, type BackupInfo, type TrashItem } from '../storage';
 import { confirmDialog, deleteBattles, fmtDate, installExamples, restoreBackup, restoreFromTrash, toast, updateSettings, useApp } from '../store';
 
@@ -60,8 +59,8 @@ export function SettingsPage() {
                 ]}
               />
             </Field>
-            <Field label="Масштаб" hint="Ctrl+плюс и Ctrl+минус — крупнее и мельче, Ctrl+0 — обычный.">
-              <Sel value={String(zoomOf(s))} width={180} onChange={(v) => setZoom(Number(v))} options={ZOOM_OPTIONS} />
+            <Field label="Масштаб" hint={ZOOM_HINT}>
+              <ZoomSelect />
             </Field>
             <Field label="Панель инструментов" hint="Можно и правым щелчком по свободному месту панели инструментов.">
               <div>

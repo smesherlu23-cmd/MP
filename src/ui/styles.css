@@ -573,6 +573,13 @@ html.resizing .splitter::after {
     overflow: hidden;
   }
 }
+/* Ещё уже: кнопки, которые есть и в меню «⋯» (прогноз боя, «Переиграть»), прячутся, у «До события» — только значок. */
+@container main (max-width: 720px) {
+  .tb-actions .tb-opt,
+  .tb-actions .btn .btn-text {
+    display: none;
+  }
+}
 
 /* окно без системной шапки: панель инструментов — заголовок окна, кнопки окна — поверх её правого края */
 html.desktop .toolbar-win,
@@ -605,10 +612,57 @@ html[data-material="mica"][data-theme="light"] .sidebar-col {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Инспектор справа */
+/* Узкое окно (меньше 900 px, см. layout.ts): боковая панель не сжимает страницу, а выезжает поверх неё;
+   щелчок мимо, Escape или переход на другую страницу её закрывают. */
+.side-scrim {
+  display: none;
+}
+@media (max-width: 899.98px) {
+  .app,
+  .app.side-hidden {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app > .sidebar-col {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    width: min(var(--side-w, 260px), calc(100vw - 56px));
+    background: var(--side-bg);
+    box-shadow: var(--shadow);
+    transition:
+      transform var(--dur-3) var(--ease),
+      visibility 0s;
+  }
+  html[data-material="mica"] .app > .sidebar-col {
+    background: var(--side-bg);
+  }
+  .app.side-hidden > .sidebar-col {
+    transform: translateX(-100%);
+    visibility: hidden;
+    box-shadow: none;
+    transition:
+      transform var(--dur-3) var(--ease),
+      visibility 0s var(--dur-3);
+  }
+  .side-scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 49;
+    background: rgba(0, 0, 0, 0.18);
+  }
+}
+
+/* Инспектор справа. Рядом со страницей — не шире 40% окна, чтобы странице оставалось место. Содержимое —
+   постоянной ширины: при скрытии оно уезжает, а не сжимается. */
 .inspector {
+  --insp-cur: min(var(--insp-w, 420px), 40cqw);
   position: relative;
   flex-shrink: 0;
+  width: var(--insp-cur);
   min-height: 0;
   overflow: hidden;
   background: var(--bg2);
@@ -616,13 +670,34 @@ html[data-material="mica"][data-theme="light"] .sidebar-col {
   transition: width var(--dur-3) var(--ease);
 }
 .inspector.hidden {
+  width: 0;
   border-left-color: transparent;
 }
 .inspector-body {
   display: flex;
   flex-direction: column;
+  width: var(--insp-cur);
   height: 100%;
   min-height: 0;
+}
+/* Странице мало места (область уже 760 px, см. layout.ts): инспектор выезжает поверх неё, почти во всю ширину. */
+@container main (max-width: 759.98px) {
+  .split-body,
+  .battle-body {
+    position: relative;
+  }
+  .inspector {
+    --insp-cur: min(var(--insp-w, 420px), calc(100cqw - 56px));
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    box-shadow: var(--shadow);
+  }
+  .inspector.hidden {
+    box-shadow: none;
+  }
 }
 
 .content {
@@ -994,6 +1069,43 @@ table.tbl {
   gap: 1px;
   position: sticky;
   top: 0;
+}
+/* Набор правил: разделы слева, содержимое справа; каталог типов: список слева, карточка типа справа. */
+.split.rs-split {
+  grid-template-columns: 190px minmax(0, 1fr);
+}
+.rs-split > .stack {
+  container: rscontent / inline-size;
+}
+.split.types-split {
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+/* Узкая страница: разделы — строкой над содержимым. */
+@container main (max-width: 760px) {
+  .split.rs-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .rs-split > .vnav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+  }
+  .rs-split > .vnav button {
+    gap: 8px;
+    padding: 4px 10px;
+  }
+}
+/* Карточке типа мало места рядом со списком — список над ней, невысокий, с прокруткой. */
+@container rscontent (max-width: 700px) {
+  .split.types-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .types-split > .card:first-child .tree {
+    max-height: 232px;
+    overflow: auto;
+  }
 }
 .vnav button {
   font: inherit;
@@ -5619,6 +5731,12 @@ input[type="text"] {
 }
 .page.help {
   --page-w: 1000px;
+}
+/* Сверхширокий экран (3440 и шире): у остальных страниц — сценарий, набор правил, команда, прогоны — колонка
+   не шире 2400 px посередине, чтобы поля и списки не растягивались через весь экран. */
+.page:not(.fill, .home, .catalog, .settings-page, .help) {
+  padding-left: max(32px, calc((100% - 2400px) / 2));
+  padding-right: max(32px, calc((100% - 2400px) / 2));
 }
 
 /* Во весь экран (F11) кнопок окна нет — и места под них у правого края панели инструментов не оставляем. */

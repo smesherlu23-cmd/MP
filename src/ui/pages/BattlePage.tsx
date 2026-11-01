@@ -152,7 +152,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
         <ToolbarSlot>
           {b.finished ? (
             <>
-              <Btn onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
+              <Btn className="tb-opt" onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
                 Переиграть
               </Btn>
               <Btn
@@ -169,7 +169,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
                   onClick={() => void applyResultsToForces(b)}
                   title="Потери, раненые, техника в ремонте, мораль и боезапас — в силы, участвовавшие в бою"
                 >
-                  Записать итоги в силы
+                  Записать итоги<span className="btn-text"> в силы</span>
                 </Btn>
               )}
             </>
@@ -184,7 +184,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
                   Object.entries(rules).filter(([k, v]) => k !== 'lossPct' && v).length
                 } видов событий${rules.lossPct ? `, потери за ход ≥ ${rules.lossPct}%` : ''}. Настроить — в меню «⋯».`}
               >
-                <Icon name="skip" size={13} /> До события
+                <Icon name="skip" size={13} /> <span className="btn-text">До события</span>
               </Btn>
               <Btn onClick={() => step(5)} title="Рассчитать пять ходов">
                 <Icon name="forward" size={14} /> 5
@@ -192,7 +192,9 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
               <Btn onClick={toEnd} title="Рассчитать бой до конца">
                 До конца
               </Btn>
+              {/* В узком окне прячется: прогноз есть и в меню «⋯». */}
               <Btn
+                className="tb-opt"
                 onClick={() => setForecastOpen(true)}
                 title="Что дальше? Сотни продолжений боя с этого хода — вероятности исходов и потерь. Если вы только что приняли решения — рядом прогноз без них."
               >

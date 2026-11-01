@@ -83,6 +83,10 @@ export interface WindowBridge {
   /** Окно вошло во весь экран или вышло из него. */
   onFullScreen(cb: (on: boolean) => void): void;
   appInfo(): Promise<{ version: string; dataDir: string }>;
+  /** Рабочая область экрана, на котором окно (DIP, без масштаба программы). */
+  display?: { w: number; h: number };
+  /** Окно перенесли на другой экран или у экрана сменился масштаб. */
+  onDisplay?(cb: (d: { w: number; h: number }) => void): void;
   setZoom(f: number): void;
   /** Перед закрытием окна главный процесс ждёт, пока `flush` допишет сохранения. */
   onBeforeClose(flush: () => Promise<void>): void;

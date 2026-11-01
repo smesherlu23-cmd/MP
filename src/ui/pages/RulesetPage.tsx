@@ -63,7 +63,7 @@ export function RulesetPage({ tab }: { tab: Tab }) {
           />
         </ToolbarSlot>
       </div>
-      <div className="split" style={{ gridTemplateColumns: '190px minmax(0, 1fr)' }}>
+      <div className="split rs-split">
         <nav className="vnav">
           {SECTIONS.map((x) => (
             <button type="button" key={x.id} className={sub === x.id ? 'on' : ''} onClick={() => setTabSub(tab.key, x.id)}>

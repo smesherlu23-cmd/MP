@@ -90,7 +90,7 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
       {view === 'table' ? (
         <TypesTable r={r} onPick={(id) => (setSel(id), setView('edit'))} />
       ) : (
-        <div className="split" style={{ gridTemplateColumns: '240px minmax(0, 1fr)' }}>
+        <div className="split types-split">
           <Card tight>
             <div className="tree" style={{ padding: 6 }}>
               {(['personnel', 'weapon', 'vehicle'] as ComponentKind[]).map((k) => (
