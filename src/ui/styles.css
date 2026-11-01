@@ -5398,14 +5398,19 @@ tr[tabindex]:focus-visible {
     overflow-wrap: anywhere;
   }
   .tbl.forces td.f-cell {
-    padding-left: calc(2px + var(--depth, 0) * 8px);
+    padding-left: calc(2px + var(--depth, 0) * 6px);
   }
   .tbl.forces td.e-cell {
-    padding-left: calc(10px + var(--depth, 0) * 8px);
+    padding-left: calc(4px + var(--depth, 0) * 6px);
+  }
+  /* «112/117» — в две строки: столбец «Люди» вдвое уже, место — именам. */
+  .tbl.forces td.num > .faint {
+    display: block;
+    font-size: var(--fs-xs);
   }
   .tbl.forces select {
-    width: 96px !important;
-    max-width: 96px;
+    width: 90px !important;
+    max-width: 90px;
   }
   .tbl.forces td[style*="min-width"] {
     min-width: 0 !important;
@@ -5572,5 +5577,69 @@ input[type="text"] {
   }
   .log-head .seg {
     margin-right: auto;
+  }
+}
+
+/* Широкое окно (развёрнуто или во весь экран). Страницы с ограниченной шириной — главная, каталоги,
+   настройки, справка — держат колонку содержимого посередине. Ограничена сама колонка, а не область
+   прокрутки: полоса прокрутки — у края окна, и колесо мыши прокручивает страницу и над полями по бокам. */
+.page.home,
+.page.catalog,
+.page.settings-page,
+.page.help {
+  max-width: none;
+  padding-left: max(32px, calc((100% - var(--page-w)) / 2));
+  padding-right: max(32px, calc((100% - var(--page-w)) / 2));
+}
+.page.home {
+  --page-w: 1116px;
+}
+.page.catalog {
+  --page-w: 1176px;
+}
+.page.settings-page {
+  --page-w: 1100px;
+}
+.page.help {
+  --page-w: 1000px;
+}
+
+/* Во весь экран (F11) кнопок окна нет — и места под них у правого края панели инструментов не оставляем. */
+html.desktop.fullscreen .toolbar-win {
+  padding-right: 10px;
+}
+
+/* Таблицы сил: у обеих сторон столбцы одной ширины — приказы и числа стоят друг под другом,
+   всё остальное место — у имён. */
+.tbl.forces th.c-order {
+  width: 150px;
+}
+.tbl.forces th.c-pers {
+  width: 100px;
+}
+.tbl.forces th.c-morale {
+  width: 124px;
+}
+.tbl.forces th.c-ce,
+.tbl.forces th.c-det {
+  width: 64px;
+}
+@container (max-width: 680px) {
+  .tbl.forces th:is(.c-order, .c-pers, .c-morale, .c-ce, .c-det) {
+    width: auto;
+  }
+}
+/* Очень широкая страница боя (окно ~2400 px и шире): стороны — рядом, а не одна под другой,
+   иначе между именем и числами строки — полэкрана. С подробными столбцами — по-прежнему друг под другом. */
+.forces-sides {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@container (min-width: 1800px) {
+  .forces-sides:not(.details) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
   }
 }

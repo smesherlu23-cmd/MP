@@ -270,42 +270,44 @@ export function Forces(props: {
           <span className="muted small">подробные столбцы</span>
         </Check>
       </div>
-      {SIDES.map((side) => (
-        <Card key={side} title={<span style={{ color: b.sides[side].color }}>{b.sides[side].name}</span>} tight>
-          <ScrollX>
-            <table className="tbl compact forces">
-              <thead>
-                <tr>
-                  <th>Элемент</th>
-                  <th>Приказ</th>
-                  <th className="num">Люди</th>
-                  {b.ruleset.features.morale && <th>Мораль</th>}
-                  <th className="num" data-tip="Остаточная боеспособность">
-                    Боесп.
-                  </th>
-                  {details && <DetailHeaders b={b} />}
-                </tr>
-              </thead>
-              <tbody>
-                {rowsFor(side).map(({ f: fs, depth }) => (
-                  <FormationRows
-                    key={fs.id}
-                    {...props}
-                    fs={fs}
-                    depth={depth}
-                    details={details}
-                    folded={fold.has(fs.id)}
-                    onToggle={() => toggle(fs.id)}
-                    agg={agg.get(fs.id)}
-                    selected={selSet}
-                    onSelect={onSelect}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </ScrollX>
-        </Card>
-      ))}
+      <div className={details ? 'forces-sides details' : 'forces-sides'}>
+        {SIDES.map((side) => (
+          <Card key={side} title={<span style={{ color: b.sides[side].color }}>{b.sides[side].name}</span>} tight>
+            <ScrollX>
+              <table className="tbl compact forces">
+                <thead>
+                  <tr>
+                    <th>Элемент</th>
+                    <th className="c-order">Приказ</th>
+                    <th className="num c-pers">Люди</th>
+                    {b.ruleset.features.morale && <th className="c-morale">Мораль</th>}
+                    <th className="num c-ce" data-tip="Остаточная боеспособность">
+                      Боесп.
+                    </th>
+                    {details && <DetailHeaders b={b} />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rowsFor(side).map(({ f: fs, depth }) => (
+                    <FormationRows
+                      key={fs.id}
+                      {...props}
+                      fs={fs}
+                      depth={depth}
+                      details={details}
+                      folded={fold.has(fs.id)}
+                      onToggle={() => toggle(fs.id)}
+                      agg={agg.get(fs.id)}
+                      selected={selSet}
+                      onSelect={onSelect}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </ScrollX>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
@@ -314,11 +316,15 @@ export function DetailHeaders({ b }: { b: Battle }) {
   const f = b.ruleset.features;
   return (
     <>
-      <th className="num">Техн.</th>
-      {f.suppression && <th className="num">Подавл.</th>}
-      {f.fatigue && <th className="num">Устал.</th>}
-      {f.ammo && <th className="num">БК</th>}
-      {f.detection && <th data-tip="Обнаружен противником в этом ходу">Виден</th>}
+      <th className="num c-det">Техн.</th>
+      {f.suppression && <th className="num c-det">Подавл.</th>}
+      {f.fatigue && <th className="num c-det">Устал.</th>}
+      {f.ammo && <th className="num c-det">БК</th>}
+      {f.detection && (
+        <th className="c-det" data-tip="Обнаружен противником в этом ходу">
+          Виден
+        </th>
+      )}
     </>
   );
 }

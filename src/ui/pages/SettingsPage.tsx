@@ -33,7 +33,7 @@ export function SettingsPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: сведения о папке обновляются при изменении данных
   useEffect(refresh, [libSize, refresh]);
   return (
-    <div className="page">
+    <div className="page settings-page">
       <div className="page-head">
         <h1>Настройки</h1>
       </div>

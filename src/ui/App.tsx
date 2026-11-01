@@ -1,7 +1,7 @@
 // Каркас окна в духе macOS: боковая панель слева (на всю высоту), справа — панель инструментов
 // (назад/вперёд, заголовок, действия страницы, поиск) и открытая страница. Вкладок нет: переходы — как в Finder.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BattlePage } from './pages/BattlePage';
 import { FormationPage } from './pages/FormationPage';
 import { HelpPage } from './pages/HelpPage';
@@ -26,7 +26,7 @@ import { ToolbarSetupHost, openToolbarSetup } from './components/ToolbarSetup';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { objFromKey, objMenu, objName, renameObj, startRename, stopRename, useRenaming } from './objects';
 import { TOOLBAR_ITEMS, applyZoom, setTbShown, setZoom, tbShown, zoomBy, zoomOf } from './prefs';
-import { desktop } from './storage';
+import { desktop, isFullScreen, subscribeFullScreen } from './storage';
 import {
   openTab,
   alertDialog,
@@ -401,6 +401,7 @@ export function App() {
 
   const sidebar = s.settings.sidebar;
   const toggleSidebar = () => updateSettings({ sidebar: !sidebar });
+  const fullScreen = useSyncExternalStore(subscribeFullScreen, isFullScreen);
   const title = active ? tabTitle(active, s, battles) : '';
   const st = s.settings;
   const show = (id: Parameters<typeof tbShown>[1]) => tbShown(st, id);
@@ -557,6 +558,9 @@ export function App() {
                 { label: st.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', onClick: toggleTheme },
                 { label: sidebar ? 'Скрыть боковую панель' : 'Показать боковую панель', kbd: 'Ctrl+B', onClick: toggleSidebar },
                 { label: 'Настроить окно…', onClick: openToolbarSetup, tip: 'Кнопки панели инструментов и масштаб интерфейса' },
+                ...(desktop?.toggleFullScreen
+                  ? [{ label: fullScreen ? 'Выйти из полноэкранного режима' : 'Во весь экран', kbd: 'F11', onClick: () => desktop?.toggleFullScreen?.() }]
+                  : []),
                 'sep',
                 { label: 'Справка', onClick: () => openTab('help') },
                 { label: 'Настройки', kbd: 'Ctrl+,', onClick: () => openTab('settings') },
