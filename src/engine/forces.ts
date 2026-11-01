@@ -274,6 +274,9 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
     const f = cloneDeep(forces[id]);
     let personnel = 0;
     let equipment = 0;
+    let killed = 0;
+    let wounded = 0;
+    let missing = 0;
     let side: ElementState['side'] | undefined;
     // Состояние узлов до боя (с наследованием) — для узлов, где в бою был не весь состав.
     const before = new Map<Id, UnitState>();
@@ -302,6 +305,9 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
         const t = types.get(c.typeId);
         // Люди — как в итогах боя: убитые, раненые и пропавшие, включая экипажи техники.
         personnel += s.kia + s.wia + s.mia;
+        killed += s.kia;
+        wounded += s.wia;
+        missing += s.mia;
         const lost = Math.max(0, s.start - s.current);
         if (!lost) continue;
         c.current = Math.max(0, c.current - lost);
@@ -316,7 +322,7 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
     });
     const r = b.result;
     const outcome = r ? (!r.winner || r.winner === side ? r.outcomeName : `${r.outcomeName} противника`) : undefined;
-    addRecord(f, { at, kind: 'battle', title: b.name, battleId: b.id, outcome, personnel: -personnel, equipment: -equipment });
+    addRecord(f, { at, kind: 'battle', title: b.name, battleId: b.id, outcome, personnel: -personnel, equipment: -equipment, killed, wounded, missing });
     // Опыт растёт после каждых N боёв (если включено в наборе правил).
     if (every > 0) {
       const battles = (f.history ?? []).filter((x) => x.kind === 'battle').length;
@@ -533,13 +539,15 @@ export interface BetweenPlan {
   /** Боезапас и топливо: до какого уровня, %. */
   ammo?: number;
   fuel?: number;
-  /** Недостающее до штата — из резерва (после лечения и ремонта). */
-  replenish?: { personnel: boolean; equipment: boolean };
+  /** Недостающее до штата — из резерва (после лечения и ремонта); note — откуда пополнение. */
+  replenish?: { personnel: boolean; equipment: boolean; note?: string };
+  /** Недостающее до штата — из другого подразделения: сколько каждого типа (после лечения и ремонта). */
+  transfer?: { donor: UnitNode; amounts: Record<Id, number> };
 }
 
 /**
  * Подготовка к бою одним шагом: лечение, ремонт, пополнение из резерва, отдых, боезапас, топливо — что
- * указано в плане. В боевой путь — одна запись «Между боями» с перечнем сделанного. Возвращает изменённую
+ * указано в плане. В боевой путь — одна запись «Восстановление» с перечнем сделанного. Возвращает изменённую
  * копию, сколько вернулось и пришло, и что сделано.
  */
 export function prepareForce(src: UnitNode, rs: Ruleset | undefined, plan: BetweenPlan, at = new Date().toISOString()) {
@@ -564,13 +572,26 @@ export function prepareForce(src: UnitNode, rs: Ruleset | undefined, plan: Betwe
       done.push(`ремонт${plan.repair < 100 ? ` ${plan.repair}%` : ''}${r.count ? `: ${r.count} ед.` : ''}`);
     }
   }
+  const amount = (p: number, e: number) => [p ? `${p} чел.` : '', e ? `${e} ед.` : ''].filter(Boolean).join(', ');
+  // У донора — своя запись «Передано в …»; он возвращается вместе с силами.
+  let donor: UnitNode | undefined;
+  if (plan.transfer) {
+    const r = transferStrength(f, plan.transfer.donor, rs, plan.transfer.amounts, at);
+    if (r.changed) {
+      f = r.target;
+      donor = r.donor;
+      personnel += r.personnel;
+      equipment += r.equipment;
+      done.push(`пополнение из «${plan.transfer.donor.name}»: ${amount(r.personnel, r.equipment)}`);
+    }
+  }
   if (plan.replenish && (plan.replenish.personnel || plan.replenish.equipment)) {
     const r = replenishForce(f, rs, plan.replenish);
     if (r.personnel || r.equipment) {
       f = r.force;
       personnel += r.personnel;
       equipment += r.equipment;
-      done.push(`пополнение из резерва: ${[r.personnel ? `${r.personnel} чел.` : '', r.equipment ? `${r.equipment} ед.` : ''].filter(Boolean).join(', ')}`);
+      done.push(`пополнение из резерва${plan.replenish.note ? ` (${plan.replenish.note})` : ''}: ${amount(r.personnel, r.equipment)}`);
     }
   }
   if (plan.rest?.pct) {
@@ -593,9 +614,9 @@ export function prepareForce(src: UnitNode, rs: Ruleset | undefined, plan: Betwe
   if (changed) {
     // Шаги записались по отдельности — сводятся в одну запись.
     f = { ...f, history: [...(f.history ?? []).slice(0, before)] };
-    addRecord(f, { at, kind: 'restore', title: 'Между боями', personnel: personnel || undefined, equipment: equipment || undefined, note: done.join('; ') });
+    addRecord(f, { at, kind: 'restore', title: 'Восстановление', personnel: personnel || undefined, equipment: equipment || undefined, note: done.join('; ') });
   }
-  return { force: f, personnel, equipment, done, changed };
+  return { force: f, donor, personnel, equipment, done, changed };
 }
 
 /** Пополнение до штата из резерва: людей и/или техники и вооружения. Возвращает изменённую копию и сколько пришло. */

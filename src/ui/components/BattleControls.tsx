@@ -436,9 +436,7 @@ export function SupportPanel({
                     <span className="sup-title" title={a.name}>
                       {a.name}
                     </span>
-                    <span className="sup-sub faint small">
-                      {a.count} × {t?.name.toLowerCase() ?? '?'}
-                    </span>
+                    <span className="sup-sub faint small">{a.name === t?.name ? `${a.count} ед.` : `${a.count} × ${t?.name.toLowerCase() ?? '?'}`}</span>
                   </span>
                   <span className={`small nowrap ${a.left ? '' : 'faint'}`} title="Осталось ударов из доступных за бой">
                     {a.left} из {a.missions}

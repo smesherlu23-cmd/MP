@@ -1,6 +1,6 @@
 // Набор правил: каталог типов (карточки и таблица), классы целей и дистанции.
 
-import { KIND_LABELS, clone, newId, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
+import { KIND_LABELS, clone, dec, newId, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
 import { Btn, Card, Check, Field, Info, Menu, Num, ScrollX, Sel, Seg, Tags, Txt, pressable } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { openTab, toastUndoable, useApp } from '../../store';
@@ -18,10 +18,30 @@ export function typeUsage(typeId: string): number {
   return n;
 }
 
+/** Эталон по умолчанию: люди первого класса цели с ценностью 1 (стрелок, мушкетёр), иначе первые люди, иначе первый тип. */
+export function defaultReference(r: Ruleset): ComponentType | undefined {
+  const people = r.componentTypes.filter((x) => x.kind === 'personnel');
+  return people.find((x) => x.value === 1 && x.targetClass === r.targetClasses[0]?.id) ?? people.find((x) => x.value === 1) ?? people[0] ?? r.componentTypes[0];
+}
+
+/** Во сколько раз больше эталона: «×2,9»; пусто, если сравнивать не с чем. */
+const ratio = (v: number, base: number) => {
+  if (!(v > 0) || !(base > 0)) return '';
+  const x = v / base;
+  return `×${dec(x, x >= 10 ? 0 : x >= 1 ? 1 : 2)
+    .replace(/(,\d*?)0+$/, '$1')
+    .replace(/,$/, '')}`;
+};
+
+const KIND_OWN: Record<ComponentKind, string> = { personnel: 'у людей', weapon: 'у оружия', vehicle: 'у техники' };
+
 export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: string }) {
   const [selId, setSel] = useTabState<string>(`${tabKey}:type`, r.componentTypes[0]?.id ?? '');
   const [view, setView] = useTabState<'edit' | 'table'>(`${tabKey}:typesView`, 'edit');
   const t = r.componentTypes.find((x) => x.id === selId) ?? r.componentTypes[0];
+  // Эталон для сравнения чисел типа: по умолчанию — рядовой боец (люди первого класса цели с ценностью 1).
+  const [refId, setRef] = useTabState<string>(`${tabKey}:refType`, defaultReference(r)?.id ?? '');
+  const ref = r.componentTypes.find((x) => x.id === refId) ?? defaultReference(r);
   const add = () => {
     const id = newId('type');
     upd((d) =>
@@ -95,20 +115,54 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
               {!r.componentTypes.length && <div className="empty">Каталог пуст. Добавьте первый тип: например, «Стрелок» или «Танк».</div>}
             </div>
           </Card>
-          {t && <TypeEditor r={r} t={t} upd={upd} allTags={allTags} onSelect={setSel} />}
+          {t && <TypeEditor r={r} t={t} upd={upd} allTags={allTags} onSelect={setSel} reference={ref} onReference={setRef} />}
         </div>
       )}
     </>
   );
 }
 
-export function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: ComponentType; upd: Upd; allTags: string[]; onSelect: (id: string) => void }) {
+export function TypeEditor({
+  r,
+  t,
+  upd,
+  allTags,
+  onSelect,
+  reference,
+  onReference,
+}: {
+  r: Ruleset;
+  t: ComponentType;
+  upd: Upd;
+  allTags: string[];
+  onSelect: (id: string) => void;
+  reference?: ComponentType;
+  onReference?: (id: string) => void;
+}) {
   const ut = (fn: (x: ComponentType) => void) =>
     upd((d) => {
       const x = d.componentTypes.find((y) => y.id === t.id);
       if (x) fn(x);
     });
   const used = typeUsage(t.id);
+  // Эталонные значения: у эталона и у типов того же вида в этом наборе — подпись под полем.
+  const ref = reference && reference.id !== t.id ? reference : undefined;
+  const same = r.componentTypes.filter((x) => x.kind === t.kind && x.id !== t.id);
+  const refLine = (get: (x: ComponentType) => number, withRef = true) => {
+    const vs = same.map(get);
+    const lo = Math.min(...vs);
+    const hi = Math.max(...vs);
+    const parts = [
+      ref && withRef ? `эталон ${num(get(ref))}` : '',
+      vs.length >= 2 ? `${KIND_OWN[t.kind]} в наборе ${lo === hi ? num(lo) : `${num(lo)}–${num(hi)}`}` : '',
+    ].filter(Boolean);
+    return parts.length ? <div className="ref-line">{parts.join(' · ')}</div> : null;
+  };
+  // Огонь по классу, по которому стреляет эталон (обычно — живая сила): во сколько раз больше эталона по дистанциям.
+  const refClass = ref && r.targetClasses.find((c) => r.rangeBands.some((b) => (ref.firepower[c.id]?.[b.id] ?? 0) > 0));
+  const fireRatios = refClass
+    ? r.rangeBands.map((b) => ({ b, x: ratio(t.firepower[refClass.id]?.[b.id] ?? 0, ref?.firepower[refClass.id]?.[b.id] ?? 0) })).filter((y) => y.x)
+    : [];
   return (
     <Card
       title={t.name}
@@ -140,6 +194,14 @@ export function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Co
         />
       }
     >
+      {onReference && reference && (
+        <div className="row ref-pick">
+          <span className="muted small">Эталон для сравнения</span>
+          <Sel value={reference.id} onChange={onReference} options={r.componentTypes.map((x) => ({ value: x.id, label: x.name }))} />
+          <Info text="Числа типа сравниваются с эталоном — обычно рядовым бойцом эпохи: под полями — его значения и разброс у типов того же вида в этом наборе, в огневой мощи — во сколько раз больше эталона. Ценность обычно близка к огню в эталонах на «своей» дистанции (руководство ГМ, «Ценность: как подобрать»)." />
+          {reference.id === t.id && <span className="faint small">— это сам эталон</span>}
+        </div>
+      )}
       <div className="fields">
         <Field label="Название">
           <Txt value={t.name} onChange={(v) => ut((x) => void (x.name = v))} />
@@ -166,25 +228,31 @@ export function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Co
         {t.kind !== 'personnel' && (
           <Field label="Экипаж / расчёт, чел.">
             <Num value={t.crew} onChange={(v) => ut((x) => void (x.crew = v))} min={0} integer />
+            {refLine((x) => x.crew, ref?.kind === t.kind)}
           </Field>
         )}
         <Field label="Боевая ценность" hint="Очки: вес в боеспособности и потерях.">
           <Num value={t.value} onChange={(v) => ut((x) => void (x.value = v))} min={0} step={0.5} />
+          {refLine((x) => x.value)}
         </Field>
         <Field label="Защищённость" hint="1 — как у типичной цели класса.">
           <Num value={t.protection} onChange={(v) => ut((x) => void (x.protection = v))} min={0.05} step={0.1} />
+          {refLine((x) => x.protection)}
         </Field>
         <Field label="Подавляющее действие">
           <Num value={t.suppressive} onChange={(v) => ut((x) => void (x.suppressive = v))} min={0} step={0.1} />
+          {refLine((x) => x.suppressive)}
         </Field>
         {r.features.ammo && (
           <Field label="Расход БК, %/ход">
             <Num value={t.ammoUse} onChange={(v) => ut((x) => void (x.ammoUse = v))} min={0} step={0.5} />
+            {refLine((x) => x.ammoUse)}
           </Field>
         )}
         {r.features.fuel && t.kind === 'vehicle' && (
           <Field label="Расход топлива, %/ход">
             <Num value={t.fuelUse} onChange={(v) => ut((x) => void (x.fuelUse = v))} min={0} step={0.5} />
+            {refLine((x) => x.fuelUse)}
           </Field>
         )}
         <Field label="Огонь">
@@ -222,26 +290,42 @@ export function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: Co
             {r.targetClasses.map((c) => (
               <tr key={c.id}>
                 <td>{c.name}</td>
-                {r.rangeBands.map((b) => (
-                  <td key={b.id} className="num">
-                    <Num
-                      value={t.firepower[c.id]?.[b.id] ?? 0}
-                      min={0}
-                      step={0.005}
-                      width={80}
-                      onChange={(v) =>
-                        ut((x) => {
-                          x.firepower[c.id] = { ...(x.firepower[c.id] ?? {}), [b.id]: v };
-                        })
-                      }
-                    />
-                  </td>
-                ))}
+                {r.rangeBands.map((b) => {
+                  const own = t.firepower[c.id]?.[b.id] ?? 0;
+                  const base = ref?.firepower[c.id]?.[b.id] ?? 0;
+                  const x = ratio(own, base);
+                  return (
+                    <td key={b.id} className="num">
+                      <Num
+                        value={own}
+                        min={0}
+                        step={0.005}
+                        width={80}
+                        onChange={(v) =>
+                          ut((y) => {
+                            y.firepower[c.id] = { ...(y.firepower[c.id] ?? {}), [b.id]: v };
+                          })
+                        }
+                      />
+                      {ref && (
+                        <div className="ref-line" data-tip={`«${ref.name}»: ${num(base)}`}>
+                          {x || (base > 0 ? '—' : `эталон ${num(base)}`)}
+                        </div>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
       </ScrollX>
+      {ref && refClass && (
+        <p className="muted small" style={{ margin: '8px 0 0' }}>
+          Против класса «{refClass.name}» огонь — {fireRatios.length ? fireRatios.map((y) => `${y.b.name.toLowerCase()} ${y.x}`).join(', ') : 'нет'} эталона «
+          {ref.name}»; ценность — {ratio(t.value, ref.value) || '0'} эталона.
+        </p>
+      )}
       {used > 0 && (
         <p className="faint small" style={{ margin: '8px 0 0' }}>
           Используется в элементах: {used}

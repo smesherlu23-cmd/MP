@@ -216,18 +216,20 @@ export function repairForceStep(id: Id, pct = 100) {
 
 /** Между боями: всё, что отмечено в плане, — одним шагом отмены и одной записью в боевом пути. */
 export function prepareForceStep(id: Id, plan: BetweenPlan) {
-  let done: string[] = [];
-  return betweenStep(
-    id,
-    'подготовка к бою',
-    (f) => {
-      const r = prepareForce(f, rulesetOf(f), plan);
-      done = r.done;
-      return r;
-    },
-    (n) => `«${n}»: ${done.join('; ')}.`,
-    'Делать нечего: силы в норме.',
-  );
+  const f = get().forces[id];
+  if (!f) return false;
+  const r = prepareForce(f, rulesetOf(f), plan);
+  if (!r.changed) {
+    toast('Делать нечего: силы в норме.');
+    return false;
+  }
+  // Пополнение из другого подразделения меняет и его — один шаг отмены на оба.
+  historyStep(`восстановление «${f.name}»`);
+  updateForce(id, (d) => void Object.assign(d, r.force));
+  const donor = r.donor;
+  if (donor) updateForce(donor.id, (d) => void Object.assign(d, donor));
+  toastUndoable(`«${f.name}»: ${r.done.join('; ')}.`, 'good');
+  return true;
 }
 
 /** Пополнение из другого подразделения: по типам, сколько указано. Один шаг отмены на оба подразделения. */

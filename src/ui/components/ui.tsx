@@ -230,12 +230,24 @@ export function Area(props: { value: string; onChange: (v: string) => void; plac
 export function Sel<T extends string | number>(props: {
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string; title?: string }[];
+  /** group — заголовок группы в списке (соседние варианты с одной группой — под одним заголовком). */
+  options: { value: T; label: string; title?: string; group?: string }[];
   width?: number | string;
   disabled?: boolean;
   title?: string;
 }) {
   const isNum = typeof props.value === 'number';
+  const opt = (o: (typeof props.options)[number]) => (
+    <option key={String(o.value)} value={String(o.value)} title={o.title}>
+      {o.label}
+    </option>
+  );
+  const groups: { label?: string; items: typeof props.options }[] = [];
+  for (const o of props.options) {
+    const last = groups[groups.length - 1];
+    if (last && last.label === o.group) last.items.push(o);
+    else groups.push({ label: o.group, items: [o] });
+  }
   return (
     <select
       value={String(props.value)}
@@ -248,11 +260,15 @@ export function Sel<T extends string | number>(props: {
       {!props.options.some((o) => String(o.value) === String(props.value)) && (
         <option value={String(props.value)}>— {String(props.value) || 'не выбрано'} —</option>
       )}
-      {props.options.map((o) => (
-        <option key={String(o.value)} value={String(o.value)} title={o.title}>
-          {o.label}
-        </option>
-      ))}
+      {groups.map((g) =>
+        g.label ? (
+          <optgroup key={`g:${g.label}:${String(g.items[0].value)}`} label={g.label}>
+            {g.items.map(opt)}
+          </optgroup>
+        ) : (
+          g.items.map(opt)
+        ),
+      )}
     </select>
   );
 }

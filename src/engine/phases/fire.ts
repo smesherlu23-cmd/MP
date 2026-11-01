@@ -481,7 +481,8 @@ function resolveStrike(E: EngineContext, st: StrikeOrder) {
     side: st.side,
     severity: 'info',
     refs: targets.map((x) => x.id),
-    text: `${s(st.side)}: удар «${asset.name}» (${asset.count} × ${t.name}) по ${target}${unseen === targets.length ? ' — цель не обнаружена, огонь по площади' : ''}.`,
+    // Средство без своего названия называется по типу: «удар 2 × Миномёт», а не «удар «Миномёт» (2 × Миномёт)».
+    text: `${s(st.side)}: удар ${asset.name && asset.name !== t.name ? `«${asset.name}» (${asset.count} × ${t.name})` : `${asset.count} × ${t.name}`} по ${target}${unseen === targets.length ? ' — цель не обнаружена, огонь по площади' : ''}.`,
     factors: [
       { label: `${asset.count} × ${t.name}`, value: asset.count, kind: 'base' },
       { label: 'Сила ударов (коэффициент)', value: k.strikeScale, kind: 'mult' },

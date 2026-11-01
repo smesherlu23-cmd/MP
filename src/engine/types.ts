@@ -281,6 +281,10 @@ export interface ForceRecord {
   /** Изменение численности: люди и техника/вооружение (− потери, + вернулось/пришло). */
   personnel?: number;
   equipment?: number;
+  /** Для записей боя: из потерь людей — убитые, раненые, пропавшие (в старых записях нет). */
+  killed?: number;
+  wounded?: number;
+  missing?: number;
   note?: string;
 }
 

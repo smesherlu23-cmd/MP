@@ -87,8 +87,9 @@ export function ConditionRow({
   const info = fieldInfo(r, c.field);
   const ops = opsFor(info.kind);
   const fields = [
-    ...r.conditions.map((cat) => ({ value: `cond.${cat.id}`, label: `Условие: ${cat.name}` })),
-    ...MODIFIER_FIELDS.map((f) => ({ value: f.field, label: f.label })),
+    // Условия боя — отдельной группой, без приставки «Условие:»: в узком поле видно само название.
+    ...r.conditions.map((cat) => ({ value: `cond.${cat.id}`, label: cat.name, group: 'Условия боя' })),
+    ...MODIFIER_FIELDS.map((f) => ({ value: f.field, label: f.label, group: 'Элемент и сторона' })),
   ];
   const multi = c.op === 'in' || c.op === 'nin';
   const arr = Array.isArray(c.value) ? c.value.map(String) : [String(c.value)];
