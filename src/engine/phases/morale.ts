@@ -1,6 +1,6 @@
 // Мораль, слаженность и снятие подавления в конце хода.
 
-import { type EngineContext, clamp, e, lerp, round1 } from '../context';
+import { type EngineContext, clamp, e, lerp, notArrived, round1 } from '../context';
 import { dec } from '../labels';
 import type { Factor, SideId } from '../types';
 
@@ -11,7 +11,7 @@ export function phaseMorale(E: EngineContext) {
   const sideLoss: Record<SideId, number> = { A: 0, B: 0 };
   const sideValue: Record<SideId, number> = { A: 0, B: 0 };
   for (const el of E.b.elements) {
-    if (el.status === 'pending') continue;
+    if (notArrived(el)) continue;
     sideLoss[el.side] += el.turnValueLost;
     sideValue[el.side] += el.startValue;
   }

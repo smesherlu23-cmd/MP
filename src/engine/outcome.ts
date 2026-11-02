@@ -1,10 +1,12 @@
 // Итоги боя: потери, боеспособность, организация, снабжение, выполнение задач и исход.
 
-import { type EngineContext, lerp } from './context';
+import { type EngineContext, lerp, notArrived } from './context';
 import { newObjective } from './defaults';
 import { fmtDuration, hoursFor } from './duration';
 import { dec, OBJECTIVE_SHORT } from './labels';
+import { elementsOfNode } from './phases/common';
 import type {
+  Battle,
   Behavior,
   BattleResult,
   ElementState,
@@ -60,27 +62,77 @@ function lossValuePct(E: EngineContext, els: ElementState[]) {
 }
 
 function holdingAtEnd(E: EngineContext, side: SideId) {
-  const els = E.sideElements(side).filter((x) => x.status !== 'pending');
+  const els = E.sideElements(side).filter((x) => !notArrived(x));
   return fightingValue(E, els) >= startValue(els) * E.k.holdMinShare && startValue(els) > 0;
 }
 
 /** Силы стороны, участвующие в бою: не подошедшие подкрепления в задачах не считаются. */
-const present = (E: EngineContext, side: SideId) => E.sideElements(side).filter((x) => x.status !== 'pending');
+const present = (E: EngineContext, side: SideId) => E.sideElements(side).filter((x) => !notArrived(x));
+
+/** Задача о своём подразделении (удержать, сохранить, без бегства) или о подразделении противника. */
+const OWN_NODE: Record<Objective['type'], boolean> = { hold: true, preserve: true, noRout: true, take: false, inflict: false, recon: false };
+
+/** Ключ задачи с участком или подразделением — для учёта «позиция оставлена» отдельно от стороны. */
+export function objectiveScopeKey(o: Objective): string | null {
+  return o.sectorId || o.nodeId ? `${o.sectorId ?? ''}|${o.nodeId ?? ''}` : null;
+}
+
+/**
+ * Силы, по которым считается задача: участок (обе стороны) и подразделение — своё или противника,
+ * в зависимости от задачи. Без участка и подразделения — вся сторона.
+ */
+export function objectiveScope(E: EngineContext, side: SideId, o: Objective): { own: ElementState[]; foe: ElementState[] } {
+  const enemy = E.enemyOf(side);
+  let own = present(E, side);
+  let foe = present(E, enemy);
+  if (o.sectorId && E.b.sectors?.some((x) => x.id === o.sectorId)) {
+    const sec = E.b.sectors[0].id;
+    const on = (x: ElementState) => (x.sector ?? sec) === o.sectorId;
+    own = own.filter(on);
+    foe = foe.filter(on);
+  }
+  if (o.nodeId) {
+    const ids = new Set(elementsOfNode(E.b, OWN_NODE[o.type] ? side : enemy, o.nodeId).map((x) => x.id));
+    if (OWN_NODE[o.type]) own = own.filter((x) => ids.has(x.id));
+    else foe = foe.filter((x) => ids.has(x.id));
+  }
+  return { own, foe };
+}
+
+/** Удерживают ли позицию эти силы: осталось достаточно сил, не выходящих из боя. */
+export function holdingEls(E: EngineContext, els: ElementState[]): boolean {
+  const start = startValue(els);
+  return start > 0 && fightingValue(E, els) >= start * E.k.holdMinShare;
+}
+
+/** Подпись участка и подразделения задачи: « · участок «Левый» · 2-я рота». */
+export function objectiveScopeText(
+  b: Pick<Battle, 'sectors' | 'formations' | 'elements'> | null,
+  o: Objective,
+  names?: { sector?: string; node?: string },
+): string {
+  const parts: string[] = [];
+  if (o.sectorId) parts.push(`участок «${names?.sector ?? b?.sectors?.find((x) => x.id === o.sectorId)?.name ?? '?'}»`);
+  if (o.nodeId) {
+    const n = names?.node ?? b?.formations.find((x) => x.defId === o.nodeId)?.name ?? b?.elements.find((x) => x.defId === o.nodeId)?.name ?? '?';
+    parts.push(OWN_NODE[o.type] ? `«${n}»` : `противник: «${n}»`);
+  }
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
+}
 
 function scoreObjective(E: EngineContext, side: SideId, o: Objective): ObjectiveResult {
   const b = E.b;
-  const enemy = E.enemyOf(side);
-  const own = present(E, side);
-  const foe = present(E, enemy);
+  const { own, foe } = objectiveScope(E, side, o);
+  const scopeKey = objectiveScopeKey(o);
   // В бою «удержать» — в ходах; ГМ задавал часы — и в итогах они в часах.
   const h = (turns: number) => fmtDuration(hoursFor(turns, E.rs));
-  const label = o.label?.trim() || OBJECTIVE_SHORT[o.type](o.type === 'hold' ? hoursFor(o.value, E.rs) : o.value);
+  const label = (o.label?.trim() || OBJECTIVE_SHORT[o.type](o.type === 'hold' ? hoursFor(o.value, E.rs) : o.value)) + objectiveScopeText(b, o);
   let score = 0;
   let explanation = '';
   switch (o.type) {
     case 'hold': {
       const need = Math.max(1, o.value);
-      const lost = b.sides[side].lostHoldTurn;
+      const lost = scopeKey ? (b.sides[side].lostHoldAt?.[scopeKey] ?? 0) : b.sides[side].lostHoldTurn;
       const held = lost ? lost - 1 : b.turn;
       const enemyOut = !foe.some((x) => E.fighting(x) && E.behavior(x) === 'attack') && foe.every((x) => !E.fighting(x));
       if (!lost && (held >= need || enemyOut)) {
@@ -101,7 +153,7 @@ function scoreObjective(E: EngineContext, side: SideId, o: Objective): Objective
     case 'take': {
       const foeStart = startValue(foe);
       const foeLeft = fightingValue(E, foe);
-      const ownHolds = holdingAtEnd(E, side);
+      const ownHolds = scopeKey ? holdingEls(E, own) : holdingAtEnd(E, side);
       if (foeLeft <= 0 && ownHolds) {
         score = 1;
         explanation = 'Противник выбит с позиции, позиция занята.';
@@ -162,7 +214,7 @@ function summarize(E: EngineContext, els: ElementState[]): UnitSummary {
   const status = { active: 0, pending: 0, withdrawn: 0, routed: 0, destroyed: 0, retreating: 0, routing: 0 };
   for (const el of els) {
     // Не подошедшее подкрепление в бою не участвовало — только счётчик.
-    if (el.status === 'pending') {
+    if (notArrived(el)) {
       status.pending++;
       continue;
     }

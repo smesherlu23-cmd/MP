@@ -15,6 +15,11 @@ export function phaseSupply(E: EngineContext) {
     if (f.ammo) el.ammo = clamp(el.ammo + k.resupplyAmmo * sup * m, 0, 100);
     if (f.fuel) el.fuel = clamp(el.fuel + k.resupplyFuel * sup * m, 0, 100);
     if (f.equipment && inContact) el.equipment = clamp(el.equipment - k.equipmentWear, 0, 100);
+    // Готовность растёт, пока элемент не под огнём (развёртывание, изготовка к бою).
+    if (f.readiness && k.readinessGrowth > 0 && !el.underFireThisTurn && el.readiness < 100) {
+      el.readiness = clamp(el.readiness + k.readinessGrowth, 0, 100);
+      E.invalidate(el);
+    }
     const bh = E.behavior(el);
     if (bh === 'consolidate') el.digInTurns++;
     else if (bh === 'attack' || bh === 'retreat' || bh === 'rout') el.digInTurns = 0;

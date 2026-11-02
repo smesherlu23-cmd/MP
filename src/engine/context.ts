@@ -34,7 +34,30 @@ export interface StatCx {
 }
 
 /** Поля условий, зависящие от состояния элемента: такие правила не кэшируются. */
-const STATE_FIELDS = new Set(['morale', 'cohesion', 'suppression', 'fatigue', 'ammo', 'losses', 'sideLosses']);
+const STATE_FIELDS = new Set([
+  'morale',
+  'cohesion',
+  'suppression',
+  'fatigue',
+  'ammo',
+  'losses',
+  'sideLosses',
+  'readiness',
+  'fuel',
+  'equipment',
+  'vehicleCondition',
+  'comms',
+  'supply',
+  'commandLevel',
+  'holdFast',
+  'spotted',
+]);
+
+/** Поля условий своих правил, которые проверяются и для ударов огневой поддержки. */
+const SUPPORT_FIELDS = new Set(['tag', 'kind', 'side', 'turn', 'intel', 'sideLosses']);
+
+/** Подкрепление, которое ещё не подошло (вне боя и в итогах не учитывается); переброска между участками — не оно. */
+export const notArrived = (el: ElementState) => el.status === 'pending' && !el.transit;
 const fieldBase = (f: string) => (f.startsWith('enemy.') ? f.slice(6) : f);
 
 export class EngineContext {
@@ -177,7 +200,7 @@ export class EngineContext {
       let start = 0;
       let now = 0;
       for (const el of this.bySide[side]) {
-        if (el.status === 'pending') continue;
+        if (notArrived(el)) continue;
         start += el.startPersonnel;
         now += this.personnel(el);
       }
@@ -219,6 +242,45 @@ export class EngineContext {
 
   enemyOf(side: SideId): SideId {
     return side === 'A' ? 'B' : 'A';
+  }
+
+  /**
+   * Доля боевой ценности элемента у типов, подходящих под условия правила на свои теги и состав (для правил
+   * «по доле»). Нет таких условий — 1.
+   */
+  shareOf(el: ElementState, mod: CustomModifier): number {
+    const conds = mod.when.filter((c) => (c.field === 'tag' || c.field === 'kind') && c.op !== 'not_has' && c.op !== 'nin' && c.op !== 'neq');
+    if (!conds.length) return 1;
+    let all = 0;
+    let part = 0;
+    for (const c of el.comps) {
+      if (c.current <= 0) continue;
+      const t = this.type(c.typeId);
+      const v = c.current * t.value;
+      all += v;
+      const tags = el.ownTags?.length ? [...t.tags, ...el.ownTags] : t.tags;
+      const ok = (x: ModifierCondition) => testValue(x, x.field === 'tag' ? tags : [t.kind]);
+      if (mod.any ? conds.some(ok) : conds.every(ok)) part += v;
+    }
+    return all > 0 ? part / all : 0;
+  }
+
+  /** Множитель правила для элемента: целиком или по доле подходящих типов. */
+  private ruleValue(mod: CustomModifier, v: number, el: ElementState): number {
+    return mod.byShare ? 1 + (v - 1) * this.shareOf(el, mod) : v;
+  }
+
+  /** Свои множители типов состава: тип → доля его боевой ценности в элементе. */
+  typeShares(el: ElementState): { type: ComponentType; share: number }[] {
+    let all = 0;
+    for (const c of el.comps) if (c.current > 0) all += c.current * this.type(c.typeId).value;
+    if (all <= 0) return [];
+    const out: { type: ComponentType; share: number }[] = [];
+    for (const c of el.comps) {
+      const t = this.type(c.typeId);
+      if (c.current > 0 && t.effects && Object.keys(t.effects).length) out.push({ type: t, share: (c.current * t.value) / all });
+    }
+    return out;
   }
 
   /** Теги элемента — теги типов его состава (тех, что ещё в строю); у боёв прежних версий — и теги подразделения. */
@@ -283,6 +345,13 @@ export class EngineContext {
       f = f.parentId ? this.formations.get(f.parentId) : undefined;
     }
     return out;
+  }
+
+  /** Уровень командира элемента: свой или формирования (0 — нет или штаб потерян). */
+  commandLevelOf(el: ElementState): number {
+    if (el.ownCommandLevel) return el.ownCommandLevel;
+    const f = this.formationOf(el);
+    return f && !f.hqLost ? f.commandLevel : 0;
   }
 
   /** Эффективная связь элемента, 0..1. */
@@ -353,7 +422,23 @@ export class EngineContext {
       case 'suppression':
       case 'fatigue':
       case 'ammo':
+      case 'readiness':
+      case 'fuel':
+      case 'equipment':
+      case 'vehicleCondition':
         return el[field];
+      case 'comms':
+        return Math.round(this.comms(el) * 100);
+      case 'supply':
+        return Math.round(this.supply(el) * 100);
+      case 'commandLevel':
+        return this.commandLevelOf(el);
+      case 'hq':
+        return el.isHQ ? 'yes' : 'no';
+      case 'holdFast':
+        return el.holdFast ? 'yes' : 'no';
+      case 'spotted':
+        return el.spotted ? 'yes' : 'no';
       case 'losses':
         return el.startValue > 0 ? (1 - this.value(el) / el.startValue) * 100 : 0;
       case 'sideLosses':
@@ -362,35 +447,26 @@ export class EngineContext {
     return undefined;
   }
 
-  matches(conds: ModifierCondition[], el: ElementState, cx: StatCx): boolean {
+  /** Выполнены ли условия: все (any — хотя бы одно). Без условий — всегда. */
+  matches(conds: ModifierCondition[], el: ElementState, cx: StatCx, any = false): boolean {
+    if (!conds.length) return true;
+    if (any) {
+      for (const c of conds) if (this.test(c, el, cx)) return true;
+      return false;
+    }
     for (const c of conds) if (!this.test(c, el, cx)) return false;
     return true;
+  }
+
+  /** Сработает ли правило для элемента (с учётом «все / любое из»). */
+  ruleMatches(mod: CustomModifier, el: ElementState, cx: StatCx = {}): boolean {
+    return this.matches(mod.when, el, cx, !!mod.any);
   }
 
   private test(c: ModifierCondition, el: ElementState, cx: StatCx): boolean {
     const v = this.fieldValue(c.field, el, cx);
     if (v === undefined) return false;
-    const list = Array.isArray(c.value) ? c.value.map(String) : [String(c.value)];
-    const vals = Array.isArray(v) ? v.map(String) : [String(v)];
-    switch (c.op) {
-      case 'eq':
-        return vals.length === 1 && vals[0] === list[0];
-      case 'neq':
-        return !(vals.length === 1 && vals[0] === list[0]);
-      case 'in':
-        return vals.some((x) => list.includes(x));
-      case 'nin':
-        return !vals.some((x) => list.includes(x));
-      case 'has':
-        return list.every((x) => vals.includes(x));
-      case 'not_has':
-        return !list.some((x) => vals.includes(x));
-      case 'gte':
-        return Number(vals[0]) >= Number(list[0]);
-      case 'lte':
-        return Number(vals[0]) <= Number(list[0]);
-    }
-    return false;
+    return testValue(c, v);
   }
 
   /**
@@ -407,7 +483,7 @@ export class EngineContext {
     let base = arr[STAT_INDEX[stat]];
     for (const mod of this.dynamicList) {
       const v = mod.effects[stat];
-      if (v !== undefined && Number.isFinite(v) && this.matches(mod.when, el, {})) base *= v;
+      if (v !== undefined && Number.isFinite(v) && this.ruleMatches(mod, el)) base *= this.ruleValue(mod, v, el);
     }
     if (!this.contextualList.length || (!cx.enemy && !cx.targetClass)) return base;
     return base * this.contextual(el, stat, cx);
@@ -439,7 +515,8 @@ export class EngineContext {
     const intel = this.rs.intelLevels.find((x) => x.id === side.intel);
     if (intel) apply(intel.effects);
     for (const ef of this.effectsOf(el)) apply(ef.effects);
-    for (const mod of this.plainMods) if (this.matches(mod.when, el, {})) apply(mod.effects);
+    for (const x of this.typeShares(el)) apply(x.type.effects!, x.share);
+    for (const mod of this.plainMods) if (this.ruleMatches(mod, el)) apply(mod.effects, mod.byShare ? this.shareOf(el, mod) : 1);
     return arr;
   }
 
@@ -448,7 +525,7 @@ export class EngineContext {
     let m = 1;
     for (const mod of this.contextualList) {
       const v = mod.effects[stat];
-      if (v !== undefined && this.matches(mod.when, el, cx)) m *= v;
+      if (v !== undefined && this.ruleMatches(mod, el, cx)) m *= this.ruleValue(mod, v, el);
     }
     return m;
   }
@@ -481,13 +558,51 @@ export class EngineContext {
       const intel = this.rs.intelLevels.find((x) => x.id === side.intel);
       if (intel) add(`Разведданные: ${intel.name}`, intel.effects[stat]);
       for (const ef of this.effectsOf(el)) add(`Эффект «${ef.name}» (до ${ef.until}-го хода)`, ef.effects[stat]);
+      for (const x of this.typeShares(el)) {
+        const v = x.type.effects![stat];
+        if (v !== undefined) add(`Тип «${x.type.name}» (${Math.round(x.share * 100)}% ценности)`, 1 + (v - 1) * x.share);
+      }
     }
     for (const mod of this.rs.modifiers) {
       if (!mod.enabled || mod.effects[stat] === undefined) continue;
       const contextual = this.contextualMods.has(mod.id);
       if (contextualOnly === true && !contextual) continue;
       if (contextualOnly === false && contextual) continue;
-      if (this.matches(mod.when, el, cx)) add(`Правило «${mod.name}»`, mod.effects[stat]);
+      if (!this.ruleMatches(mod, el, cx)) continue;
+      if (mod.byShare) {
+        const sh = this.shareOf(el, mod);
+        add(`Правило «${mod.name}» (по доле ${Math.round(sh * 100)}%)`, 1 + (mod.effects[stat]! - 1) * sh);
+      } else add(`Правило «${mod.name}»`, mod.effects[stat]);
+    }
+    return m;
+  }
+
+  /**
+   * Множитель огня средства огневой поддержки (удара): условия боя — на участке цели, временные эффекты на
+   * всю сторону и свои правила на огонь, условия которых имеют смысл для средства вне поля боя (условия боя,
+   * теги и состав, сторона, ход, разведданные, потери стороны). Средство считается элементом из count единиц своего типа.
+   */
+  supportMult(side: SideId, type: ComponentType, count: number, sector: Id | undefined, out?: Factor[]): number {
+    const el = {
+      id: `support:${side}:${type.id}:${sector ?? ''}`,
+      side,
+      sector,
+      comps: [{ typeId: type.id, authorized: count, start: count, current: count, destroyed: 0, damaged: 0, abandoned: 0, kia: 0, wia: 0, mia: 0 }],
+    } as unknown as ElementState;
+    let m = 1;
+    const add = (label: string, v: number | undefined) => {
+      if (v === undefined || v === 1 || !Number.isFinite(v)) return;
+      m *= v;
+      out?.push({ label, value: v, kind: 'mult' });
+    };
+    for (const c of this.conditionsOf(el)) add(c.label, c.opt.effects.fire);
+    const turn = this.b.turn;
+    for (const ef of this.b.effects ?? [])
+      if (ef.side === side && !ef.formationId && !ef.elementIds && turn >= ef.from && turn <= ef.until) add(`Эффект «${ef.name}»`, ef.effects.fire);
+    for (const mod of this.rs.modifiers) {
+      const v = mod.effects.fire;
+      if (!mod.enabled || v === undefined || !mod.when.every((c) => SUPPORT_FIELDS.has(c.field) || c.field.startsWith('cond.'))) continue;
+      if (this.ruleMatches(mod, el)) add(`Правило «${mod.name}»`, this.ruleValue(mod, v, el));
     }
     return m;
   }
@@ -524,6 +639,31 @@ export class EngineContext {
 }
 
 const STAT_INDEX = Object.fromEntries(STAT_KEYS.map((k, i) => [k, i])) as Record<StatKey, number>;
+
+/** Проверка условия по значению поля (строка, число или список — теги, состав). */
+export function testValue(c: ModifierCondition, v: string | number | string[]): boolean {
+  const list = Array.isArray(c.value) ? c.value.map(String) : [String(c.value)];
+  const vals = Array.isArray(v) ? v.map(String) : [String(v)];
+  switch (c.op) {
+    case 'eq':
+      return vals.length === 1 && vals[0] === list[0];
+    case 'neq':
+      return !(vals.length === 1 && vals[0] === list[0]);
+    case 'in':
+      return vals.some((x) => list.includes(x));
+    case 'nin':
+      return !vals.some((x) => list.includes(x));
+    case 'has':
+      return list.every((x) => vals.includes(x));
+    case 'not_has':
+      return !list.some((x) => vals.includes(x));
+    case 'gte':
+      return Number(vals[0]) >= Number(list[0]);
+    case 'lte':
+      return Number(vals[0]) <= Number(list[0]);
+  }
+  return false;
+}
 
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * clamp(t, 0, 1);

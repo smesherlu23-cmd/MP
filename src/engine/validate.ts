@@ -1,8 +1,8 @@
 // Проверка сценария и подразделений на ошибки до начала боя.
 
 import { fmtDuration, scenarioHours, scenarioTurns } from './duration';
-import { EVENT_KIND_LABELS } from './labels';
-import type { Id, Ruleset, Scenario, SideDef, UnitNode } from './types';
+import { EVENT_KIND_LABELS, MODIFIER_FIELDS } from './labels';
+import type { CustomModifier, Id, Ruleset, Scenario, SideDef, UnitNode } from './types';
 import { sideUnits, walkUnits } from './units';
 
 export interface Issue {
@@ -28,6 +28,73 @@ export function validateUnit(root: UnitNode, rs: Ruleset, path = ''): Issue[] {
   return issues;
 }
 
+/**
+ * Замечания к своему правилу: ссылки на удалённые приказы, варианты условий, классы целей, дистанции,
+ * укрепления и разведданные; теги, которых нет ни у одного типа; пустые условия. Такое условие молча
+ * не выполняется — правило не срабатывает (или, в «не / ни одно из», срабатывает всегда).
+ */
+export function ruleIssues(r: Ruleset, m: CustomModifier): string[] {
+  const out: string[] = [];
+  const typeTags = new Set(r.componentTypes.flatMap((t) => t.tags));
+  if (r.reconTag) typeTags.add(r.reconTag);
+  for (const c of m.when) {
+    const vals = (Array.isArray(c.value) ? c.value : [c.value]).map(String).filter((x) => x.trim());
+    if (c.field.startsWith('cond.')) {
+      const cat = r.conditions.find((x) => x.id === c.field.slice(5));
+      if (!cat) {
+        out.push('условие по удалённой категории условий боя');
+        continue;
+      }
+      const lost = vals.filter((v) => !cat.options.some((o) => o.id === v));
+      if (lost.length) out.push(`«${cat.name}»: вариант удалён`);
+      else if (!vals.length) out.push(`«${cat.name}»: вариант не выбран`);
+      continue;
+    }
+    const f = MODIFIER_FIELDS.find((x) => x.field === c.field);
+    if (!f) {
+      out.push(`неизвестное поле «${c.field}»`);
+      continue;
+    }
+    if (f.feature && !r.features[f.feature]) out.push(`«${f.label}»: механика выключена — значение не меняется`);
+    if (f.kind === 'number') {
+      if (!Number.isFinite(Number(c.value))) out.push(`«${f.label}»: не задано число`);
+      continue;
+    }
+    if (!vals.length) {
+      out.push(`«${f.label}»: значение не выбрано`);
+      continue;
+    }
+    const known: Record<string, (v: string) => boolean> = {
+      order: (v) => r.orders.some((o) => o.id === v),
+      range: (v) => r.rangeBands.some((o) => o.id === v),
+      class: (v) => r.targetClasses.some((o) => o.id === v),
+      fort: (v) => r.fortifications.some((o) => o.id === v),
+      intel: (v) => r.intelLevels.some((o) => o.id === v),
+      tag: (v) => typeTags.has(v),
+    };
+    const ok = known[f.kind];
+    const lost = ok ? vals.filter((v) => !ok(v)) : [];
+    if (lost.length)
+      out.push(
+        f.kind === 'tag'
+          ? `тег ${lost.map((x) => `«${x}»`).join(', ')} — нет ни у одного типа`
+          : `«${f.label}»: ${lost.length > 1 ? 'значения удалены' : 'значение удалено'} из набора правил`,
+      );
+  }
+  if (!Object.values(m.effects).some((v) => v !== undefined && v !== 1)) out.push('нет действия: все множители — 1');
+  if (m.byShare && !m.when.some((c) => (c.field === 'tag' || c.field === 'kind') && !['not_has', 'nin', 'neq'].includes(c.op)))
+    out.push('«по доле» без условия на свой тег или состав — действует на весь элемент');
+  return out;
+}
+
+/** Замечания ко всем включённым правилам набора: правило → список. */
+export function rulesetIssues(r: Ruleset): { rule: CustomModifier; issues: string[] }[] {
+  return r.modifiers
+    .filter((m) => m.enabled)
+    .map((rule) => ({ rule, issues: ruleIssues(r, rule) }))
+    .filter((x) => x.issues.length);
+}
+
 export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[] {
   if (!rs) return [{ level: 'error', text: 'Не найден набор правил сценария.' }];
   const issues: Issue[] = [];
@@ -38,6 +105,7 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
   for (const cat of rs.conditions) {
     if (!cat.options.some((o) => o.id === sc.conditions[cat.id])) issues.push({ level: 'warning', text: `Не выбрано условие «${cat.name}».` });
   }
+  for (const x of rulesetIssues(rs)) issues.push({ level: 'warning', text: `Набор правил, правило «${x.rule.name}»: ${x.issues.join('; ')}.` });
   for (const side of sc.sides) {
     if (!side.formations.length) issues.push({ level: 'error', text: `У стороны «${side.name}» нет подразделений.` });
     else if (!sideUnits(side).length) issues.push({ level: 'error', text: `У стороны «${side.name}» все подразделения исключены из боя.` });
@@ -96,7 +164,13 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
       if (ev.nodeId && (!ev.side || !nodes.get(ev.side)?.has(ev.nodeId)))
         issues.push({ level: 'warning', text: `${at} — подразделение удалено из сценария или не участвует в бою.` });
     }
-    if (ev.kind === 'arrive' || ev.kind === 'order') {
+    if (ev.sectorId && !(sc.sectors ?? []).some((x) => x.id === ev.sectorId)) issues.push({ level: 'warning', text: `${at} — участок удалён из сценария.` });
+    if (ev.kind === 'transfer' && !ev.sectorId) issues.push({ level: 'warning', text: `${at} — не выбран участок, куда перебрасывать.` });
+    if (ev.kind === 'band' && !rs.rangeBands.some((b) => b.id === ev.bandId)) issues.push({ level: 'warning', text: `${at} — дистанция не выбрана.` });
+    if (ev.kind === 'resupply' && !ev.ammo && !ev.fuel && !ev.equipment) issues.push({ level: 'warning', text: `${at} — не задано, что и сколько подвезти.` });
+    if (ev.kind === 'fortification' && !ev.fortificationId && !ev.intelId)
+      issues.push({ level: 'warning', text: `${at} — не выбраны ни укрепления, ни разведданные.` });
+    if (ev.kind === 'arrive' || ev.kind === 'order' || ev.kind === 'command' || ev.kind === 'transfer') {
       if (!ev.side || !ev.nodeId || !nodes.get(ev.side)?.has(ev.nodeId))
         issues.push({ level: 'warning', text: `${at} — подразделение не выбрано, удалено из сценария или не участвует в бою; событие не сработает.` });
     }
@@ -108,6 +182,21 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
     )
       issues.push({ level: 'warning', text: `${at} — не выбрано, какие условия меняются.` });
   }
+  // Задачи на участке или подразделении: участок и подразделение должны быть в сценарии.
+  for (const sd of sc.sides)
+    for (const o of sd.objectives ?? []) {
+      if (o.sectorId && !(sc.sectors ?? []).some((x) => x.id === o.sectorId))
+        issues.push({ level: 'warning', text: `Задача стороны «${sd.name}»: участок удалён — задача считается по всей стороне.` });
+      if (o.nodeId) {
+        const own = ['hold', 'preserve', 'noRout'].includes(o.type);
+        const side = own ? sd.id : enemyOf(sd.id);
+        if (!nodes.get(side)?.has(o.nodeId))
+          issues.push({
+            level: 'warning',
+            text: `Задача стороны «${sd.name}»: подразделение удалено из сценария или не участвует в бою — по нему нечего считать.`,
+          });
+      }
+    }
   return issues;
 }
 

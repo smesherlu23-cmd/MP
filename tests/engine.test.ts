@@ -92,11 +92,15 @@ import {
   computeResult,
   rulesetTags,
   compositionTags,
+  resolveTree,
+  ruleIssues,
+  notArrived,
   type Battle,
   type UnitNode,
   type Ruleset,
   type Scenario,
 } from '../src/engine';
+import { phaseChecks } from '../src/engine/phases/checks';
 
 // Сравнение боёв без случайных идентификаторов задач по умолчанию (они создаются заново при каждом создании боя).
 const strip = (b: Battle) =>
@@ -1540,5 +1544,310 @@ describe('теги — особенность типа', () => {
     const scout = rs.componentTypes.find((t) => t.tags.includes('разведка'))!;
     expect(compositionTags(rs, [{ typeId: scout.id, authorized: 3, current: 3 }])).toEqual(['разведка']);
     expect(compositionTags(rs, [{ typeId: scout.id, authorized: 3, current: 0 }])).toEqual([]);
+  });
+});
+
+describe('доработки: силы между боями', () => {
+  it('опыт растёт ровно через N боёв и только у воевавших частей', () => {
+    const rs = makeUniversalRuleset();
+    rs.coefficients.expGainBattles = 2;
+    const { scenario, forces } = extractForces(makeDemoScenario(), new Set(), () => newId('u'));
+    let map = Object.fromEntries(forces.map((f) => [f.id, f])) as Record<string, UnitNode>;
+    const sd = scenario.sides[0];
+    const force = () => map[sd.units![0].forceId];
+    let reserve = '';
+    let fighter = '';
+    walkUnits(force(), (n) => {
+      if (n.name.includes('3-я мотострелковая')) reserve = n.id;
+      if (n.name.includes('Разведвзвод')) fighter = n.id;
+    });
+    sd.excluded = [reserve];
+    const exp = (id: string) => resolveTree(force()).get(id)!.state.experience;
+    const was = { reserve: exp(reserve), fighter: exp(fighter) };
+    const raised: number[] = [];
+    for (let i = 1; i <= 4; i++) {
+      const b = createBattle(resolveScenario(scenario, map), rs, { seed: `XP${i}`, id: `bt-xp-${i}` });
+      runToEnd(b);
+      for (const u of applyBattleToForces(b, map).updated) map = { ...map, [u.id]: u };
+      raised.push((force().history ?? []).filter((x) => x.kind === 'experience').length);
+    }
+    // Каждые 2 боя: после 2-го и 4-го, запись «Опыт повышен» боем не считается.
+    expect(raised).toEqual([0, 1, 1, 2]);
+    const max = rs.experienceLevels.length;
+    expect(exp(fighter)).toBe(Math.min(max, was.fighter + 2));
+    // Исключённая из боёв рота опыта не получила.
+    expect(exp(reserve)).toBe(was.reserve);
+  });
+});
+
+describe('доработки: правила, теги, план, задачи', () => {
+  const rs0 = makeUniversalRuleset();
+  const mixed = (name: string, rifle: number, scout: number, order = 'defend', patch: Partial<UnitNode> = {}) =>
+    newRootUnit(name, {
+      order,
+      children: [
+        newUnit(`${name} — группа`, {
+          composition: [
+            { typeId: 'rifleman', authorized: rifle, current: rifle },
+            { typeId: 'scout', authorized: scout, current: scout },
+          ],
+        }),
+      ],
+      ...patch,
+    });
+  const blue = (b: Battle) => b.elements.find((x) => x.side === 'A')!;
+  const red = (b: Battle) => b.elements.find((x) => x.side === 'B')!;
+
+  it('правило «любое из»: достаточно одного условия; «все» — нужны все', () => {
+    const r = clone(rs0);
+    const rule = {
+      id: 'm-any',
+      name: 'Разведка или ночь',
+      enabled: true,
+      when: [
+        { field: 'tag', op: 'has' as const, value: 'разведка' },
+        { field: 'cond.time', op: 'eq' as const, value: 'night' },
+      ],
+      effects: { concealment: 2 },
+    };
+    const sc = duel(r, mixed('Синие', 0, 10), infantry('Красные', 10));
+    const b0 = createBattle(sc, r, { seed: 'ANY' });
+    const base = new EngineContext(b0).mult(blue(b0), 'concealment');
+    const baseRed = new EngineContext(b0).mult(red(b0), 'concealment');
+    r.modifiers.push(rule);
+    let b = createBattle(sc, r, { seed: 'ANY' });
+    expect(new EngineContext(b).mult(blue(b), 'concealment')).toBeCloseTo(base); // днём — не все условия
+    r.modifiers[r.modifiers.length - 1] = { ...rule, any: true };
+    b = createBattle(sc, r, { seed: 'ANY' });
+    expect(new EngineContext(b).mult(blue(b), 'concealment')).toBeCloseTo(base * 2);
+    expect(new EngineContext(b).mult(red(b), 'concealment')).toBeCloseTo(baseRed); // ни тега, ни ночи
+  });
+
+  it('правило «по доле»: действует по доле ценности типов с тегом; без доли — на весь элемент', () => {
+    const r = clone(rs0);
+    const sc = duel(r, mixed('Синие', 10, 10), infantry('Красные', 10));
+    const b0 = createBattle(sc, r, { seed: 'SH' });
+    const base = new EngineContext(b0).mult(blue(b0), 'concealment');
+    r.modifiers.push({
+      id: 'm-sh',
+      name: 'Разведчики',
+      enabled: true,
+      byShare: true,
+      when: [{ field: 'tag', op: 'has', value: 'разведка' }],
+      effects: { concealment: 2 },
+    });
+    const b = createBattle(sc, r, { seed: 'SH' });
+    const E = new EngineContext(b);
+    const share = (10 * 1.3) / (10 * 1 + 10 * 1.3);
+    expect(E.shareOf(blue(b), r.modifiers.at(-1)!)).toBeCloseTo(share);
+    expect(E.mult(blue(b), 'concealment')).toBeCloseTo(base * (1 + share));
+    const f: { label: string }[] = [];
+    E.mult(blue(b), 'concealment', {}, f as never);
+    expect(f.some((x) => x.label.includes('по доле 57%'))).toBe(true);
+    r.modifiers.at(-1)!.byShare = false;
+    const c = createBattle(sc, r, { seed: 'SH' });
+    expect(new EngineContext(c).mult(blue(c), 'concealment')).toBeCloseTo(base * 2);
+  });
+
+  it('свои множители типа действуют по его доле в элементе', () => {
+    const r = clone(rs0);
+    const sc = duel(r, mixed('Синие', 10, 10), mixed('Красные', 0, 10, 'attack'));
+    const b0 = createBattle(sc, r, { seed: 'TE' });
+    const base = [new EngineContext(b0).mult(blue(b0), 'detection'), new EngineContext(b0).mult(red(b0), 'detection')];
+    r.componentTypes.find((t) => t.id === 'scout')!.effects = { detection: 3 };
+    const b = createBattle(sc, r, { seed: 'TE' });
+    const E = new EngineContext(b);
+    const share = 13 / 23;
+    expect(E.mult(blue(b), 'detection')).toBeCloseTo(base[0] * (1 + 2 * share));
+    expect(E.mult(red(b), 'detection')).toBeCloseTo(base[1] * 3);
+  });
+
+  it('новые поля правил: готовность своя, укрепления противника', () => {
+    const r = clone(rs0);
+    r.modifiers.push(
+      { id: 'm-r', name: 'Не готовы', enabled: true, when: [{ field: 'readiness', op: 'lte', value: 50 }], effects: { fire: 0.5 } },
+      { id: 'm-f', name: 'По укреплённым', enabled: true, when: [{ field: 'enemy.fortification', op: 'eq', value: 'fortified' }], effects: { fire: 0.8 } },
+    );
+    const sc = duel(r, infantry('Синие', 20), infantry('Красные', 20, 'defend'));
+    sc.sides[1].fortification = 'fortified';
+    const b = createBattle(sc, r, { seed: 'NF' });
+    const E = new EngineContext(b);
+    const a = blue(b);
+    const plain = E.mult(a, 'fire');
+    expect(E.mult(a, 'fire', { enemy: red(b) })).toBeCloseTo(plain * 0.8);
+    expect(E.mult(red(b), 'fire', { enemy: a })).toBeCloseTo(E.mult(red(b), 'fire'));
+    a.readiness = 40;
+    expect(E.mult(a, 'fire')).toBeCloseTo(plain * 0.5);
+  });
+
+  it('атака и защита старших перемножаются по цепочке; в боях прежних версий — только свои', () => {
+    const a = infantry('Синие', 20, 'attack', { attackMod: 120 });
+    a.children[0].attackMod = 110;
+    a.children[0].defenseMod = 90;
+    const sc = duel(rs0, a, infantry('Красные', 20, 'defend'));
+    const b = createBattle(sc, rs0, { seed: 'CH' });
+    expect(blue(b).attackMod).toBe(132);
+    expect(blue(b).defenseMod).toBe(90);
+    const old = clone(rs0);
+    old.coefficients.chainMods = 0;
+    expect(blue(createBattle(sc, old, { seed: 'CH' })).attackMod).toBe(110);
+    // Часть подразделения уносит множители старших с собой.
+    const part = extractPart(a, a.children[0].id)!;
+    expect(part.attackMod).toBe(132);
+  });
+
+  it('готовность растёт вне огня; инициатива от готовности — только если задан коэффициент', () => {
+    const r = clone(rs0);
+    r.coefficients.readinessGrowth = 10;
+    const sc = duel(r, infantry('Синие', 20, 'attack', { state: { readiness: 50 } }), infantry('Красные', 20, 'defend', { state: { readiness: 50 } }));
+    sc.startBand = 'long';
+    const b = createBattle(sc, r, { seed: 'RG' });
+    stepTurn(b);
+    for (const el of b.elements) expect(el.readiness).toBe(el.underFireThisTurn ? 50 : 60);
+    const c = createBattle(sc, rs0, { seed: 'RG' });
+    stepTurn(c);
+    expect(c.elements.every((x) => x.readiness === 50)).toBe(true);
+  });
+
+  const sectors = () => {
+    const a = infantry('Синие', 100, 'attack', {
+      children: [newUnit('Левая рота', { composition: rifles(50) }), newUnit('Правая рота', { composition: rifles(50) })],
+    });
+    const b = infantry('Красные', 100, 'defend', {
+      children: [newUnit('Левый взвод', { composition: rifles(50) }), newUnit('Правый взвод', { composition: rifles(50) })],
+    });
+    const sc = duel(rs0, a, b);
+    sc.sectors = [
+      { id: 'L', name: 'Левый' },
+      { id: 'R', name: 'Правый', startBand: 'long' },
+    ];
+    sc.sides[0].sectorOf = { [a.children[1].id]: 'R' };
+    sc.sides[1].sectorOf = { [b.children[1].id]: 'R' };
+    return { sc, a, b };
+  };
+
+  it('переброска решением ГМ: в пути вне боя, потом в бою на новом участке; повтор тот же', () => {
+    const { sc, a } = sectors();
+    const b = createBattle(sc, rs0, { seed: 'TR' });
+    stepTurn(b);
+    const el = b.elements.find((x) => x.defId === a.children[0].id)!;
+    applyIntervention(b, { type: 'transfer', payload: { elementIds: [el.id], sector: 'R', turns: 2 } });
+    expect(el.status).toBe('pending');
+    expect(el.transit).toEqual({ to: 'R', until: 4 });
+    expect(notArrived(el)).toBe(false);
+    stepTurn(b);
+    stepTurn(b);
+    expect(el.status).toBe('pending');
+    expect(b.finished).toBe(false);
+    stepTurn(b);
+    expect(el.transit).toBeUndefined();
+    expect(el.sector).toBe('R');
+    expect(b.log.some((e) => e.turn === 4 && e.text.startsWith('На участок «Правый» прибыли'))).toBe(true);
+    const r = replayBattle(b, { withInterventions: true });
+    expect(strip(r)).toEqual(strip(b));
+  });
+
+  it('события плана: условия и дистанция на участке, подвоз, командир, укрепления, переброска', () => {
+    const { sc, a, b: red0 } = sectors();
+    sc.events = [
+      { id: 'e1', kind: 'conditions', turn: 1, sectorId: 'L', conditions: { time: 'night' } },
+      { id: 'e2', kind: 'band', turn: 1, sectorId: 'R', bandId: 'close' },
+      { id: 'e3', kind: 'resupply', turn: 1, side: 'A', ammo: 30 },
+      { id: 'e4', kind: 'command', turn: 1, side: 'B', nodeId: red0.id, commandLevel: 0, comms: 40 },
+      { id: 'e5', kind: 'fortification', turn: 1, side: 'B', fortificationId: 'prepared', intelId: 'good' },
+      { id: 'e6', kind: 'transfer', turn: 1, side: 'A', nodeId: a.children[0].id, sectorId: 'R', turns: 0 },
+    ];
+    expect(validateScenario(sc, rs0).filter((x) => x.text.includes('Событие'))).toEqual([]);
+    const b = createBattle(sc, rs0, { seed: 'EV' });
+    for (const el of b.elements) el.ammo = 50;
+    stepTurn(b);
+    expect(b.sectors!.find((x) => x.id === 'L')!.conditions.time).toBe('night');
+    expect(b.conditions.time).not.toBe('night');
+    expect(b.ruleset.rangeBands[b.sectors!.find((x) => x.id === 'R')!.bandIndex].id).toBe('close');
+    const f = b.formations.find((x) => x.side === 'B' && x.defId === red0.id)!;
+    expect(f.commandLevel).toBe(0);
+    expect(f.comms).toBe(40);
+    expect(b.sides.B.fortification).toBe('prepared');
+    expect(b.sides.B.intel).toBe('good');
+    expect(b.elements.filter((x) => x.side === 'A').every((x) => x.sector === 'R')).toBe(true);
+    expect(b.log.filter((e) => e.phase === 'plan').length).toBeGreaterThanOrEqual(6);
+    // Ночь на всём поле перекрывает и свою ночь участка.
+    sc.events = [
+      { id: 'e1', kind: 'conditions', turn: 1, sectorId: 'L', conditions: { time: 'twilight' } },
+      { id: 'e2', kind: 'conditions', turn: 2, conditions: { time: 'night' } },
+    ];
+    const c = createBattle(sc, rs0, { seed: 'EV' });
+    stepTurn(c);
+    stepTurn(c);
+    expect(c.conditions.time).toBe('night');
+    expect(c.sectors!.find((x) => x.id === 'L')!.conditions.time).toBeUndefined();
+  });
+
+  it('задачи на участке и подразделении: подпись, свой учёт «удержать», проверка ссылок', () => {
+    const { sc, b: red0 } = sectors();
+    sc.sides[1].objectives = [
+      { id: 'o1', type: 'hold', value: 4, weight: 1, sectorId: 'R' },
+      { id: 'o2', type: 'preserve', value: 50, weight: 1, nodeId: red0.children[0].id },
+    ];
+    expect(validateScenario(sc, rs0).filter((x) => x.text.startsWith('Задача'))).toEqual([]);
+    const b = createBattle(sc, rs0, { seed: 'OB' });
+    const res = () => computeResult(new EngineContext(b)).sides.B.objectives;
+    expect(res()[0].label).toContain('участок «Правый»');
+    expect(res()[1].label).toContain('«Левый взвод»');
+    // Правый взвод выбит — позиция на участке оставлена, по стороне в целом — ещё нет.
+    for (const el of b.elements.filter((x) => x.side === 'B' && x.sector === 'R')) el.status = 'routed';
+    b.turn = 2;
+    phaseChecks(new EngineContext(b));
+    expect(b.sides.B.lostHoldAt).toEqual({ 'R|': 2 });
+    expect(b.sides.B.lostHoldTurn).toBe(0);
+    expect(res()[0].score).toBeLessThan(1);
+    // Удалённое подразделение — замечание.
+    sc.sides[1].objectives[1].nodeId = 'нет-такого';
+    expect(validateScenario(sc, rs0).some((x) => x.text.includes('подразделение удалено'))).toBe(true);
+  });
+
+  it('замечания к правилам: тег без типа, «по доле» без тега, нет действия', () => {
+    const r = clone(rs0);
+    const m = { id: 'm', name: 'М', enabled: true, byShare: true, when: [{ field: 'tag', op: 'has' as const, value: 'кавалерия' }], effects: { fire: 1 } };
+    const issues = ruleIssues(r, m);
+    expect(issues.join('\n')).toContain('тег «кавалерия» — нет ни у одного типа');
+    expect(issues.join('\n')).toContain('нет действия');
+    expect(ruleIssues(r, { ...m, when: [{ field: 'morale', op: 'lte', value: 40 }], effects: { fire: 0.5 } })).toEqual([
+      '«по доле» без условия на свой тег или состав — действует на весь элемент',
+    ]);
+    expect(ruleIssues(r, { ...m, byShare: false, when: [{ field: 'tag', op: 'has', value: 'разведка' }], effects: { fire: 0.5 } })).toEqual([]);
+  });
+
+  it('удары поддержки: условия участка цели и свои правила на огонь; в боях прежних версий — без них', () => {
+    const { sc } = sectors();
+    sc.sectors![0].conditions = { time: 'night' };
+    const b = createBattle(sc, rs0, { seed: 'SP' });
+    const E = new EngineContext(b);
+    const gun = b.ruleset.componentTypes.find((t) => t.id === 'gun')!;
+    const night = b.ruleset.conditions.find((c) => c.id === 'time')!.options.find((o) => o.id === 'night')!.effects.fire!;
+    expect(E.supportMult('A', gun, 6, 'L')).toBeCloseTo(night);
+    expect(E.supportMult('A', gun, 6, 'R')).toBeCloseTo(1);
+    b.ruleset.modifiers.push({ id: 'm-art', name: 'Артиллерия', enabled: true, when: [{ field: 'kind', op: 'has', value: 'weapon' }], effects: { fire: 1.5 } });
+    b.ruleset.modifiers.push({ id: 'm-mor', name: 'Мораль', enabled: true, when: [{ field: 'morale', op: 'lte', value: 100 }], effects: { fire: 0 } });
+    const E2 = new EngineContext(b);
+    const out: { label: string }[] = [];
+    expect(E2.supportMult('A', gun, 6, 'R', out as never)).toBeCloseTo(1.5);
+    expect(out.map((x) => x.label)).toEqual(['Правило «Артиллерия»']);
+  });
+
+  it('заметка ГМ и новый тип в составе: в журнале, при повторе — так же', () => {
+    const b = createBattle(duel(rs0, infantry('Синие', 20), infantry('Красные', 20, 'defend')), rs0, { seed: 'NT' });
+    stepTurn(b);
+    const el = blue(b);
+    applyIntervention(b, { type: 'note', payload: { text: 'игрок отводит роту к опушке', side: 'A', elementIds: [el.id] } });
+    expect(b.log.at(-1)!.text).toBe('Заметка ГМ: игрок отводит роту к опушке');
+    const v = new EngineContext(b).value(el);
+    applyIntervention(b, { type: 'editElement', payload: { elementId: el.id, patch: { comps: [{ typeId: 'mg', current: 2 }] } } });
+    expect(el.comps.find((c) => c.typeId === 'mg')).toMatchObject({ current: 2, start: 2 });
+    expect(new EngineContext(b).value(el)).toBeGreaterThan(v);
+    stepTurn(b);
+    const r = replayBattle(b, { withInterventions: true });
+    expect(strip(r)).toEqual(strip(b));
+    expect(r.log.some((e) => e.text === 'Заметка ГМ: игрок отводит роту к опушке')).toBe(true);
   });
 });

@@ -355,8 +355,9 @@ function makeElement(
     equipment: clamp(st.equipment, 0, 100),
     fatigue: clamp(st.fatigue, 0, 100),
     vehicleCondition: clamp(st.vehicleCondition, 0, 100),
-    attackMod: Math.max(0, d.attackMod ?? 100),
-    defenseMod: Math.max(1, d.defenseMod ?? 100),
+    // Атака и защита старших перемножаются по цепочке (в боях прежних версий — только свои).
+    attackMod: Math.max(0, (rs.coefficients.chainMods ?? 1) > 0 ? Math.round(res.attack * 100) / 100 : (d.attackMod ?? 100)),
+    defenseMod: Math.max(1, (rs.coefficients.chainMods ?? 1) > 0 ? Math.round(res.defense * 100) / 100 : (d.defenseMod ?? 100)),
     suppression: 0,
     status: 'active',
     exitTurns: 0,

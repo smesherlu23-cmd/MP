@@ -1,9 +1,10 @@
 // Проверки конца хода: выход из боя, уничтожение, паника, отход, штабы, распад, резервы, удержание.
 
-import { type EngineContext, clamp, e, fm, round1, s } from '../context';
+import { type EngineContext, clamp, e, fm, notArrived, round1, s } from '../context';
 import { dec } from '../labels';
 import type { Behavior, ElementState, Factor, FormationState, SideId } from '../types';
 import { SIDES, subtreeIds } from './common';
+import { holdingEls, objectiveScope, objectiveScopeKey } from '../outcome';
 
 // ------------------------------------------------------------------ проверки конца хода
 
@@ -204,7 +205,7 @@ export function phaseChecks(E: EngineContext) {
   for (const f2 of b.formations) {
     if (f2.broken) continue;
     const ids = subtreeIds(E, f2.id);
-    const els = b.elements.filter((x) => ids.has(x.formationId) && x.status !== 'pending');
+    const els = b.elements.filter((x) => ids.has(x.formationId) && !notArrived(x));
     const total = els.reduce((a, x) => a + x.startValue, 0);
     // Распад имеет смысл только для звена из нескольких элементов.
     if (total <= 0 || els.length < 2) continue;
@@ -273,14 +274,19 @@ export function phaseChecks(E: EngineContext) {
   // Удержание позиций (для задач «удержать/захватить»)
   for (const side of SIDES) {
     const st = b.sides[side];
-    if (st.lostHoldTurn) continue;
-    if (!holding(E, side)) st.lostHoldTurn = b.turn;
+    if (!st.lostHoldTurn && !holding(E, side)) st.lostHoldTurn = b.turn;
+    // Задачи «удержать» на участке или подразделением — свой учёт.
+    for (const o of st.objectives) {
+      const key = o.type === 'hold' ? objectiveScopeKey(o) : null;
+      if (!key || st.lostHoldAt?.[key]) continue;
+      if (!holdingEls(E, objectiveScope(E, side, o).own)) (st.lostHoldAt ??= {})[key] = b.turn;
+    }
   }
 }
 
 /** Сторона удерживает позиции: на месте осталось достаточно сил, не выходящих из боя. */
 export function holding(E: EngineContext, side: SideId): boolean {
-  const els = E.sideElements(side).filter((x) => x.status !== 'pending');
+  const els = E.sideElements(side).filter((x) => !notArrived(x));
   const start = els.reduce((a, x) => a + x.startValue, 0);
   const now = els.filter((x) => E.fighting(x)).reduce((a, x) => a + E.value(x), 0);
   return start > 0 && now >= start * E.k.holdMinShare;

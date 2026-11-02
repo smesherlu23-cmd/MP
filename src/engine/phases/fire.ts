@@ -450,10 +450,21 @@ function resolveStrike(E: EngineContext, st: StrikeOrder) {
     if (m > 0) raw.set(cls.id, m * asset.count * k.strikeScale);
   }
   const rnd = Math.max(0, 1 + k.strikeSpread * (E.rng.next() + E.rng.next() - 1)) * (b.sides[st.side].luck ?? 1);
+  // Условия боя (на участке цели), эффекты на сторону и свои правила на огонь — если включено в наборе правил.
+  const condMult = new Map<Id | undefined, number>();
+  const cond = (x: ElementState) => {
+    if (!(k.strikeConditions > 0)) return 1;
+    let v = condMult.get(x.sector);
+    if (v === undefined) {
+      v = E.supportMult(st.side, t, asset.count, x.sector);
+      condMult.set(x.sector, v);
+    }
+    return v;
+  };
   const cands: { t: ElementState; cls: Id; w: number; vis: number }[] = [];
   for (const x of targets) {
     const ex = exposureOf(E, x, t.indirect);
-    const vis = !E.f.detection || x.spotted ? 1 : k.strikeUnspotted;
+    const vis = (!E.f.detection || x.spotted ? 1 : k.strikeUnspotted) * cond(x);
     const pres = new Map<Id, number>();
     for (const c of x.comps)
       if (c.current > 0) {
@@ -475,6 +486,8 @@ function resolveStrike(E: EngineContext, st: StrikeOrder) {
       shots.push({ source: asset.name, target: c.t, cls: c.cls, fire, lethality: (cls?.lethality ?? 1) * k.casualtyScale, suppressive: t.suppressive });
     }
   const unseen = targets.filter((x) => E.f.detection && !x.spotted).length;
+  const condFactors: Factor[] = [];
+  if (k.strikeConditions > 0 && E.logging) E.supportMult(st.side, t, asset.count, targets[0].sector, condFactors);
   E.log({
     phase: 'fire',
     level: 0,
@@ -488,6 +501,7 @@ function resolveStrike(E: EngineContext, st: StrikeOrder) {
       { label: 'Сила ударов (коэффициент)', value: k.strikeScale, kind: 'mult' },
       { label: 'Случайность', value: rnd, kind: 'mult' },
       ...(unseen ? [{ label: `Необнаруженные цели (${unseen})`, value: k.strikeUnspotted, kind: 'mult' as const }] : []),
+      ...condFactors,
     ],
   });
   applyShots(E, shots);

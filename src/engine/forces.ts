@@ -3,6 +3,7 @@
 // (целиком или на часть), приказы задаёт сам; деревья для боя собираются из сил (resolveScenario),
 // итоги боя записываются обратно в силы (applyBattleToForces) — шаблонов это не касается.
 
+import { notArrived } from './context';
 import { COEFFICIENT_DEFAULTS } from './coefficients';
 import { plural } from './labels';
 import { STATE_KEYS } from './types';
@@ -85,6 +86,9 @@ export function partOf(root: UnitNode, nodeId: Id): UnitNode | null {
   if (c.comms === null && parent.comms !== ROOT_COMMS) c.comms = parent.comms;
   if (c.supply === null && parent.supply !== ROOT_SUPPLY) c.supply = parent.supply;
   for (const k of STATE_KEYS) if (c.state[k] === undefined && parent.state[k] !== ROOT_STATE[k]) c.state[k] = parent.state[k];
+  // Атака и защита старших действуют и на часть (перемножаются по цепочке) — переносятся в неё.
+  if (parent.attack !== 100) c.attackMod = Math.round((c.attackMod ?? 100) * parent.attack) / 100;
+  if (parent.defense !== 100) c.defenseMod = Math.round((c.defenseMod ?? 100) * parent.defense) / 100;
   c.name = `${c.name} · ${path[path.length - 2].name}`;
   delete c.attachedFrom;
   return c;
@@ -290,7 +294,7 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
     }
     walkUnits(f, (n) => {
       const el = byNode.get(n.id);
-      if (!el || el.status === 'pending') return;
+      if (!el || notArrived(el)) return;
       side ??= el.side;
       // Доля участвовавших (по людям, включая экипажи) — до вычета потерь.
       let share = 1;
@@ -323,18 +327,45 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
     const r = b.result;
     const outcome = r ? (!r.winner || r.winner === side ? r.outcomeName : `${r.outcomeName} противника`) : undefined;
     addRecord(f, { at, kind: 'battle', title: b.name, battleId: b.id, outcome, personnel: -personnel, equipment: -equipment, killed, wounded, missing });
-    // Опыт растёт после каждых N боёв (если включено в наборе правил).
+    // Опыт растёт после каждых N боёв (если включено в наборе правил). Считаются только записи боёв (со ссылкой
+    // на бой), запись «Опыт повышен» — не бой. Опыт получают только части, которые воевали: не исключённые из боя
+    // и подошедшие подкрепления; у не воевавших подчинённых опыт остаётся прежним.
     if (every > 0) {
-      const battles = (f.history ?? []).filter((x) => x.kind === 'battle').length;
+      const battles = (f.history ?? []).filter((x) => x.kind === 'battle' && x.battleId).length;
       if (battles % every === 0) {
+        const fought = (n: UnitNode) => {
+          const el = byNode.get(n.id);
+          return !!el && !notArrived(el);
+        };
+        const resolveExp = () => {
+          const out = new Map<Id, number>();
+          const visit = (n: UnitNode, parent: number) => {
+            const own = n.state.experience;
+            out.set(n.id, typeof own === 'number' ? own : parent);
+            for (const c of n.children) visit(c, out.get(n.id)!);
+          };
+          visit(f, ROOT_STATE.experience);
+          return out;
+        };
+        const resolved = resolveExp();
         let raised = false;
         walkUnits(f, (n) => {
-          const v = n === f ? (n.state.experience ?? ROOT_STATE.experience) : n.state.experience;
-          if (v === undefined || v >= maxExp) return;
+          if (!fought(n)) return;
+          const v = resolved.get(n.id) ?? ROOT_STATE.experience;
+          if (v >= maxExp) return;
           n.state.experience = v + 1;
           raised = true;
         });
-        if (raised) addRecord(f, { at, kind: 'battle', title: 'Опыт повышен', note: `после ${battles} ${plural(battles, 'боя', 'боёв', 'боёв')}` });
+        // Не воевавшие подчинённые воевавших сохраняют прежний опыт (а не наследуют повышенный).
+        if (raised) {
+          const now = resolveExp();
+          walkUnits(f, (n) => {
+            const was = resolved.get(n.id);
+            if (fought(n) || n.state.experience !== undefined || was === undefined || now.get(n.id) === was) return;
+            n.state.experience = was;
+          });
+        }
+        if (raised) addRecord(f, { at, kind: 'experience', title: 'Опыт повышен', note: `после ${battles} ${plural(battles, 'боя', 'боёв', 'боёв')}` });
       }
     }
     f.updatedAt = at;

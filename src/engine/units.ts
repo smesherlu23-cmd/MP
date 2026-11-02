@@ -112,9 +112,20 @@ export interface Resolved {
   supply: number;
   order: Id | null;
   echelon: Echelon;
+  /** Атака и защита, % — с учётом старших (перемножаются по цепочке). */
+  attack: number;
+  defense: number;
 }
 
-export const ROOT_RESOLVED: Resolved = { state: ROOT_STATE, comms: ROOT_COMMS, supply: ROOT_SUPPLY, order: null, echelon: 'front' };
+export const ROOT_RESOLVED: Resolved = {
+  state: ROOT_STATE,
+  comms: ROOT_COMMS,
+  supply: ROOT_SUPPLY,
+  order: null,
+  echelon: 'front',
+  attack: 100,
+  defense: 100,
+};
 
 export function resolveChild(node: UnitNode, parent: Resolved): Resolved {
   const state = { ...parent.state };
@@ -128,6 +139,8 @@ export function resolveChild(node: UnitNode, parent: Resolved): Resolved {
     supply: node.supply ?? parent.supply,
     order: node.order ?? parent.order,
     echelon: node.echelon ?? parent.echelon,
+    attack: (parent.attack * (node.attackMod ?? 100)) / 100,
+    defense: (parent.defense * (node.defenseMod ?? 100)) / 100,
   };
 }
 
@@ -182,6 +195,9 @@ export function extractPart(root: UnitNode, nodeId: Id): UnitNode | null {
   if (c.comms === null && parent.comms !== ROOT_COMMS) c.comms = parent.comms;
   if (c.supply === null && parent.supply !== ROOT_SUPPLY) c.supply = parent.supply;
   for (const k of STATE_KEYS) if (c.state[k] === undefined && parent.state[k] !== ROOT_STATE[k]) c.state[k] = parent.state[k];
+  // Атака и защита старших действуют и на часть — переносятся в неё.
+  if (parent.attack !== 100) c.attackMod = Math.round((c.attackMod ?? 100) * parent.attack) / 100;
+  if (parent.defense !== 100) c.defenseMod = Math.round((c.defenseMod ?? 100) * parent.defense) / 100;
   c.name = `${c.name} · ${path[path.length - 2].name}`;
   delete c.attachedFrom;
   delete c.rulesetId;
@@ -515,7 +531,7 @@ export function summarizeUnits(roots: UnitNode[], rs: Ruleset, bases?: Map<Id, R
         for (const cls of rs.targetClasses)
           for (const b of rs.rangeBands) {
             out.fire[cls.id] ??= {};
-            out.fire[cls.id][b.id] = (out.fire[cls.id][b.id] ?? 0) + (t.firepower[cls.id]?.[b.id] ?? 0) * c.current * ((n.attackMod ?? 100) / 100);
+            out.fire[cls.id][b.id] = (out.fire[cls.id][b.id] ?? 0) + (t.firepower[cls.id]?.[b.id] ?? 0) * c.current * ((r?.attack ?? n.attackMod ?? 100) / 100);
           }
       }
       if (r) {
