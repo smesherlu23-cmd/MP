@@ -1,11 +1,12 @@
 // Набор правил: общее, механики, временные эффекты, исходы, коэффициенты, JSON.
 
 import { useMemo, useState } from 'react';
-import { COEFFICIENT_GROUPS, COEFFICIENTS, FEATURE_LABELS, newId, normalizeRuleset, type Features, type Ruleset } from '../../../engine';
+import { COEFFICIENT_GROUPS, COEFFICIENTS, FEATURE_LABELS, clone, newId, normalizeRuleset, type Features, type Ruleset } from '../../../engine';
 import { EffectsEditor } from '../../components/EffectsEditor';
 import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Txt } from '../../components/ui';
+import { useTabState } from '../../hooks';
 import { replaceRuleset, toast, toastUndoable, useApp } from '../../store';
-import type { Upd } from './common';
+import { moveIn, moveItems, type Upd } from './common';
 
 export const FEATURE_HINTS: Record<keyof Features, string> = {
   detection: 'Без неё все элементы всегда видны противнику.',
@@ -37,7 +38,10 @@ export function General({ r, upd }: { r: Ruleset; upd: Upd }) {
         <Field label="Эпоха">
           <Txt value={r.era ?? ''} onChange={(v) => upd((d) => void (d.era = v))} placeholder="например: Вторая мировая" />
         </Field>
-        <Field label="Минут в ходу" hint="Только для отображения времени боя.">
+        <Field
+          label="Минут в ходу"
+          hint="Длина хода. Ходов в бою = часы × 60 ÷ минуты в ходу. Коэффициенты (расход, отдых, сближение…) заданы на ход: при смене длины хода проверьте баланс прогонами."
+        >
           <Num value={r.turnMinutes} onChange={(v) => upd((d) => void (d.turnMinutes = v))} min={1} integer width="100%" />
         </Field>
         <Field
@@ -101,7 +105,7 @@ export function TempEffectsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
       {!list.length && <div className="muted">Заготовок нет — добавьте, чтобы накладывать их в бою одним щелчком.</div>}
       <div className="grid two">
         {list.map((x, i) => (
-          <div key={x.id} className="kpi stack" style={{ gap: 8 }}>
+          <div key={x.id} className="kpi stack" style={{ gap: 8 }} data-anchor={`fx-${x.id}`}>
             <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
               <Txt value={x.name} onChange={(v) => upd((d) => void (d.tempEffects[i].name = v))} width="100%" />
               <Num
@@ -114,7 +118,18 @@ export function TempEffectsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                 width={78}
                 title="Сколько ходов действует по умолчанию"
               />
-              <Menu sm items={[{ label: 'Удалить эффект', danger: true, onClick: () => upd((d) => void d.tempEffects.splice(i, 1)) }]} />
+              <Menu
+                sm
+                items={[
+                  ...moveItems(i, list.length, (dir) => upd((d) => moveIn(d.tempEffects, i, dir))),
+                  {
+                    label: 'Дублировать',
+                    onClick: () => upd((d) => void d.tempEffects.splice(i + 1, 0, { ...clone(x), id: newId('fx'), name: `${x.name} (копия)` })),
+                  },
+                  'sep',
+                  { label: 'Удалить эффект', danger: true, onClick: () => upd((d) => void d.tempEffects.splice(i, 1)) },
+                ]}
+              />
             </div>
             <Txt
               value={x.description ?? ''}
@@ -186,8 +201,9 @@ export function OutcomesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
   );
 }
 
-export function CoefficientsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
-  const [q, setQ] = useState('');
+export function CoefficientsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: string }) {
+  // Запрос — в состоянии вкладки: быстрый переход (Ctrl+K) открывает раздел сразу с найденным коэффициентом.
+  const [q, setQ] = useTabState(`${tabKey}:coefQ`, '');
   const isChanged = (key: string, def: number) => (r.coefficients[key] ?? def) !== def;
   const changed = COEFFICIENTS.filter((m) => isChanged(m.key, m.default)).length;
   const query = q.trim().toLowerCase();

@@ -1,9 +1,10 @@
 // Оргсхема и список подразделения, значки узлов, подсказка для пустого подразделения.
 
 import { useLayoutEffect, useRef, useState } from 'react';
-import { isOutdated, type DropPos, type UnitNode } from '../../../engine';
+import { compositionTags, isOutdated, type DropPos, type UnitNode } from '../../../engine';
 import { Chev, Menu, openContextMenu } from '../../components/ui';
 import { Icon } from '../../components/Icon';
+import { TagChips } from '../../components/TagChips';
 import { type Ctx, acceptsDrop, addChild, canInsertTemplate, dragStart, isStacked, nodeActions, riskOf, statsLine, statsTip } from './model';
 
 export function EmptyStart({ ctx }: { ctx: Ctx }) {
@@ -188,8 +189,26 @@ export function OrgBox({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       </div>
       <div className="org-badges">
         <NodeBadges ctx={ctx} node={node} />
+        <OrgTags ctx={ctx} node={node} />
       </div>
     </div>
+  );
+}
+
+/** Теги типов в собственном составе узла — на карточке схемы (до трёх, остальные — в подсказке). */
+function OrgTags({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
+  const tags = compositionTags(ctx.rs, node.composition);
+  if (!tags.length) return null;
+  const shown = tags.slice(0, 3);
+  return (
+    <>
+      <TagChips tags={shown} rs={ctx.rs} className="org-tags" />
+      {tags.length > 3 && (
+        <span className="chip org-tags-more" data-tip={tags.slice(3).join(', ')}>
+          +{tags.length - 3}
+        </span>
+      )}
+    </>
   );
 }
 

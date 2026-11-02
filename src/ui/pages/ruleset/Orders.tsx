@@ -1,10 +1,15 @@
 // Набор правил: приказы, уровни опыта и командиров, условия боя, укрепления, разведданные.
 
-import { BEHAVIOR_LABELS, BEHAVIORS, newId, type Behavior, type LevelDef, type OptionDef, type Ruleset } from '../../../engine';
+import { BEHAVIOR_LABELS, BEHAVIORS, clone, newId, type Behavior, type LevelDef, type OptionDef, type Ruleset } from '../../../engine';
 import { EffectsEditor } from '../../components/EffectsEditor';
 import { Btn, Card, Info, Menu, Num, Sel, Txt } from '../../components/ui';
 import { toastUndoable } from '../../store';
-import type { Upd } from './common';
+import { moveIn, moveItems, type Upd } from './common';
+
+/** Описание (необязательно): видно подсказкой в выпадающих списках и в разборе расчёта. */
+export function Desc({ value, onChange }: { value: string | undefined; onChange: (v: string | undefined) => void }) {
+  return <Txt value={value ?? ''} onChange={(v) => onChange(v.trim() ? v : undefined)} placeholder="описание (необязательно)" width="100%" />;
+}
 
 export function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
   const missing = (['retreat', 'rout'] as Behavior[]).filter((b) => !r.orders.some((o) => o.behavior === b));
@@ -34,12 +39,18 @@ export function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
       >
         <div className="grid two">
           {r.orders.map((o, i) => (
-            <div key={o.id} className="kpi stack" style={{ gap: 8 }}>
+            <div key={o.id} className="kpi stack" style={{ gap: 8 }} data-anchor={`order-${o.id}`}>
               <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
                 <Txt value={o.name} onChange={(v) => upd((d) => void (d.orders[i].name = v))} width="100%" />
                 <Menu
                   sm
                   items={[
+                    ...moveItems(i, r.orders.length, (dir) => upd((d) => moveIn(d.orders, i, dir))),
+                    {
+                      label: 'Дублировать',
+                      onClick: () => upd((d) => void d.orders.splice(i + 1, 0, { ...clone(o), id: newId('order'), name: `${o.name} (копия)` })),
+                    },
+                    'sep',
                     {
                       label: 'Удалить приказ',
                       danger: true,
@@ -72,6 +83,7 @@ export function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                   title="Подставленность под огонь: 0 — вне огня, 1 — полностью"
                 />
               </div>
+              <Desc value={o.description} onChange={(v) => upd((d) => void (d.orders[i].description = v))} />
               <EffectsEditor value={o.effects} onChange={(v) => upd((d) => void (d.orders[i].effects = v))} />
             </div>
           ))}
@@ -111,6 +123,7 @@ export function LevelsSection({ title, hint, levels, set }: { title: string; hin
                 ]}
               />
             </div>
+            <Desc value={lv.description} onChange={(v) => set((l) => void (l[i].description = v))} />
             <EffectsEditor value={lv.effects} onChange={(v) => set((l) => void (l[i].effects = v))} />
           </div>
         ))}
@@ -152,13 +165,20 @@ export function OptionGrid({ options, set }: { options: OptionDef[]; set: (fn: (
   return (
     <div className="grid three">
       {options.map((op, i) => (
-        <div key={op.id} className="kpi stack" style={{ gap: 6 }}>
+        <div key={op.id} className="kpi stack" style={{ gap: 6 }} data-anchor={`opt-${op.id}`}>
           <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
             <Txt value={op.name} onChange={(v) => set((o) => void (o[i].name = v))} width="100%" />
-            <Btn sm kind="ghost" icon disabled={options.length <= 1} onClick={() => set((o) => void o.splice(i, 1))} title="Удалить вариант">
-              ×
-            </Btn>
+            <Menu
+              sm
+              items={[
+                ...moveItems(i, options.length, (dir) => set((o) => moveIn(o, i, dir))),
+                { label: 'Дублировать', onClick: () => set((o) => void o.splice(i + 1, 0, { ...clone(op), id: newId('opt'), name: `${op.name} (копия)` })) },
+                'sep',
+                { label: 'Удалить вариант', danger: true, disabled: options.length <= 1, onClick: () => set((o) => void o.splice(i, 1)) },
+              ]}
+            />
           </div>
+          <Desc value={op.description} onChange={(v) => set((o) => void (o[i].description = v))} />
           <EffectsEditor value={op.effects} onChange={(v) => set((o) => void (o[i].effects = v))} />
         </div>
       ))}
@@ -188,6 +208,8 @@ export function ConditionsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
               <Menu
                 sm
                 items={[
+                  ...moveItems(ci, r.conditions.length, (dir) => upd((d) => moveIn(d.conditions, ci, dir))),
+                  'sep',
                   {
                     label: 'Удалить категорию',
                     danger: true,

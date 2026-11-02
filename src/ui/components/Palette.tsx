@@ -1,10 +1,11 @@
 // Быстрый переход (Ctrl+K): любое подразделение — в том числе вложенное, сценарий, раздел
-// набора правил, тип, бой — и основные команды. Поиск по словам в любом порядке.
+// набора правил, тип, тег, приказ, правило, эффект, вариант условия, коэффициент, бой — и основные
+// команды. Поиск по словам в любом порядке.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { walkUnits, type UnitNode } from '../../engine';
-import { openUnit, setTabState } from '../hooks';
+import { COEFFICIENTS, rulesetTags, walkUnits, type UnitNode } from '../../engine';
+import { openUnit, revealAnchor, setTabState } from '../hooks';
 import { sidebarShown, toggleSidebar } from '../layout';
 import { SECTIONS as NAV_SECTIONS } from '../nav';
 import { HELP_GROUPS } from '../pages/HelpPage';
@@ -89,10 +90,52 @@ function buildItems(): Item[] {
         id: `rt:${r.id}:${t.id}`,
         group: 'Наборы правил',
         title: t.name,
-        sub: `тип · ${r.name}`,
+        // Теги типа — в подписи: тип находится и по тегу.
+        sub: `тип${t.tags.length ? ` · ${t.tags.map((x) => `#${x}`).join(' ')}` : ''} · ${r.name}`,
         run: () => {
           setTabState(`${tabKey('ruleset', r.id)}:type`, t.id);
           openTab('ruleset', r.id, { sub: 'types' });
+        },
+      });
+    // Карточки разделов: переход к разделу с прокруткой к карточке и подсветкой.
+    const card = (id: string, title: string, what: string, sub: string, anchor: string) =>
+      items.push({
+        id: `rc:${r.id}:${id}`,
+        group: 'Наборы правил',
+        title,
+        sub: `${what} · ${r.name}`,
+        run: () => {
+          openTab('ruleset', r.id, { sub });
+          revealAnchor(anchor);
+        },
+      });
+    for (const o of r.orders) card(`o:${o.id}`, o.name, 'приказ', 'orders', `order-${o.id}`);
+    for (const m of r.modifiers) card(`m:${m.id}`, m.name, m.enabled ? 'своё правило' : 'своё правило, выключено', 'modifiers', `rule-${m.id}`);
+    for (const x of r.tempEffects ?? []) card(`fx:${x.id}`, x.name, 'временный эффект', 'effects', `fx-${x.id}`);
+    for (const cat of r.conditions) for (const op of cat.options) card(`c:${op.id}`, `${cat.name}: ${op.name}`, 'условие боя', 'conditions', `opt-${op.id}`);
+    for (const op of r.fortifications) card(`f:${op.id}`, `Укрепления: ${op.name}`, 'вариант', 'conditions', `opt-${op.id}`);
+    for (const op of r.intelLevels) card(`i:${op.id}`, `Разведданные: ${op.name}`, 'вариант', 'conditions', `opt-${op.id}`);
+    for (const tag of rulesetTags(r))
+      items.push({
+        id: `tag:${r.id}:${tag}`,
+        group: 'Наборы правил',
+        title: `#${tag}`,
+        sub: `тег${r.tagDescriptions?.[tag] ? ` · ${r.tagDescriptions[tag]}` : ''} · ${r.name}`,
+        run: () => {
+          setTabState(`${tabKey('ruleset', r.id)}:tag`, tag);
+          openTab('ruleset', r.id, { sub: 'tags' });
+          revealAnchor(`tag-${tag}`);
+        },
+      });
+    for (const m of COEFFICIENTS)
+      items.push({
+        id: `k:${r.id}:${m.key}`,
+        group: 'Наборы правил',
+        title: m.label,
+        sub: `коэффициент · ${m.group} · ${r.name}`,
+        run: () => {
+          setTabState(`${tabKey('ruleset', r.id)}:coefQ`, m.label);
+          openTab('ruleset', r.id, { sub: 'coefficients' });
         },
       });
   }
@@ -171,7 +214,7 @@ function PaletteBody() {
         <input
           autoFocus
           className="pal-input"
-          placeholder="Подразделение, сценарий, тип, раздел правил или команда…"
+          placeholder="Подразделение, сценарий, тип, тег, приказ, правило, коэффициент или команда…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {

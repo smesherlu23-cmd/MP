@@ -1,12 +1,15 @@
 // Окна боя: элемент, формирование, условия и дистанция.
 
 import { useState } from 'react';
-import type { EngineContext, Battle, ElementState, SideId } from '../../../engine';
+import { walkUnits, type Battle, type CustomModifier, type ElementState, type EngineContext, type SideId } from '../../../engine';
+import { effectsText } from '../../components/EffectsEditor';
+import { TagChips } from '../../components/TagChips';
 import type { Target } from '../../components/BattleControls';
 import { CommanderSelect } from '../../components/CommanderSelect';
 import { RichText } from '../../components/LogView';
-import { Btn, Check, Field, Modal, Num, Sel, fmt0 } from '../../components/ui';
-import type { Iv } from './common';
+import { Btn, Check, Field, Menu, Modal, Num, Sel, fmt0 } from '../../components/ui';
+import { SIDES, type Iv } from './common';
+import { IvNote, openDecision } from './Decisions';
 import { CMD_TIP, PendingOrder, statusOf } from './ForcesTable';
 
 export const EDITABLE: { key: keyof ElementState; label: string; feature?: keyof Battle['ruleset']['features'] }[] = [
@@ -62,11 +65,24 @@ export function ElementModal({
   const [edit, setEdit] = useState(false);
   const [patch, setPatch] = useState<Record<string, number>>({});
   const [comps, setComps] = useState<Record<string, number>>({});
+  const [addType, setAddType] = useState('');
   if (!el) return null;
   const rs = b.ruleset;
   const fs = E.formationOf(el);
   const st = statusOf(E, el);
   const tags = E.tags(el);
+  const sector = b.sectors?.length ? E.sectorOf(el) : null;
+  // Заметки подразделения (из конструктора) — в окне элемента.
+  let notes = '';
+  for (const sd of b.scenario.sides)
+    for (const f of sd.formations) walkUnits(f, (n) => void (n.id === el.defId && n.notes?.trim() && (notes = n.notes.trim())));
+  // Какие свои правила сейчас действуют на элемент (без зависящих от цели) и множители типов состава.
+  const contextual = (m: CustomModifier) => m.when.some((c) => c.field.startsWith('enemy.') || c.field === 'targetClass');
+  const rules = el.status === 'active' ? rs.modifiers.filter((m) => m.enabled && !contextual(m) && E.ruleMatches(m, el)) : [];
+  const perTarget = rs.modifiers.filter((m) => m.enabled && contextual(m)).length;
+  const typeMods = el.status === 'active' ? E.typeShares(el) : [];
+  const newTypes = rs.componentTypes.filter((t) => !el.comps.some((c) => c.typeId === t.id) && !(t.id in comps));
+  const target = { side: el.side, elementIds: [el.id], label: el.name };
   const canEdit = !b.finished && el.status === 'active';
   const editing = edit && canEdit;
   const selfRef = `[[e:${el.id}]]`;
@@ -107,7 +123,8 @@ export function ElementModal({
       footer={
         editing ? (
           <>
-            <span className="muted small grow">Изменение запишется в журнал как вмешательство ГМ.</span>
+            <IvNote />
+            <span className="grow" />
             <Btn onClick={cancel}>Отмена</Btn>
             <Btn kind="primary" disabled={!dirty} onClick={apply}>
               Применить
@@ -136,7 +153,20 @@ export function ElementModal({
               </Btn>
             )}
             {canEdit && (
-              <Btn onClick={() => setEdit(true)} title="Пополнить или списать состав, поправить мораль, боезапас и т. п.">
+              <Menu
+                label="Ещё…"
+                items={[
+                  (rs.features.ammo || rs.features.fuel || rs.features.equipment) && {
+                    label: 'Подвезти…',
+                    onClick: () => (onClose(), openDecision({ kind: 'resupply', target })),
+                  },
+                  (b.sectors?.length ?? 0) > 1 && { label: 'Перебросить на участок…', onClick: () => (onClose(), openDecision({ kind: 'transfer', target })) },
+                  { label: 'Заметка в журнал…', onClick: () => (onClose(), openDecision({ kind: 'note', target })) },
+                ]}
+              />
+            )}
+            {canEdit && (
+              <Btn onClick={() => setEdit(true)} title="Пополнить или списать состав, добавить тип, поправить опыт, атаку, мораль, боезапас и т. п.">
                 Изменить…
               </Btn>
             )}
@@ -145,14 +175,63 @@ export function ElementModal({
         )
       }
     >
-      <div className="meta" style={{ marginBottom: 14 }}>
+      <div className="meta" style={{ marginBottom: 8 }}>
         <span>{fs.name}</span>
+        {sector && <span>участок: {sector.name}</span>}
+        {el.transit && (
+          <span className="warn">
+            в пути на участок «{b.sectors?.find((x) => x.id === el.transit!.to)?.name}», в бою с {el.transit.until}-го хода
+          </span>
+        )}
         <span>опыт: {rs.experienceLevels[el.experience - 1]?.name}</span>
-        {tags.length > 0 && <span data-tip="Теги типов в составе элемента: по ним работают свои правила набора">теги: {tags.join(', ')}</span>}
+        {(el.attackMod !== 100 || el.defenseMod !== 100) && (
+          <span data-tip="Атака и защита подразделения с учётом старших (из конструктора) или по решению ГМ">
+            атака {fmt0(el.attackMod)}% · защита {fmt0(el.defenseMod)}%
+          </span>
+        )}
         <span>
           {fmt0(E.personnel(el))} из {fmt0(el.startPersonnel)} чел.
         </span>
       </div>
+      {(tags.length > 0 || rules.length > 0 || typeMods.length > 0) && (
+        <div className="el-mods">
+          {tags.length > 0 && (
+            <div className="row" style={{ gap: 6 }}>
+              <span className="muted small" data-tip="Теги типов в составе элемента: по ним работают свои правила набора">
+                теги
+              </span>
+              <TagChips tags={tags} rs={rs} />
+            </div>
+          )}
+          {(rules.length > 0 || typeMods.length > 0) && (
+            <div className="row" style={{ gap: 6 }}>
+              <span
+                className="muted small"
+                data-tip={`Свои правила набора, условия которых сейчас выполнены, и множители типов состава.${perTarget ? ` Ещё ${perTarget} — зависят от цели и противника, они видны в разборе огня в журнале.` : ''}`}
+              >
+                действуют
+              </span>
+              {typeMods.map((x) => (
+                <span key={x.type.id} className="chip" data-tip={`${effectsText(x.type.effects!)} — по доле ${Math.round(x.share * 100)}% ценности`}>
+                  тип «{x.type.name}»
+                </span>
+              ))}
+              {rules.map((m) => (
+                <span
+                  key={m.id}
+                  className="chip accent"
+                  data-tip={[effectsText(m.effects), m.byShare ? `по доле ${Math.round(E.shareOf(el, m) * 100)}%` : '', m.description]
+                    .filter(Boolean)
+                    .join('\n')}
+                >
+                  {m.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {notes && <div className="ql-note">{notes}</div>}
       <div className="grid two align-start">
         <div className="stack">
           {canEdit && (
@@ -161,7 +240,7 @@ export function ElementModal({
                 <Sel
                   value={el.orderId}
                   onChange={(v) => iv('setOrder', { elementIds: [el.id], orderId: v })}
-                  options={rs.orders.map((o) => ({ value: o.id, label: o.name }))}
+                  options={rs.orders.map((o) => ({ value: o.id, label: o.name, title: o.description }))}
                 />
                 <PendingOrder E={E} el={el} />
               </Field>
@@ -196,6 +275,19 @@ export function ElementModal({
                   >
                     стоять насмерть
                   </Check>
+                  <Field label="Опыт">
+                    <Sel
+                      value={patch.experience ?? el.experience}
+                      onChange={(v) => setPatch({ ...patch, experience: Number(v) })}
+                      options={rs.experienceLevels.map((l, i) => ({ value: i + 1, label: l.name, title: l.description }))}
+                    />
+                  </Field>
+                  <Field label="Атака, %">
+                    <Num value={patch.attackMod ?? el.attackMod} onChange={(v) => setPatch({ ...patch, attackMod: v })} min={0} width={80} />
+                  </Field>
+                  <Field label="Защита, %">
+                    <Num value={patch.defenseMod ?? el.defenseMod} onChange={(v) => setPatch({ ...patch, defenseMod: v })} min={1} width={80} />
+                  </Field>
                 </>
               )}
             </div>
@@ -244,21 +336,55 @@ export function ElementModal({
                   </tr>
                 );
               })}
+              {editing &&
+                Object.keys(comps)
+                  .filter((typeId) => !el.comps.some((c) => c.typeId === typeId))
+                  .map((typeId) => (
+                    <tr key={typeId}>
+                      <td>
+                        {E.type(typeId).name} <span className="faint small">· новый</span>
+                      </td>
+                      <td className="num nowrap">
+                        <Num value={comps[typeId]} onChange={(v) => setComps({ ...comps, [typeId]: v })} min={0} integer width={64} />
+                      </td>
+                      <td className="num">
+                        <Btn
+                          sm
+                          kind="ghost"
+                          icon
+                          title="Не добавлять"
+                          onClick={() => {
+                            const next = { ...comps };
+                            delete next[typeId];
+                            setComps(next);
+                          }}
+                        >
+                          ×
+                        </Btn>
+                      </td>
+                    </tr>
+                  ))}
             </tbody>
           </table>
-          {editing && (rs.features.ammo || rs.features.fuel) && (
-            <div className="row">
-              <span className="muted small">Подвезти:</span>
-              {rs.features.ammo && (
-                <Btn sm onClick={() => iv('resupply', { elementIds: [el.id], ammo: 25 })}>
-                  боезапас +25%
-                </Btn>
-              )}
-              {rs.features.fuel && (
-                <Btn sm onClick={() => iv('resupply', { elementIds: [el.id], fuel: 25 })}>
-                  топливо +25%
-                </Btn>
-              )}
+          {editing && newTypes.length > 0 && (
+            <div className="row" style={{ gap: 6 }}>
+              <Sel
+                value={addType}
+                onChange={setAddType}
+                options={[{ value: '', label: '+ тип в состав…' }, ...newTypes.map((t) => ({ value: t.id, label: t.name, title: t.description }))]}
+                width={200}
+              />
+              <Btn
+                sm
+                disabled={!addType}
+                onClick={() => {
+                  setComps({ ...comps, [addType]: 1 });
+                  setAddType('');
+                }}
+                title="Придан расчёт, подошла техника: тип появится в составе элемента"
+              >
+                Добавить
+              </Btn>
             </div>
           )}
         </div>
@@ -314,7 +440,18 @@ export function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => 
   const [cond, setCond] = useState<Record<string, string>>({ ...b.conditions });
   const [bandIdx, setBand] = useState(b.bandIndex);
   // Участки: своя дистанция и свои условия (пусто — как на всём поле).
-  const [secs, setSecs] = useState(() => (b.sectors ?? []).map((x) => ({ id: x.id, name: x.name, band: x.bandIndex, cond: { ...x.conditions } })));
+  const [secs, setSecs] = useState(() =>
+    (b.sectors ?? []).map((x) => ({
+      id: x.id,
+      name: x.name,
+      band: x.bandIndex,
+      cond: { ...x.conditions },
+      fort: { ...x.fortification } as Record<string, string>,
+    })),
+  );
+  // Укрепления и разведданные сторон (укрепления — на всём поле и по участкам).
+  const [sideFort, setSideFort] = useState<Record<SideId, string>>({ A: b.sides.A.fortification, B: b.sides.B.fortification });
+  const [sideIntel, setSideIntel] = useState<Record<SideId, string>>({ A: b.sides.A.intel, B: b.sides.B.intel });
   const setSec = (i: number, patch: Partial<(typeof secs)[number]>) => setSecs(secs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const apply = () => {
     if (Object.keys(cond).some((k) => cond[k] !== b.conditions[k])) iv('setConditions', { conditions: cond });
@@ -325,7 +462,15 @@ export function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => 
       const changed: Record<string, string> = {};
       for (const cat of rs.conditions) if ((x.cond[cat.id] ?? '') !== (was.conditions[cat.id] ?? '')) changed[cat.id] = x.cond[cat.id] ?? '';
       if (Object.keys(changed).length) iv('setConditions', { sector: x.id, conditions: changed });
+      for (const sd of SIDES)
+        if ((x.fort[sd] ?? '') !== (was.fortification[sd] ?? '')) iv('setSide', { side: sd, sector: x.id, fortification: x.fort[sd] ?? '' });
     });
+    for (const sd of SIDES) {
+      const p: Record<string, unknown> = { side: sd };
+      if (sideFort[sd] !== b.sides[sd].fortification) p.fortification = sideFort[sd];
+      if (sideIntel[sd] !== b.sides[sd].intel) p.intel = sideIntel[sd];
+      if (Object.keys(p).length > 1) iv('setSide', p);
+    }
     onClose();
   };
   return (
@@ -335,6 +480,8 @@ export function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => 
       onClose={onClose}
       footer={
         <>
+          <IvNote />
+          <span className="grow" />
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn kind="primary" onClick={apply}>
             Применить
@@ -345,7 +492,11 @@ export function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => 
       <div className="fields two">
         {rs.conditions.map((c) => (
           <Field key={c.id} label={c.name}>
-            <Sel value={cond[c.id] ?? ''} onChange={(v) => setCond({ ...cond, [c.id]: v })} options={c.options.map((o) => ({ value: o.id, label: o.name }))} />
+            <Sel
+              value={cond[c.id] ?? ''}
+              onChange={(v) => setCond({ ...cond, [c.id]: v })}
+              options={c.options.map((o) => ({ value: o.id, label: o.name, title: o.description }))}
+            />
           </Field>
         ))}
         {!b.sectors && (
@@ -353,6 +504,28 @@ export function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => 
             <Sel value={bandIdx} onChange={setBand} options={rs.rangeBands.map((x, i) => ({ value: i, label: x.name }))} />
           </Field>
         )}
+      </div>
+      <div className="fields two" style={{ marginTop: 12 }}>
+        {SIDES.map((sd) => (
+          <Field
+            key={sd}
+            label={<span style={{ color: b.sides[sd].color }}>{b.sides[sd].name}</span>}
+            hint="Укрепления разбиты или дооборудованы, разведка уточнила данные о противнике."
+          >
+            <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+              <Sel
+                value={sideFort[sd]}
+                onChange={(v) => setSideFort({ ...sideFort, [sd]: v })}
+                options={rs.fortifications.map((o) => ({ value: o.id, label: `укрепления: ${o.name}`, title: o.description }))}
+              />
+              <Sel
+                value={sideIntel[sd]}
+                onChange={(v) => setSideIntel({ ...sideIntel, [sd]: v })}
+                options={rs.intelLevels.map((o) => ({ value: o.id, label: `разведданные: ${o.name}`, title: o.description }))}
+              />
+            </div>
+          </Field>
+        ))}
       </div>
       {secs.length > 0 && (
         <div className="stack" style={{ gap: 8, marginTop: 12 }}>
@@ -368,6 +541,18 @@ export function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => 
                   onChange={(v) => setSec(i, { cond: { ...x.cond, [c.id]: v } })}
                   options={[{ value: '', label: `${c.name}: как на всём поле` }, ...c.options.map((o) => ({ value: o.id, label: `${c.name}: ${o.name}` }))]}
                   width={190}
+                />
+              ))}
+              {SIDES.map((sd) => (
+                <Sel
+                  key={sd}
+                  value={x.fort[sd] ?? ''}
+                  onChange={(v) => setSec(i, { fort: { ...x.fort, [sd]: v } })}
+                  options={[
+                    { value: '', label: `${b.sides[sd].name}: укрепления как у стороны` },
+                    ...rs.fortifications.map((o) => ({ value: o.id, label: `${b.sides[sd].name}: ${o.name}` })),
+                  ]}
+                  width={210}
                 />
               ))}
             </div>
@@ -422,7 +607,27 @@ export function FormationModal({
               Удар…
             </Btn>
           )}
+          {!b.finished && (
+            <Menu
+              label="Ещё…"
+              items={[
+                (rs.features.ammo || rs.features.fuel || rs.features.equipment) && {
+                  label: 'Подвезти…',
+                  onClick: () => (onClose(), openDecision({ kind: 'resupply', target: { side: fs.side, formationId: fs.id, label: fs.name } })),
+                },
+                (b.sectors?.length ?? 0) > 1 && {
+                  label: 'Перебросить на участок…',
+                  onClick: () => (onClose(), openDecision({ kind: 'transfer', target: { side: fs.side, formationId: fs.id, label: fs.name } })),
+                },
+                {
+                  label: 'Заметка в журнал…',
+                  onClick: () => (onClose(), openDecision({ kind: 'note', target: { side: fs.side, formationId: fs.id, label: fs.name } })),
+                },
+              ]}
+            />
+          )}
           <span className="grow" />
+          {!b.finished && <IvNote width={170} />}
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn
             kind="primary"
@@ -444,7 +649,11 @@ export function FormationModal({
     >
       <div className="fields two">
         <Field label="Приказ всем элементам" hint="Получат все элементы, включая вложенные подразделения.">
-          <Sel value={order} onChange={setOrder} options={[{ value: '', label: '— не менять —' }, ...rs.orders.map((o) => ({ value: o.id, label: o.name }))]} />
+          <Sel
+            value={order}
+            onChange={setOrder}
+            options={[{ value: '', label: '— не менять —' }, ...rs.orders.map((o) => ({ value: o.id, label: o.name, title: o.description }))]}
+          />
         </Field>
         {rs.features.command && (
           <Field label="Командир">

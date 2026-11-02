@@ -896,6 +896,19 @@ input.invalid {
   background: var(--accent-soft);
   border-color: var(--accent-fg);
 }
+.chip.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.chip-btn {
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+.chip-btn:hover {
+  border-color: var(--accent-fg);
+}
 
 .badge {
   display: inline-block;
@@ -2078,6 +2091,13 @@ select.eff-add:hover {
 }
 .org-badges:empty {
   display: none;
+}
+.org-badges .org-tags {
+  display: contents;
+}
+.org-badges .chip {
+  padding: 0 5px;
+  font-size: 10px;
 }
 .org-fold {
   font: inherit;
@@ -4892,6 +4912,19 @@ tr[tabindex]:focus-visible {
     transform: translateX(24px);
   }
 }
+/* Подсветка карточки, к которой перешли (быстрый переход, ссылки из проверок). */
+@keyframes flash {
+  0%,
+  40% {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.flash {
+  animation: flash 1.6s ease-out;
+}
 /* Системная настройка «уменьшить движение» — без анимаций. */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -5144,6 +5177,14 @@ tr[tabindex]:focus-visible {
 }
 .ql-body {
   gap: 14px;
+}
+.ql-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow: auto;
 }
 .ql-facts {
   display: grid;
@@ -5713,4 +5754,24 @@ html.desktop.fullscreen .toolbar-win {
 body:has(.backdrop) .toasts {
   left: 16px;
   right: auto;
+}
+
+/* Теги набора правил: выбранный из быстрого перехода тег. */
+.tags-tbl tr.sel td {
+  background: var(--accent-soft);
+}
+
+/* Задача стороны: участок и подразделение — под строкой задачи. */
+.obj-scope {
+  gap: 6px;
+  margin: -2px 0 8px;
+  padding-left: 10px;
+}
+
+/* Окно элемента в бою: теги и действующие правила. */
+.el-mods {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
 }

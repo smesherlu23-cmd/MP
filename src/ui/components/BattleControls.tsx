@@ -21,6 +21,7 @@ import {
 } from '../../engine';
 import { updateSettings, useApp } from '../store';
 import { EffectsEditor, effectsText } from './EffectsEditor';
+import { IvNote } from '../pages/battle/Decisions';
 import { Btn, Check, Field, Modal, Num, Sel, Txt, fmt0, pct } from './ui';
 
 export type Iv = (type: InterventionType, payload: Record<string, unknown>) => void;
@@ -247,7 +248,8 @@ export function EffectModal({ b, target, onClose, iv }: { b: Battle; target: Tar
       onClose={onClose}
       footer={
         <>
-          <span className="muted small grow">Действует со следующего хода; снять можно раньше срока.</span>
+          <IvNote />
+          <span className="muted small grow">Со следующего хода; снять можно раньше срока.</span>
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn
             kind="primary"
@@ -319,7 +321,8 @@ export function StrikeModal({
       onClose={onClose}
       footer={
         <>
-          <span className="muted small grow">Удар наносится в начале следующего хода; до него его можно отменить.</span>
+          <IvNote />
+          <span className="muted small grow">В начале следующего хода; до него можно отменить.</span>
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn
             kind="primary"
@@ -489,11 +492,19 @@ const GROUP_FIELDS: { key: string; label: string; feature?: keyof Battle['rulese
   { key: 'ammo', label: 'Боезапас', feature: 'ammo' },
   { key: 'fuel', label: 'Топливо', feature: 'fuel' },
   { key: 'equipment', label: 'Снаряжение', feature: 'equipment' },
+  { key: 'vehicleCondition', label: 'Техсостояние', feature: 'vehicleCondition' },
 ];
 
 /** Изменить состояние сразу нескольких элементов: заданные поля — всем, пустые — не трогать. */
 export function GroupEditModal({ b, ids, onClose, iv }: { b: Battle; ids: string[]; onClose: () => void; iv: Iv }) {
-  const [patch, setPatch] = useState<Record<string, number>>({});
+  const [patch, setPatch] = useState<Record<string, number | string | boolean>>({});
+  const rs = b.ruleset;
+  const opt = <K extends string>(key: K, v: string | number | boolean | undefined) => {
+    const next = { ...patch };
+    if (v === undefined || v === '') delete next[key];
+    else next[key] = v;
+    setPatch(next);
+  };
   const fields = GROUP_FIELDS.filter((x) => !x.feature || b.ruleset.features[x.feature]);
   const els = b.elements.filter((x) => ids.includes(x.id));
   const avg = (k: string) => (els.length ? Math.round(els.reduce((a, x) => a + ((x as unknown as Record<string, number>)[k] ?? 0), 0) / els.length) : 0);
@@ -503,7 +514,8 @@ export function GroupEditModal({ b, ids, onClose, iv }: { b: Battle; ids: string
       onClose={onClose}
       footer={
         <>
-          <span className="muted small grow">Заданное получат все выбранные; запишется в журнал одним решением ГМ.</span>
+          <IvNote />
+          <span className="muted small grow">Заданное получат все выбранные — одним решением ГМ.</span>
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn
             kind="primary"
@@ -539,7 +551,7 @@ export function GroupEditModal({ b, ids, onClose, iv }: { b: Battle; ids: string
                 }}
               />
               <Num
-                value={patch[x.key] ?? avg(x.key)}
+                value={(patch[x.key] as number | undefined) ?? avg(x.key)}
                 onChange={(v) => setPatch({ ...patch, [x.key]: Math.max(0, Math.min(100, v)) })}
                 min={0}
                 max={100}
@@ -548,6 +560,61 @@ export function GroupEditModal({ b, ids, onClose, iv }: { b: Battle; ids: string
             </div>
           </Field>
         ))}
+      </div>
+      <div className="fields" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', marginTop: 12 }}>
+        <Field label="Опыт">
+          <Sel
+            value={patch.experience === undefined ? '' : String(patch.experience)}
+            onChange={(v) => opt('experience', v === '' ? undefined : Number(v))}
+            options={[
+              { value: '', label: '— не менять —' },
+              ...rs.experienceLevels.map((l, i) => ({ value: String(i + 1), label: l.name, title: l.description })),
+            ]}
+          />
+        </Field>
+        <Field label="Эшелон">
+          <Sel
+            value={String(patch.echelon ?? '')}
+            onChange={(v) => opt('echelon', v)}
+            options={[
+              { value: '', label: '— не менять —' },
+              { value: 'front', label: 'Первый' },
+              { value: 'support', label: 'Второй' },
+              { value: 'rear', label: 'Тыл' },
+            ]}
+          />
+        </Field>
+        <Field label="Стоять насмерть">
+          <Sel
+            value={patch.holdFast === undefined ? '' : patch.holdFast ? 'yes' : 'no'}
+            onChange={(v) => opt('holdFast', v === '' ? undefined : v === 'yes')}
+            options={[
+              { value: '', label: '— не менять —' },
+              { value: 'yes', label: 'да' },
+              { value: 'no', label: 'нет' },
+            ]}
+          />
+        </Field>
+        <Field label="Атака, %">
+          <Num
+            value={(patch.attackMod as number | undefined) ?? null}
+            onChange={(v) => opt('attackMod', v >= 0 ? v : undefined)}
+            min={0}
+            emptyAs={-1}
+            placeholder="не менять"
+            width="100%"
+          />
+        </Field>
+        <Field label="Защита, %">
+          <Num
+            value={(patch.defenseMod as number | undefined) ?? null}
+            onChange={(v) => opt('defenseMod', v >= 1 ? v : undefined)}
+            min={1}
+            emptyAs={-1}
+            placeholder="не менять"
+            width="100%"
+          />
+        </Field>
       </div>
     </Modal>
   );

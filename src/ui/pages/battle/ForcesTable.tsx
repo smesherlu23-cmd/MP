@@ -17,9 +17,10 @@ import {
 } from '../../../engine';
 import { SupportPanel, type Target } from '../../components/BattleControls';
 import { CommanderSelect } from '../../components/CommanderSelect';
-import { Chev, Btn, Card, Check, Meter, ScrollX, Sel, fmt0, pct } from '../../components/ui';
+import { Chev, Btn, Card, Check, Menu, Meter, ScrollX, Sel, fmt0, pct } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { type Iv, SIDES } from './common';
+import { openDecision } from './Decisions';
 import { SideCompare } from './Result';
 
 /** Приказ ГМ ещё в пути (задержка доведения приказов): куда идёт и с каким шансом дойдёт к следующему ходу. */
@@ -45,6 +46,10 @@ export function statusOf(E: EngineContext, el: ElementState): { label: string; c
     if (bh === 'rout') return { label: 'Бежит', cls: 'status-dead' };
     if (bh === 'reserve') return { label: 'В резерве', cls: 'status-out' };
     return { label: 'В бою', cls: 'status-active' };
+  }
+  if (el.transit) {
+    const to = E.b.sectors?.find((x) => x.id === el.transit!.to)?.name ?? '?';
+    return { label: `В пути на «${to}» (с ${el.transit.until}-го хода)`, cls: 'status-retreat' };
   }
   if (el.status === 'pending') {
     const t = arrivalTurn(E.b, el);
@@ -221,14 +226,24 @@ export function Forces(props: {
             value=""
             width={150}
             onChange={(v) => v && iv('setOrder', { elementIds: sel.filter((id) => E.elements.get(id)?.status === 'active'), orderId: v })}
-            options={[{ value: '', label: 'приказ всем…' }, ...b.ruleset.orders.map((o) => ({ value: o.id, label: o.name }))]}
+            options={[{ value: '', label: 'приказ всем…' }, ...b.ruleset.orders.map((o) => ({ value: o.id, label: o.name, title: o.description }))]}
           />
           <Btn sm onClick={() => props.onGroupEdit(sel)} title="Мораль, усталость, боезапас… сразу всем выбранным">
             Изменить…
           </Btn>
-          {b.ruleset.features.ammo && (
-            <Btn sm onClick={() => iv('resupply', { elementIds: sel, ammo: 25 })}>
-              боезапас +25%
+          {(b.ruleset.features.ammo || b.ruleset.features.fuel || b.ruleset.features.equipment) && (
+            <Btn sm onClick={() => openDecision({ kind: 'resupply', target: { side: oneSide ?? 'A', elementIds: sel, label: selLabel } })}>
+              Подвезти…
+            </Btn>
+          )}
+          {(b.sectors?.length ?? 0) > 1 && (
+            <Btn
+              sm
+              disabled={!oneSide}
+              onClick={() => oneSide && openDecision({ kind: 'transfer', target: { side: oneSide, elementIds: sel, label: selLabel } })}
+              title={oneSide ? 'Переброска выбранных на другой участок' : 'Переброска — для элементов одной стороны'}
+            >
+              Перебросить…
             </Btn>
           )}
           <Btn
@@ -272,7 +287,12 @@ export function Forces(props: {
       </div>
       <div className={details ? 'forces-sides details' : 'forces-sides'}>
         {SIDES.map((side) => (
-          <Card key={side} title={<span style={{ color: b.sides[side].color }}>{b.sides[side].name}</span>} tight>
+          <Card
+            key={side}
+            title={<span style={{ color: b.sides[side].color }}>{b.sides[side].name}</span>}
+            actions={!b.finished && <PickMenu b={b} E={E} side={side} onPick={(ids) => setPicked([...new Set([...sel, ...ids])])} />}
+            tight
+          >
             <ScrollX>
               <table className="tbl compact forces">
                 <thead>
@@ -362,7 +382,7 @@ export function FormationRows(props: {
   const spread = !!b.sectors && new Set(b.elements.filter((x) => x.side === fs.side).map((x) => x.sector)).size > 1;
   const sectorName = (el: ElementState) => (spread ? b.sectors!.find((x) => x.id === el.sector)?.name : undefined);
   const detailCols = details ? 1 + [f.suppression, f.fatigue, f.ammo, f.detection].filter(Boolean).length : 0;
-  const orderOptions = b.ruleset.orders.map((o) => ({ value: o.id, label: o.name }));
+  const orderOptions = b.ruleset.orders.map((o) => ({ value: o.id, label: o.name, title: o.description }));
   const morale = agg && agg.w > 0 ? agg.moraleW / agg.w : 0;
   return (
     <>
@@ -469,7 +489,7 @@ export function FormationRows(props: {
               ) : (
                 <span className={`small ${st.cls}`}>{st.label}</span>
               )}
-              {el.status === 'pending' && !b.finished && (
+              {el.status === 'pending' && !el.transit && !b.finished && (
                 <button
                   type="button"
                   className="link-btn small"
@@ -508,3 +528,28 @@ export function FormationRows(props: {
 }
 
 // ------------------------------------------------------------------ карточка элемента
+
+/** Выбрать элементы стороны для группового решения: всех в бою или по тегу типов состава. */
+function PickMenu({ b, E, side, onPick }: { b: Battle; E: EngineContext; side: SideId; onPick: (ids: string[]) => void }) {
+  const act = b.elements.filter((x) => x.side === side && x.status === 'active');
+  const byTag = new Map<string, string[]>();
+  for (const el of act) for (const t of E.tags(el)) byTag.set(t, [...(byTag.get(t) ?? []), el.id]);
+  const tags = [...byTag.keys()].sort((a, c) => a.localeCompare(c, 'ru'));
+  if (!act.length) return null;
+  return (
+    <Menu
+      sm
+      label="Выбрать"
+      title="Отметить элементы для группового решения: приказ, правка, подвоз, эффект"
+      items={[
+        { label: `Все в бою (${act.length})`, onClick: () => onPick(act.map((x) => x.id)) },
+        ...(tags.length ? (['sep'] as const) : []),
+        ...tags.map((t) => ({
+          label: `с тегом «${t}» (${byTag.get(t)!.length})`,
+          tip: b.ruleset.tagDescriptions?.[t],
+          onClick: () => onPick(byTag.get(t)!),
+        })),
+      ]}
+    />
+  );
+}

@@ -34,6 +34,7 @@ import {
   type Id,
   type ObjectiveType,
   type Ruleset,
+  type Objective,
   type Scenario,
   type SideUnitRef,
   type UnitNode,
@@ -49,7 +50,7 @@ import { PartialButton, type PartialLimit, PartialModal, partialCount } from '..
 import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
 import { SectorSelect, SectorsEditor } from '../components/SectorsEditor';
 import { SideSupport } from '../components/SupportEditor';
-import { Chev, openContextMenu, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable, ToolbarSlot } from '../components/ui';
+import { Area, Chev, openContextMenu, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable, ToolbarSlot } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import {
   confirmDialog,
@@ -237,7 +238,7 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
                     <Sel
                       value={sc.conditions[cat.id] ?? ''}
                       onChange={(v) => upd((d) => void (d.conditions[cat.id] = v))}
-                      options={cat.options.map((o) => ({ value: o.id, label: o.name }))}
+                      options={cat.options.map((o) => ({ value: o.id, label: o.name, title: o.description }))}
                     />
                   </Field>
                 );
@@ -297,6 +298,14 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
               <Field label="Набор правил">
                 <Sel value={sc.rulesetId} onChange={changeRuleset} options={Object.values(st.rulesets).map((r) => ({ value: r.id, label: r.name }))} />
               </Field>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <Area
+                value={sc.description ?? ''}
+                onChange={(v) => upd((d) => void (v.trim() ? (d.description = v) : delete d.description))}
+                rows={2}
+                placeholder="Описание (необязательно): замысел, вводная для игроков — видно в начале отчёта боя"
+              />
             </div>
           </Card>
         </div>
@@ -467,7 +476,7 @@ function SideTree(props: {
               >
                 <option value="">как у старшего</option>
                 {rs.orders.map((o) => (
-                  <option key={o.id} value={o.id}>
+                  <option key={o.id} value={o.id} title={o.description}>
                     {o.name}
                   </option>
                 ))}
@@ -708,7 +717,10 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
                   else delete d.orders[root];
                 })
               }
-              options={[{ value: '', label: `${defaultOrderName} (по умолч.)` }, ...rs.orders.map((o) => ({ value: o.id, label: o.name }))]}
+              options={[
+                { value: '', label: `${defaultOrderName} (по умолч.)` },
+                ...rs.orders.map((o) => ({ value: o.id, label: o.name, title: o.description })),
+              ]}
               title="Приказ на этот бой (подчинённые — так же, если им не задан свой)"
             />
           )}
@@ -811,11 +823,15 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
             <Sel
               value={side.fortification}
               onChange={(v) => upd((d) => void (d.fortification = v))}
-              options={rs.fortifications.map((o) => ({ value: o.id, label: o.name }))}
+              options={rs.fortifications.map((o) => ({ value: o.id, label: o.name, title: o.description }))}
             />
           </Field>
           <Field label="Разведданные">
-            <Sel value={side.intel} onChange={(v) => upd((d) => void (d.intel = v))} options={rs.intelLevels.map((o) => ({ value: o.id, label: o.name }))} />
+            <Sel
+              value={side.intel}
+              onChange={(v) => upd((d) => void (d.intel = v))}
+              options={rs.intelLevels.map((o) => ({ value: o.id, label: o.name, title: o.description }))}
+            />
           </Field>
         </div>
 
@@ -826,43 +842,46 @@ function SideEditor({ sc, rsc, i, rs }: { sc: Scenario; rsc: Scenario; i: number
           </div>
           {!side.objectives.length && <div className="faint small">По приказам (автоматически)</div>}
           {side.objectives.map((o, oi) => (
-            <div key={o.id} className="row" style={{ flexWrap: 'nowrap', marginBottom: 4, gap: 6 }}>
-              <div className="grow">
-                <Sel
-                  value={o.type}
-                  width="100%"
-                  onChange={(v) =>
-                    upd((d) => {
-                      d.objectives[oi].type = v;
-                      d.objectives[oi].value = DEFAULT_OBJECTIVE_VALUE[v](sc.hours ?? sc.maxTurns);
-                    })
-                  }
-                  options={OBJECTIVE_TYPES.map((t) => ({ value: t, label: OBJECTIVE_LABELS[t] }))}
-                />
+            <Fragment key={o.id}>
+              <div className="row" style={{ flexWrap: 'nowrap', marginBottom: 4, gap: 6 }}>
+                <div className="grow">
+                  <Sel
+                    value={o.type}
+                    width="100%"
+                    onChange={(v) =>
+                      upd((d) => {
+                        d.objectives[oi].type = v;
+                        d.objectives[oi].value = DEFAULT_OBJECTIVE_VALUE[v](sc.hours ?? sc.maxTurns);
+                      })
+                    }
+                    options={OBJECTIVE_TYPES.map((t) => ({ value: t, label: OBJECTIVE_LABELS[t] }))}
+                  />
+                </div>
+                {OBJECTIVE_HAS_VALUE[o.type] && (
+                  <Num
+                    value={o.value}
+                    onChange={(v) => upd((d) => void (d.objectives[oi].value = v))}
+                    min={0}
+                    step={o.type === 'hold' && sc.hours !== undefined ? 0.5 : 1}
+                    width={78}
+                    suffix={o.type !== 'hold' ? '%' : sc.hours !== undefined ? 'ч' : 'ход'}
+                    title={
+                      o.type === 'hold' && sc.hours !== undefined
+                        ? `Сколько удерживать позицию: ${fmtDuration(o.value)} (${turnsFor(o.value, rs)}-й ход)`
+                        : undefined
+                    }
+                  />
+                )}
+                <span className="faint small" data-tip="Вес задачи в итоговой оценке">
+                  вес
+                </span>
+                <Num value={o.weight} onChange={(v) => upd((d) => void (d.objectives[oi].weight = v))} min={0} step={0.5} width={48} />
+                <Btn sm kind="ghost" icon onClick={() => upd((d) => void d.objectives.splice(oi, 1))} title="Убрать задачу">
+                  ×
+                </Btn>
               </div>
-              {OBJECTIVE_HAS_VALUE[o.type] && (
-                <Num
-                  value={o.value}
-                  onChange={(v) => upd((d) => void (d.objectives[oi].value = v))}
-                  min={0}
-                  step={o.type === 'hold' && sc.hours !== undefined ? 0.5 : 1}
-                  width={78}
-                  suffix={o.type !== 'hold' ? '%' : sc.hours !== undefined ? 'ч' : 'ход'}
-                  title={
-                    o.type === 'hold' && sc.hours !== undefined
-                      ? `Сколько удерживать позицию: ${fmtDuration(o.value)} (${turnsFor(o.value, rs)}-й ход)`
-                      : undefined
-                  }
-                />
-              )}
-              <span className="faint small" data-tip="Вес задачи в итоговой оценке">
-                вес
-              </span>
-              <Num value={o.weight} onChange={(v) => upd((d) => void (d.objectives[oi].weight = v))} min={0} step={0.5} width={48} />
-              <Btn sm kind="ghost" icon onClick={() => upd((d) => void d.objectives.splice(oi, 1))} title="Убрать задачу">
-                ×
-              </Btn>
-            </div>
+              <ObjectiveScope sc={rsc} i={i} o={o} set={(fn) => upd((d) => fn(d.objectives[oi]))} />
+            </Fragment>
           ))}
           <Btn
             sm
@@ -1148,5 +1167,36 @@ function ForceRatio({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
         Огонь — на начальной дистанции, без учёта условий и состояния.
       </p>
     </Section>
+  );
+}
+
+/** Где считается задача: участок и подразделение (своё — удержать, сохранить, без бегства; противника — остальные). */
+function ObjectiveScope({ sc, i, o, set }: { sc: Scenario; i: number; o: Objective; set: (fn: (o: Objective) => void) => void }) {
+  const own = ['hold', 'preserve', 'noRout'].includes(o.type);
+  const sd = sc.sides[own ? i : 1 - i];
+  const nodes: { value: string; label: string }[] = [];
+  for (const f of sd.formations) walkUnits(f, (n, _p, depth) => void nodes.push({ value: n.id, label: `${'\u00a0\u00a0'.repeat(depth)}${n.name}` }));
+  const sectors = sc.sectors ?? [];
+  if (sectors.length < 2 && !nodes.length) return null;
+  return (
+    <div className="row obj-scope">
+      {sectors.length > 1 && (
+        <Sel
+          value={o.sectorId ?? ''}
+          onChange={(v) => set((x) => void (v ? (x.sectorId = v) : delete x.sectorId))}
+          options={[{ value: '', label: 'на всём поле' }, ...sectors.map((x) => ({ value: x.id, label: `участок «${x.name}»` }))]}
+          width={160}
+        />
+      )}
+      <Sel
+        value={o.nodeId ?? ''}
+        onChange={(v) => set((x) => void (v ? (x.nodeId = v) : delete x.nodeId))}
+        options={[{ value: '', label: own ? 'все свои силы' : 'все силы противника' }, ...nodes]}
+        width={200}
+        title={
+          own ? 'Своё подразделение: удержать, сохранить, не допустить бегства' : `Подразделение противника («${sd.name}»): разбить, нанести потери, разведать`
+        }
+      />
+    </div>
   );
 }

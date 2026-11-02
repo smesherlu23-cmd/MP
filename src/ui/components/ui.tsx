@@ -227,6 +227,9 @@ export function Area(props: { value: string; onChange: (v: string) => void; plac
   );
 }
 
+/** Подсказка выбранного значения: название и описание (у приказа, варианта условий…). */
+const selTitle = (o: { label: string; title?: string } | undefined) => (o ? (o.title ? `${o.label} — ${o.title}` : o.label) : undefined);
+
 export function Sel<T extends string | number>(props: {
   value: T;
   onChange: (v: T) => void;
@@ -253,7 +256,7 @@ export function Sel<T extends string | number>(props: {
       value={String(props.value)}
       disabled={props.disabled}
       // Без своей подсказки — выбранное значение целиком (на случай, если в узком поле оно не поместилось).
-      title={props.title ?? props.options.find((o) => String(o.value) === String(props.value))?.label}
+      title={props.title ?? selTitle(props.options.find((o) => String(o.value) === String(props.value)))}
       style={props.width ? { width: props.width } : undefined}
       onChange={(e) => props.onChange((isNum ? Number(e.target.value) : e.target.value) as T)}
     >
@@ -574,9 +577,11 @@ export function Card(props: {
   tight?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  /** Метка для перехода к карточке (revealAnchor). */
+  anchor?: string;
 }) {
   return (
-    <div className={`card ${props.className ?? ''}`} style={props.style}>
+    <div className={`card ${props.className ?? ''}`} style={props.style} data-anchor={props.anchor}>
       {(props.title || props.actions) && (
         <div className="card-head">
           <h3>{props.title}</h3>

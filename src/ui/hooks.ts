@@ -37,3 +37,22 @@ export function openUnit(ref: string, nodeId: string) {
   setTabState(`${tabKey('formation', ref)}:sel`, nodeId);
   openTab('formation', ref);
 }
+
+/**
+ * Прокрутить к карточке с data-anchor и подсветить её — после перехода на вкладку (быстрый переход,
+ * ссылки из проверок). Ждёт, пока карточка появится, не дольше секунды.
+ */
+export function revealAnchor(anchor: string) {
+  let tries = 0;
+  const step = () => {
+    const el = document.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(anchor)}"]`);
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.remove('flash');
+      void el.offsetWidth;
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 1600);
+    } else if (tries++ < 60) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}

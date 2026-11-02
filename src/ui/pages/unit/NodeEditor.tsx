@@ -21,6 +21,7 @@ import {
 } from '../../../engine';
 import { Link } from '../../components/Link';
 import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, fmt0, pressable } from '../../components/ui';
+import { TagChips } from '../../components/TagChips';
 import { instantiateLibrary, returnPart, updateCopy } from '../../store';
 import { type Ctx, canInsertTemplate, nodeActions } from './model';
 
@@ -59,6 +60,8 @@ export function InheritRange(props: {
     </Field>
   );
 }
+
+const fmtPct = (v: number) => `${String(Math.round(v * 10) / 10).replace('.', ',')}%`;
 
 export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
   const { rs } = ctx;
@@ -382,11 +385,16 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
       >
         <div className="stack" style={{ gap: 10 }}>
           <div className="row">
-            <Field label="Атака, %" hint="100% — как в каталоге. Особое вооружение, выучка, тактика.">
+            <Field
+              label="Атака, %"
+              hint="100% — как в каталоге. Особое вооружение, выучка, тактика. Действует на всех подчинённых и перемножается со старшими: батальон 120% × рота 110% = 132%."
+            >
               <Num value={node.attackMod} onChange={(v) => un((n) => void (n.attackMod = v))} min={0} />
+              {pr.attack !== 100 && <div className="ref-line">с учётом старших: {fmtPct((pr.attack * node.attackMod) / 100)}</div>}
             </Field>
-            <Field label="Защита, %">
+            <Field label="Защита, %" hint="Как атака: действует на подчинённых и перемножается со старшими.">
               <Num value={node.defenseMod} onChange={(v) => un((n) => void (n.defenseMod = v))} min={1} />
+              {pr.defense !== 100 && <div className="ref-line">с учётом старших: {fmtPct((pr.defense * node.defenseMod) / 100)}</div>}
             </Field>
           </div>
           {typeTags.length > 0 && (
@@ -394,13 +402,7 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
               label="Теги"
               hint={`Особенности типов в составе: задаются у типов в наборе правил («Типы»), по ним работают свои правила.${rs.reconTag ? ` Тег «${rs.reconTag}» — разведчик.` : ''}`}
             >
-              <div className="tags readonly">
-                {typeTags.map((t) => (
-                  <span key={t} className="chip">
-                    {t}
-                  </span>
-                ))}
-              </div>
+              <TagChips tags={typeTags} rs={rs} />
             </Field>
           )}
           {node.tags.length > 0 && (

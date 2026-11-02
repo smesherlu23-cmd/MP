@@ -2,7 +2,7 @@
 // об объекте во всплывающем окне — без перехода на его страницу. Пробел или Esc закрывают.
 
 import { useEffect, type ReactNode } from 'react';
-import { plural, resolveScenario, sideUnits, summarizeUnits } from '../../engine';
+import { compositionTags, plural, resolveScenario, sideUnits, summarizeUnits, walkUnits, type Ruleset, type UnitNode } from '../../engine';
 import { OBJ_ICON, OBJ_NOUN, objName, openObj, quickLook, useQuickLook, type Obj } from '../objects';
 import { fmtWhen } from '../pages/HomePage';
 import { StateLine, StrengthBar } from '../pages/ForcesPage';
@@ -25,6 +25,34 @@ function Facts({ items }: { items: [string, ReactNode][] }) {
   );
 }
 
+/** Описание или заметки объекта — первые строки. */
+function Note({ text }: { text?: string }) {
+  const t = text?.trim();
+  if (!t) return null;
+  return <div className="ql-note">{t.length > 400 ? `${t.slice(0, 400)}…` : t}</div>;
+}
+
+/** Теги подразделения — теги типов его состава по всему дереву. */
+function TreeTags({ root, rs }: { root: UnitNode; rs: Ruleset | undefined }) {
+  if (!rs) return null;
+  const set = new Set<string>();
+  walkUnits(root, (n) => {
+    for (const t of compositionTags(rs, n.composition)) set.add(t);
+  });
+  if (!set.size) return null;
+  return (
+    <div className="tags readonly">
+      {[...set]
+        .sort((a, b) => a.localeCompare(b, 'ru'))
+        .map((t) => (
+          <span key={t} className="tag" data-tip={rs.tagDescriptions?.[t]}>
+            {t}
+          </span>
+        ))}
+    </div>
+  );
+}
+
 function Body({ o }: { o: Obj }) {
   const s = useApp();
   if (o.kind === 'scenario') {
@@ -34,6 +62,7 @@ function Body({ o }: { o: Obj }) {
     const sides = rs ? resolveScenario(sc, s.forces).sides : [];
     return (
       <>
+        <Note text={sc.description} />
         <div className="ql-sides">
           {sides.map((sd) => {
             const sum = summarizeUnits(sideUnits(sd), rs!);
@@ -79,6 +108,8 @@ function Body({ o }: { o: Obj }) {
           <StrengthBar label="Техника" cur={c.equipCur} auth={c.equipAuth} back={c.repair} backText={`в ремонте ${fmt0(c.repair)}`} unit="ед." />
         )}
         <StateLine c={c} />
+        <TreeTags root={f} rs={s.rulesets[f.rulesetId ?? defaultRulesetId() ?? '']} />
+        <Note text={f.notes} />
         <Facts
           items={[
             ['Шаблон', tpl?.name ?? '—'],
@@ -97,6 +128,8 @@ function Body({ o }: { o: Obj }) {
     const forces = templateUsages(f.id).filter((u) => u.ref.startsWith('force:')).length;
     return (
       <>
+        <TreeTags root={f} rs={rs} />
+        <Note text={f.notes} />
         <Facts
           items={[
             ['Уровень', f.level || '—'],
@@ -123,16 +156,19 @@ function Body({ o }: { o: Obj }) {
     const r = s.rulesets[o.id];
     const used = Object.values(s.scenarios).filter((x) => x.rulesetId === r.id).length;
     return (
-      <Facts
-        items={[
-          ['Эпоха', r.era || '—'],
-          ['Типов вооружения', r.componentTypes.length],
-          ['Приказов', r.orders.length],
-          ['Дистанций', r.rangeBands.map((b) => b.name).join(', ')],
-          ['Сценариев', used || '—'],
-          ['Изменён', fmtWhen(r.updatedAt) || '—'],
-        ]}
-      />
+      <>
+        <Note text={r.description} />
+        <Facts
+          items={[
+            ['Эпоха', r.era || '—'],
+            ['Типов вооружения', r.componentTypes.length],
+            ['Приказов', r.orders.length],
+            ['Дистанций', r.rangeBands.map((b) => b.name).join(', ')],
+            ['Сценариев', used || '—'],
+            ['Изменён', fmtWhen(r.updatedAt) || '—'],
+          ]}
+        />
+      </>
     );
   }
   const b = s.battleIndex[o.id];

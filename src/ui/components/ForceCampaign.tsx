@@ -398,6 +398,8 @@ export const KIND_ICON: Record<ForceRecord['kind'], IconName> = {
   replenish: 'replenish',
   transfer: 'transfer',
   restore: 'restore',
+  experience: 'star',
+  note: 'pencil',
 };
 
 /** Потери людей в бою по видам — для подсказки; в записях прежних версий разбивки нет. */
