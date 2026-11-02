@@ -1,6 +1,6 @@
 // Набор правил: каталог типов (карточки и таблица), классы целей и дистанции.
 
-import { KIND_LABELS, clone, dec, newId, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
+import { KIND_LABELS, clone, dec, newId, rulesetTags, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
 import { Btn, Card, Check, Field, Info, Menu, Num, ScrollX, Sel, Seg, Tags, Txt, pressable } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { openTab, toastUndoable, useApp } from '../../store';
@@ -63,7 +63,7 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
     );
     setSel(id);
   };
-  const allTags = [...new Set(r.componentTypes.flatMap((x) => x.tags).concat(r.reconTag ? [r.reconTag] : []))];
+  const allTags = rulesetTags(r);
   return (
     <>
       <div className="row">
@@ -266,7 +266,10 @@ export function TypeEditor({
         </Field>
       </div>
       <div style={{ marginTop: 12 }}>
-        <Field label="Теги" hint={`Используются в своих правилах. Тег «${r.reconTag}» делает тип разведчиком.`}>
+        <Field
+          label="Теги"
+          hint={`Особенности типа: «кавалерия», «ночное видение», «сапёр». Подразделение получает теги всех типов своего состава, по ним работают свои правила.${r.reconTag ? ` Тег «${r.reconTag}» делает тип разведчиком.` : ''}`}
+        >
           <Tags value={t.tags} onChange={(v) => ut((x) => void (x.tags = v))} suggestions={allTags} />
         </Field>
       </div>
@@ -383,6 +386,7 @@ export function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => 
                       навесной
                     </span>
                   )}
+                  {t.tags.length > 0 && <div className="faint small">{t.tags.join(', ')}</div>}
                 </td>
                 <td className="small">{KIND_LABELS[t.kind]}</td>
                 <td className="small">{r.targetClasses.find((c) => c.id === t.targetClass)?.name}</td>

@@ -8,6 +8,7 @@ import {
   OP_LABELS,
   clone,
   newId,
+  rulesetTags,
   type ComponentKind,
   type ConditionOp,
   type CustomModifier,
@@ -93,7 +94,10 @@ export function ConditionRow({
   ];
   const multi = c.op === 'in' || c.op === 'nin';
   const arr = Array.isArray(c.value) ? c.value.map(String) : [String(c.value)];
-  const allTags = [...new Set(r.componentTypes.flatMap((t) => t.tags))];
+  const allTags = rulesetTags(r);
+  // Тег — особенность типа: тег, которого нет ни у одного типа (опечатка, тип удалён), правило не включит никогда.
+  const typeTag = (t: string) => t === r.reconTag || r.componentTypes.some((x) => x.tags.includes(t));
+  const lostTag = info.kind === 'tag' && !!arr[0]?.trim() && !typeTag(arr[0].trim());
   return (
     <div className="cond-row">
       <Sel
@@ -140,6 +144,8 @@ export function ConditionRow({
               onChange={(e) => onChange({ ...c, value: e.target.value })}
               placeholder="тег"
               style={{ width: '100%' }}
+              className={lostTag ? 'invalid' : undefined}
+              data-tip={lostTag ? 'Такого тега нет ни у одного типа — условие не выполнится. Теги задаются у типов («Типы»).' : undefined}
             />
             <datalist id="mod-tags">
               {allTags.map((t) => (

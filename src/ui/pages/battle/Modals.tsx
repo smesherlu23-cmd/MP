@@ -66,6 +66,7 @@ export function ElementModal({
   const rs = b.ruleset;
   const fs = E.formationOf(el);
   const st = statusOf(E, el);
+  const tags = E.tags(el);
   const canEdit = !b.finished && el.status === 'active';
   const editing = edit && canEdit;
   const selfRef = `[[e:${el.id}]]`;
@@ -147,6 +148,7 @@ export function ElementModal({
       <div className="meta" style={{ marginBottom: 14 }}>
         <span>{fs.name}</span>
         <span>опыт: {rs.experienceLevels[el.experience - 1]?.name}</span>
+        {tags.length > 0 && <span data-tip="Теги типов в составе элемента: по ним работают свои правила набора">теги: {tags.join(', ')}</span>}
         <span>
           {fmt0(E.personnel(el))} из {fmt0(el.startPersonnel)} чел.
         </span>

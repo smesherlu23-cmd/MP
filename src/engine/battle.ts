@@ -345,7 +345,6 @@ function makeElement(
     orderId,
     holdFast: !!d.holdFast,
     isHQ: !!d.isHQ,
-    ownTags: [...(d.tags ?? [])],
     comps,
     experience: clamp(Math.round(st.experience || 1), 1, maxExp),
     morale: clamp(st.morale, 0, 100),

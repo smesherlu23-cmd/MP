@@ -221,10 +221,11 @@ export class EngineContext {
     return side === 'A' ? 'B' : 'A';
   }
 
+  /** Теги элемента — теги типов его состава (тех, что ещё в строю); у боёв прежних версий — и теги подразделения. */
   tags(el: ElementState): string[] {
     let t = this.tagCache.get(el.id);
     if (!t) {
-      const set = new Set(el.ownTags);
+      const set = new Set(el.ownTags ?? []);
       for (const c of el.comps) if (c.current > 0) for (const tag of this.type(c.typeId).tags) set.add(tag);
       t = [...set];
       this.tagCache.set(el.id, t);

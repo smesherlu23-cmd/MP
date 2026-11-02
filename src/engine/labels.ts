@@ -1,7 +1,19 @@
 // Человекочитаемые названия для журнала, отчётов и интерфейса.
 
 import { fmtDuration } from './duration';
-import type { Behavior, ComponentKind, ConditionOp, Echelon, ElementStatus, ObjectiveType, ScenarioEventKind, StatKey, TriggerMetric } from './types';
+import type {
+  Behavior,
+  ComponentEntry,
+  ComponentKind,
+  ConditionOp,
+  Echelon,
+  ElementStatus,
+  ObjectiveType,
+  Ruleset,
+  ScenarioEventKind,
+  StatKey,
+  TriggerMetric,
+} from './types';
 
 export const STAT_LABELS: Record<StatKey, string> = {
   fire: 'Огонь',
@@ -167,3 +179,24 @@ export const TRIGGER_LABELS: Record<TriggerMetric, string> = {
   morale: 'мораль ≤',
   band: 'дистанция',
 };
+
+/** Все теги набора правил — для подсказок: теги типов, тег разведки и теги из условий своих правил. */
+export function rulesetTags(r: Pick<Ruleset, 'componentTypes' | 'reconTag' | 'modifiers'>): string[] {
+  const out = new Set<string>();
+  for (const t of r.componentTypes) for (const tag of t.tags) out.add(tag);
+  if (r.reconTag) out.add(r.reconTag);
+  for (const m of r.modifiers)
+    for (const c of m.when)
+      if (c.field === 'tag' || c.field === 'enemy.tag') for (const v of Array.isArray(c.value) ? c.value : [c.value]) if (String(v).trim()) out.add(String(v));
+  return [...out];
+}
+
+/** Теги подразделения — теги типов его состава, которые в строю: в бою элемент получает их все. */
+export function compositionTags(r: Pick<Ruleset, 'componentTypes'>, composition: ComponentEntry[]): string[] {
+  const out = new Set<string>();
+  for (const c of composition) {
+    if (!(c.current > 0)) continue;
+    for (const tag of r.componentTypes.find((t) => t.id === c.typeId)?.tags ?? []) out.add(tag);
+  }
+  return [...out];
+}

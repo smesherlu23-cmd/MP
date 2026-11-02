@@ -236,6 +236,10 @@ export interface UnitNode {
   isHQ: boolean;
   /** «Стоять насмерть»: не отходит добровольно. */
   holdFast: boolean;
+  /**
+   * Теги подразделения из прежних версий. Тег — особенность типа (задаётся у типа в наборе правил): у
+   * подразделения теги больше не задаются и в расчёте не участвуют, а прежние показываются, чтобы ГМ их убрал.
+   */
   tags: string[];
   notes?: string;
   /** Корень копии: по какому шаблону создано (силы или копия внутри другого шаблона). */
@@ -483,7 +487,8 @@ export interface ElementState {
   orderId: Id;
   holdFast: boolean;
   isHQ: boolean;
-  ownTags: string[];
+  /** Теги подразделения в боях прежних версий; в новых боях теги элемента — только теги типов его состава. */
+  ownTags?: string[];
   comps: CompState[];
   experience: number;
   morale: number;

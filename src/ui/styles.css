@@ -857,6 +857,13 @@ input.invalid {
   padding: 3px;
   min-height: var(--row);
 }
+/* Только показ (теги типов в составе подразделения, в окне элемента): без рамки поля ввода. */
+.tags.readonly {
+  border: none;
+  background: none;
+  padding: 0;
+  min-height: 0;
+}
 .tags input {
   border: none;
   background: transparent;

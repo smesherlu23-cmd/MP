@@ -90,6 +90,8 @@ import {
   scenarioToHours,
   turnsFor,
   computeResult,
+  rulesetTags,
+  compositionTags,
   type Battle,
   type UnitNode,
   type Ruleset,
@@ -1497,5 +1499,46 @@ describe('импорт файлов', () => {
     expect(fromNewerVersion({ dataVersion: DATA_VERSION + 1 }, DATA_VERSION, SCHEMA_VERSION)).toBe(true);
     expect(fromNewerVersion({ schemaVersion: SCHEMA_VERSION + 1 }, DATA_VERSION, SCHEMA_VERSION)).toBe(true);
     expect(fromNewerVersion({}, DATA_VERSION, SCHEMA_VERSION)).toBe(false);
+  });
+});
+
+describe('теги — особенность типа', () => {
+  const sniperRule = (rs: Ruleset) =>
+    rs.modifiers.push({ id: 'm-sniper', name: 'Снайперы', enabled: true, when: [{ field: 'tag', op: 'has', value: 'снайпер' }], effects: { concealment: 2 } });
+
+  it('элемент получает теги типов состава; теги подразделения не действуют, бои прежних версий — как были', () => {
+    const rs = makeUniversalRuleset();
+    sniperRule(rs);
+    const a = infantry('Синие', 30, 'defend');
+    a.children[0].tags = ['снайпер'];
+    const sc = duel(rs, a, infantry('Красные', 30));
+    const blue = (b: Battle) => b.elements.find((x) => x.side === 'A')!;
+
+    const b = createBattle(sc, rs, { seed: 'TAG' });
+    expect(blue(b).ownTags).toBeUndefined();
+    expect(new EngineContext(b).tags(blue(b))).not.toContain('снайпер');
+    const base = new EngineContext(b).mult(blue(b), 'concealment');
+
+    // Бой, начатый до обновления: теги подразделения записаны в элемент и по-прежнему действуют.
+    const old = createBattle(sc, rs, { seed: 'TAG' });
+    blue(old).ownTags = ['снайпер'];
+    expect(new EngineContext(old).mult(blue(old), 'concealment')).toBeCloseTo(base * 2);
+
+    // Тег у типа — у всех подразделений, где этот тип в строю.
+    const rs2 = makeUniversalRuleset();
+    sniperRule(rs2);
+    rs2.componentTypes.find((t) => t.id === 'rifleman')!.tags.push('снайпер');
+    const c = createBattle(duel(rs2, infantry('Синие', 30, 'defend'), infantry('Красные', 30)), rs2, { seed: 'TAG' });
+    expect(new EngineContext(c).tags(blue(c))).toContain('снайпер');
+    expect(new EngineContext(c).mult(blue(c), 'concealment')).toBeCloseTo(base * 2);
+  });
+
+  it('подсказки тегов — из типов, тега разведки и правил; теги состава — только типов в строю', () => {
+    const rs = makeUniversalRuleset();
+    rs.modifiers.push({ id: 'm-sap', name: 'Сапёры', enabled: true, when: [{ field: 'enemy.tag', op: 'has', value: 'сапёр' }], effects: { fire: 1.2 } });
+    expect(rulesetTags(rs)).toEqual(expect.arrayContaining(['разведка', 'сапёр', rs.reconTag]));
+    const scout = rs.componentTypes.find((t) => t.tags.includes('разведка'))!;
+    expect(compositionTags(rs, [{ typeId: scout.id, authorized: 3, current: 3 }])).toEqual(['разведка']);
+    expect(compositionTags(rs, [{ typeId: scout.id, authorized: 3, current: 0 }])).toEqual([]);
   });
 });

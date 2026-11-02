@@ -40,7 +40,10 @@ export function General({ r, upd }: { r: Ruleset; upd: Upd }) {
         <Field label="Минут в ходу" hint="Только для отображения времени боя.">
           <Num value={r.turnMinutes} onChange={(v) => upd((d) => void (d.turnMinutes = v))} min={1} integer width="100%" />
         </Field>
-        <Field label="Тег разведки" hint="Элементы и типы с этим тегом — лучшие наблюдатели, как при приказе «разведка».">
+        <Field
+          label="Тег разведки"
+          hint="Типы с этим тегом — лучшие наблюдатели, как при приказе «разведка»: тег получает подразделение, в составе которого есть такой тип."
+        >
           <Txt value={r.reconTag} onChange={(v) => upd((d) => void (d.reconTag = v))} />
         </Field>
       </div>
