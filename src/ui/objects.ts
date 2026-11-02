@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import type { IconName } from './components/Icon';
 import type { MenuItem } from './components/ui';
+import { sidebarShown } from './layout';
 import { exportScenario, startBattle } from './pages/ScenarioPage';
 import {
   branchBattleDialog,
@@ -182,7 +183,8 @@ export function startRename(o: Obj, at?: { where: 'side' | 'title'; row?: string
     }
     if (document.querySelector('.tb-name')?.checkVisibility()) return useRenaming.setState({ key, where: 'title', row: undefined });
   }
-  const el = document.querySelector<HTMLElement>(`.sidebar [data-obj="${CSS.escape(key)}"]`);
+  // В скрытой боковой панели переименовать на месте нельзя — тогда отдельным окном.
+  const el = sidebarShown() ? document.querySelector<HTMLElement>(`.sidebar [data-obj="${CSS.escape(key)}"]`) : null;
   if (el) return useRenaming.setState({ key, where: 'side', row: el.dataset.row });
   void promptDialog(`Новое название: ${OBJ_NOUN[o.kind].toLowerCase()}`, objName(o) ?? '').then((v) => v !== null && renameObj(o, v));
 }

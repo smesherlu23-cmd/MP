@@ -1,7 +1,7 @@
 // Массовое моделирование сценария: вероятности исходов, средние потери, разброс, список прогонов.
 
 import { Icon } from '../components/Icon';
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, type ReactNode, useMemo, useState } from 'react';
 import { create } from 'zustand';
 import { createBattle, fmtDuration, newId, randomSeed, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
 import { Histogram, StackBar } from '../components/Charts';
@@ -52,6 +52,66 @@ const setRun = (id: string, patch: Partial<McState['runs'][string]>) => {
   if (patch.result) persist(useMC.getState().runs);
 };
 
+// ------------------------------------------------------------------ история прогонов
+
+/** Краткие итоги прежних прогонов сценария — сравнить «до и после правки». */
+interface HistEntry {
+  at: string;
+  n: number;
+  winA: number;
+  draw: number;
+  winB: number;
+  loss: Record<SideId, number>;
+  score: Record<SideId, number>;
+  hours: number;
+  /** Когда сценарий и набор правил менялись в последний раз (для пометки «что менялось»). */
+  scAt?: string;
+  rsAt?: string;
+}
+const HIST_KEY = 'warsim-mc-history';
+const HIST_KEEP = 5;
+
+function loadHist(): Record<string, HistEntry[]> {
+  try {
+    return JSON.parse(localStorage.getItem(HIST_KEY) ?? '{}') as Record<string, HistEntry[]>;
+  } catch {
+    return {};
+  }
+}
+
+const useHist = create<{ h: Record<string, HistEntry[]> }>(() => ({ h: loadHist() }));
+
+function saveHist(h: Record<string, HistEntry[]>) {
+  useHist.setState({ h });
+  try {
+    localStorage.setItem(HIST_KEY, JSON.stringify(h));
+  } catch {
+    // Не поместилось — история не обязательна.
+  }
+}
+
+function pushHist(scId: string, r: MonteCarloResult, scAt?: string, rsAt?: string) {
+  const m = (key: string) => r.metrics.find((x) => x.key === key)?.stats.mean ?? 0;
+  const e: HistEntry = {
+    at: new Date().toISOString(),
+    n: r.n,
+    winA: r.winA,
+    draw: r.draw,
+    winB: r.winB,
+    loss: { A: m('A.personnelLossPct'), B: m('B.personnelLossPct') },
+    score: { A: m('A.score'), B: m('B.score') },
+    hours: m('hours'),
+    scAt,
+    rsAt,
+  };
+  const h = useHist.getState().h;
+  // Не больше 30 сценариев с историей: дольше всех не прогонявшиеся забываются.
+  const keep = Object.entries({ ...h, [scId]: [e, ...(h[scId] ?? [])].slice(0, HIST_KEEP) })
+    .sort(([, a], [, b]) => (b[0]?.at ?? '').localeCompare(a[0]?.at ?? ''))
+    .slice(0, 30);
+  saveHist(Object.fromEntries(keep));
+}
+
 const SIDES: SideId[] = ['A', 'B'];
 
 export function MonteCarloPage({ tab }: { tab: Tab }) {
@@ -79,6 +139,7 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
         () => !!useMC.getState().runs[sc.id]?.cancel,
       );
       setRun(sc.id, { running: false, result: res, at: new Date().toISOString() });
+      if (res.n) pushHist(sc.id, res, sc.updatedAt, rs.updatedAt);
     } catch (e) {
       setRun(sc.id, { running: false });
       toast(`Ошибка моделирования: ${(e as Error).message}`, 'bad');
@@ -192,6 +253,7 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
             </div>
           </Card>
           <MetricsTable r={r} colors={colors} metric={metric} setMetric={setMetric} tabKey={tab.key} scId={sc.id} />
+          {r.meta && <Breakdown r={r} colors={colors} metric={metric} setMetric={setMetric} />}
           <Section id="mc-runs" title="Отдельные прогоны" summary="любой можно открыть как полноценный бой" tight>
             <RunsTable r={r} scId={sc.id} colors={colors} />
           </Section>
@@ -202,6 +264,7 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
           Каждый прогон — полный бой без вмешательства ГМ: приказы из сценария, отход и паника — автоматически.
         </p>
       )}
+      <History scId={sc.id} colors={colors} names={[sc.sides[0].name, sc.sides[1].name]} />
       <div style={{ marginTop: 16 }}>
         <CompareSection sc={sc} rs={rs} />
       </div>
@@ -252,9 +315,10 @@ function MetricsTable({
         stats: { mean: f(st.mean), sd: f(st.sd), min: f(st.min), p10: f(st.p10), median: f(st.median), p90: f(st.p90), max: f(st.max) },
       };
     })();
-  const allKeys = [...new Set(r.metrics.filter((m) => m.side).map((m) => m.key.slice(2)))];
+  const allKeys = [...new Set(r.metrics.filter((m) => m.side && !isBreakdown(m.key)).map((m) => m.key.slice(2)))];
   const keys = all ? allKeys : allKeys.filter((k) => MAIN_METRICS.includes(k));
   const sel = SIDES.map((s) => r.metrics.find((m) => m.key === `${s}.${metric}`)).filter(Boolean) as MonteCarloResult['metrics'];
+  const selLabel = sel[0] ? (isBreakdown(sel[0].key) ? sel[0].label.replace(/\s+/g, ' ') : sel[0].label.trim()) : metric;
   const tip = (x: MonteCarloResult['metrics'][number]) =>
     `среднее ${fmt1(x.stats.mean)} · медиана ${fmt1(x.stats.median)} · 10–90%: ${fmt1(x.stats.p10)}–${fmt1(x.stats.p90)} · мин–макс: ${fmt1(x.stats.min)}–${fmt1(x.stats.max)} · σ ${fmt1(x.stats.sd)}`;
   const cells = (x?: MonteCarloResult['metrics'][number]) =>
@@ -348,7 +412,7 @@ function MetricsTable({
         </table>
       </Card>
       <div className="stack">
-        <Card title={`Распределение: ${sel[0]?.label.trim() ?? metric}${sel[0]?.unit ? `, ${sel[0].unit}` : ''}`}>
+        <Card title={`Распределение: ${selLabel}${sel[0]?.unit ? `, ${sel[0].unit}` : ''}`}>
           <Histogram
             series={sel.map((m) => ({ name: r.sideNames[m.side!], color: colors[m.side!], values: m.values }))}
             unit={sel[0]?.unit === '%' ? '%' : ''}
@@ -358,6 +422,199 @@ function MetricsTable({
           <Histogram series={[{ name: 'Часов', color: 'var(--accent)', values: hours.values }]} height={120} />
         </Card>
       </div>
+    </div>
+  );
+}
+
+/** Разбивка по задачам и формированиям — отдельная карточка, не в общем списке показателей. */
+const isBreakdown = (key: string) => /^[AB]\.(obj|unit)\./.test(key);
+
+/** Задачи сторон (в скольких прогонах выполнены) и потери формирований верхних уровней. */
+function Breakdown({ r, colors, metric, setMetric }: { r: MonteCarloResult; colors: Record<SideId, string>; metric: string; setMetric: (m: string) => void }) {
+  const meta = r.meta!;
+  const row = (side: SideId, key: string, label: ReactNode, value: ReactNode, tip: string) => (
+    <tr
+      key={key}
+      className={`${side}.${metric}` === key ? 'sel' : ''}
+      style={{ cursor: 'pointer' }}
+      onClick={() => setMetric(key.slice(2))}
+      title={`${tip}. Нажмите — гистограмма выше`}
+      {...pressable(() => setMetric(key.slice(2)))}
+    >
+      <td>{label}</td>
+      {value}
+    </tr>
+  );
+  return (
+    <Card
+      title={
+        <>
+          Задачи и подразделения{' '}
+          <Info text="Задачи: в какой доле прогонов задача выполнена полностью и среднее выполнение. Подразделения — подчинённые старшего (роты батальона, взводы роты): средние потери личного состава и диапазон 80% прогонов. Нажмите на строку — гистограмма." />
+        </>
+      }
+      tight
+    >
+      <div className="grid two align-start" style={{ gap: 0 }}>
+        {SIDES.map((side) => (
+          <table key={side} className="tbl compact">
+            <thead>
+              <tr>
+                <th style={{ color: colors[side] }}>{r.sideNames[side]}</th>
+                <th className="num">выполнена</th>
+                <th className="num">в среднем</th>
+              </tr>
+            </thead>
+            <tbody>
+              {meta.objectives[side].map((label, i) => {
+                const m = r.metrics.find((x) => x.key === `${side}.obj.${i}`);
+                if (!m) return null;
+                const done = m.values.length ? (m.values.filter((v) => v >= 99.5).length / m.values.length) * 100 : 0;
+                return row(
+                  side,
+                  m.key,
+                  label,
+                  <>
+                    <td className="num">
+                      <b>{fmt1(done)}%</b>
+                    </td>
+                    <td className="num">{fmt1(m.stats.mean)}%</td>
+                  </>,
+                  `Задача выполнена полностью в ${fmt1(done)}% прогонов`,
+                );
+              })}
+              {meta.units[side].length > 0 && (
+                <tr>
+                  <th>Подразделение</th>
+                  <th className="num">потери</th>
+                  <th className="num">10–90%</th>
+                </tr>
+              )}
+              {meta.units[side].map((u) => {
+                const m = r.metrics.find((x) => x.key === `${side}.unit.${u.id}`);
+                if (!m) return null;
+                return row(
+                  side,
+                  m.key,
+                  <span style={{ paddingLeft: u.depth * 14 }}>{u.name}</span>,
+                  <>
+                    <td className="num">
+                      <b>{fmt1(m.stats.mean)}%</b>
+                    </td>
+                    <td className="num muted small nowrap">
+                      {fmt1(m.stats.p10)}–{fmt1(m.stats.p90)}
+                    </td>
+                  </>,
+                  `Потери личного состава: медиана ${fmt1(m.stats.median)}%, мин–макс ${fmt1(m.stats.min)}–${fmt1(m.stats.max)}%`,
+                );
+              })}
+            </tbody>
+          </table>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/** Последние прогоны сценария: сравнить «до и после правки». */
+function History({ scId, colors, names }: { scId: string; colors: Record<SideId, string>; names: [string, string] }) {
+  const list = useHist((s) => s.h[scId]) ?? [];
+  if (list.length < 2) return null;
+  const delta = (v: number, prev: number | undefined) => {
+    if (prev === undefined) return null;
+    const d = v - prev;
+    if (Math.abs(d) < 0.05) return null;
+    return (
+      <span className="faint small">
+        {' '}
+        ({d > 0 ? '+' : '−'}
+        {fmt1(Math.abs(d))})
+      </span>
+    );
+  };
+  return (
+    <div style={{ marginTop: 16 }}>
+      <Section
+        id="mc-history"
+        title="Последние прогоны"
+        summary={`${list.length} — сравнить до и после правки`}
+        tight
+        actions={
+          <Btn
+            sm
+            kind="ghost"
+            onClick={() => {
+              const h = { ...useHist.getState().h };
+              h[scId] = h[scId].slice(0, 1);
+              saveHist(h);
+            }}
+            title="Оставить только последний"
+          >
+            Очистить
+          </Btn>
+        }
+      >
+        <table className="tbl compact">
+          <thead>
+            <tr>
+              <th>Когда</th>
+              <th className="num">Прогонов</th>
+              <th className="num" style={{ color: colors.A }}>
+                Победа: {names[0]}
+              </th>
+              <th className="num">Ничья</th>
+              <th className="num" style={{ color: colors.B }}>
+                Победа: {names[1]}
+              </th>
+              <th className="num">Потери {names[0]}</th>
+              <th className="num">Потери {names[1]}</th>
+              <th className="num">Задачи {names[0]}</th>
+              <th className="num">Задачи {names[1]}</th>
+              <th className="num">Длительность</th>
+              <th>Что менялось</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((x, i) => {
+              const prev = list[i + 1];
+              const changed = prev
+                ? [x.scAt !== prev.scAt ? 'сценарий' : '', x.rsAt !== prev.rsAt ? 'набор правил' : ''].filter(Boolean).join(', ') || 'ничего'
+                : '';
+              return (
+                <tr key={x.at}>
+                  <td className="nowrap">{fmtDate(x.at)}</td>
+                  <td className="num">{x.n}</td>
+                  <td className="num">
+                    <b>{fmt1(x.winA)}%</b>
+                    {delta(x.winA, prev?.winA)}
+                  </td>
+                  <td className="num">
+                    {fmt1(x.draw)}%{delta(x.draw, prev?.draw)}
+                  </td>
+                  <td className="num">
+                    <b>{fmt1(x.winB)}%</b>
+                    {delta(x.winB, prev?.winB)}
+                  </td>
+                  <td className="num">
+                    {fmt1(x.loss.A)}%{delta(x.loss.A, prev?.loss.A)}
+                  </td>
+                  <td className="num">
+                    {fmt1(x.loss.B)}%{delta(x.loss.B, prev?.loss.B)}
+                  </td>
+                  <td className="num">
+                    {fmt1(x.score.A)}%{delta(x.score.A, prev?.score.A)}
+                  </td>
+                  <td className="num">
+                    {fmt1(x.score.B)}%{delta(x.score.B, prev?.score.B)}
+                  </td>
+                  <td className="num">{fmtDuration(x.hours)}</td>
+                  <td className="small muted">{changed}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Section>
     </div>
   );
 }
@@ -474,6 +731,8 @@ function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): stri
       `${s}_score`,
     );
     for (const id of typeIds) head.push(`${s}_loss_${types.find((t) => t.id === id)?.name ?? id}`);
+    r.meta?.objectives[s].forEach((label, i) => head.push(`${s}_objective_${i + 1} ${label}`));
+    for (const u of r.meta?.units[s] ?? []) head.push(`${s}_unit_loss_pct ${u.name}`);
   }
   const q = (v: string | number) => (typeof v === 'number' ? String(Math.round(v * 100) / 100) : `"${v.replace(/"/g, '""')}"`);
   const lines = [head.map((h) => q(h)).join(';')];
@@ -483,6 +742,8 @@ function toCsv(r: MonteCarloResult, types: { id: string; name: string }[]): stri
       const d = x.sides[s];
       row.push(d.personnelLoss, d.personnelLossPct, d.kia, d.wia, d.mia, d.valueLossPct, d.ce, d.organization, d.morale, d.ammo, d.score);
       for (const id of typeIds) row.push(d.equipmentLoss[id] ?? 0);
+      r.meta?.objectives[s].forEach((_, i) => row.push(d.objectives?.[i] ?? ''));
+      for (const u of r.meta?.units[s] ?? []) row.push(d.units?.[u.id] ?? '');
     }
     lines.push(row.map(q).join(';'));
   }

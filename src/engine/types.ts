@@ -72,7 +72,13 @@ export interface ComponentType extends Named {
   ammoUse: number;
   /** Расход топлива, % за ход движения (только техника). */
   fuelUse: number;
+  /** Особенности типа: по ним работают свои правила набора («если тег …»), тег разведки. */
   tags: string[];
+  /**
+   * Свои множители типа (скрытность снайпера, наблюдение разведчика…). В элементе действуют по доле
+   * боевой ценности типа в его составе: 1 + (N − 1) × доля.
+   */
+  effects?: Effects;
 }
 
 /** Поведение — то, как движок трактует приказ. */
@@ -107,6 +113,7 @@ export type ConditionOp = 'eq' | 'neq' | 'in' | 'nin' | 'has' | 'not_has' | 'gte
 export interface ModifierCondition {
   /** Поле контекста: cond.<категория>, range, turn, order, behavior, tag, kind, experience, side,
    *  echelon, fortification, intel, sector, targetClass; состояние — morale, cohesion, suppression, fatigue, ammo,
+   *  readiness, fuel, equipment, vehicleCondition, comms, supply, commandLevel, hq, holdFast, spotted,
    *  losses (потери элемента, %), sideLosses (потери стороны, %); enemy.<поле> — то же у противника. */
   field: string;
   op: ConditionOp;
@@ -117,6 +124,13 @@ export interface ModifierCondition {
 export interface CustomModifier extends Named {
   enabled: boolean;
   when: ModifierCondition[];
+  /** Достаточно любого из условий (иначе — все). */
+  any?: boolean;
+  /**
+   * По доле: множитель ослабляется по доле боевой ценности типов элемента, подходящих под условия
+   * правила на свои теги и состав: 1 + (N − 1) × доля. Иначе действует на весь элемент.
+   */
+  byShare?: boolean;
   effects: Effects;
 }
 
@@ -185,6 +199,8 @@ export interface Ruleset {
   tempEffects: EffectDef[];
   outcomeLevels: OutcomeLevel[];
   coefficients: Coefficients;
+  /** Описания тегов (тег → текст): подсказка у тега в каталоге, на схеме и в бою. */
+  tagDescriptions?: Record<string, string>;
   updatedAt?: string;
 }
 
@@ -236,6 +252,10 @@ export interface UnitNode {
   isHQ: boolean;
   /** «Стоять насмерть»: не отходит добровольно. */
   holdFast: boolean;
+  /**
+   * Теги подразделения из прежних версий. Тег — особенность типа (задаётся у типа в наборе правил): у
+   * подразделения теги больше не задаются и в расчёте не участвуют, а прежние показываются, чтобы ГМ их убрал.
+   */
   tags: string[];
   notes?: string;
   /** Корень копии: по какому шаблону создано (силы или копия внутри другого шаблона). */
@@ -273,7 +293,7 @@ export interface TransferOrigin {
 /** Запись боевого пути сил. */
 export interface ForceRecord {
   at: string;
-  kind: 'battle' | 'rest' | 'heal' | 'repair' | 'supply' | 'replenish' | 'transfer' | 'restore';
+  kind: 'battle' | 'rest' | 'heal' | 'repair' | 'supply' | 'replenish' | 'transfer' | 'restore' | 'experience' | 'note';
   title: string;
   battleId?: Id;
   /** Итог боя для стороны этих сил: «Победа (решительная)», «Поражение»… */
@@ -300,6 +320,13 @@ export interface Objective {
   value: number;
   weight: number;
   label?: string;
+  /** Только на этом участке (удержать участок, потери на участке). */
+  sectorId?: Id;
+  /**
+   * Только это подразделение (узел сил): своё — для hold, preserve, noRout; противника — для inflict, recon.
+   * Не задано — вся сторона.
+   */
+  nodeId?: Id;
 }
 
 /** Подразделение сил на стороне сценария: целиком или его часть (узел внутри него). */
@@ -408,7 +435,7 @@ export interface Scenario {
  * приказа подразделению, conditions — смена условий (ночь, дождь…), strike — удар огневой поддержки,
  * effect — временный эффект (дымовая завеса, внезапность…).
  */
-export type ScenarioEventKind = 'arrive' | 'order' | 'conditions' | 'strike' | 'effect';
+export type ScenarioEventKind = 'arrive' | 'order' | 'conditions' | 'strike' | 'effect' | 'band' | 'resupply' | 'command' | 'fortification' | 'transfer';
 
 /**
  * Условие события: оно наступает в первый ход (не раньше turn), когда условие выполнено.
@@ -445,6 +472,21 @@ export interface ScenarioEvent {
   /** effect: заготовка эффекта из набора правил и срок, ходов (не задано — как в заготовке). */
   effectId?: Id;
   turns?: number;
+  /** conditions, band, fortification — участок (не задано — всё поле); transfer — куда перебросить. */
+  sectorId?: Id;
+  /** band: новая дистанция. */
+  bandId?: Id;
+  /** resupply: что и сколько процентов подвезти (подразделению nodeId или всей стороне). */
+  ammo?: number;
+  fuel?: number;
+  equipment?: number;
+  /** command: уровень командира формирования nodeId (0 — без командира), связь и снабжение, %. */
+  commandLevel?: number;
+  comms?: number;
+  supply?: number;
+  /** fortification: укрепления стороны side; intel — разведданные стороны. */
+  fortificationId?: Id;
+  intelId?: Id;
   /** Условие наступления; turn тогда — «не раньше хода». */
   trigger?: EventTrigger;
   /** Задержка после выполнения условия, ходов. */
@@ -483,7 +525,8 @@ export interface ElementState {
   orderId: Id;
   holdFast: boolean;
   isHQ: boolean;
-  ownTags: string[];
+  /** Теги подразделения в боях прежних версий; в новых боях теги элемента — только теги типов его состава. */
+  ownTags?: string[];
   comps: CompState[];
   experience: number;
   morale: number;
@@ -520,6 +563,8 @@ export interface ElementState {
   startMorale: number;
   /** Участок боя (если участков несколько). */
   sector?: Id;
+  /** Переброска на другой участок: в пути (вне боя) до начала хода until, затем в бою на участке to. */
+  transit?: { to: Id; until: number };
   /** Приказ ГМ, который ещё не дошёл до элемента (задержка приказов). */
   pendingOrder?: { orderId: Id; since: number };
   /** Свой командир элемента (0 — нет), его связь и снабжение (null — как у формирования). */
@@ -554,6 +599,8 @@ export interface SideState {
   objectives: Objective[];
   /** Ход, на котором сторона перестала удерживать позиции (0 — удерживает). */
   lostHoldTurn: number;
+  /** Задачи «удержать» на участке или подразделением: ключ задачи (objectiveScopeKey) → ход, когда позиция оставлена. */
+  lostHoldAt?: Record<string, number>;
   initiative: number;
   /** Удача и качество исполнения стороны в этом бою (множитель, выпадает в начале боя). */
   luck?: number;
@@ -632,7 +679,10 @@ export type InterventionType =
   | 'addEffect'
   | 'removeEffect'
   | 'strike'
-  | 'cancelStrike';
+  | 'cancelStrike'
+  | 'transfer'
+  | 'setSide'
+  | 'note';
 
 /** Участок в бою: своя дистанция и сближение. */
 export interface SectorState {

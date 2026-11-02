@@ -19,6 +19,21 @@ test('оргсхема, наследование и список', async ({ page
   expect(errors).toEqual([]);
 });
 
+test('теги — у типов: у подразделения видны теги типов состава, своих тегов нет', async ({ page }) => {
+  const errors = await openApp(page);
+  await openFromNav(page, '1-й мотострелковый батальон');
+  await page.locator('.org-box', { hasText: 'Разведвзвод' }).click();
+  const extra = page.locator('.section', { has: page.locator('.card-head', { hasText: 'Дополнительно' }) });
+  await expect(extra.locator('.sec-summary')).toContainText('разведка');
+  await extra.locator('.card-head').click();
+  await expect(extra.locator('.tags.readonly .chip', { hasText: 'разведка' })).toBeVisible();
+  await expect(extra.locator('.tags input')).toHaveCount(0);
+  // У роты без разведчиков тегов нет — и поля тоже.
+  await page.locator('.org-box', { hasText: '2-я мотострелковая рота' }).click();
+  await expect(extra.locator('.field', { hasText: 'Теги' })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test('шаблон: вставка ×3 с номерами и обновление всех копий', async ({ page }) => {
   const errors = await openApp(page);
   await openFromNav(page, 'Мотострелковая рота');

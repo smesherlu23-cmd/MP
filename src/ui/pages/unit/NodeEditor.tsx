@@ -7,6 +7,7 @@ import {
   KIND_LABELS,
   ROOT_RESOLVED,
   STATE_LABELS,
+  compositionTags,
   findParent,
   findUnit,
   isOutdated,
@@ -19,7 +20,8 @@ import {
   type UnitNode,
 } from '../../../engine';
 import { Link } from '../../components/Link';
-import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, Tags, fmt0, pressable } from '../../components/ui';
+import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, fmt0, pressable } from '../../components/ui';
+import { TagChips } from '../../components/TagChips';
 import { instantiateLibrary, returnPart, updateCopy } from '../../store';
 import { type Ctx, canInsertTemplate, nodeActions } from './model';
 
@@ -59,6 +61,8 @@ export function InheritRange(props: {
   );
 }
 
+const fmtPct = (v: number) => `${String(Math.round(v * 10) / 10).replace('.', ',')}%`;
+
 export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
   const { rs } = ctx;
   const isRoot = node.id === ctx.root.id;
@@ -79,6 +83,7 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
   );
   if (!expOptions.some((o) => o.value === 0)) expOptions.unshift({ value: 0, label: `${expName(pr.state.experience)} (${inheritText})` });
   const types = new Map(rs.componentTypes.map((t) => [t.id, t]));
+  const typeTags = compositionTags(rs, node.composition);
   let ownCur = 0;
   let ownAuth = 0;
   for (const c of node.composition) {
@@ -373,27 +378,43 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
         id="unit-extra"
         title="Дополнительно"
         summary={
-          [node.attackMod !== 100 && `атака ${node.attackMod}%`, node.defenseMod !== 100 && `защита ${node.defenseMod}%`, ...node.tags]
+          [node.attackMod !== 100 && `атака ${node.attackMod}%`, node.defenseMod !== 100 && `защита ${node.defenseMod}%`, ...typeTags]
             .filter(Boolean)
-            .join(', ') || 'атака и защита, теги, заметки'
+            .join(', ') || 'атака и защита, заметки'
         }
       >
         <div className="stack" style={{ gap: 10 }}>
           <div className="row">
-            <Field label="Атака, %" hint="100% — как в каталоге. Особое вооружение, выучка, тактика.">
+            <Field
+              label="Атака, %"
+              hint="100% — как в каталоге. Особое вооружение, выучка, тактика. Действует на всех подчинённых и перемножается со старшими: батальон 120% × рота 110% = 132%."
+            >
               <Num value={node.attackMod} onChange={(v) => un((n) => void (n.attackMod = v))} min={0} />
+              {pr.attack !== 100 && <div className="ref-line">с учётом старших: {fmtPct((pr.attack * node.attackMod) / 100)}</div>}
             </Field>
-            <Field label="Защита, %">
+            <Field label="Защита, %" hint="Как атака: действует на подчинённых и перемножается со старшими.">
               <Num value={node.defenseMod} onChange={(v) => un((n) => void (n.defenseMod = v))} min={1} />
+              {pr.defense !== 100 && <div className="ref-line">с учётом старших: {fmtPct((pr.defense * node.defenseMod) / 100)}</div>}
             </Field>
           </div>
-          <Field label="Теги" hint={`Используются в своих правилах. Тег «${rs.reconTag}» делает подразделение разведчиком.`}>
-            <Tags
-              value={node.tags}
-              onChange={(v) => un((n) => void (n.tags = v))}
-              suggestions={[...new Set(rs.componentTypes.flatMap((t) => t.tags).concat(rs.reconTag ? [rs.reconTag] : []))]}
-            />
-          </Field>
+          {typeTags.length > 0 && (
+            <Field
+              label="Теги"
+              hint={`Особенности типов в составе: задаются у типов в наборе правил («Типы»), по ним работают свои правила.${rs.reconTag ? ` Тег «${rs.reconTag}» — разведчик.` : ''}`}
+            >
+              <TagChips tags={typeTags} rs={rs} />
+            </Field>
+          )}
+          {node.tags.length > 0 && (
+            <div className="note warn small row" style={{ gap: 8 }}>
+              <span className="grow">
+                Теги подразделения из прежней версии — {node.tags.join(', ')} — больше не действуют: теги задаются у типов в наборе правил.
+              </span>
+              <Btn sm onClick={() => un((n) => void (n.tags = []))}>
+                Убрать
+              </Btn>
+            </div>
+          )}
           <Area value={node.notes ?? ''} onChange={(v) => un((n) => void (n.notes = v))} rows={2} placeholder="Заметки" />
         </div>
       </Section>

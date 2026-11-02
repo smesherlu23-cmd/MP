@@ -73,6 +73,7 @@ export function formatReport(b: Battle, opts: { includeLog?: boolean; logLevel?:
   const r = b.result;
   const lines: string[] = [];
   lines.push(`# ${b.name}`);
+  if (b.scenario.description?.trim()) lines.push(b.scenario.description.trim(), '');
   const cond = b.ruleset.conditions.map((c) => `${c.name}: ${c.options.find((o) => o.id === b.conditions[c.id])?.name ?? '—'}`).join(' · ');
   lines.push(`${cond}. Длительность: ${fmtDuration((b.turn * b.ruleset.turnMinutes) / 60)} (${b.turn} ход.).`);
   if (r) {
@@ -135,6 +136,7 @@ export function formatSideReport(b: Battle, side: SideId): string {
   const foe = r?.sides[foeId];
   const lines: string[] = [];
   lines.push(`# ${b.name} — донесение для стороны «${b.sides[side].name}»`);
+  if (b.scenario.description?.trim()) lines.push(b.scenario.description.trim(), '');
   const cond = b.ruleset.conditions.map((c) => `${c.name}: ${c.options.find((o) => o.id === b.conditions[c.id])?.name ?? '—'}`).join(' · ');
   lines.push(`${cond}. Длительность: ${fmtDuration((b.turn * b.ruleset.turnMinutes) / 60)} (${b.turn} ход.).`);
   if (!r || !own || !foe) {

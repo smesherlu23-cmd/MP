@@ -29,16 +29,20 @@ export function phaseInitiative(E: EngineContext): Initiative {
     let wsum = 0;
     let msum = 0;
     let csum = 0;
+    let rsum = 0;
     for (const el of els) {
       const w = Math.max(0.1, E.value(el));
       wsum += w;
       msum += w * E.mult(el, 'initiative');
       csum += w * E.comms(el);
+      rsum += w * el.readiness;
     }
     const m = msum / wsum;
     const comms = E.f.comms ? lerp(k.commsInitiativeMin, 1, csum / wsum) : 1;
+    // Готовность влияет на инициативу, только если коэффициент задан (по умолчанию 1 — не влияет).
+    const ready = E.f.readiness && k.readinessInitiativeMin < 1 ? lerp(k.readinessInitiativeMin, 1, rsum / wsum / 100) : 1;
     const rnd = E.rng.range(0, k.initiativeRandom);
-    scores[side] = 50 * m * comms + rnd;
+    scores[side] = 50 * m * comms * ready + rnd;
     if (E.logging) {
       const f: Factor[] = [{ label: 'База', value: 50, kind: 'base' }];
       const ref = els.reduce((a, x) => (E.value(x) > E.value(a) ? x : a), els[0]);
@@ -47,6 +51,7 @@ export function phaseInitiative(E: EngineContext): Initiative {
       f.push({ label: 'Средний множитель (опыт, командиры, условия, разведданные)', value: m, kind: 'mult' });
       for (const d of detail) f.push({ ...d, label: `  в т.ч. ${d.label}` });
       if (E.f.comms) f.push({ label: `Связь ${Math.round((csum / wsum) * 100)}%`, value: comms, kind: 'mult' });
+      if (ready !== 1) f.push({ label: `Готовность ${Math.round(rsum / wsum)}%`, value: ready, kind: 'mult' });
       f.push({ label: 'Случайность', value: round1(rnd), kind: 'add' });
       breakdown[side] = f;
     }

@@ -1,6 +1,6 @@
 // Снимок хода для графиков и окончание боя.
 
-import { type EngineContext, lerp } from '../context';
+import { type EngineContext, lerp, notArrived } from '../context';
 import { computeResult } from '../outcome';
 import type { Battle, ElementState, SideId, SideSnapshot } from '../types';
 import { SIDES, elementsOfNode } from './common';
@@ -24,7 +24,7 @@ export function snapshot(E: EngineContext) {
   const sides = {} as Record<SideId, SideSnapshot>;
   for (const side of SIDES) {
     // Не подошедшие подкрепления на графиках не видны — их подход заметен как рост сил.
-    const els = E.sideElements(side).filter((x) => x.status !== 'pending');
+    const els = E.sideElements(side).filter((x) => !notArrived(x));
     let vehicles = 0;
     for (const el of els) for (const c of el.comps) if (E.type(c.typeId).kind === 'vehicle') vehicles += c.current;
     const active = els.filter((x) => x.status === 'active');
@@ -49,10 +49,12 @@ export function snapshot(E: EngineContext) {
 
 /** Сторона ждёт подкреплений по плану (их ход ещё не наступил). */
 function awaitingReinforcements(b: Battle, side: SideId): boolean {
+  // Переброска между участками: часть ещё в пути — сторона не выбыла.
+  if (b.elements.some((x) => x.side === side && x.transit)) return true;
   return (b.scenario.events ?? []).some((ev) => {
     if (ev.kind !== 'arrive' || ev.side !== side || !ev.nodeId) return false;
     const t = eventTurn(b, ev);
-    return t !== undefined && t > b.turn && elementsOfNode(b, side, ev.nodeId).some((x) => x.status === 'pending');
+    return t !== undefined && t > b.turn && elementsOfNode(b, side, ev.nodeId).some((x) => notArrived(x));
   });
 }
 

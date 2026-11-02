@@ -1,7 +1,20 @@
 // Человекочитаемые названия для журнала, отчётов и интерфейса.
 
 import { fmtDuration } from './duration';
-import type { Behavior, ComponentKind, ConditionOp, Echelon, ElementStatus, ObjectiveType, ScenarioEventKind, StatKey, TriggerMetric } from './types';
+import type {
+  Behavior,
+  ComponentEntry,
+  ComponentKind,
+  ConditionOp,
+  Echelon,
+  ElementStatus,
+  Features,
+  ObjectiveType,
+  Ruleset,
+  ScenarioEventKind,
+  StatKey,
+  TriggerMetric,
+} from './types';
 
 export const STAT_LABELS: Record<StatKey, string> = {
   fire: 'Огонь',
@@ -108,7 +121,11 @@ export const OP_LABELS: Record<ConditionOp, string> = {
 export const MODIFIER_FIELDS: {
   field: string;
   label: string;
-  kind: 'order' | 'behavior' | 'tag' | 'kind' | 'number' | 'side' | 'echelon' | 'range' | 'class' | 'fort' | 'intel';
+  kind: 'order' | 'behavior' | 'tag' | 'kind' | 'number' | 'side' | 'echelon' | 'range' | 'class' | 'fort' | 'intel' | 'bool';
+  /** Механика, без которой поле не имеет смысла: при выключенной поле в списке не предлагается. */
+  feature?: keyof Features;
+  /** Поле противника — проверяется для каждой пары стрелок — цель. */
+  enemy?: boolean;
 }[] = [
   { field: 'range', label: 'Дистанция', kind: 'range' },
   { field: 'turn', label: 'Номер хода', kind: 'number' },
@@ -121,25 +138,40 @@ export const MODIFIER_FIELDS: {
   { field: 'echelon', label: 'Эшелон (свой)', kind: 'echelon' },
   { field: 'fortification', label: 'Укрепления (своей стороны)', kind: 'fort' },
   { field: 'intel', label: 'Разведданные (своей стороны)', kind: 'intel' },
-  { field: 'morale', label: 'Мораль (своя)', kind: 'number' },
-  { field: 'cohesion', label: 'Слаженность (своя)', kind: 'number' },
-  { field: 'suppression', label: 'Подавление (своё), %', kind: 'number' },
-  { field: 'fatigue', label: 'Усталость (своя), %', kind: 'number' },
-  { field: 'ammo', label: 'Боезапас (свой), %', kind: 'number' },
+  { field: 'hq', label: 'Штаб', kind: 'bool' },
+  { field: 'holdFast', label: '«Стоять насмерть»', kind: 'bool' },
+  { field: 'spotted', label: 'Обнаружен противником', kind: 'bool', feature: 'detection' },
+  { field: 'commandLevel', label: 'Уровень командира (0 — нет)', kind: 'number', feature: 'command' },
+  { field: 'morale', label: 'Мораль (своя)', kind: 'number', feature: 'morale' },
+  { field: 'cohesion', label: 'Слаженность (своя)', kind: 'number', feature: 'cohesion' },
+  { field: 'readiness', label: 'Готовность (своя)', kind: 'number', feature: 'readiness' },
+  { field: 'suppression', label: 'Подавление (своё), %', kind: 'number', feature: 'suppression' },
+  { field: 'fatigue', label: 'Усталость (своя), %', kind: 'number', feature: 'fatigue' },
+  { field: 'ammo', label: 'Боезапас (свой), %', kind: 'number', feature: 'ammo' },
+  { field: 'fuel', label: 'Топливо (своё), %', kind: 'number', feature: 'fuel' },
+  { field: 'equipment', label: 'Снаряжение (своё), %', kind: 'number', feature: 'equipment' },
+  { field: 'vehicleCondition', label: 'Техсостояние (своё), %', kind: 'number', feature: 'vehicleCondition' },
+  { field: 'comms', label: 'Связь (своя), %', kind: 'number', feature: 'comms' },
+  { field: 'supply', label: 'Снабжение (своё), %', kind: 'number' },
   { field: 'losses', label: 'Потери элемента, %', kind: 'number' },
   { field: 'sideLosses', label: 'Потери своей стороны, %', kind: 'number' },
-  { field: 'targetClass', label: 'Класс цели', kind: 'class' },
-  { field: 'enemy.tag', label: 'Тег противника', kind: 'tag' },
-  { field: 'enemy.kind', label: 'Состав противника', kind: 'kind' },
-  { field: 'enemy.order', label: 'Приказ противника', kind: 'order' },
-  { field: 'enemy.behavior', label: 'Поведение противника', kind: 'behavior' },
-  { field: 'enemy.echelon', label: 'Эшелон противника', kind: 'echelon' },
-  { field: 'enemy.morale', label: 'Мораль противника', kind: 'number' },
-  { field: 'enemy.suppression', label: 'Подавление противника, %', kind: 'number' },
-  { field: 'enemy.losses', label: 'Потери противника (элемента), %', kind: 'number' },
+  { field: 'targetClass', label: 'Класс цели', kind: 'class', enemy: true },
+  { field: 'enemy.tag', label: 'Тег противника', kind: 'tag', enemy: true },
+  { field: 'enemy.kind', label: 'Состав противника', kind: 'kind', enemy: true },
+  { field: 'enemy.order', label: 'Приказ противника', kind: 'order', enemy: true },
+  { field: 'enemy.behavior', label: 'Поведение противника', kind: 'behavior', enemy: true },
+  { field: 'enemy.echelon', label: 'Эшелон противника', kind: 'echelon', enemy: true },
+  { field: 'enemy.fortification', label: 'Укрепления противника', kind: 'fort', enemy: true },
+  { field: 'enemy.intel', label: 'Разведданные противника', kind: 'intel', enemy: true },
+  { field: 'enemy.spotted', label: 'Противник обнаружен', kind: 'bool', feature: 'detection', enemy: true },
+  { field: 'enemy.experience', label: 'Опыт противника', kind: 'number', enemy: true },
+  { field: 'enemy.morale', label: 'Мораль противника', kind: 'number', feature: 'morale', enemy: true },
+  { field: 'enemy.cohesion', label: 'Слаженность противника', kind: 'number', feature: 'cohesion', enemy: true },
+  { field: 'enemy.suppression', label: 'Подавление противника, %', kind: 'number', feature: 'suppression', enemy: true },
+  { field: 'enemy.fatigue', label: 'Усталость противника, %', kind: 'number', feature: 'fatigue', enemy: true },
+  { field: 'enemy.ammo', label: 'Боезапас противника, %', kind: 'number', feature: 'ammo', enemy: true },
+  { field: 'enemy.losses', label: 'Потери противника (элемента), %', kind: 'number', enemy: true },
 ];
-
-export const SIDE_IDS = ['A', 'B'] as const;
 
 export function plural(n: number, one: string, few: string, many: string): string {
   const a = Math.abs(n) % 100;
@@ -155,23 +187,17 @@ export function dec(v: number, digits = 1): string {
   return v.toFixed(digits).replace('.', ',');
 }
 
-export function fmtPct(v: number, digits = 0): string {
-  return `${dec(v, digits)}%`;
-}
-
-export function fmtMult(v: number): string {
-  return `×${v
-    .toFixed(2)
-    .replace(/\.?0+$/, '')
-    .replace('.', ',')}`;
-}
-
 export const EVENT_KIND_LABELS: Record<ScenarioEventKind, string> = {
   arrive: 'Подход подкреплений',
   order: 'Смена приказа',
   conditions: 'Смена условий',
   strike: 'Удар огневой поддержки',
   effect: 'Временный эффект',
+  band: 'Смена дистанции',
+  resupply: 'Подвоз',
+  command: 'Командир и связь',
+  fortification: 'Укрепления и разведданные',
+  transfer: 'Переброска на участок',
 };
 
 export const TRIGGER_LABELS: Record<TriggerMetric, string> = {
@@ -180,3 +206,24 @@ export const TRIGGER_LABELS: Record<TriggerMetric, string> = {
   morale: 'мораль ≤',
   band: 'дистанция',
 };
+
+/** Все теги набора правил — для подсказок: теги типов, тег разведки и теги из условий своих правил. */
+export function rulesetTags(r: Pick<Ruleset, 'componentTypes' | 'reconTag' | 'modifiers'>): string[] {
+  const out = new Set<string>();
+  for (const t of r.componentTypes) for (const tag of t.tags) out.add(tag);
+  if (r.reconTag) out.add(r.reconTag);
+  for (const m of r.modifiers)
+    for (const c of m.when)
+      if (c.field === 'tag' || c.field === 'enemy.tag') for (const v of Array.isArray(c.value) ? c.value : [c.value]) if (String(v).trim()) out.add(String(v));
+  return [...out];
+}
+
+/** Теги подразделения — теги типов его состава, которые в строю: в бою элемент получает их все. */
+export function compositionTags(r: Pick<Ruleset, 'componentTypes'>, composition: ComponentEntry[]): string[] {
+  const out = new Set<string>();
+  for (const c of composition) {
+    if (!(c.current > 0)) continue;
+    for (const tag of r.componentTypes.find((t) => t.id === c.typeId)?.tags ?? []) out.add(tag);
+  }
+  return [...out];
+}

@@ -3,6 +3,7 @@
 
 import { COEFFICIENT_DEFAULTS, COMPAT_NEUTRAL, DEFAULT_FEATURES, RECALIBRATED } from './coefficients';
 import { turnsFor } from './duration';
+import { newId } from './ids';
 import { instantiate, newRootUnit, newUnit, walkUnits } from './units';
 import type { ComponentType, EffectDef, Id, LevelDef, Objective, OrderDef, Ruleset, Scenario, SideDef, UnitNode } from './types';
 
@@ -14,14 +15,7 @@ export const SCHEMA_VERSION = 1;
  */
 export const DATA_VERSION = 2;
 
-let idCounter = 0;
-/** Уникальный идентификатор для новых объектов (не влияет на расчёт боя). */
-export function newId(prefix = 'id'): string {
-  idCounter = (idCounter + 1) % 1679616;
-  return `${prefix}-${Date.now().toString(36)}${idCounter.toString(36).padStart(4, '0')}${Math.floor(Math.random() * 1296)
-    .toString(36)
-    .padStart(2, '0')}`;
-}
+export { newId } from './ids';
 
 export function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;

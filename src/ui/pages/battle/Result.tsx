@@ -162,6 +162,11 @@ export function Result({ b, result, onElement }: { b: Battle; result: BattleResu
   return (
     <div className="stack">
       <div>
+        {b.scenario.description?.trim() && (
+          <div className="muted small pre-wrap" style={{ marginBottom: 8 }}>
+            {b.scenario.description.trim()}
+          </div>
+        )}
         {!b.finished && <div className="muted small">Бой не окончен — оценка на текущий ход</div>}
         <div className="bignum" style={{ color: result.winner ? b.sides[result.winner].color : undefined }}>
           {result.headline}

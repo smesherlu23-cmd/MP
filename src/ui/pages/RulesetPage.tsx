@@ -1,7 +1,7 @@
 // Редактор набора правил: всё, что влияет на расчёт, редактируется здесь без изменения кода.
 
 import { useState } from 'react';
-import type { Ruleset } from '../../engine';
+import { rulesetTags, type Ruleset } from '../../engine';
 import { TransferModal } from '../components/RulesetTransfer';
 import { Menu, ToolbarSlot } from '../components/ui';
 import { Crumbs } from '../components/Crumbs';
@@ -11,10 +11,12 @@ import { CoefficientsSection, FeaturesSection, General, JsonSection, OutcomesSec
 import { BandsSection, ClassesSection, TypesSection } from './ruleset/Types';
 import { ConditionsSection, LevelsSection, OptionsSection, OrdersSection } from './ruleset/Orders';
 import { ModifiersSection } from './ruleset/Modifiers';
+import { TagsSection } from './ruleset/TagsSection';
 
 export const SECTIONS: { id: string; label: string; count?: (r: Ruleset) => number }[] = [
   { id: 'general', label: 'Общее' },
   { id: 'types', label: 'Каталог типов', count: (r) => r.componentTypes.length },
+  { id: 'tags', label: 'Теги', count: (r) => rulesetTags(r).length },
   { id: 'classes', label: 'Классы и дистанции' },
   { id: 'orders', label: 'Приказы', count: (r) => r.orders.length },
   { id: 'levels', label: 'Опыт и командиры' },
@@ -63,7 +65,7 @@ export function RulesetPage({ tab }: { tab: Tab }) {
           />
         </ToolbarSlot>
       </div>
-      <div className="split" style={{ gridTemplateColumns: '190px minmax(0, 1fr)' }}>
+      <div className="split rs-split">
         <nav className="vnav">
           {SECTIONS.map((x) => (
             <button type="button" key={x.id} className={sub === x.id ? 'on' : ''} onClick={() => setTabSub(tab.key, x.id)}>
@@ -80,6 +82,7 @@ export function RulesetPage({ tab }: { tab: Tab }) {
             </>
           )}
           {sub === 'types' && <TypesSection r={r} upd={upd} tabKey={tab.key} />}
+          {sub === 'tags' && <TagsSection r={r} upd={upd} tabKey={tab.key} />}
           {sub === 'classes' && (
             <>
               <ClassesSection r={r} upd={upd} />
@@ -122,7 +125,7 @@ export function RulesetPage({ tab }: { tab: Tab }) {
           )}
           {sub === 'modifiers' && <ModifiersSection r={r} upd={upd} />}
           {sub === 'effects' && <TempEffectsSection r={r} upd={upd} />}
-          {sub === 'coefficients' && <CoefficientsSection r={r} upd={upd} />}
+          {sub === 'coefficients' && <CoefficientsSection r={r} upd={upd} tabKey={tab.key} />}
           {sub === 'outcomes' && <OutcomesSection r={r} upd={upd} />}
           {sub === 'json' && <JsonSection r={r} />}
         </div>

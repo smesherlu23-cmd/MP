@@ -3,14 +3,9 @@
 
 import type { ComponentKind, ComponentEntry, Echelon, Id, Ruleset, SideDef, StateKey, UnitNode, UnitState } from './types';
 import { STATE_KEYS } from './types';
+import { newId } from './ids';
 
-let idCounter = 0;
-function uid(prefix: string): string {
-  idCounter = (idCounter + 1) % 1679616;
-  return `${prefix}-${Date.now().toString(36)}${idCounter.toString(36).padStart(4, '0')}${Math.floor(Math.random() * 1296)
-    .toString(36)
-    .padStart(2, '0')}`;
-}
+const uid = newId;
 
 /** Значения корня по умолчанию: всё, что не задано ниже, наследуется отсюда. */
 export const ROOT_STATE: UnitState = {
@@ -76,12 +71,6 @@ export function walkUnits(root: UnitNode, fn: (node: UnitNode, parent: UnitNode 
   for (const ch of root.children) walkUnits(ch, fn, root, depth + 1);
 }
 
-export function allUnits(root: UnitNode): UnitNode[] {
-  const out: UnitNode[] = [];
-  walkUnits(root, (n) => out.push(n));
-  return out;
-}
-
 export function findUnit(roots: UnitNode | UnitNode[], id: Id): UnitNode | null {
   for (const r of Array.isArray(roots) ? roots : [roots]) {
     if (r.id === id) return r;
@@ -123,9 +112,20 @@ export interface Resolved {
   supply: number;
   order: Id | null;
   echelon: Echelon;
+  /** Атака и защита, % — с учётом старших (перемножаются по цепочке). */
+  attack: number;
+  defense: number;
 }
 
-export const ROOT_RESOLVED: Resolved = { state: ROOT_STATE, comms: ROOT_COMMS, supply: ROOT_SUPPLY, order: null, echelon: 'front' };
+export const ROOT_RESOLVED: Resolved = {
+  state: ROOT_STATE,
+  comms: ROOT_COMMS,
+  supply: ROOT_SUPPLY,
+  order: null,
+  echelon: 'front',
+  attack: 100,
+  defense: 100,
+};
 
 export function resolveChild(node: UnitNode, parent: Resolved): Resolved {
   const state = { ...parent.state };
@@ -139,6 +139,8 @@ export function resolveChild(node: UnitNode, parent: Resolved): Resolved {
     supply: node.supply ?? parent.supply,
     order: node.order ?? parent.order,
     echelon: node.echelon ?? parent.echelon,
+    attack: (parent.attack * (node.attackMod ?? 100)) / 100,
+    defense: (parent.defense * (node.defenseMod ?? 100)) / 100,
   };
 }
 
@@ -193,6 +195,9 @@ export function extractPart(root: UnitNode, nodeId: Id): UnitNode | null {
   if (c.comms === null && parent.comms !== ROOT_COMMS) c.comms = parent.comms;
   if (c.supply === null && parent.supply !== ROOT_SUPPLY) c.supply = parent.supply;
   for (const k of STATE_KEYS) if (c.state[k] === undefined && parent.state[k] !== ROOT_STATE[k]) c.state[k] = parent.state[k];
+  // Атака и защита старших действуют и на часть — переносятся в неё.
+  if (parent.attack !== 100) c.attackMod = Math.round((c.attackMod ?? 100) * parent.attack) / 100;
+  if (parent.defense !== 100) c.defenseMod = Math.round((c.defenseMod ?? 100) * parent.defense) / 100;
   c.name = `${c.name} · ${path[path.length - 2].name}`;
   delete c.attachedFrom;
   delete c.rulesetId;
@@ -526,7 +531,7 @@ export function summarizeUnits(roots: UnitNode[], rs: Ruleset, bases?: Map<Id, R
         for (const cls of rs.targetClasses)
           for (const b of rs.rangeBands) {
             out.fire[cls.id] ??= {};
-            out.fire[cls.id][b.id] = (out.fire[cls.id][b.id] ?? 0) + (t.firepower[cls.id]?.[b.id] ?? 0) * c.current * ((n.attackMod ?? 100) / 100);
+            out.fire[cls.id][b.id] = (out.fire[cls.id][b.id] ?? 0) + (t.firepower[cls.id]?.[b.id] ?? 0) * c.current * ((r?.attack ?? n.attackMod ?? 100) / 100);
           }
       }
       if (r) {
@@ -552,8 +557,4 @@ export function ownPersonnel(n: UnitNode, rs: Ruleset): { cur: number; auth: num
     auth += c.authorized * crew;
   }
   return { cur, auth };
-}
-
-export function countComponents(entries: ComponentEntry[]): number {
-  return entries.reduce((a, c) => a + c.current, 0);
 }

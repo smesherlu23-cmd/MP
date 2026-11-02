@@ -29,6 +29,11 @@ contextBridge.exposeInMainWorld('warsim', {
     ipcRenderer.on('window:fullscreen', (_e, on: boolean) => cb(on));
   },
   appInfo: () => ipcRenderer.invoke('app:info'),
+  /** Рабочая область экрана, на котором окно (без масштаба программы), — для автомасштаба. */
+  display: ipcRenderer.sendSync('display:get') as { w: number; h: number },
+  onDisplay: (cb: (d: { w: number; h: number }) => void) => {
+    ipcRenderer.on('window:display', (_e, d: { w: number; h: number }) => cb(d));
+  },
   /** Масштаб интерфейса (1 — обычный): как масштаб страницы, со всеми меню и окнами. */
   setZoom: (f: number) => webFrame.setZoomFactor(f),
   /** Перед закрытием окна: дописать сохранения и ответить «готово». */

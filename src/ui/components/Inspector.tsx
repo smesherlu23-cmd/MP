@@ -1,8 +1,10 @@
 // Инспектор — панель справа (как в Pages и Keynote): свойства выбранного и вспомогательное, например журнал боя.
 // Ширина меняется перетаскиванием края и запоминается; панель скрывается кнопкой в панели инструментов
-// (Ctrl+Alt+I). У каждого инспектора (журнал, свойства) свои ширина и видимость.
+// (Ctrl+Alt+I). У каждого инспектора (журнал, свойства) свои ширина и видимость. Когда странице мало места (уже 760 px),
+// инспектор выезжает поверх неё и по умолчанию скрыт; показ там временный (layout.ts).
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { isInspNarrow, useInspNarrow, usePeek } from '../layout';
 import { get, updateSettings, useApp, type Settings } from '../store';
 import { Icon } from './Icon';
 import { Splitter } from './ui';
@@ -20,9 +22,18 @@ function save(id: string, patch: { shown?: boolean; width?: number }) {
   updateSettings({ inspectors: { ...st.inspectors, [id]: { ...st.inspectors?.[id], ...patch } } });
 }
 
-export const useInspectorShown = (id: string) => useApp((s) => readShown(s.settings, id));
-export const inspectorShown = (id: string) => readShown(get().settings, id);
-export const toggleInspector = (id: string) => save(id, { shown: !readShown(get().settings, id) });
+export function useInspectorShown(id: string) {
+  const narrow = useInspNarrow();
+  const peek = usePeek((p) => !!p.insp[id]);
+  const saved = useApp((s) => readShown(s.settings, id));
+  return narrow ? peek : saved;
+}
+export const inspectorShown = (id: string) => (isInspNarrow() ? !!usePeek.getState().insp[id] : readShown(get().settings, id));
+export function toggleInspector(id: string) {
+  if (!isInspNarrow()) return save(id, { shown: !readShown(get().settings, id) });
+  const p = usePeek.getState();
+  usePeek.setState({ insp: { ...p.insp, [id]: !p.insp[id] } });
+}
 
 /** Кнопка показа и скрытия инспектора — для панели инструментов. */
 export function InspectorToggle({ id, label }: { id: string; label: string }) {
@@ -61,11 +72,9 @@ export function Inspector({ id, label, def = W.def, children }: { id: string; la
     return () => window.removeEventListener('keydown', onKey);
   }, [id]);
   return (
-    // В узком окне инспектор не шире 40% окна — странице остаётся место.
-    <aside className={`inspector${shown ? '' : ' hidden'}`} style={{ width: shown ? `min(${width}px, 40cqw)` : 0 }} aria-label={label} inert={!shown}>
-      <div className="inspector-body" style={{ width: `min(${width}px, 40cqw)` }}>
-        {children}
-      </div>
+    // Ширина — в styles.css (.inspector): рядом со страницей не шире 40% окна, поверх неё — почти во всю ширину.
+    <aside className={`inspector${shown ? '' : ' hidden'}`} style={{ '--insp-w': `${width}px` } as React.CSSProperties} aria-label={label} inert={!shown}>
+      <div className="inspector-body">{children}</div>
       {shown && <Splitter side="right" label={`Ширина: ${label.toLowerCase()}`} width={width} min={W.min} max={W.max} def={def} onChange={setW} />}
     </aside>
   );

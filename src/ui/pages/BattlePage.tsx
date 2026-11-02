@@ -47,6 +47,7 @@ import {
 } from '../store';
 import { SIDES, copyText } from './battle/common';
 import { Forces } from './battle/ForcesTable';
+import { DecisionHost, openDecision, takeIvNote } from './battle/Decisions';
 import { ConditionsModal, ElementModal, FormationModal } from './battle/Modals';
 import { Charts, Result } from './battle/Result';
 
@@ -123,7 +124,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
   const iv = (type: Parameters<typeof applyIntervention>[1]['type'], payload: Record<string, unknown>) => {
     forgetBattleRedo(b.id);
     setPauseNote(null);
-    applyIntervention(b, { type, payload });
+    applyIntervention(b, { type, payload, note: takeIvNote() });
     touchBattle(b.id);
     if (b.finished) setView('result');
   };
@@ -152,7 +153,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
         <ToolbarSlot>
           {b.finished ? (
             <>
-              <Btn onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
+              <Btn className="tb-opt" onClick={() => restart(false)} title="Новый бой по тому же сценарию — с другими случайностями">
                 Переиграть
               </Btn>
               <Btn
@@ -169,7 +170,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
                   onClick={() => void applyResultsToForces(b)}
                   title="Потери, раненые, техника в ремонте, мораль и боезапас — в силы, участвовавшие в бою"
                 >
-                  Записать итоги в силы
+                  Записать итоги<span className="btn-text"> в силы</span>
                 </Btn>
               )}
             </>
@@ -184,7 +185,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
                   Object.entries(rules).filter(([k, v]) => k !== 'lossPct' && v).length
                 } видов событий${rules.lossPct ? `, потери за ход ≥ ${rules.lossPct}%` : ''}. Настроить — в меню «⋯».`}
               >
-                <Icon name="skip" size={13} /> До события
+                <Icon name="skip" size={13} /> <span className="btn-text">До события</span>
               </Btn>
               <Btn onClick={() => step(5)} title="Рассчитать пять ходов">
                 <Icon name="forward" size={14} /> 5
@@ -192,7 +193,9 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
               <Btn onClick={toEnd} title="Рассчитать бой до конца">
                 До конца
               </Btn>
+              {/* В узком окне прячется: прогноз есть и в меню «⋯». */}
               <Btn
+                className="tb-opt"
                 onClick={() => setForecastOpen(true)}
                 title="Что дальше? Сотни продолжений боя с этого хода — вероятности исходов и потерь. Если вы только что приняли решения — рядом прогноз без них."
               >
@@ -227,7 +230,16 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
               !b.finished && { label: 'Прогноз с этого хода…', onClick: () => setForecastOpen(true) },
               !b.finished && { label: 'Настроить «до события»…', onClick: () => setPauseModal(true) },
               'sep',
-              !b.finished && { label: 'Изменить условия и дистанцию…', onClick: () => setCondModal(true) },
+              !b.finished && {
+                label: 'Изменить условия и дистанцию…',
+                onClick: () => setCondModal(true),
+                tip: 'Условия, дистанция, укрепления и разведданные сторон — на всём поле или на участке',
+              },
+              !b.finished && {
+                label: 'Заметка в журнал…',
+                onClick: () => openDecision({ kind: 'note' }),
+                tip: 'Своя запись: решение игрока, событие вне расчёта',
+              },
               !b.finished && {
                 label: 'Завершить бой сейчас',
                 onClick: () => iv('endBattle', { reason: 'Бой остановлен ГМ' }),
@@ -404,6 +416,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
       {pauseModal && <PauseSettingsModal onClose={() => setPauseModal(false)} />}
       {forecastOpen && <ForecastModal b={b} onClose={() => setForecastOpen(false)} />}
       {groupEdit && <GroupEditModal b={b} ids={groupEdit} onClose={() => setGroupEdit(null)} iv={iv} />}
+      <DecisionHost b={b} iv={iv} />
     </div>
   );
 }

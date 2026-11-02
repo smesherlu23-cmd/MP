@@ -1,10 +1,12 @@
 // Набор правил: каталог типов (карточки и таблица), классы целей и дистанции.
 
-import { KIND_LABELS, clone, dec, newId, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
+import { KIND_LABELS, clone, dec, newId, rulesetTags, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
 import { Btn, Card, Check, Field, Info, Menu, Num, ScrollX, Sel, Seg, Tags, Txt, pressable } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { openTab, toastUndoable, useApp } from '../../store';
-import type { Upd } from './common';
+import { moveIn, moveItems, type Upd } from './common';
+import { EffectsEditor } from '../../components/EffectsEditor';
+import { Desc } from './Orders';
 
 export function typeUsage(typeId: string): number {
   const s = useApp.getState();
@@ -63,13 +65,23 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
     );
     setSel(id);
   };
-  const allTags = [...new Set(r.componentTypes.flatMap((x) => x.tags).concat(r.reconTag ? [r.reconTag] : []))];
+  const allTags = rulesetTags(r);
+  // Поиск по названию и по тегу: «танк», «#кавалерия» (решётка — только теги).
+  const [q, setQ] = useTabState<string>(`${tabKey}:typeQ`, '');
+  const query = q.trim().toLowerCase().replace(/ё/g, 'е');
+  const fits = (x: ComponentType) => {
+    if (!query) return true;
+    const norm = (v: string) => v.toLowerCase().replace(/ё/g, 'е');
+    if (query.startsWith('#')) return x.tags.some((tg) => norm(tg).includes(query.slice(1)));
+    return norm(x.name).includes(query) || x.tags.some((tg) => norm(tg).includes(query));
+  };
   return (
     <>
       <div className="row">
         <Btn kind="primary" onClick={add}>
           + Тип
         </Btn>
+        <input type="search" placeholder="Найти тип или #тег…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200 }} />
         <Btn
           kind="ghost"
           onClick={() => openTab('help', undefined, { sub: 'gm-type-fields' })}
@@ -90,7 +102,7 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
       {view === 'table' ? (
         <TypesTable r={r} onPick={(id) => (setSel(id), setView('edit'))} />
       ) : (
-        <div className="split" style={{ gridTemplateColumns: '240px minmax(0, 1fr)' }}>
+        <div className="split types-split">
           <Card tight>
             <div className="tree" style={{ padding: 6 }}>
               {(['personnel', 'weapon', 'vehicle'] as ComponentKind[]).map((k) => (
@@ -99,7 +111,7 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
                     {KIND_LABELS[k]}
                   </div>
                   {r.componentTypes
-                    .filter((x) => x.kind === k)
+                    .filter((x) => x.kind === k && fits(x))
                     .map((x) => (
                       <div key={x.id} className={`tree-node${x.id === t?.id ? ' sel' : ''}`} onClick={() => setSel(x.id)} {...pressable(() => setSel(x.id))}>
                         <span className="tn-name" title={x.name}>
@@ -113,6 +125,7 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
                 </div>
               ))}
               {!r.componentTypes.length && <div className="empty">Каталог пуст. Добавьте первый тип: например, «Стрелок» или «Танк».</div>}
+              {r.componentTypes.length > 0 && !r.componentTypes.some(fits) && <div className="empty">Ничего не найдено.</div>}
             </div>
           </Card>
           {t && <TypeEditor r={r} t={t} upd={upd} allTags={allTags} onSelect={setSel} reference={ref} onReference={setRef} />}
@@ -163,6 +176,8 @@ export function TypeEditor({
   const fireRatios = refClass
     ? r.rangeBands.map((b) => ({ b, x: ratio(t.firepower[refClass.id]?.[b.id] ?? 0, ref?.firepower[refClass.id]?.[b.id] ?? 0) })).filter((y) => y.x)
     : [];
+  // Соседи по списку — типы того же вида (в каталоге они сгруппированы по виду).
+  const sameKind = r.componentTypes.filter((x) => x.kind === t.kind).map((x) => x.id);
   return (
     <Card
       title={t.name}
@@ -170,6 +185,14 @@ export function TypeEditor({
         <Menu
           sm
           items={[
+            ...moveItems(sameKind.indexOf(t.id), sameKind.length, (dir) =>
+              upd((d) => {
+                const i = d.componentTypes.findIndex((y) => y.id === t.id);
+                const j = d.componentTypes.findIndex((y) => y.id === sameKind[sameKind.indexOf(t.id) + dir]);
+                if (i < 0 || j < 0) return;
+                [d.componentTypes[i], d.componentTypes[j]] = [d.componentTypes[j], d.componentTypes[i]];
+              }),
+            ),
             {
               label: 'Дублировать',
               onClick: () => {
@@ -266,9 +289,22 @@ export function TypeEditor({
         </Field>
       </div>
       <div style={{ marginTop: 12 }}>
-        <Field label="Теги" hint={`Используются в своих правилах. Тег «${r.reconTag}» делает тип разведчиком.`}>
+        <Desc value={t.description} onChange={(v) => ut((x) => void (x.description = v))} />
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <Field
+          label="Теги"
+          hint={`Особенности типа: «кавалерия», «ночное видение», «сапёр». Подразделение получает теги всех типов своего состава, по ним работают свои правила.${r.reconTag ? ` Тег «${r.reconTag}» делает тип разведчиком.` : ''}`}
+        >
           <Tags value={t.tags} onChange={(v) => ut((x) => void (x.tags = v))} suggestions={allTags} />
         </Field>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <div className="row" style={{ gap: 6, marginBottom: 6 }}>
+          <h4>Множители типа</h4>
+          <Info text="Свои особенности типа без отдельного правила: скрытность снайпера, наблюдение разведчика, подвижность танка. В элементе действуют по доле боевой ценности типа в его составе: 1 + (N − 1) × доля — один снайпер во взводе почти ничего не меняет, взвод снайперов — полностью." />
+        </div>
+        <EffectsEditor value={t.effects ?? {}} onChange={(v) => ut((x) => void (Object.keys(v).length ? (x.effects = v) : delete x.effects))} />
       </div>
       <div className="row" style={{ margin: '16px 0 6px', gap: 6 }}>
         <h4>Огневая мощь одной единицы за ход</h4>
@@ -383,6 +419,7 @@ export function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => 
                       навесной
                     </span>
                   )}
+                  {t.tags.length > 0 && <div className="faint small">{t.tags.join(', ')}</div>}
                 </td>
                 <td className="small">{KIND_LABELS[t.kind]}</td>
                 <td className="small">{r.targetClasses.find((c) => c.id === t.targetClass)?.name}</td>
@@ -436,32 +473,38 @@ export function ClassesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
           {r.targetClasses.map((c, i) => (
             <tr key={c.id}>
               <td>
-                <Txt value={c.name} onChange={(v) => upd((d) => void (d.targetClasses[i].name = v))} width="100%" />
+                <div className="stack" style={{ gap: 4 }}>
+                  <Txt value={c.name} onChange={(v) => upd((d) => void (d.targetClasses[i].name = v))} width="100%" />
+                  <Desc value={c.description} onChange={(v) => upd((d) => void (d.targetClasses[i].description = v))} />
+                </div>
               </td>
               <td className="num" style={{ width: 110 }}>
                 <Num value={c.lethality} onChange={(v) => upd((d) => void (d.targetClasses[i].lethality = v))} min={0} step={0.05} width={80} />
               </td>
               <td style={{ width: 36 }}>
-                <Btn
+                <Menu
                   sm
-                  kind="ghost"
-                  icon
-                  title="Удалить класс"
-                  disabled={r.targetClasses.length <= 1}
-                  onClick={() => {
-                    toastUndoable(`Класс «${c.name}» удалён: его огневая мощь убрана из типов, типы этого класса перешли в первый оставшийся.`);
-                    upd((d) => {
-                      d.targetClasses = d.targetClasses.filter((x) => x.id !== c.id);
-                      const fallback = d.targetClasses[0]?.id ?? '';
-                      for (const t of d.componentTypes) {
-                        delete t.firepower[c.id];
-                        if (t.targetClass === c.id) t.targetClass = fallback;
-                      }
-                    });
-                  }}
-                >
-                  ×
-                </Btn>
+                  items={[
+                    ...moveItems(i, r.targetClasses.length, (dir) => upd((d) => moveIn(d.targetClasses, i, dir))),
+                    'sep',
+                    {
+                      label: 'Удалить класс',
+                      danger: true,
+                      disabled: r.targetClasses.length <= 1,
+                      onClick: () => {
+                        toastUndoable(`Класс «${c.name}» удалён: его огневая мощь убрана из типов, типы этого класса перешли в первый оставшийся.`);
+                        upd((d) => {
+                          d.targetClasses = d.targetClasses.filter((x) => x.id !== c.id);
+                          const fallback = d.targetClasses[0]?.id ?? '';
+                          for (const t of d.componentTypes) {
+                            delete t.firepower[c.id];
+                            if (t.targetClass === c.id) t.targetClass = fallback;
+                          }
+                        });
+                      },
+                    },
+                  ]}
+                />
               </td>
             </tr>
           ))}
@@ -514,7 +557,10 @@ export function BandsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
           {r.rangeBands.map((b, i) => (
             <tr key={b.id}>
               <td>
-                <Txt value={b.name} onChange={(v) => upd((d) => void (d.rangeBands[i].name = v))} width="100%" />
+                <div className="stack" style={{ gap: 4 }}>
+                  <Txt value={b.name} onChange={(v) => upd((d) => void (d.rangeBands[i].name = v))} width="100%" />
+                  <Desc value={b.description} onChange={(v) => upd((d) => void (d.rangeBands[i].description = v))} />
+                </div>
               </td>
               <td className="num" style={{ width: 120 }}>
                 <Num

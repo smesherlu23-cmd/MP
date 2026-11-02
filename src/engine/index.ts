@@ -6,11 +6,11 @@ export * from './rng';
 export * from './coefficients';
 export * from './labels';
 export * from './defaults';
-export { EngineContext } from './context';
+export { EngineContext, notArrived } from './context';
 export { frontage, type Frontage } from './phases/frontage';
 export { orderChance } from './phases/orders';
 export { createBattle, stepTurn, runToEnd, combatEffectiveness, shooterMult, elementsOfNode, arrivalTurn, eventTurn, triggerMet, triggerText } from './battle';
-export { computeResult, defaultObjectives, explainResult } from './outcome';
+export { computeResult, defaultObjectives, explainResult, objectiveScopeText } from './outcome';
 export {
   INTERVENTION_LABELS,
   applyIntervention,
@@ -32,3 +32,4 @@ export * from './control';
 export * from './variants';
 export * from './transfer';
 export * from './duration';
+export * from './structure';

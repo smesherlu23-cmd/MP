@@ -44,7 +44,7 @@ export interface Settings {
   navRecent?: boolean;
   /** Какие кнопки показаны в панели инструментов (не задано — по умолчанию, см. TOOLBAR_ITEMS). */
   toolbar?: Partial<Record<string, boolean>>;
-  /** Масштаб интерфейса: 1 — обычный. */
+  /** Масштаб интерфейса: 1 — обычный; не задан — «Авто», по экрану (prefs.ts autoZoom). */
   zoom?: number;
   /** Цвета команд (принадлежность сил): название → цвет. Не задано — по одноимённой стороне сценария или из палитры. */
   teamColors?: Record<string, string>;

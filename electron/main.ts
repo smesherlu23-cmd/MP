@@ -2,7 +2,7 @@
 // Данные — JSON-файлы в папке: rulesets/, formations/ (шаблоны), forces/ (силы), scenarios/, battles/; резервные копии,
 // корзина и повреждённые файлы — в backups/, trash/, damaged/ (см. protect.ts).
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell } from 'electron';
 import { existsSync, promises as fs } from 'node:fs';
 import { release } from 'node:os';
 import path from 'node:path';
@@ -74,6 +74,11 @@ function registerIpc() {
     if (process.platform !== 'darwin' && win) win.setTitleBarOverlay(overlay(t));
   });
   ipcMain.on('window:fullscreen', () => win?.setFullScreen(!win.isFullScreen()));
+  // Рабочая область экрана, на котором окно (DIP, без масштаба программы): по ней окно выбирает автомасштаб.
+  ipcMain.on('display:get', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    e.returnValue = workArea(w ? screen.getDisplayMatching(w.getBounds()) : screen.getPrimaryDisplay());
+  });
   ipcMain.handle('app:info', () => ({ version: app.getVersion(), dataDir }));
   ipcMain.handle('storage:list', (_e, col: string) => store.list(col, col === 'battles' ? battleMeta : undefined));
   ipcMain.handle('storage:load', (_e, col: string, id: string) => store.load(col, id));
@@ -143,7 +148,9 @@ function buildMenu() {
     },
     {
       label: 'Вид',
-      submenu: [{ role: 'reload' }, { role: 'togglefullscreen' }, { role: 'toggleDevTools' }],
+      // Перезагрузка и инструменты разработчика — только при разработке: в выпущенной программе Ctrl+R и
+      // Ctrl+Shift+I ничего не делают (перезагрузка при ошибке — кнопкой в сообщении об ошибке).
+      submenu: [{ role: 'togglefullscreen' }, ...(app.isPackaged ? [] : [{ role: 'reload' as const }, { role: 'toggleDevTools' as const }])],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -164,12 +171,27 @@ const OVERLAY_MICA = {
 const MICA = process.platform === 'win32' && Number(release().split('.')[2] ?? 0) >= 22621;
 const overlay = (theme: 'dark' | 'light') => (MICA ? OVERLAY_MICA : OVERLAY)[theme];
 
+const workArea = (d: Electron.Display) => ({ w: d.workAreaSize.width, h: d.workAreaSize.height });
+
+/** Автомасштаб интерфейса по рабочей области экрана — та же формула, что autoZoom в src/ui/prefs.ts. */
+function screenZoom({ w, h }: { w: number; h: number }) {
+  const f = Math.min(w / 2560, h / 1400);
+  return f <= 1 ? 1 : Math.min(2, Math.floor(f * 10 + 1e-6) / 10);
+}
+
 async function createWindow() {
+  // Окно при запуске — по экрану: на 4K (с автомасштабом) соразмерно крупнее, на маленьком экране не выходит
+  // за его край, а если почти весь экран — развёрнуто (ноутбук 1366×768, 1920×1080 при масштабе 125%).
+  const area = workArea(screen.getPrimaryDisplay());
+  const z = screenZoom(area);
+  const width = Math.min(Math.round(1440 * z), area.w);
+  const height = Math.min(Math.round(900 * z), area.h);
+  const fill = width >= area.w * 0.94 || height >= area.h * 0.94;
   win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 980,
-    minHeight: 620,
+    width,
+    height,
+    minWidth: Math.min(980, area.w),
+    minHeight: Math.min(620, area.h),
     backgroundColor: MICA ? '#00000000' : '#1e1e1f',
     backgroundMaterial: MICA ? 'mica' : undefined,
     title: APP_NAME,
@@ -189,7 +211,22 @@ async function createWindow() {
     },
   });
   win.setMenuBarVisibility(false);
-  win.once('ready-to-show', () => win?.show());
+  win.once('ready-to-show', () => {
+    if (fill) win?.maximize();
+    win?.show();
+  });
+  // Окно перенесли на другой экран (или у экрана сменился масштаб Windows) — окно пересчитывает автомасштаб.
+  let lastArea = JSON.stringify(area);
+  const sendDisplay = () => {
+    if (!win || win.isDestroyed()) return;
+    const a = workArea(screen.getDisplayMatching(win.getBounds()));
+    if (JSON.stringify(a) === lastArea) return;
+    lastArea = JSON.stringify(a);
+    win.webContents.send('window:display', a);
+  };
+  win.on('moved', sendDisplay);
+  screen.on('display-metrics-changed', sendDisplay);
+  win.on('closed', () => screen.removeListener('display-metrics-changed', sendDisplay));
   // Во весь экран кнопок окна нет: окно убирает место под них на панели инструментов и меняет пункт меню.
   const sendFullScreen = () => win?.webContents.send('window:fullscreen', win.isFullScreen());
   win.on('enter-full-screen', sendFullScreen);

@@ -249,7 +249,20 @@ function TurnLosses({ b, turn }: { b: Battle; turn: number }) {
   );
 }
 
-function Factors({ e }: { e: LogEntry }) {
+/** Описания из набора правил для строк разбора: «Приказ «Оборона»» → описание приказа (подсказка при наведении). */
+function factorHints(rs: Battle['ruleset']): Map<string, string> {
+  const m = new Map<string, string>();
+  const put = (label: string, d: string | undefined) => d?.trim() && m.set(label, d.trim());
+  for (const o of rs.orders) put(`Приказ «${o.name}»`, o.description);
+  for (const x of rs.experienceLevels) put(`Опыт: ${x.name}`, x.description);
+  for (const c of rs.conditions) for (const o of c.options) put(`${c.name}: ${o.name}`, o.description);
+  for (const o of rs.fortifications) put(`Укрепления: ${o.name}`, o.description);
+  for (const o of rs.intelLevels) put(`Разведданные: ${o.name}`, o.description);
+  for (const x of rs.modifiers) put(`Правило «${x.name}»`, x.description);
+  return m;
+}
+
+function Factors({ e, hints }: { e: LogEntry; hints: Map<string, string> }) {
   return (
     <div className="factors">
       {e.factors!.map((f, i) => {
@@ -269,7 +282,7 @@ function Factors({ e }: { e: LogEntry }) {
               : '';
         return (
           <Fragment key={i}>
-            <span>{f.label}</span>
+            <span data-tip={hints.get(f.label)}>{f.label}</span>
             <span className={`fv ${dir}`}>{formatFactor(f.value, f.kind)}</span>
           </Fragment>
         );
@@ -295,6 +308,7 @@ export function LogView(props: {
   const [showFilters, setShowFilters] = useTabState(`${props.tabKey}:logFilters`, false);
   const [open, setOpen] = useState<Set<number>>(new Set());
   const [limit, setLimit] = useState(1500);
+  const hints = useMemo(() => factorHints(b.ruleset), [b.ruleset]);
   const listRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -499,7 +513,7 @@ export function LogView(props: {
                 <RichText text={e.text} b={b} onElement={props.onElement} />
                 {(e.factors || e.hadFactors) && !open.has(i) && <span className="fx-hint"> ⓘ</span>}
               </span>
-              {open.has(i) && e.factors && <Factors e={e} />}
+              {open.has(i) && e.factors && <Factors e={e} hints={hints} />}
             </div>
           );
         })}

@@ -2,8 +2,9 @@
 // с тем же сидом и теми же решениями ГМ. Вмешательства не тратят случайные числа.
 
 import { createBattle, finish, stepTurn } from './battle';
-import { EngineContext, clamp, e, fm, s as sd } from './context';
+import { EngineContext, clamp, e, fm, notArrived, s as sd } from './context';
 import { plural } from './labels';
+import { startTransfer } from './phases/events';
 import { giveOrder } from './phases/orders';
 import type { Battle, ElementState, Intervention, InterventionType } from './types';
 
@@ -159,8 +160,14 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       }
       const el = els[0];
       for (const c of patch.comps ?? []) {
-        const st = el.comps.find((x) => x.typeId === c.typeId);
-        if (!st) continue;
+        let st = el.comps.find((x) => x.typeId === c.typeId);
+        if (!st) {
+          // Новый тип в составе (придан расчёт, подошла техника): с нуля, дальше — как пополнение.
+          if (!E.types.has(c.typeId) || !(c.current > 0)) continue;
+          st = { typeId: c.typeId, authorized: 0, start: 0, current: 0, destroyed: 0, damaged: 0, abandoned: 0, kia: 0, wia: 0, mia: 0 };
+          el.comps.push(st);
+          E.invalidate(el);
+        }
         const next = Math.max(0, Math.floor(c.current));
         if (next === st.current) continue;
         changes.push(`${E.type(c.typeId).name}: ${st.current} → ${next}`);
@@ -339,7 +346,7 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
     case 'arrive': {
       // ГМ вводит подкрепление раньше плана.
       const ids: string[] = p.elementIds ?? [];
-      const els = ids.map((id) => E.elements.get(id)).filter((x): x is ElementState => !!x && x.status === 'pending');
+      const els = ids.map((id) => E.elements.get(id)).filter((x): x is ElementState => !!x && notArrived(x));
       if (!els.length) return;
       for (const el of els) el.status = 'active';
       E.invalidate();
@@ -350,6 +357,85 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
         refs: els.map((x) => x.id),
         text: `ГМ: подкрепление вводится в бой раньше плана — ${els.length > 3 ? `${els.length} элементов` : els.map((x) => e(x)).join(', ')}${note}.`,
       });
+      break;
+    }
+    case 'transfer': {
+      // Переброска на другой участок: travel ходов в пути (вне боя), потом в бою на новом участке.
+      const sec = b.sectors?.find((x) => x.id === p.sector);
+      if (!sec) return;
+      const ids: string[] = Array.isArray(p.elementIds) ? p.elementIds : [];
+      let els = ids.map((id) => E.elements.get(id)).filter((x): x is ElementState => !!x);
+      if (typeof p.formationId === 'string') {
+        const f = E.formations.get(p.formationId);
+        if (!f) return;
+        const sub = new Set([f.id]);
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const x of b.formations)
+            if (x.parentId && sub.has(x.parentId) && !sub.has(x.id)) {
+              sub.add(x.id);
+              grew = true;
+            }
+        }
+        els = b.elements.filter((x) => sub.has(x.formationId));
+      }
+      const travel = Math.max(0, Math.round(Number(p.turns) || 0));
+      const moved = startTransfer(E, els, sec.id, travel, b.turn + 1);
+      if (!moved.length) return;
+      const who = typeof p.formationId === 'string' ? fm(p.formationId) : moved.length > 3 ? `${moved.length} элементов` : moved.map((x) => e(x)).join(', ');
+      E.log({
+        phase: 'gm',
+        level: 0,
+        side: moved[0].side,
+        refs: moved.map((x) => x.id),
+        text: `ГМ: ${who} — переброска на участок «${sec.name}»${travel ? `, в пути ${travel} ${plural(travel, 'ход', 'хода', 'ходов')} (в бою с ${b.turn + 1 + travel}-го хода)` : ''}${note}.`,
+      });
+      break;
+    }
+    case 'setSide': {
+      // Укрепления стороны (на всём поле или на участке) и разведданные.
+      const side = p.side as 'A' | 'B';
+      if (side !== 'A' && side !== 'B') return;
+      const sec = typeof p.sector === 'string' ? b.sectors?.find((x) => x.id === p.sector) : undefined;
+      if (typeof p.sector === 'string' && !sec) return;
+      const changes: string[] = [];
+      if (typeof p.fortification === 'string') {
+        if (sec) {
+          const was = sec.fortification[side] ?? '';
+          if (was !== p.fortification) {
+            const o = b.ruleset.fortifications.find((x) => x.id === p.fortification);
+            if (p.fortification && !o) return;
+            if (o) sec.fortification[side] = o.id;
+            else delete sec.fortification[side];
+            changes.push(`укрепления на участке «${sec.name}»: ${o?.name ?? 'как у стороны'}`);
+          }
+        } else {
+          const o = b.ruleset.fortifications.find((x) => x.id === p.fortification);
+          if (o && b.sides[side].fortification !== o.id) {
+            b.sides[side].fortification = o.id;
+            changes.push(`укрепления: ${o.name}`);
+          }
+        }
+      }
+      if (typeof p.intel === 'string') {
+        const o = b.ruleset.intelLevels.find((x) => x.id === p.intel);
+        if (o && b.sides[side].intel !== o.id) {
+          b.sides[side].intel = o.id;
+          changes.push(`разведданные: ${o.name}`);
+        }
+      }
+      if (!changes.length) return;
+      E.invalidate();
+      E.log({ phase: 'gm', level: 0, side, text: `ГМ: ${sd(side)} — ${changes.join(', ')}${note}.` });
+      break;
+    }
+    case 'note': {
+      // Заметка ГМ в журнал: решение игрока, событие вне расчёта.
+      const text = String(p.text ?? '').trim();
+      if (!text) return;
+      const refs = Array.isArray(p.elementIds) ? (p.elementIds as string[]).filter((id) => E.elements.has(id)) : undefined;
+      E.log({ phase: 'gm', level: 0, side: p.side === 'A' || p.side === 'B' ? p.side : undefined, refs, text: `Заметка ГМ: ${text}` });
       break;
     }
     case 'endBattle': {
@@ -395,6 +481,9 @@ export const INTERVENTION_LABELS: Record<InterventionType, string> = {
   removeEffect: 'снятие эффекта',
   strike: 'вызов удара',
   cancelStrike: 'отмена удара',
+  transfer: 'переброска',
+  setSide: 'укрепления и разведданные',
+  note: 'заметка в журнал',
 };
 
 /** Что отменит «Отменить» в бою: вмешательство ГМ, сделанное после последнего хода, или сам последний ход. */

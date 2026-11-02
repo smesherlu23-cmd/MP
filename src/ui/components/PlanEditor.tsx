@@ -19,7 +19,7 @@ import {
   type TriggerMetric,
 } from '../../engine';
 import { updateScenario } from '../store';
-import { Btn, Info, Num, Section, Sel, Txt } from './ui';
+import { Btn, Info, Menu, Num, Section, Sel, Txt } from './ui';
 
 const HINT = [
   'События наступают в начале хода — в каждом бою и в каждом прогоне: на заданном ходу или когда выполнено условие («потери Синих ≥ 30% → резерв в бой»).',
@@ -33,7 +33,24 @@ const KIND_TIP: Record<ScenarioEventKind, string> = {
   conditions: 'Меняются условия боя: наступает ночь, начинается дождь…',
   strike: 'Средство огневой поддержки стороны (артиллерия, авиация) наносит удар по подразделению противника или по всей стороне.',
   effect: 'На сторону или подразделение на несколько ходов действует эффект: дымовая завеса, внезапность, растерянность…',
+  band: 'Дистанция меняется сразу: внезапное сближение, отход на дальнюю дистанцию — на всём поле или на участке.',
+  resupply: 'Подвоз боезапаса, топлива или снаряжения подразделению или всей стороне.',
+  command: 'У формирования меняются командир, связь или снабжение: прибыл новый командир, восстановлена связь.',
+  fortification: 'Меняются укрепления стороны (разбиты, дооборудованы) — на всём поле или на участке — или её разведданные.',
+  transfer: 'Подразделение перебрасывается на другой участок: несколько ходов в пути (вне боя), потом вступает в бой там.',
 };
+
+/** Какие события относятся к подразделению стороны и что значит «не выбрано». */
+const NODE_PICK: Partial<Record<ScenarioEventKind, string>> = {
+  arrive: '— подразделение —',
+  order: '— подразделение —',
+  effect: '— вся сторона —',
+  resupply: '— вся сторона —',
+  command: '— формирование —',
+  transfer: '— подразделение —',
+};
+/** События, не относящиеся к одной стороне. */
+const NO_SIDE = new Set<ScenarioEventKind>(['conditions', 'band']);
 
 const TRIGGER_TIP: Record<TriggerMetric, string> = {
   losses: 'Потери личного состава стороны или подразделения от начальной численности.',
@@ -58,9 +75,16 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
         id: newId('ev'),
         kind,
         turn: Math.min(scenarioTurns(sc, rs), last + 2 || 3),
-        side: kind === 'conditions' ? undefined : 'A',
+        side: NO_SIDE.has(kind) ? undefined : 'A',
         chance: 100,
       };
+      if (kind === 'band') ev.bandId = rs.rangeBands[rs.rangeBands.length - 1]?.id;
+      if (kind === 'resupply') ev.ammo = 25;
+      if (kind === 'fortification') ev.fortificationId = rs.fortifications[0]?.id;
+      if (kind === 'transfer') {
+        ev.sectorId = sc.sectors?.[1]?.id ?? sc.sectors?.[0]?.id;
+        ev.turns = 1;
+      }
       if (kind === 'strike') {
         ev.turn = 1;
         ev.assetId = sc.sides[0].support?.[0]?.id;
@@ -75,6 +99,18 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
       walkUnits(f, (n, _p, depth) => void out.push({ value: n.id, label: `${'\u00a0\u00a0\u00a0'.repeat(depth)}${n.name}` }));
     return out;
   };
+  /** Формирования стороны (узлы с подчинёнными и корни) — у них есть командир. */
+  const sideGroups = (side: SideId) => {
+    const sd = sc.sides.find((x) => x.id === side);
+    const out: { value: string; label: string }[] = [];
+    for (const f of sd?.formations ?? [])
+      walkUnits(
+        f,
+        (n, _p, depth) => void ((depth === 0 || n.children.length) && out.push({ value: n.id, label: `${'\u00a0\u00a0\u00a0'.repeat(depth)}${n.name}` })),
+      );
+    return out;
+  };
+  const sectors = sc.sectors ?? [];
   const sideName = (id?: SideId) => sc.sides.find((x) => x.id === id)?.name ?? '';
   const summary = events.length ? `${events.length} ${events.length === 1 ? 'событие' : events.length < 5 ? 'события' : 'событий'}` : 'событий нет';
   const hasSupport = sc.sides.some((s) => s.support?.length);
@@ -108,16 +144,20 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                 onChange={(v) =>
                   set((e) => {
                     e.kind = v;
-                    if (v === 'conditions') delete e.side;
+                    if (NO_SIDE.has(v)) delete e.side;
                     else e.side ??= 'A';
+                    if (v === 'band') e.bandId ??= rs.rangeBands[rs.rangeBands.length - 1]?.id;
+                    if (v === 'transfer') e.sectorId ??= sc.sectors?.[1]?.id ?? sc.sectors?.[0]?.id;
                     if (v === 'strike') e.assetId ??= sc.sides.find((x) => x.id === e.side)?.support?.[0]?.id;
                     if (v === 'effect') e.effectId ??= rs.tempEffects[0]?.id;
                   })
                 }
-                options={(Object.keys(EVENT_KIND_LABELS) as ScenarioEventKind[]).map((k) => ({ value: k, label: EVENT_KIND_LABELS[k], title: KIND_TIP[k] }))}
+                options={(Object.keys(EVENT_KIND_LABELS) as ScenarioEventKind[])
+                  .filter((k) => k !== 'transfer' || k === ev.kind || sectors.length > 1)
+                  .map((k) => ({ value: k, label: EVENT_KIND_LABELS[k], title: KIND_TIP[k] }))}
                 width={228}
               />
-              {ev.kind !== 'conditions' && (
+              {!NO_SIDE.has(ev.kind) && (
                 <Sel
                   value={side}
                   onChange={(v) =>
@@ -133,19 +173,147 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                   title={ev.kind === 'strike' ? 'Чья огневая поддержка бьёт' : undefined}
                 />
               )}
-              {(ev.kind === 'arrive' || ev.kind === 'order' || ev.kind === 'effect') && (
+              {NODE_PICK[ev.kind] && (
                 <Sel
                   value={ev.nodeId ?? ''}
                   onChange={(v) => set((e) => void (e.nodeId = v || undefined))}
-                  options={[{ value: '', label: ev.kind === 'effect' ? '— вся сторона —' : '— подразделение —' }, ...sideNodes(side)]}
+                  options={[{ value: '', label: NODE_PICK[ev.kind]! }, ...(ev.kind === 'command' ? sideGroups(side) : sideNodes(side))]}
                   width={230}
                 />
+              )}
+              {ev.kind === 'band' && (
+                <Sel
+                  value={ev.bandId ?? ''}
+                  onChange={(v) => set((e) => void (e.bandId = v || undefined))}
+                  options={[{ value: '', label: '— дистанция —' }, ...rs.rangeBands.map((b) => ({ value: b.id, label: b.name, title: b.description }))]}
+                  width={150}
+                />
+              )}
+              {(ev.kind === 'conditions' || ev.kind === 'band' || ev.kind === 'fortification') && sectors.length > 1 && (
+                <Sel
+                  value={ev.sectorId ?? ''}
+                  onChange={(v) => set((e) => void (e.sectorId = v || undefined))}
+                  options={[{ value: '', label: 'всё поле' }, ...sectors.map((x) => ({ value: x.id, label: `участок «${x.name}»` }))]}
+                  width={170}
+                  title={
+                    ev.kind === 'fortification'
+                      ? 'Где меняются укрепления (разведданные — всегда для всей стороны)'
+                      : 'Где меняется: на всём поле (и на участках со своими условиями) или на одном участке'
+                  }
+                />
+              )}
+              {ev.kind === 'resupply' && (
+                <>
+                  {(['ammo', 'fuel', 'equipment'] as const)
+                    .filter((k) => rs.features[k] || ev[k])
+                    .map((k) => (
+                      <Num
+                        key={k}
+                        value={ev[k] ?? 0}
+                        onChange={(v) => set((e) => void (v > 0 ? (e[k] = Math.min(100, v)) : delete e[k]))}
+                        min={0}
+                        max={100}
+                        integer
+                        suffix="%"
+                        width={78}
+                        emptyAs={0}
+                        title={`${{ ammo: 'Боезапас', fuel: 'Топливо', equipment: 'Снаряжение' }[k]}: сколько процентов подвезти`}
+                        placeholder={{ ammo: 'БК', fuel: 'топл.', equipment: 'снар.' }[k]}
+                      />
+                    ))}
+                </>
+              )}
+              {ev.kind === 'command' && (
+                <>
+                  {rs.features.command && (
+                    <Sel
+                      value={ev.commandLevel === undefined ? '' : String(ev.commandLevel)}
+                      onChange={(v) => set((e) => void (v === '' ? delete e.commandLevel : (e.commandLevel = Number(v))))}
+                      options={[
+                        { value: '', label: 'командир: не менять' },
+                        { value: '0', label: 'без командира' },
+                        ...rs.commandLevels.map((l, j) => ({ value: String(j + 1), label: `командир: ${l.name}`, title: l.description })),
+                      ]}
+                      width={190}
+                    />
+                  )}
+                  {rs.features.comms && (
+                    <Num
+                      value={ev.comms}
+                      onChange={(v) => set((e) => void (v >= 0 ? (e.comms = Math.min(100, v)) : delete e.comms))}
+                      emptyAs={-1}
+                      min={0}
+                      max={100}
+                      integer
+                      suffix="%"
+                      width={78}
+                      placeholder="связь"
+                      title="Связь формирования, %; пусто — не менять"
+                    />
+                  )}
+                  <Num
+                    value={ev.supply}
+                    onChange={(v) => set((e) => void (v >= 0 ? (e.supply = Math.min(100, v)) : delete e.supply))}
+                    emptyAs={-1}
+                    min={0}
+                    max={100}
+                    integer
+                    suffix="%"
+                    width={78}
+                    placeholder="снабж."
+                    title="Снабжение формирования, %; пусто — не менять"
+                  />
+                </>
+              )}
+              {ev.kind === 'fortification' && (
+                <>
+                  <Sel
+                    value={ev.fortificationId ?? ''}
+                    onChange={(v) => set((e) => void (e.fortificationId = v || undefined))}
+                    options={[
+                      { value: '', label: 'укрепления: не менять' },
+                      ...rs.fortifications.map((o) => ({ value: o.id, label: `укрепления: ${o.name}`, title: o.description })),
+                    ]}
+                    width={200}
+                  />
+                  <Sel
+                    value={ev.intelId ?? ''}
+                    onChange={(v) => set((e) => void (e.intelId = v || undefined))}
+                    options={[
+                      { value: '', label: 'разведданные: не менять' },
+                      ...rs.intelLevels.map((o) => ({ value: o.id, label: `разведданные: ${o.name}`, title: o.description })),
+                    ]}
+                    width={210}
+                  />
+                </>
+              )}
+              {ev.kind === 'transfer' && (
+                <>
+                  <span className="plan-label">на</span>
+                  <Sel
+                    value={ev.sectorId ?? ''}
+                    onChange={(v) => set((e) => void (e.sectorId = v || undefined))}
+                    options={[{ value: '', label: '— участок —' }, ...sectors.map((x) => ({ value: x.id, label: x.name }))]}
+                    width={150}
+                  />
+                  <span className="plan-label">в пути</span>
+                  <Num
+                    value={ev.turns ?? 1}
+                    onChange={(v) => set((e) => void (e.turns = Math.max(0, Math.round(v))))}
+                    min={0}
+                    max={20}
+                    integer
+                    suffix="ход."
+                    width={78}
+                    title="Сколько ходов подразделение в пути (вне боя); 0 — сразу"
+                  />
+                </>
               )}
               {ev.kind === 'order' && (
                 <Sel
                   value={ev.orderId ?? ''}
                   onChange={(v) => set((e) => void (e.orderId = v || undefined))}
-                  options={[{ value: '', label: '— приказ —' }, ...rs.orders.map((o) => ({ value: o.id, label: o.name }))]}
+                  options={[{ value: '', label: '— приказ —' }, ...rs.orders.map((o) => ({ value: o.id, label: o.name, title: o.description }))]}
                   width={150}
                 />
               )}
@@ -340,17 +508,35 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
         <Btn sm onClick={() => add('conditions')}>
           + Смена условий
         </Btn>
-        <Btn sm onClick={() => add('strike')} title={hasSupport ? undefined : 'Сначала задайте огневую поддержку в карточке стороны'}>
-          + Удар поддержки
-        </Btn>
-        <Btn
+        <Menu
           sm
-          onClick={() => add('effect')}
-          disabled={!rs.tempEffects.length}
-          title={rs.tempEffects.length ? undefined : 'В наборе правил нет заготовок эффектов'}
-        >
-          + Эффект
-        </Btn>
+          label="+ Другое событие"
+          alignLeft
+          items={[
+            {
+              label: 'Удар поддержки',
+              onClick: () => add('strike'),
+              disabled: !hasSupport,
+              tip: hasSupport ? KIND_TIP.strike : 'Сначала задайте огневую поддержку в карточке стороны',
+            },
+            {
+              label: 'Временный эффект',
+              onClick: () => add('effect'),
+              disabled: !rs.tempEffects.length,
+              tip: rs.tempEffects.length ? KIND_TIP.effect : 'В наборе правил нет заготовок эффектов',
+            },
+            { label: 'Смена дистанции', onClick: () => add('band'), tip: KIND_TIP.band },
+            { label: 'Подвоз', onClick: () => add('resupply'), tip: KIND_TIP.resupply },
+            { label: 'Командир и связь', onClick: () => add('command'), tip: KIND_TIP.command },
+            { label: 'Укрепления и разведданные', onClick: () => add('fortification'), tip: KIND_TIP.fortification },
+            {
+              label: 'Переброска на участок',
+              onClick: () => add('transfer'),
+              disabled: sectors.length < 2,
+              tip: sectors.length < 2 ? 'Нужно хотя бы два участка (раздел «Участки» сценария)' : KIND_TIP.transfer,
+            },
+          ]}
+        />
         <Info text="Примеры: «ход 6, Синие, Танковая рота — подход подкреплений, вероятность 80%, разброс ±1» — танки подходят на 5–7-м ходу, а в одном бою из пяти не подходят вовсе. «Когда потери Красных ≥ 30%, задержка 1 — Красные, Резерв: приказ «Атака»» — контратака резерва. «Ход 1, удар поддержки по опорному пункту» — артподготовка." />
       </div>
     </Section>
