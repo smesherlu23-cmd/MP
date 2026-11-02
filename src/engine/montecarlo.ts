@@ -2,8 +2,9 @@
 // Любой прогон можно открыть как полноценный бой по его сиду.
 
 import { createBattle, runToEnd } from './battle';
+import { EngineContext, notArrived } from './context';
 import { clone, normalizeRuleset } from './defaults';
-import type { Battle, Id, Ruleset, Scenario, SideId } from './types';
+import type { Battle, ElementState, Id, Ruleset, Scenario, SideId } from './types';
 
 export interface RunSideSummary {
   personnelLoss: number;
@@ -18,6 +19,60 @@ export interface RunSideSummary {
   ammo: number;
   score: number;
   equipmentLoss: Record<Id, number>;
+  /** Потери личного состава подразделений верхних уровней, %: формирование или элемент → %. */
+  units?: Record<Id, number>;
+  /** Выполнение задач стороны, % (по порядку задач). */
+  objectives?: number[];
+}
+
+/** Подписи формирований и задач сторон (одинаковы во всех прогонах сценария). */
+export interface RunMeta {
+  units: Record<SideId, { id: Id; name: string; depth: number }[]>;
+  objectives: Record<SideId, string[]>;
+}
+
+/** Подразделений стороны в разбивке прогонов — не больше. */
+const MAX_UNITS = 16;
+
+/**
+ * Подразделения стороны для разбивки: подчинённые старшего (формирования и элементы); если старших
+ * несколько — и они сами. Потери личного состава, % (не подошедшие подкрепления не считаются).
+ */
+function unitLosses(b: Battle, side: SideId): { id: Id; name: string; depth: number; lossPct: number }[] {
+  const E = new EngineContext(b);
+  const roots = b.formations.filter((f) => f.side === side && !f.parentId);
+  const sub = (fid: Id) => {
+    const ids = new Set([fid]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const x of b.formations)
+        if (x.parentId && ids.has(x.parentId) && !ids.has(x.id)) {
+          ids.add(x.id);
+          grew = true;
+        }
+    }
+    return b.elements.filter((x) => ids.has(x.formationId));
+  };
+  const out: { id: Id; name: string; depth: number; lossPct: number }[] = [];
+  const push = (id: Id, name: string, depth: number, els: ElementState[]) => {
+    let start = 0;
+    let now = 0;
+    for (const el of els) {
+      if (notArrived(el)) continue;
+      start += el.startPersonnel;
+      now += E.personnel(el);
+    }
+    if (start > 0) out.push({ id, name, depth, lossPct: Math.round((1 - now / start) * 1000) / 10 });
+  };
+  const many = roots.length > 1;
+  for (const r of roots) {
+    if (many) push(r.id, r.name, 0, sub(r.id));
+    const d = many ? 1 : 0;
+    for (const f of b.formations.filter((x) => x.parentId === r.id)) push(f.id, f.name, d, sub(f.id));
+    for (const el of b.elements.filter((x) => x.formationId === r.id)) push(el.id, el.name, d, [el]);
+  }
+  return out.slice(0, MAX_UNITS);
 }
 
 export interface RunSummary {
@@ -74,6 +129,8 @@ export interface MonteCarloResult {
   metrics: MetricRow[];
   sideNames: Record<SideId, string>;
   ms: number;
+  /** Подписи формирований и задач (у результатов прежних версий нет). */
+  meta?: RunMeta;
 }
 
 export function runSeed(baseSeed: string, i: number): string {
@@ -87,6 +144,8 @@ export function summarizeRun(b: Battle, index: number): RunSummary {
     const s = r.sides[side];
     const equipmentLoss: Record<Id, number> = {};
     for (const q of s.equipment) equipmentLoss[q.typeId] = q.losses;
+    const units: Record<Id, number> = {};
+    for (const u of unitLosses(b, side)) units[u.id] = u.lossPct;
     sides[side] = {
       personnelLoss: s.personnel.losses,
       personnelLossPct: s.personnel.lossPct,
@@ -100,6 +159,8 @@ export function summarizeRun(b: Battle, index: number): RunSummary {
       ammo: s.supply.ammo,
       score: s.score * 100,
       equipmentLoss,
+      units,
+      objectives: s.objectives.map((o) => Math.round(o.score * 1000) / 10),
     };
   }
   return {
@@ -117,9 +178,23 @@ export function summarizeRun(b: Battle, index: number): RunSummary {
   };
 }
 
-export function runOne(scenario: Scenario, ruleset: Ruleset, seed: string, index = 0): RunSummary {
+/** Подписи формирований и задач по завершённому бою. */
+export function runMeta(b: Battle): RunMeta {
+  const units = {} as RunMeta['units'];
+  const objectives = {} as RunMeta['objectives'];
+  for (const side of ['A', 'B'] as SideId[]) {
+    const s = b.result!.sides[side];
+    units[side] = unitLosses(b, side).map(({ id, name, depth }) => ({ id, name, depth }));
+    objectives[side] = s.objectives.map((o) => o.label);
+  }
+  return { units, objectives };
+}
+
+/** Один прогон; meta (если передан) получает подписи формирований и задач. */
+export function runOne(scenario: Scenario, ruleset: Ruleset, seed: string, index = 0, meta?: { value?: RunMeta }): RunSummary {
   const b = createBattle(scenario, ruleset, { seed, silent: true, shareInputs: true });
   runToEnd(b);
+  if (meta && !meta.value) meta.value = runMeta(b);
   return summarizeRun(b, index);
 }
 
@@ -137,7 +212,7 @@ export function stats(values: number[]): Stats {
   return { mean, sd, min: v[0], p10: q(0.1), median: q(0.5), p90: q(0.9), max: v[v.length - 1] };
 }
 
-export function aggregate(runs: RunSummary[], ruleset: Ruleset, sideNames: Record<SideId, string>, baseSeed: string, ms = 0): MonteCarloResult {
+export function aggregate(runs: RunSummary[], ruleset: Ruleset, sideNames: Record<SideId, string>, baseSeed: string, ms = 0, meta?: RunMeta): MonteCarloResult {
   const n = runs.length;
   const buckets = new Map<string, OutcomeBucket>();
   const levelOrder = [...ruleset.outcomeLevels].sort((a, b) => b.minDiff - a.minDiff);
@@ -255,6 +330,24 @@ export function aggregate(runs: RunSummary[], ruleset: Ruleset, sideNames: Recor
       side,
       pick((s) => s.score),
     );
+    // Разбивка: задачи (выполнение, %) и формирования (потери личного состава, %).
+    meta?.objectives[side].forEach((label, i) =>
+      add(
+        `${side}.obj.${i}`,
+        `Задача: ${label}`,
+        '%',
+        side,
+        pick((s) => s.objectives?.[i] ?? 0),
+      ),
+    );
+    for (const u of meta?.units[side] ?? [])
+      add(
+        `${side}.unit.${u.id}`,
+        `Потери л/с — ${'  '.repeat(u.depth)}${u.name}`,
+        '%',
+        side,
+        pick((s) => s.units?.[u.id] ?? 0),
+      );
   }
   return {
     runs,
@@ -267,6 +360,7 @@ export function aggregate(runs: RunSummary[], ruleset: Ruleset, sideNames: Recor
     metrics,
     sideNames,
     ms,
+    meta,
   };
 }
 
@@ -275,9 +369,10 @@ export function runMany(scenario: Scenario, rulesetIn: Ruleset, n: number, baseS
   const t0 = Date.now();
   const ruleset = normalizeRuleset(clone(rulesetIn));
   const runs: RunSummary[] = [];
-  for (let i = 0; i < n; i++) runs.push(runOne(scenario, ruleset, runSeed(baseSeed, i), i));
+  const meta: { value?: RunMeta } = {};
+  for (let i = 0; i < n; i++) runs.push(runOne(scenario, ruleset, runSeed(baseSeed, i), i, meta));
   const names = { A: scenario.sides[0].name, B: scenario.sides[1].name };
-  return aggregate(runs, ruleset, names, baseSeed, Date.now() - t0);
+  return aggregate(runs, ruleset, names, baseSeed, Date.now() - t0, meta.value);
 }
 
 /** Асинхронный вариант для интерфейса: считает порциями, не блокируя окно. */
@@ -292,10 +387,11 @@ export async function runManyAsync(
   const t0 = Date.now();
   const ruleset = normalizeRuleset(clone(rulesetIn));
   const runs: RunSummary[] = [];
+  const meta: { value?: RunMeta } = {};
   let lastYield = Date.now();
   for (let i = 0; i < n; i++) {
     if (isCancelled?.()) break;
-    runs.push(runOne(scenario, ruleset, runSeed(baseSeed, i), i));
+    runs.push(runOne(scenario, ruleset, runSeed(baseSeed, i), i, meta));
     if (Date.now() - lastYield > 30) {
       onProgress?.(i + 1, n);
       await new Promise((r) => setTimeout(r, 0));
@@ -304,5 +400,5 @@ export async function runManyAsync(
   }
   onProgress?.(runs.length, n);
   const names = { A: scenario.sides[0].name, B: scenario.sides[1].name };
-  return aggregate(runs, ruleset, names, baseSeed, Date.now() - t0);
+  return aggregate(runs, ruleset, names, baseSeed, Date.now() - t0, meta.value);
 }
