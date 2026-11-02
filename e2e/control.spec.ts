@@ -89,7 +89,9 @@ test('сценарий: участки боя, событие по услови�
 
   const plan = page.locator('.section', { hasText: 'План боя' });
   if (!(await plan.locator('.card-body').count())) await plan.locator('.card-head').click();
-  await plan.getByRole('button', { name: '+ Удар поддержки' }).click();
+  // Редкие виды событий — в меню «+ Другое событие».
+  await plan.getByRole('button', { name: '+ Другое событие' }).click();
+  await page.locator('.menu-pop .menu-item', { hasText: 'Удар поддержки' }).click();
   await plan.getByRole('button', { name: '+ Смена приказа' }).click();
   const row = plan.locator('.plan-row').last();
   await row.locator('.plan-extra select').first().selectOption('trigger');

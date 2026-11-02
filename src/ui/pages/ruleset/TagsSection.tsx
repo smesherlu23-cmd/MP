@@ -135,7 +135,7 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
                       {tag === r.reconTag && (
                         <span className="faint small" data-tip="Тег разведки (раздел «Общее»): типы с ним — лучшие наблюдатели">
                           {' '}
-                          · разведка
+                          · тег разведки
                         </span>
                       )}
                     </td>
