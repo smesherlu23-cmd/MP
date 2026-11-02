@@ -95,6 +95,9 @@ import {
   resolveTree,
   ruleIssues,
   notArrived,
+  formatStructure,
+  structureRows,
+  toCsvText,
   type Battle,
   type UnitNode,
   type Ruleset,
@@ -1835,6 +1838,41 @@ describe('доработки: правила, теги, план, задачи',
     expect(out.map((x) => x.label)).toEqual(['Правило «Артиллерия»']);
   });
 
+  it('перебор: коэффициент, правило, состояние, участок; условия — на всём поле или на участке', () => {
+    const { sc, a } = sectors();
+    sc.sectors![0].conditions = { time: 'night' };
+    const k = sweepVariants(sc, rs0, { kind: 'coefficient', key: 'casualtyScale', from: 0.5, to: 1.5, step: 0.25 });
+    expect(k.map((x) => x.label)).toEqual(['0,5', '0,75', '1', '1,25', '1,5']);
+    expect(k.map((x) => x.ruleset!.coefficients.casualtyScale)).toEqual([0.5, 0.75, 1, 1.25, 1.5]);
+    expect(k[0].scenario).toBe(sc);
+    const r = clone(rs0);
+    r.modifiers.push({ id: 'm1', name: 'М', enabled: true, when: [], effects: { fire: 2 } });
+    expect(sweepVariants(sc, r, { kind: 'rule', ruleId: 'm1' }).map((x) => x.ruleset!.modifiers.at(-1)!.enabled)).toEqual([false, true]);
+    const st = sweepVariants(sc, rs0, { kind: 'state', side: 'A', nodeId: a.id, stateKey: 'morale', from: 20, to: 80, step: 30 });
+    expect(st.map((x) => x.scenario.sides[0].formations[0].state.morale)).toEqual([20, 50, 80]);
+    expect(sweepVariants(sc, rs0, { kind: 'sector', side: 'A', nodeId: a.children[0].id }).map((x) => x.scenario.sides[0].sectorOf![a.children[0].id])).toEqual(
+      ['L', 'R'],
+    );
+    const all = sweepVariants(sc, rs0, { kind: 'condition', category: 'time' });
+    expect(all.every((x) => x.scenario.sectors![0].conditions!.time === undefined)).toBe(true);
+    const one = sweepVariants(sc, rs0, { kind: 'condition', category: 'time', sectorId: 'R' });
+    expect(one.map((x) => x.scenario.sectors![1].conditions!.time)).toEqual(rs0.conditions.find((c) => c.id === 'time')!.options.map((o) => o.id));
+    expect(one.every((x) => x.scenario.sectors![0].conditions!.time === 'night')).toBe(true);
+    const f = sweepVariants(sc, rs0, { kind: 'fortification', side: 'B', sectorId: 'L' });
+    expect(f.map((x) => x.scenario.sectors![0].fortification!.B)).toEqual(rs0.fortifications.map((o) => o.id));
+  });
+
+  it('прогоны: разбивка по задачам и формированиям', () => {
+    const res = runMany(makeDemoScenario(), rs0, 8, 'BD');
+    expect(res.meta!.objectives.A.length).toBeGreaterThan(0);
+    expect(res.meta!.units.A.length).toBeGreaterThan(0);
+    const o = res.metrics.find((m) => m.key === 'A.obj.0')!;
+    expect(o.values).toHaveLength(8);
+    expect(o.values.every((v) => v >= 0 && v <= 100)).toBe(true);
+    const u = res.meta!.units.A[0];
+    expect(res.metrics.find((m) => m.key === `A.unit.${u.id}`)!.values).toEqual(res.runs.map((x) => x.sides.A.units![u.id]));
+  });
+
   it('заметка ГМ и новый тип в составе: в журнале, при повторе — так же', () => {
     const b = createBattle(duel(rs0, infantry('Синие', 20), infantry('Красные', 20, 'defend')), rs0, { seed: 'NT' });
     stepTurn(b);
@@ -1849,5 +1887,31 @@ describe('доработки: правила, теги, план, задачи',
     const r = replayBattle(b, { withInterventions: true });
     expect(strip(r)).toEqual(strip(b));
     expect(r.log.some((e) => e.text === 'Заметка ГМ: игрок отводит роту к опушке')).toBe(true);
+  });
+});
+
+describe('состав сил: печать и таблица', () => {
+  it('шаблон — штат; силы — в строю, вне строя и состояние; в таблице у всех строк одинаково столбцов', () => {
+    const rs = makeUniversalRuleset();
+    const unit = makeDemoBattalion();
+    const tpl = formatStructure(unit, rs, { template: true });
+    expect(tpl.split('\n')[0]).toBe(unit.name);
+    expect(tpl).toContain('Личный состав по штату:');
+    expect(tpl).not.toContain(' из ');
+    const first = unit.children[0];
+    first.composition[0].current = Math.max(0, first.composition[0].authorized - 2);
+    first.composition[0].recoverable = 1;
+    first.state.morale = 40;
+    const force = formatStructure(unit, rs, { templateName: 'Батальон' });
+    expect(force).toContain('по шаблону «Батальон»');
+    expect(force).toContain('(+1 вне строя)');
+    expect(force).toContain('мораль 40');
+    const rows = structureRows(unit, rs);
+    expect(rows.every((r) => r.length === rows[0].length)).toBe(true);
+    expect(rows[0]).toContain('В строю');
+    expect(structureRows(unit, rs, { template: true })[0]).not.toContain('В строю');
+    const csv = toCsvText(rows);
+    expect(csv.startsWith('\ufeff"Уровень";')).toBe(true);
+    expect(csv.split('\n')).toHaveLength(rows.length);
   });
 });

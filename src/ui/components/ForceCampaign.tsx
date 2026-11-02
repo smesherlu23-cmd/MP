@@ -20,9 +20,9 @@ import {
   type StateKey,
   type UnitNode,
 } from '../../engine';
-import { defaultRulesetId, fmtDate, openTab, prepareForceStep, useApp } from '../store';
+import { confirmDialog, defaultRulesetId, fmtDate, openTab, prepareForceStep, promptDialog, toastUndoable, updateForce, useApp } from '../store';
 import { Icon, type IconName } from './Icon';
-import { Btn, Check, Modal, Num, Range, Section, Seg, Txt, fmt0 } from './ui';
+import { Area, Btn, Check, Field, Menu, Modal, Num, Range, Section, Seg, Txt, fmt0 } from './ui';
 
 /** Боеготовность сил — подпись и цвет. */
 export const LEVEL_LABEL: Record<ForceCondition['level'], { text: string; cls: string }> = {
@@ -406,43 +406,154 @@ export const KIND_ICON: Record<ForceRecord['kind'], IconName> = {
 export const lossBreakdown = (x: Pick<ForceRecord, 'killed' | 'wounded' | 'missing'>) =>
   x.wounded === undefined ? undefined : `убито ${fmt0(x.killed ?? 0)}, ранено ${fmt0(x.wounded)}, пропало без вести ${fmt0(x.missing ?? 0)}`;
 
-/** Боевой путь сил: бои (с исходом и потерями), отдых, лечение, ремонт, пополнения. */
+/** Боевой путь сил: бои (с исходом и потерями), отдых, лечение, ремонт, пополнения, свои записи ГМ. */
 export function ForceHistory({ force }: { force: UnitNode }) {
   const list = force.history ?? [];
   const index = useApp((s) => s.battleIndex);
+  const [adding, setAdding] = useState(false);
   const battles = list.filter((x) => x.kind === 'battle' && x.battleId).length;
   const lost = list.filter((x) => x.kind === 'battle').reduce((a, x) => a - (x.personnel ?? 0), 0);
   const wounded = list.reduce((a, x) => a + (x.kind === 'battle' ? (x.wounded ?? 0) : 0), 0);
   const summary = list.length
     ? `боёв: ${battles}${lost > 0 ? `, потери за всё время: ${fmt0(lost)} чел.${wounded ? `, из них ранено ${fmt0(wounded)}` : ''}` : ''}`
     : 'пока пусто';
+  // Запись ищется по месту в списке и по времени — на случай, если список успел измениться.
+  const edit = (i: number, fn: (h: ForceRecord[], at: number) => void) =>
+    updateForce(force.id, (d) => {
+      const h = d.history ?? [];
+      const at = h[i]?.at === list[i]?.at ? i : h.findIndex((x) => x.at === list[i]?.at && x.title === list[i]?.title);
+      if (at >= 0) fn(h, at);
+      d.history = h;
+    });
+  const editNote = async (i: number) => {
+    const x = list[i];
+    const v = await promptDialog(x.kind === 'note' ? 'Запись боевого пути' : 'Заметка к записи', x.kind === 'note' ? x.title : (x.note ?? ''));
+    if (v === null || v === undefined) return;
+    edit(i, (h, at) => {
+      if (x.kind === 'note') h[at].title = v.trim() || h[at].title;
+      else if (v.trim()) h[at].note = v.trim();
+      else delete h[at].note;
+    });
+  };
+  const remove = async (i: number) => {
+    const x = list[i];
+    const battle = x.kind === 'battle' && x.battleId;
+    if (
+      !(await confirmDialog(
+        'Удалить запись?',
+        `«${x.title}» уберётся из боевого пути. Численность и состояние сил не изменятся.${battle ? ' Рост опыта считается по записям боёв — этот бой больше не будет учтён.' : ''}`,
+        'Удалить',
+        true,
+      ))
+    )
+      return;
+    edit(i, (h, at) => void h.splice(at, 1));
+    toastUndoable('Запись удалена.');
+  };
   return (
-    <Section id="force-history" title="Боевой путь" summary={summary} defaultOpen={list.length > 0}>
-      {!list.length && <div className="muted">Здесь появятся бои, итоги которых записаны в эти силы, а также отдых, лечение, ремонт и пополнения.</div>}
-      <div className="stack" style={{ gap: 4 }}>
-        {[...list].reverse().map((x, i) => (
-          <div key={i} className="history-row">
-            <span className="faint small nowrap">{fmtDate(x.at)}</span>
-            <span className="history-icon">
-              <Icon name={KIND_ICON[x.kind] ?? 'dot'} size={14} />
-            </span>
-            <span className="grow" style={{ minWidth: 0 }}>
-              {x.battleId && index[x.battleId] ? (
-                <a href="#" onClick={(e) => (e.preventDefault(), openTab('battle', x.battleId!))}>
-                  {x.title}
-                </a>
-              ) : (
-                x.title
-              )}
-              {x.outcome && <span className="faint"> · {x.outcome}</span>}
-              {x.note && <span className="faint"> · {x.note}</span>}
-            </span>
-            <span className={`small nowrap ${(x.personnel ?? 0) < 0 ? 'bad' : (x.personnel ?? 0) > 0 ? 'good' : 'faint'}`} data-tip={lossBreakdown(x)}>
-              {[signed(x.personnel, 'чел.'), signed(x.equipment, 'ед.')].filter(Boolean).join(', ') || '—'}
-            </span>
-          </div>
-        ))}
+    <>
+      <Section
+        id="force-history"
+        title="Боевой путь"
+        summary={summary}
+        defaultOpen={list.length > 0}
+        actions={
+          <Btn sm kind="ghost" onClick={() => setAdding(true)} title="Своя запись: марш, переформирование, награждение…">
+            + Запись
+          </Btn>
+        }
+      >
+        {!list.length && (
+          <div className="muted">Здесь появятся бои, итоги которых записаны в эти силы, а также отдых, лечение, ремонт, пополнения и свои записи.</div>
+        )}
+        <div className="stack" style={{ gap: 4 }}>
+          {list
+            .map((x, i) => ({ x, i }))
+            .reverse()
+            .map(({ x, i }) => (
+              <div key={`${x.at}-${i}`} className="history-row">
+                <span className="faint small nowrap">{fmtDate(x.at)}</span>
+                <span className="history-icon">
+                  <Icon name={KIND_ICON[x.kind] ?? 'dot'} size={14} />
+                </span>
+                <span className="grow" style={{ minWidth: 0 }}>
+                  {x.battleId && index[x.battleId] ? (
+                    <a href="#" onClick={(e) => (e.preventDefault(), openTab('battle', x.battleId!))}>
+                      {x.title}
+                    </a>
+                  ) : (
+                    x.title
+                  )}
+                  {x.outcome && <span className="faint"> · {x.outcome}</span>}
+                  {x.note && <span className="faint"> · {x.note}</span>}
+                </span>
+                <span className={`small nowrap ${(x.personnel ?? 0) < 0 ? 'bad' : (x.personnel ?? 0) > 0 ? 'good' : 'faint'}`} data-tip={lossBreakdown(x)}>
+                  {[signed(x.personnel, 'чел.'), signed(x.equipment, 'ед.')].filter(Boolean).join(', ') || '—'}
+                </span>
+                <Menu
+                  sm
+                  items={[
+                    { label: x.kind === 'note' ? 'Изменить текст…' : x.note ? 'Изменить заметку…' : 'Добавить заметку…', onClick: () => void editNote(i) },
+                    { label: 'Удалить запись', danger: true, onClick: () => void remove(i) },
+                  ]}
+                />
+              </div>
+            ))}
+        </div>
+      </Section>
+      {/* Окно — вне раздела: добавить запись можно и в свёрнутом. */}
+      {adding && createPortal(<RecordModal force={force} onClose={() => setAdding(false)} />, document.body)}
+    </>
+  );
+}
+
+/** Своя запись в боевой путь: дата и текст. */
+function RecordModal({ force, onClose }: { force: UnitNode; onClose: () => void }) {
+  const today = new Date();
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const [date, setDate] = useState(iso(today));
+  const [title, setTitle] = useState('');
+  const [note, setNote] = useState('');
+  const save = () => {
+    const at = date === iso(today) ? today.toISOString() : new Date(`${date}T12:00`).toISOString();
+    updateForce(force.id, (d) => {
+      const h = d.history ?? [];
+      const rec: ForceRecord = { at, kind: 'note', title: title.trim(), ...(note.trim() ? { note: note.trim() } : {}) };
+      // По дате: запись задним числом встаёт на своё место.
+      const pos = h.findIndex((x) => x.at > at);
+      if (pos < 0) h.push(rec);
+      else h.splice(pos, 0, rec);
+      d.history = h;
+    });
+    onClose();
+  };
+  return (
+    <Modal
+      title="Запись в боевой путь"
+      onClose={onClose}
+      footer={
+        <>
+          <span className="muted small grow">На численность и состояние сил не влияет.</span>
+          <Btn onClick={onClose}>Отмена</Btn>
+          <Btn kind="primary" disabled={!title.trim() || !date} onClick={save}>
+            Добавить
+          </Btn>
+        </>
+      }
+    >
+      <div className="stack" style={{ gap: 10 }}>
+        <div className="fields two">
+          <Field label="Дата">
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+          <Field label="Что было">
+            <Txt value={title} onChange={setTitle} placeholder="Марш к переправе, переформирование…" width="100%" />
+          </Field>
+        </div>
+        <Field label="Подробности">
+          <Area value={note} onChange={setNote} rows={3} placeholder="необязательно" />
+        </Field>
       </div>
-    </Section>
+    </Modal>
   );
 }

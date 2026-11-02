@@ -5,12 +5,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   findUnit,
+  formatStructure,
   insertUnit,
   isOutdated,
   moveUnit,
   pathTo,
   remapTypes,
   resolveTree,
+  structureRows,
+  toCsvText,
   transferFromRuleset,
   usedTypeIds,
   validateUnit,
@@ -30,6 +33,7 @@ import {
   deleteFormation,
   duplicateFormation,
   exportJson,
+  exportText,
   historyStep,
   instantiateLibrary,
   openTab,
@@ -67,6 +71,7 @@ import { InsertDialog, NodeEditor } from './unit/NodeEditor';
 import { TransferDialog } from '../components/TransferDialog';
 import { SummaryCard } from './unit/Summary';
 import { ForceReadiness } from './ForcesPage';
+import { printText } from './battle/common';
 
 export function FormationPage({ tab }: { tab: Tab }) {
   const ref = tab.ref!;
@@ -221,6 +226,21 @@ export function FormationPage({ tab }: { tab: Tab }) {
               <Menu
                 items={[
                   { label: 'Развернуть всё', onClick: () => setCollapsed([]) },
+                  'sep',
+                  {
+                    label: 'Печать состава…',
+                    tip: isLib ? 'Структура и штат по типам' : 'Структура, штат и в строю по типам, состояние',
+                    onClick: () => printText(root.name, formatStructure(root, rs, { template: isLib, templateName: tpl?.name })),
+                  },
+                  {
+                    label: 'Состав текстом…',
+                    onClick: () => void exportText(`${root.name} — состав`, formatStructure(root, rs, { template: isLib, templateName: tpl?.name })),
+                  },
+                  {
+                    label: 'Состав таблицей (CSV)…',
+                    tip: 'Строка на тип в составе каждого подразделения — для Excel',
+                    onClick: () => void exportText(`${root.name} — состав`, toCsvText(structureRows(root, rs, { template: isLib })), 'csv'),
+                  },
                   'sep',
                   ...(isLib
                     ? [
