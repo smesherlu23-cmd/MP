@@ -28,34 +28,8 @@ export const FEATURE_HINTS: Record<keyof Features, string> = {
   orderDelay: 'Приказ ГМ доходит не сразу: чем хуже связь и командир, тем чаще с опозданием на ход и больше.',
 };
 
+/** Общее: длина хода и механики. Название — в заголовке страницы, тег разведки — в разделе «Теги». */
 export function General({ r, upd }: { r: Ruleset; upd: Upd }) {
-  return (
-    <Card title="Общее">
-      <div className="fields">
-        <Field label="Название">
-          <Txt value={r.name} onChange={(v) => upd((d) => void (d.name = v))} />
-        </Field>
-        <Field label="Эпоха">
-          <Txt value={r.era ?? ''} onChange={(v) => upd((d) => void (d.era = v))} placeholder="например: Вторая мировая" />
-        </Field>
-        <Field
-          label="Минут в ходу"
-          hint="Длина хода. Ходов в бою = часы × 60 ÷ минуты в ходу. Коэффициенты (расход, отдых, сближение…) заданы на ход: при смене длины хода проверьте баланс прогонами."
-        >
-          <Num value={r.turnMinutes} onChange={(v) => upd((d) => void (d.turnMinutes = v))} min={1} integer width="100%" />
-        </Field>
-        <Field
-          label="Тег разведки"
-          hint="Типы с этим тегом — лучшие наблюдатели, как при приказе «разведка»: тег получает подразделение, в составе которого есть такой тип."
-        >
-          <Txt value={r.reconTag} onChange={(v) => upd((d) => void (d.reconTag = v))} />
-        </Field>
-      </div>
-    </Card>
-  );
-}
-
-export function FeaturesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
   return (
     <Card
       title={
@@ -64,6 +38,14 @@ export function FeaturesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
         </>
       }
     >
+      <div className="fields" style={{ marginBottom: 14 }}>
+        <Field
+          label="Минут в ходу"
+          hint="Длина хода. Ходов в бою = часы × 60 ÷ минуты в ходу. Коэффициенты (расход, отдых, сближение…) заданы на ход: при смене длины хода проверьте баланс прогонами."
+        >
+          <Num value={r.turnMinutes} onChange={(v) => upd((d) => void (d.turnMinutes = v))} min={1} integer width={120} />
+        </Field>
+      </div>
       <div className="feature-grid">
         {(Object.keys(FEATURE_LABELS) as (keyof Features)[]).map((k) => (
           <span key={k} data-tip={FEATURE_HINTS[k]}>

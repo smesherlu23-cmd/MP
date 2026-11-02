@@ -78,8 +78,15 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
         for (const c of m.when)
           if ((c.field === 'tag' || c.field === 'enemy.tag') && Array.isArray(c.value) && c.value.length > 1)
             c.value = c.value.filter((x) => String(x) !== tag);
+      if (d.reconTag === tag) d.reconTag = '';
     });
     toastUndoable(`Тег «${tag}» удалён.`);
+  };
+
+  const setRecon = (tag: string) => {
+    const was = r.reconTag;
+    upd((d) => void (d.reconTag = tag));
+    toastUndoable(tag ? `Тег разведки — «${tag}»${was ? ` (был «${was}»)` : ''}.` : `«${was}» больше не тег разведки.`);
   };
 
   const addTag = async () => {
@@ -101,7 +108,7 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
         <Btn kind="primary" onClick={addTag}>
           + Тег
         </Btn>
-        <Info text="Тег — особенность типа: задаётся у типов в каталоге. Подразделение получает теги всех типов своего состава; по тегам работают свои правила («если тег …») и разведка. Здесь — все теги набора: где они используются, переименование и удаление сразу везде." />
+        <Info text="Тег — особенность типа: задаётся у типов в каталоге. Подразделение получает теги всех типов своего состава; по тегам работают свои правила («если тег …») и разведка. Здесь — все теги набора: где они используются, переименование и удаление сразу везде. Тег разведки (лучшие наблюдатели) — в меню тега." />
       </div>
       {!tags.length && <div className="empty">Тегов пока нет. Добавьте тег и выберите типы, у которых он есть.</div>}
       {tags.length > 0 && (
@@ -127,7 +134,7 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
                     <td className="nowrap">
                       <b>{tag}</b>
                       {tag === r.reconTag && (
-                        <span className="faint small" data-tip="Тег разведки (раздел «Общее»): типы с ним — лучшие наблюдатели">
+                        <span className="faint small" data-tip="Тег разведки: типы с ним — лучшие наблюдатели, как при приказе «разведка»">
                           {' '}
                           · тег разведки
                         </span>
@@ -190,6 +197,13 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
                           { label: 'Типы с этим тегом…', onClick: () => setPick({ tag, isNew: false }) },
                           ...(units.length ? [{ label: 'Открыть первое подразделение', onClick: () => openUnit(units[0].ref, units[0].nodeId) }] : []),
                           { label: 'Переименовать…', onClick: () => void rename(tag) },
+                          tag === r.reconTag
+                            ? { label: 'Не считать тегом разведки', onClick: () => setRecon('') }
+                            : {
+                                label: 'Сделать тегом разведки',
+                                tip: 'Типы с этим тегом — лучшие наблюдатели, как при приказе «разведка». Тег разведки в наборе один.',
+                                onClick: () => setRecon(tag),
+                              },
                           'sep' as const,
                           { label: 'Удалить тег', danger: true, onClick: () => void remove(tag) },
                         ]}

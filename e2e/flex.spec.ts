@@ -97,24 +97,17 @@ test('файл JSON, брошенный на окно, импортируетс�
   expect(errors).toEqual([]);
 });
 
-test('настройка окна: кнопки панели инструментов и масштаб', async ({ page }) => {
+test('панель инструментов постоянная; масштаб — Ctrl+плюс, Ctrl+0 и в настройках', async ({ page }) => {
   const errors = await openApp(page);
   await expect(page.locator('.tb-global .tb-undo')).toHaveCount(2);
-  await page.locator('.toolbar-win').click({ button: 'right', position: { x: 520, y: 26 } });
-  await menu(page, 'Отменить и повторить');
-  await expect(page.locator('.tb-global .tb-undo')).toHaveCount(0);
-  await page.locator('.toolbar-win').click({ button: 'right', position: { x: 520, y: 26 } });
-  await menu(page, 'Масштаб');
-  await expect(page.locator('.tb-zoom-val')).toHaveText('100%');
-  await page.keyboard.press('Control+Equal');
-  await expect(page.locator('.tb-zoom-val')).toHaveText('110%');
-  await page.keyboard.press('Control+Digit0');
-  await expect(page.locator('.tb-zoom-val')).toHaveText('100%');
-  // То же — в окне «Настроить окно…».
   await page.locator('.tb-global > .tb-appmenu').click();
-  await menu(page, 'Настроить окно…');
-  await page.locator('.modal .check', { hasText: 'Отменить и повторить' }).locator('input').check();
-  await page.locator('.modal').getByRole('button', { name: 'Готово' }).click();
-  await expect(page.locator('.tb-global .tb-undo')).toHaveCount(2);
+  await expect(page.locator('.menu-pop')).not.toContainText('Настроить окно');
+  await menu(page, 'Настройки');
+  const zoom = page.locator('.field', { hasText: 'Масштаб' }).locator('select');
+  await expect(zoom).toHaveValue('auto');
+  await page.keyboard.press('Control+Equal');
+  await expect(zoom).toHaveValue('1.1');
+  await page.keyboard.press('Control+Digit0');
+  await expect(zoom).toHaveValue('auto');
   expect(errors).toEqual([]);
 });

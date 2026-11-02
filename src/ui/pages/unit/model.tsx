@@ -117,7 +117,7 @@ export interface Ctx {
   stats: Map<Id, NodeStats>;
   collapsed: Set<Id>;
   toggle: (id: Id) => void;
-  openInsert: (targetId: Id, attach: boolean) => void;
+  openInsert: (targetId: Id) => void;
   /** Силы: передать часть в другое подразделение (окно выбора). */
   openTransfer?: (nodeId: Id) => void;
   drop: { id: Id; pos: DropPos } | null;
@@ -189,8 +189,7 @@ export function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false
   const un = (fn: (n: UnitNode) => void) => ctx.upd((d) => fn(findUnit(d, node.id)!));
   return [
     { label: 'Добавить подчинённое', kbd: 'Ins', onClick: () => addChild(ctx, node) },
-    { label: 'Вставить из шаблонов…', onClick: () => ctx.openInsert(node.id, false), tip: 'Готовый шаблон: взвод, роту, батарею…' },
-    ctx.isLib && { label: 'Придать из шаблонов…', onClick: () => ctx.openInsert(node.id, true), tip: 'То же, но с отметкой «придано»' },
+    { label: 'Вставить из шаблонов…', onClick: () => ctx.openInsert(node.id), tip: 'Готовый шаблон: взвод, роту, батарею…' },
     'sep',
     !ctx.isLib &&
       !!ctx.openTransfer && {
@@ -250,7 +249,6 @@ export function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false
             delete n.templateHash;
           }),
       },
-    !isRoot && node.attachedFrom !== undefined && { label: 'Снять отметку «придано»', onClick: () => un((n) => void delete n.attachedFrom) },
     'sep',
     !isRoot && {
       label: 'Удалить',
@@ -262,16 +260,6 @@ export function nodeActions(ctx: Ctx, node: UnitNode): (MenuItem | 'sep' | false
 }
 
 // ------------------------------------------------------------------ клавиатура
-
-export const KEYS_HELP = [
-  'Клавиши (когда курсор не в поле ввода):',
-  '↑ ↓ ← → — выбор подразделения',
-  'Ins — добавить подчинённое',
-  'Ctrl+D — дублировать',
-  'Del — удалить (можно отменить)',
-  'F2 или Enter — переименовать',
-  'Ctrl+Z / Ctrl+Y — отменить / повторить',
-].join('\n');
 
 /** Видимые узлы по порядку (свёрнутые ветки пропускаются). */
 export function visibleNodes(ctx: Ctx): UnitNode[] {

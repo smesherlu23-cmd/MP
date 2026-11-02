@@ -1,29 +1,8 @@
-// Настраиваемое окно: какие кнопки в панели инструментов и масштаб интерфейса.
+// Масштаб интерфейса: «авто» по экрану или свой.
 
 import { create } from 'zustand';
 import { desktop } from './storage';
 import { get, toast, updateSettings, useApp, type Settings } from './store';
-
-export type ToolbarItem = 'nav' | 'create' | 'undo' | 'search' | 'find' | 'import' | 'zoom' | 'theme' | 'help';
-
-/** Кнопки панели инструментов в порядке показа; def — показана ли по умолчанию. */
-export const TOOLBAR_ITEMS: { id: ToolbarItem; label: string; def: boolean }[] = [
-  { id: 'nav', label: 'Назад и вперёд', def: true },
-  { id: 'create', label: 'Создать (+)', def: true },
-  { id: 'undo', label: 'Отменить и повторить', def: true },
-  { id: 'search', label: 'Поиск', def: true },
-  { id: 'find', label: 'Найти всё (Ctrl+K)', def: false },
-  { id: 'import', label: 'Импорт из файла', def: false },
-  { id: 'zoom', label: 'Масштаб', def: false },
-  { id: 'theme', label: 'Светлая или тёмная тема', def: false },
-  { id: 'help', label: 'Справка', def: false },
-];
-
-export const tbShown = (st: Settings, id: ToolbarItem) => st.toolbar?.[id] ?? TOOLBAR_ITEMS.find((x) => x.id === id)!.def;
-
-export function setTbShown(id: ToolbarItem, on: boolean) {
-  updateSettings({ toolbar: { ...get().settings.toolbar, [id]: on } });
-}
 
 // ------------------------------------------------------------------ масштаб
 

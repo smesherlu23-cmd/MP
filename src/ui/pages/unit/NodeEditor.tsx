@@ -129,7 +129,7 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
         }
         actions={<Menu sm items={nodeActions(ctx, node)} />}
       >
-        {((tpl && !isLibRoot) || node.attachedFrom !== undefined || node.transfer) && (
+        {((tpl && !isLibRoot) || node.transfer) && (
           <div className="meta" style={{ marginBottom: 10 }}>
             {tpl && !isLibRoot && (
               <span>
@@ -165,7 +165,6 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
                 </a>
               </span>
             )}
-            {node.attachedFrom !== undefined && !node.transfer && <span>придано{node.attachedFrom ? ` из: ${node.attachedFrom}` : ''}</span>}
           </div>
         )}
         <div className="fields">
@@ -412,13 +411,11 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
 
 // ------------------------------------------------------------------ вставка из шаблонов
 
-export function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; targetId: Id; attach: boolean; onClose: () => void }) {
+export function InsertDialog({ ctx, targetId, onClose }: { ctx: Ctx; targetId: Id; onClose: () => void }) {
   const target = findUnit(ctx.root, targetId);
   const [q, setQ] = useState('');
   const [pick, setPick] = useState<Id | null>(null);
   const [count, setCount] = useState(1);
-  const [att, setAtt] = useState(attach);
-  const [from, setFrom] = useState('');
   const items = Object.values(ctx.lib)
     .filter((u) => (!u.rulesetId || u.rulesetId === ctx.rs.id) && canInsertTemplate(ctx, u.id))
     .filter((u) => !q || u.name.toLowerCase().includes(q.toLowerCase()))
@@ -430,7 +427,7 @@ export function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; tar
     const copies = Array.from({ length: count }, (_, i) => {
       // «1-й взвод» → «1-й», «2-й»…; «Взвод» → «Взвод 1», «Взвод 2»…
       const name = count > 1 ? (numbered ? nextName(tpl.name, i) : `${tpl.name} ${i + 1}`) : undefined;
-      return instantiateLibrary(tpl.id, { attachedFrom: att ? from.trim() : undefined, name })!;
+      return instantiateLibrary(tpl.id, { name })!;
     });
     ctx.upd((d) => void findUnit(d, targetId)!.children.push(...copies));
     ctx.setSel(copies[0].id);
@@ -438,7 +435,7 @@ export function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; tar
   };
   return (
     <Modal
-      title={`${attach ? 'Придать' : 'Вставить'} в «${target?.name ?? ''}»`}
+      title={`Вставить в «${target?.name ?? ''}»`}
       onClose={onClose}
       wide
       footer={
@@ -447,10 +444,6 @@ export function InsertDialog({ ctx, targetId, attach, onClose }: { ctx: Ctx; tar
             <span className="muted small">Количество</span>
             <Num value={count} onChange={setCount} min={1} max={50} integer width={70} />
           </span>
-          <Check value={att} onChange={setAtt} title="Отметить как приданное подразделение">
-            придано
-          </Check>
-          {att && <input value={from} placeholder="откуда (необязательно)" onChange={(e) => setFrom(e.target.value)} style={{ width: 200 }} />}
           <div className="grow" />
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn kind="primary" disabled={!pick} onClick={() => doInsert()}>

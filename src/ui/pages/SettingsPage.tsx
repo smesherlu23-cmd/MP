@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Btn, Card, Field, Modal, Num, Seg } from '../components/ui';
-import { ZOOM_HINT, ZoomSelect, openToolbarSetup } from '../components/ToolbarSetup';
+import { ZOOM_HINT, ZoomSelect } from '../components/ZoomSelect';
 import { storage, storageKind, type BackupInfo, type TrashItem } from '../storage';
 import { confirmDialog, deleteBattles, fmtDate, installExamples, restoreBackup, restoreFromTrash, toast, updateSettings, useApp } from '../store';
 
@@ -61,11 +61,6 @@ export function SettingsPage() {
             </Field>
             <Field label="Масштаб" hint={ZOOM_HINT}>
               <ZoomSelect />
-            </Field>
-            <Field label="Панель инструментов" hint="Можно и правым щелчком по свободному месту панели инструментов.">
-              <div>
-                <Btn onClick={openToolbarSetup}>Настроить кнопки…</Btn>
-              </div>
             </Field>
           </div>
         </Card>

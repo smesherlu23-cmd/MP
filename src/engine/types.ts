@@ -178,7 +178,6 @@ export interface Ruleset {
   dataVersion?: number;
   id: Id;
   name: string;
-  era?: string;
   description?: string;
   /** Минут в одном ходу (для отображения времени боя). */
   turnMinutes: number;

@@ -149,7 +149,6 @@ function Body({ o }: { o: Obj }) {
       <>
         <Facts
           items={[
-            ['Эпоха', r.era || '—'],
             ['Типов вооружения', r.componentTypes.length],
             ['Приказов', r.orders.length],
             ['Дистанций', r.rangeBands.map((b) => b.name).join(', ')],

@@ -7,7 +7,7 @@ import { Menu, ToolbarSlot } from '../components/ui';
 import { Crumbs } from '../components/Crumbs';
 import { createRuleset, deleteRuleset, exportJson, setTabSub, updateRuleset, useApp, type Tab } from '../store';
 import type { Upd } from './ruleset/common';
-import { CoefficientsSection, FeaturesSection, General, JsonSection, OutcomesSection, TempEffectsSection } from './ruleset/General';
+import { CoefficientsSection, General, JsonSection, OutcomesSection, TempEffectsSection } from './ruleset/General';
 import { BandsSection, ClassesSection, TypesSection } from './ruleset/Types';
 import { ConditionsSection, LevelsSection, OptionsSection, OrdersSection } from './ruleset/Orders';
 import { ModifiersSection } from './ruleset/Modifiers';
@@ -75,12 +75,7 @@ export function RulesetPage({ tab }: { tab: Tab }) {
           ))}
         </nav>
         <div className="stack">
-          {sub === 'general' && (
-            <>
-              <General r={r} upd={upd} />
-              <FeaturesSection r={r} upd={upd} />
-            </>
-          )}
+          {sub === 'general' && <General r={r} upd={upd} />}
           {sub === 'types' && <TypesSection r={r} upd={upd} tabKey={tab.key} />}
           {sub === 'tags' && <TagsSection r={r} upd={upd} tabKey={tab.key} />}
           {sub === 'classes' && (

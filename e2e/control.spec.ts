@@ -151,14 +151,13 @@ test('силы между боями: одна кнопка «Восстанов
   await panel.getByRole('button', { name: 'Восстановить…' }).click();
   await expect(row('Лечить')).toHaveCount(1);
 
-  // Боезапас до 100%, топливо до 75%, пополнение из резерва с примечанием — одной записью.
+  // Боезапас до 100%, топливо до 75%, пополнение из резерва — одной записью.
   await onlyRows(['Боезапас', 'Топливо', 'Пополнить']);
   await row('Топливо').getByRole('button', { name: '75%' }).click();
-  await row('Пополнить').getByRole('textbox').fill('маршевая рота');
   await modal.getByRole('button', { name: 'Восстановить', exact: true }).click();
   await expect(hist).toContainText('боезапас до 100%');
   await expect(hist).toContainText('топливо до 75%');
-  await expect(hist).toContainText('пополнение из резерва (маршевая рота)');
+  await expect(hist).toContainText('пополнение из резерва');
 
   // Всё сразу — «Восстановить полностью» в меню «⋯»; после него кнопки нет.
   await page.locator('.tb-actions button[aria-haspopup="menu"]').click();

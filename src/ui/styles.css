@@ -3168,111 +3168,6 @@ h4 {
 .home {
   max-width: 1180px;
 }
-.workflow {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 18px;
-  counter-reset: wf;
-}
-@media (max-width: 1100px) {
-  .workflow {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-.wf-step {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-.wf-step:not(:last-child)::after {
-  content: "›";
-  position: absolute;
-  right: -9px;
-  top: 22px;
-  z-index: 1;
-  color: var(--faint);
-  font-size: var(--fs-md);
-}
-.wf-main {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  padding: 12px 14px 10px;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-.wf-main:hover {
-  background: var(--panel2);
-}
-.wf-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.wf-n {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  color: var(--faint);
-  border: 1px solid var(--border2);
-}
-.wf-step.done .wf-n {
-  color: var(--accent-text);
-  background: var(--accent);
-  border-color: var(--accent-fg);
-}
-.wf-icon {
-  color: var(--steel);
-  font-size: var(--fs);
-}
-.wf-count {
-  margin-left: auto;
-  font-size: var(--fs-lg);
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-.wf-label {
-  font-weight: 600;
-  font-size: var(--fs);
-}
-.wf-about {
-  color: var(--faint);
-  font-size: var(--fs-xs);
-  line-height: 1.4;
-}
-.wf-add {
-  padding: 7px 14px;
-  font: inherit;
-  font-size: var(--fs-sm);
-  text-align: left;
-  color: var(--accent-fg);
-  background: none;
-  border: none;
-  border-top: 1px solid var(--border);
-  cursor: pointer;
-}
-button.wf-add:hover {
-  background: var(--accent-soft);
-}
-span.wf-add {
-  color: var(--faint);
-  cursor: default;
-}
 
 /* ---------- каталог раздела */
 
@@ -3390,30 +3285,6 @@ span.wf-add {
   color: var(--steel);
 }
 
-/* ---------- сценарий: быстрые переходы к разделам */
-.jump-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 16px;
-}
-.jump-nav button {
-  padding: 4px 12px;
-  font: inherit;
-  font-size: var(--fs-sm);
-  color: var(--muted);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  cursor: pointer;
-}
-.jump-nav button:hover {
-  color: var(--text);
-  border-color: var(--border2);
-}
-.jump-target {
-  scroll-margin-top: 76px;
-}
 .catalog-tbl {
   table-layout: fixed;
 }
@@ -3813,11 +3684,6 @@ button.team-dot:hover {
   position: absolute;
   top: 8px;
   right: 12px;
-}
-.side-strip-foot {
-  display: flex;
-  justify-content: flex-end;
-  padding: 4px 10px 6px;
 }
 .support-side {
   padding: 6px 10px;
@@ -5068,39 +4934,6 @@ tr[tabindex]:focus-visible {
 }
 .nav-list.flat {
   padding-left: 0;
-}
-
-/* ---------- панель инструментов: масштаб */
-
-.tb-zoom {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-.tb-zoom .tb-icon {
-  width: 24px;
-  min-width: 24px;
-}
-.tb-zoom-val {
-  min-width: 40px;
-  padding: 0 2px;
-  font: inherit;
-  font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-  background: none;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-}
-.tb-zoom-val:hover {
-  color: var(--text);
-  background: var(--hover);
-}
-.tb-setup {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 18px;
 }
 
 /* ---------- страница с инспектором (шаблоны и силы): схема слева, свойства справа */

@@ -25,7 +25,7 @@ import { Crumbs } from '../components/Crumbs';
 import { Link } from '../components/Link';
 import { TypeMapModal } from '../components/RulesetTransfer';
 import { ForceHistory } from '../components/ForceCampaign';
-import { Card, Info, Menu, Seg, ToolbarSlot } from '../components/ui';
+import { Card, Menu, Seg, ToolbarSlot } from '../components/ui';
 import { Inspector, InspectorToggle, inspectorShown, toggleInspector } from '../components/Inspector';
 import { openUnit, useTabState } from '../hooks';
 import {
@@ -54,18 +54,7 @@ import {
   teamColor,
   type Tab,
 } from '../store';
-import {
-  type Ctx,
-  DND_LIB,
-  DND_NODE,
-  KEYS_HELP,
-  type NodeStats,
-  canInsertTemplate,
-  computeStats,
-  initialCollapsed,
-  saveAsTemplate,
-  treeKey,
-} from './unit/model';
+import { type Ctx, DND_LIB, DND_NODE, type NodeStats, canInsertTemplate, computeStats, initialCollapsed, saveAsTemplate, treeKey } from './unit/model';
 import { EmptyStart, OrgChart, TreeList } from './unit/OrgChart';
 import { InsertDialog, NodeEditor } from './unit/NodeEditor';
 import { TransferDialog } from '../components/TransferDialog';
@@ -80,7 +69,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
   const [selId, setSel] = useTabState<string>(`${tab.key}:sel`, res?.f.id ?? '');
   const [view, setView] = useTabState<'chart' | 'list'>('unit-view', 'chart');
   const [collapsedArr, setCollapsed] = useTabState<string[]>(`${tab.key}:collapsed`, res ? initialCollapsed(res.f) : []);
-  const [insert, setInsert] = useState<{ id: Id; attach: boolean } | null>(null);
+  const [insert, setInsert] = useState<Id | null>(null);
   const [transfer, setTransfer] = useState<Id | null>(null);
   const [drop, setDrop] = useState<{ id: Id; pos: DropPos } | null>(null);
   const [typeMap, setTypeMap] = useState<{ to: Id; ids: Id[] } | null>(null);
@@ -136,7 +125,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
       if (selPath.has(id)) setSel(id);
       setCollapsed([...collapsedArr.filter((x) => x !== id), id]);
     },
-    openInsert: (id, attach) => setInsert({ id, attach }),
+    openInsert: (id) => setInsert(id),
     openTransfer: isLib ? undefined : setTransfer,
     drop,
     setDrop,
@@ -369,10 +358,6 @@ export function FormationPage({ tab }: { tab: Tab }) {
                 <span className="warn">⚠</span> замечаний: {issues.length}
               </span>
             )}
-            <span className="faint">
-              мышь и клавиши
-              <Info text={`Перетаскивайте подразделения мышью — в том числе из боковой панели слева.\n\n${KEYS_HELP}`} />
-            </span>
           </div>
 
           {!isLib && (root.children.length > 0 || root.composition.length > 0) && <ForceReadiness force={root} />}
@@ -380,7 +365,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
           <Card tight className={view === 'chart' ? 'org-card' : undefined}>
             {view === 'chart' ? <OrgChart ctx={ctx} /> : <TreeList ctx={ctx} />}
           </Card>
-          {insert && <InsertDialog ctx={ctx} targetId={insert.id} attach={insert.attach} onClose={() => setInsert(null)} />}
+          {insert && <InsertDialog ctx={ctx} targetId={insert} onClose={() => setInsert(null)} />}
           {transfer && (
             <TransferDialog
               nodeId={transfer}
@@ -407,7 +392,7 @@ export function FormationPage({ tab }: { tab: Tab }) {
         <Inspector id="unit" label="Свойства" def={460}>
           <div className="inspector-scroll stack">
             <NodeEditor key={sel.id} ctx={ctx} node={sel} />
-            <SummaryCard node={sel} rs={rs} resolved={resolved} template={isLib} />
+            <SummaryCard node={sel} rs={rs} resolved={resolved} template={isLib} forceRoot={!isLib && sel.id === root.id} />
           </div>
         </Inspector>
       </div>

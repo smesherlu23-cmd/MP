@@ -22,7 +22,9 @@ test('итоги боя записываются в силы, а не в шаб�
   await page.keyboard.press('Escape');
 
   await openFromNav(page, '1-й мотострелковый батальон');
-  const pers = Number((await page.locator('.stat', { hasText: 'Личный состав' }).locator('.v').textContent())!.split('из')[0].replace(/\s/g, ''));
+  // Численность сил — в шапке страницы (боеготовность), сводка её не повторяет.
+  const pers = Number((await page.locator('.readiness .fc-meter', { hasText: 'Личный состав' }).locator('b').first().textContent())!.replace(/\s/g, ''));
+  await expect(page.locator('.stat', { hasText: 'Личный состав' })).toHaveCount(0);
   expect(pers).toBeLessThan(before);
   await openFromNav(page, 'Мотострелковый батальон (пример)');
   await expect(page.locator('.stat', { hasText: 'По штату' })).toContainText('489');
