@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { KIND_LABELS, rulesetTags, walkUnits, type ComponentKind, type Ruleset, type UnitNode } from '../../../engine';
-import { Btn, Card, Check, Info, Menu, Modal, Txt } from '../../components/ui';
+import { Btn, Card, Check, Info, Menu, Modal } from '../../components/ui';
 import { openUnit, revealAnchor, setTabState, useTabState } from '../../hooks';
 import { confirmDialog, defaultRulesetId, openTab, promptDialog, tabKey as keyOf, toast, toastUndoable, useApp } from '../../store';
 import type { Upd } from './common';
@@ -57,10 +57,6 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
           else if (String(c.value) === tag) c.value = next;
         }
       if (d.reconTag === tag) d.reconTag = next;
-      if (d.tagDescriptions?.[tag] !== undefined) {
-        d.tagDescriptions[next] ??= d.tagDescriptions[tag];
-        delete d.tagDescriptions[tag];
-      }
     });
     toastUndoable(`Тег «${tag}» переименован в «${next}».`);
   };
@@ -82,9 +78,15 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
         for (const c of m.when)
           if ((c.field === 'tag' || c.field === 'enemy.tag') && Array.isArray(c.value) && c.value.length > 1)
             c.value = c.value.filter((x) => String(x) !== tag);
-      if (d.tagDescriptions) delete d.tagDescriptions[tag];
+      if (d.reconTag === tag) d.reconTag = '';
     });
     toastUndoable(`Тег «${tag}» удалён.`);
+  };
+
+  const setRecon = (tag: string) => {
+    const was = r.reconTag;
+    upd((d) => void (d.reconTag = tag));
+    toastUndoable(tag ? `Тег разведки — «${tag}»${was ? ` (был «${was}»)` : ''}.` : `«${was}» больше не тег разведки.`);
   };
 
   const addTag = async () => {
@@ -106,7 +108,7 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
         <Btn kind="primary" onClick={addTag}>
           + Тег
         </Btn>
-        <Info text="Тег — особенность типа: задаётся у типов в каталоге. Подразделение получает теги всех типов своего состава; по тегам работают свои правила («если тег …») и разведка. Здесь — все теги набора: где они используются, описание (видно подсказкой у тега), переименование и удаление сразу везде." />
+        <Info text="Тег — особенность типа: задаётся у типов в каталоге. Подразделение получает теги всех типов своего состава; по тегам работают свои правила («если тег …») и разведка. Здесь — все теги набора: где они используются, переименование и удаление сразу везде. Тег разведки (лучшие наблюдатели) — в меню тега." />
       </div>
       {!tags.length && <div className="empty">Тегов пока нет. Добавьте тег и выберите типы, у которых он есть.</div>}
       {tags.length > 0 && (
@@ -115,7 +117,6 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
             <thead>
               <tr>
                 <th>Тег</th>
-                <th>Описание</th>
                 <th>Типы</th>
                 <th className="num">Подразделений</th>
                 <th>Правила</th>
@@ -133,24 +134,11 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
                     <td className="nowrap">
                       <b>{tag}</b>
                       {tag === r.reconTag && (
-                        <span className="faint small" data-tip="Тег разведки (раздел «Общее»): типы с ним — лучшие наблюдатели">
+                        <span className="faint small" data-tip="Тег разведки: типы с ним — лучшие наблюдатели, как при приказе «разведка»">
                           {' '}
                           · тег разведки
                         </span>
                       )}
-                    </td>
-                    <td style={{ minWidth: 180 }}>
-                      <Txt
-                        value={r.tagDescriptions?.[tag] ?? ''}
-                        onChange={(v) =>
-                          upd((d) => {
-                            if (v.trim()) (d.tagDescriptions ??= {})[tag] = v;
-                            else if (d.tagDescriptions) delete d.tagDescriptions[tag];
-                          })
-                        }
-                        placeholder="описание (необязательно)"
-                        width="100%"
-                      />
                     </td>
                     <td>
                       {orphan ? (
@@ -209,6 +197,13 @@ export function TagsSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: 
                           { label: 'Типы с этим тегом…', onClick: () => setPick({ tag, isNew: false }) },
                           ...(units.length ? [{ label: 'Открыть первое подразделение', onClick: () => openUnit(units[0].ref, units[0].nodeId) }] : []),
                           { label: 'Переименовать…', onClick: () => void rename(tag) },
+                          tag === r.reconTag
+                            ? { label: 'Не считать тегом разведки', onClick: () => setRecon('') }
+                            : {
+                                label: 'Сделать тегом разведки',
+                                tip: 'Типы с этим тегом — лучшие наблюдатели, как при приказе «разведка». Тег разведки в наборе один.',
+                                onClick: () => setRecon(tag),
+                              },
                           'sep' as const,
                           { label: 'Удалить тег', danger: true, onClick: () => void remove(tag) },
                         ]}

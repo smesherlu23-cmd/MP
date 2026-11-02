@@ -8,10 +8,11 @@ test('сводка сторон, окно элемента (просмотр и 
   await openFromNav(page, 'атака на высоту');
   await startBattle(page);
   for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Ход', exact: true }).click();
-  // Над таблицей сил — компактная сводка; «подробнее» — полное сравнение сторон.
+  // Над таблицей сил — компактная сводка; «подробнее» — вкладка «Оценка» с полным сравнением сторон.
   await expect(page.locator('.side-strip-row')).toHaveCount(2);
   await page.locator('.side-strip-more').click();
   await expect(page.locator('.tbl.compare tbody tr').first()).toContainText('Личный состав');
+  await page.locator('.subtabs button', { hasText: 'Силы' }).click();
 
   await page.locator('.tbl a', { hasText: '2-я мотострелковая рота' }).first().click();
   await expect(page.locator('.state-row').first()).toBeVisible();

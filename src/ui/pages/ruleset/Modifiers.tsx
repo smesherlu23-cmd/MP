@@ -46,7 +46,7 @@ export function fieldInfo(r: Ruleset, field: string): { label: string; kind: Fie
       options = (['personnel', 'weapon', 'vehicle'] as ComponentKind[]).map((k) => ({ value: k, label: KIND_LABELS[k] }));
       break;
     case 'tag':
-      options = rulesetTags(r).map((t) => ({ value: t, label: t, title: r.tagDescriptions?.[t] }));
+      options = rulesetTags(r).map((t) => ({ value: t, label: t }));
       break;
     case 'bool':
       options = YES_NO;
@@ -183,11 +183,7 @@ export function ConditionRow({
               placeholder="тег"
               style={{ width: '100%' }}
               className={lostTag ? 'invalid' : undefined}
-              data-tip={
-                lostTag
-                  ? 'Такого тега нет ни у одного типа — условие не выполнится. Теги задаются у типов («Каталог типов»).'
-                  : r.tagDescriptions?.[arr[0] ?? '']
-              }
+              data-tip={lostTag ? 'Такого тега нет ни у одного типа — условие не выполнится. Теги задаются у типов («Каталог типов»).' : undefined}
             />
             <datalist id="mod-tags">
               {(info.options ?? []).map((t) => (
@@ -314,14 +310,6 @@ export function ModifiersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                 </span>
               )}
             </div>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <Txt
-              value={m.description ?? ''}
-              onChange={(v) => um(i, (x) => void (x.description = v))}
-              placeholder="Описание (для себя и игроков)"
-              width="100%"
-            />
           </div>
         </Card>
       ))}

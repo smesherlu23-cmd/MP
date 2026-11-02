@@ -57,10 +57,7 @@ export async function newRulesetDialog(): Promise<Id | undefined> {
   const list = Object.values(s.rulesets).sort((a, b) => (a.id === def ? -1 : b.id === def ? 1 : a.name.localeCompare(b.name, 'ru')));
   const v = await chooseDialog(
     'Новый набор правил — на основе чего?',
-    [
-      ...list.map((r) => ({ value: r.id, label: `На основе «${r.name}»${r.era ? ` — ${r.era}` : ''}` })),
-      { value: '', label: 'Пустой: каталог типов с нуля, остальное — по умолчанию' },
-    ],
+    [...list.map((r) => ({ value: r.id, label: `На основе «${r.name}»` })), { value: '', label: 'Пустой: каталог типов с нуля, остальное — по умолчанию' }],
     'Проще всего взять похожий набор и поменять в нём нужное: типы и их огневую мощь, приказы, условия, коэффициенты. Исходный набор не изменится.',
   );
   if (v === null) return;
@@ -234,7 +231,7 @@ export function updateAllCopies(templateId: Id): number {
 }
 
 /** Копия шаблона для вставки. */
-export function instantiateLibrary(id: Id, opts: { attachedFrom?: string; name?: string } = {}): UnitNode | null {
+export function instantiateLibrary(id: Id, opts: { name?: string } = {}): UnitNode | null {
   const tpl = get().formations[id];
   return tpl ? instantiate(tpl, opts) : null;
 }

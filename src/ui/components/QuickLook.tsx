@@ -25,13 +25,6 @@ function Facts({ items }: { items: [string, ReactNode][] }) {
   );
 }
 
-/** Описание или заметки объекта — первые строки. */
-function Note({ text }: { text?: string }) {
-  const t = text?.trim();
-  if (!t) return null;
-  return <div className="ql-note">{t.length > 400 ? `${t.slice(0, 400)}…` : t}</div>;
-}
-
 /** Теги подразделения — теги типов его состава по всему дереву. */
 function TreeTags({ root, rs }: { root: UnitNode; rs: Ruleset | undefined }) {
   if (!rs) return null;
@@ -45,7 +38,7 @@ function TreeTags({ root, rs }: { root: UnitNode; rs: Ruleset | undefined }) {
       {[...set]
         .sort((a, b) => a.localeCompare(b, 'ru'))
         .map((t) => (
-          <span key={t} className="tag" data-tip={rs.tagDescriptions?.[t]}>
+          <span key={t} className="tag">
             {t}
           </span>
         ))}
@@ -62,7 +55,6 @@ function Body({ o }: { o: Obj }) {
     const sides = rs ? resolveScenario(sc, s.forces).sides : [];
     return (
       <>
-        <Note text={sc.description} />
         <div className="ql-sides">
           {sides.map((sd) => {
             const sum = summarizeUnits(sideUnits(sd), rs!);
@@ -109,7 +101,6 @@ function Body({ o }: { o: Obj }) {
         )}
         <StateLine c={c} />
         <TreeTags root={f} rs={s.rulesets[f.rulesetId ?? defaultRulesetId() ?? '']} />
-        <Note text={f.notes} />
         <Facts
           items={[
             ['Шаблон', tpl?.name ?? '—'],
@@ -129,7 +120,6 @@ function Body({ o }: { o: Obj }) {
     return (
       <>
         <TreeTags root={f} rs={rs} />
-        <Note text={f.notes} />
         <Facts
           items={[
             ['Уровень', f.level || '—'],
@@ -157,10 +147,8 @@ function Body({ o }: { o: Obj }) {
     const used = Object.values(s.scenarios).filter((x) => x.rulesetId === r.id).length;
     return (
       <>
-        <Note text={r.description} />
         <Facts
           items={[
-            ['Эпоха', r.era || '—'],
             ['Типов вооружения', r.componentTypes.length],
             ['Приказов', r.orders.length],
             ['Дистанций', r.rangeBands.map((b) => b.name).join(', ')],

@@ -283,7 +283,7 @@ export function unitHash(node: UnitNode): string {
  * Создать копию шаблона: копия помнит шаблон и узлы шаблона,
  * чтобы позже её можно было обновить. Состояние корня шаблона переносится явно.
  */
-export function instantiate(template: UnitNode, opts: { attachedFrom?: string; name?: string } = {}): UnitNode {
+export function instantiate(template: UnitNode, opts: { name?: string } = {}): UnitNode {
   const c = cloneDeep(template);
   walkUnits(c, (n) => {
     n.srcNodeId = n.id;
@@ -293,7 +293,6 @@ export function instantiate(template: UnitNode, opts: { attachedFrom?: string; n
   c.templateHash = unitHash(template);
   delete c.rulesetId;
   delete c.updatedAt;
-  if (opts.attachedFrom !== undefined) c.attachedFrom = opts.attachedFrom;
   if (opts.name) c.name = opts.name;
   return c;
 }

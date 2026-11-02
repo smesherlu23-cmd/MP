@@ -73,7 +73,6 @@ export function formatStructure(root: UnitNode, rs: Ruleset, opts: { template?: 
           .join(', ')}`,
       );
   });
-  if (!tpl && root.notes?.trim()) lines.push('', 'Заметки', root.notes.trim());
   return lines.join('\n');
 }
 

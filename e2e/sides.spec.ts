@@ -64,7 +64,7 @@ test('командира в конструкторе нет; в сценарии
   expect(errors).toEqual([]);
 });
 
-test('главная: «продолжить» незавершённый бой и недавно изменённое', async ({ page }) => {
+test('главная: «продолжить» незавершённый бой', async ({ page }) => {
   const errors = await openApp(page);
   await expect(page.locator('.card', { hasText: 'С чего начать' })).toBeVisible();
   await openFromNav(page, 'атака на высоту');
@@ -75,7 +75,6 @@ test('главная: «продолжить» незавершённый бой
   const cont = page.locator('.card', { hasText: 'Продолжить' });
   await expect(cont).toContainText('ход 1');
   await expect(page.locator('.card', { hasText: 'С чего начать' })).toHaveCount(0);
-  await expect(page.locator('.card', { hasText: 'Недавно изменено' })).toContainText('Высота 212 — мой вариант');
   await cont.getByRole('button', { name: 'Продолжить', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Ход', exact: true })).toBeVisible();
   expect(errors).toEqual([]);

@@ -227,7 +227,6 @@ export function makeUniversalRuleset(): Ruleset {
     dataVersion: DATA_VERSION,
     id: 'rs-universal',
     name: 'Универсальный (пример)',
-    era: 'XX–XXI век, обобщённо',
     description:
       'Пример набора правил. Классы целей, дистанции, каталог типов, приказы, условия и все коэффициенты можно менять — или создать свой набор для другой эпохи.',
     turnMinutes: 15,
@@ -406,7 +405,6 @@ export function makeLinearRuleset(): Ruleset {
     ...base,
     id: 'rs-linear',
     name: 'Линейная тактика (пример)',
-    era: 'XVIII — середина XIX века',
     description:
       'Пример набора правил для эпохи гладкоствольного оружия: мушкеты, кавалерия, полевая артиллерия. Показывает, как настроить симулятор под другую эпоху.',
     turnMinutes: 20,
@@ -572,7 +570,6 @@ export function makeBlankRuleset(name = 'Новый набор правил'): R
     ...r,
     id: newId('rs'),
     name,
-    era: '',
     description: '',
     componentTypes: [],
     modifiers: [],
@@ -747,12 +744,7 @@ export function makeDemoBattalion(): UnitNode {
         state: { experience: 3 },
         composition: [comp('scout', 20), comp('apc', 3)],
       }),
-      fromTemplate(
-        'demo-tpl-tr',
-        'Танковая рота',
-        { id: 'demo-bn-tank', echelon: 'support', attachedFrom: 'отдельный танковый батальон', state: { experience: 3 } },
-        { tank: 9 },
-      ),
+      fromTemplate('demo-tpl-tr', 'Танковая рота', { id: 'demo-bn-tank', echelon: 'support', state: { experience: 3 } }, { tank: 9 }),
     ],
   });
 }

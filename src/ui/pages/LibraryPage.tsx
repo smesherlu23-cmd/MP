@@ -156,7 +156,7 @@ function useCatalog(sec: NavSection, q: string): { head: string[]; groups: Group
     };
   }
   const rows = Object.values(s.rulesets)
-    .filter((x) => match(x.name, x.era))
+    .filter((x) => match(x.name))
     .sort(byName)
     .map((x): Row => {
       const used = Object.values(s.scenarios).filter((sc) => sc.rulesetId === x.id).length;
@@ -164,10 +164,10 @@ function useCatalog(sec: NavSection, q: string): { head: string[]; groups: Group
         id: x.id,
         name: x.name,
         obj: { kind: 'ruleset', id: x.id },
-        cells: [x.era ?? '', x.componentTypes.length, used || '—', fmtWhen(x.updatedAt)],
+        cells: [x.componentTypes.length, used || '—', fmtWhen(x.updatedAt)],
       };
     });
-  return { head: ['Эпоха', 'Типов', 'Сценариев', 'Изменён'], groups: [{ title: '', rows }], empty: 'Наборов правил нет.' };
+  return { head: ['Типов', 'Сценариев', 'Изменён'], groups: [{ title: '', rows }], empty: 'Наборов правил нет.' };
 }
 
 export function LibraryPage({ tab }: { tab: Tab }) {

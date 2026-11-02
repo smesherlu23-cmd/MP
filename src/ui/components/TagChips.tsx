@@ -9,7 +9,7 @@ export function TagChips({
   className,
 }: {
   tags: string[];
-  rs: Pick<Ruleset, 'tagDescriptions' | 'reconTag'>;
+  rs: Pick<Ruleset, 'reconTag'>;
   onPick?: (tag: string) => void;
   className?: string;
 }) {
@@ -17,7 +17,7 @@ export function TagChips({
   return (
     <span className={`tags readonly${className ? ` ${className}` : ''}`}>
       {tags.map((t) => {
-        const tip = [rs.tagDescriptions?.[t], t === rs.reconTag ? 'Тег разведки: лучшие наблюдатели' : ''].filter(Boolean).join('\n') || undefined;
+        const tip = t === rs.reconTag ? 'Тег разведки: лучшие наблюдатели' : undefined;
         return onPick ? (
           <button key={t} type="button" className="chip chip-btn" data-tip={tip} onClick={() => onPick(t)}>
             {t}

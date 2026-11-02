@@ -22,7 +22,7 @@ import {
 } from '../../engine';
 import { confirmDialog, defaultRulesetId, fmtDate, openTab, prepareForceStep, promptDialog, toastUndoable, updateForce, useApp } from '../store';
 import { Icon, type IconName } from './Icon';
-import { Area, Btn, Check, Field, Menu, Modal, Num, Range, Section, Seg, Txt, fmt0 } from './ui';
+import { Btn, Check, Field, Menu, Modal, Num, Range, Section, Seg, Txt, fmt0 } from './ui';
 
 /** Боеготовность сил — подпись и цвет. */
 export const LEVEL_LABEL: Record<ForceCondition['level'], { text: string; cls: string }> = {
@@ -78,7 +78,6 @@ export function BetweenModal({ force, onClose }: { force: UnitNode; onClose: () 
   const [source, setSource] = useState<'reserve' | 'force'>('reserve');
   const [repPers, setRepPers] = useState(true);
   const [repEquip, setRepEquip] = useState(true);
-  const [note, setNote] = useState('');
 
   // Чего не хватает до штата — по типам, после лечения и ремонта (если они отмечены).
   const healPct = on.heal ? heal : undefined;
@@ -123,7 +122,7 @@ export function BetweenModal({ force, onClose }: { force: UnitNode; onClose: () 
     heal: healPct,
     repair: repairPct,
     transfer: fromForce && donor ? { donor: donor.f, amounts: Object.fromEntries(need.map((x) => [x.typeId, amountOf(x.typeId)])) } : undefined,
-    replenish: on.replenish && source === 'reserve' ? { personnel: repPers, equipment: repEquip, note: note.trim() || undefined } : undefined,
+    replenish: on.replenish && source === 'reserve' ? { personnel: repPers, equipment: repEquip } : undefined,
     rest: on.rest && restParts.length ? { pct: rest, parts: restParts } : undefined,
     ammo: on.ammo ? ammo : undefined,
     fuel: on.fuel ? fuel : undefined,
@@ -211,16 +210,13 @@ export function BetweenModal({ force, onClose }: { force: UnitNode; onClose: () 
                     ]}
                   />
                   {source === 'reserve' ? (
-                    <div className="stack" style={{ gap: 6, marginTop: 6 }}>
-                      <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}>
-                        <Check value={repPers} onChange={setRepPers}>
-                          личный состав
-                        </Check>
-                        <Check value={repEquip} onChange={setRepEquip}>
-                          техника и вооружение
-                        </Check>
-                      </div>
-                      <Txt value={note} onChange={setNote} placeholder="Откуда пополнение: маршевая рота, из резерва…" />
+                    <div className="row" style={{ gap: 16, flexWrap: 'wrap', marginTop: 6 }}>
+                      <Check value={repPers} onChange={setRepPers}>
+                        личный состав
+                      </Check>
+                      <Check value={repEquip} onChange={setRepEquip}>
+                        техника и вооружение
+                      </Check>
                     </div>
                   ) : !donors.length ? (
                     <div className="muted small" style={{ marginTop: 6 }}>
@@ -425,15 +421,12 @@ export function ForceHistory({ force }: { force: UnitNode }) {
       if (at >= 0) fn(h, at);
       d.history = h;
     });
-  const editNote = async (i: number) => {
+  // Своя запись — это её текст: его можно поправить. У записей программы (бой, отдых…) текста своего нет.
+  const editText = async (i: number) => {
     const x = list[i];
-    const v = await promptDialog(x.kind === 'note' ? 'Запись боевого пути' : 'Заметка к записи', x.kind === 'note' ? x.title : (x.note ?? ''));
-    if (v === null || v === undefined) return;
-    edit(i, (h, at) => {
-      if (x.kind === 'note') h[at].title = v.trim() || h[at].title;
-      else if (v.trim()) h[at].note = v.trim();
-      else delete h[at].note;
-    });
+    const v = await promptDialog('Запись боевого пути', x.title);
+    if (!v?.trim()) return;
+    edit(i, (h, at) => void (h[at].title = v.trim()));
   };
   const remove = async (i: number) => {
     const x = list[i];
@@ -493,7 +486,7 @@ export function ForceHistory({ force }: { force: UnitNode }) {
                 <Menu
                   sm
                   items={[
-                    { label: x.kind === 'note' ? 'Изменить текст…' : x.note ? 'Изменить заметку…' : 'Добавить заметку…', onClick: () => void editNote(i) },
+                    x.kind === 'note' && { label: 'Изменить текст…', onClick: () => void editText(i) },
                     { label: 'Удалить запись', danger: true, onClick: () => void remove(i) },
                   ]}
                 />
@@ -513,12 +506,11 @@ function RecordModal({ force, onClose }: { force: UnitNode; onClose: () => void 
   const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const [date, setDate] = useState(iso(today));
   const [title, setTitle] = useState('');
-  const [note, setNote] = useState('');
   const save = () => {
     const at = date === iso(today) ? today.toISOString() : new Date(`${date}T12:00`).toISOString();
     updateForce(force.id, (d) => {
       const h = d.history ?? [];
-      const rec: ForceRecord = { at, kind: 'note', title: title.trim(), ...(note.trim() ? { note: note.trim() } : {}) };
+      const rec: ForceRecord = { at, kind: 'note', title: title.trim() };
       // По дате: запись задним числом встаёт на своё место.
       const pos = h.findIndex((x) => x.at > at);
       if (pos < 0) h.push(rec);
@@ -541,17 +533,12 @@ function RecordModal({ force, onClose }: { force: UnitNode; onClose: () => void 
         </>
       }
     >
-      <div className="stack" style={{ gap: 10 }}>
-        <div className="fields two">
-          <Field label="Дата">
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </Field>
-          <Field label="Что было">
-            <Txt value={title} onChange={setTitle} placeholder="Марш к переправе, переформирование…" width="100%" />
-          </Field>
-        </div>
-        <Field label="Подробности">
-          <Area value={note} onChange={setNote} rows={3} placeholder="необязательно" />
+      <div className="fields two">
+        <Field label="Дата">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </Field>
+        <Field label="Что было">
+          <Txt value={title} onChange={setTitle} placeholder="Марш к переправе, переформирование…" width="100%" />
         </Field>
       </div>
     </Modal>

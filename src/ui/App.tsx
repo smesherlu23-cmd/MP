@@ -22,10 +22,9 @@ import { Btn, ContextMenuHost, Menu, RenameInput, Splitter, openContextMenu } fr
 import { CREATE_ITEMS } from './components/Navigator';
 import { QuickLookHost } from './components/QuickLook';
 import { TooltipHost } from './components/Tooltip';
-import { ToolbarSetupHost, openToolbarSetup } from './components/ToolbarSetup';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { objFromKey, objMenu, objName, renameObj, startRename, stopRename, useRenaming } from './objects';
-import { TOOLBAR_ITEMS, applyZoom, setTbShown, setZoom, tbShown, useZoom, zoomBy } from './prefs';
+import { applyZoom, setZoom, useZoom, zoomBy } from './prefs';
 import { closePeek, isNarrow, NARROW, setSidebar, sidebarShown, toggleSidebar, useMainWidth, usePeek, useSidebarShown } from './layout';
 import { desktop, isFullScreen, subscribeFullScreen } from './storage';
 import {
@@ -278,25 +277,6 @@ export function App() {
     return () => clearTimeout(t);
   }, [sideW]);
 
-  // Правый щелчок по свободному месту панели инструментов — какие кнопки показывать. Обработчик — на самом
-  // элементе: путь и действия страницы попадают в панель порталом, и их события не всплывают к ней в React.
-  const toolbarRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const el = toolbarRef.current;
-    if (!el) return;
-    const on = (e: MouseEvent) => {
-      if ((e.target as Element).closest('button, input, a, .menu-pop, .tb-name.renamable')) return;
-      const st = useApp.getState().settings;
-      openContextMenu(e, [
-        ...TOOLBAR_ITEMS.map((x) => ({ label: x.label, checked: tbShown(st, x.id), onClick: () => setTbShown(x.id, !tbShown(st, x.id)) })),
-        'sep',
-        { label: 'Настроить окно…', onClick: openToolbarSetup },
-      ]);
-    };
-    el.addEventListener('contextmenu', on);
-    return () => el.removeEventListener('contextmenu', on);
-  }, []);
-
   // Ширина области страницы: от неё зависит, рядом ли инспектор или поверх страницы.
   const mainRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -432,7 +412,6 @@ export function App() {
   const fullScreen = useSyncExternalStore(subscribeFullScreen, isFullScreen);
   const title = active ? tabTitle(active, s, battles) : '';
   const st = s.settings;
-  const show = (id: Parameters<typeof tbShown>[1]) => tbShown(st, id);
   const toggleTheme = () => updateSettings({ theme: st.theme === 'dark' ? 'light' : 'dark' });
   // Заголовок окна — название открытого объекта: двойной щелчок переименовывает, правый — меню объекта.
   const obj = objFromKey(active?.key);
@@ -465,22 +444,20 @@ export function App() {
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: Escape закрывает панель в общем обработчике клавиш */}
       {sidebar && <div className="side-scrim" aria-hidden="true" onClick={() => setSidebar(false)} />}
       <div className="main-col" ref={mainRef}>
-        <header className="toolbar-win" ref={toolbarRef}>
+        <header className="toolbar-win">
           {!sidebar && (
             <button type="button" className="tb-icon" title="Показать боковую панель (Ctrl+B)" onClick={toggleSidebar}>
               <Icon name="sidebar" size={17} />
             </button>
           )}
-          {show('nav') && (
-            <div className="tb-nav">
-              <button type="button" className="tb-icon" disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
-                <Icon name="left" size={17} />
-              </button>
-              <button type="button" className="tb-icon" disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
-                <Icon name="right" size={17} />
-              </button>
-            </div>
-          )}
+          <div className="tb-nav">
+            <button type="button" className="tb-icon" disabled={!nav.back} onClick={goBack} title="Назад (Alt+←)">
+              <Icon name="left" size={17} />
+            </button>
+            <button type="button" className="tb-icon" disabled={!nav.fwd} onClick={goForward} title="Вперёд (Alt+→)">
+              <Icon name="right" size={17} />
+            </button>
+          </div>
           <div className="tb-title">
             {/* biome-ignore lint/a11y/noStaticElementInteractions: двойной щелчок по заголовку — переименовать (есть и в меню объекта) */}
             <span
@@ -507,27 +484,20 @@ export function App() {
           </div>
           <div id="tb-actions" className="tb-actions" />
           <div className="tb-global">
-            {show('create') && (
-              <Menu
-                sm
-                label={
-                  <>
-                    <Icon name="plus" size={15} />
-                    <span className="tb-create-text">Создать</span>
-                  </>
-                }
-                className="tb-create"
-                title="Создать: сценарий, силы, шаблон или набор правил"
-                items={CREATE_ITEMS()}
-              />
-            )}
-            {show('import') && (
-              <button type="button" className="tb-icon" onClick={() => importFile()} title="Импорт из файла (или перетащите файл на окно)">
-                <Icon name="import" size={17} />
-              </button>
-            )}
+            <Menu
+              sm
+              label={
+                <>
+                  <Icon name="plus" size={15} />
+                  <span className="tb-create-text">Создать</span>
+                </>
+              }
+              className="tb-create"
+              title="Создать: сценарий, силы, шаблон или набор правил"
+              items={CREATE_ITEMS()}
+            />
             {/* В бою своя отмена хода (↶ и Ctrl+Z) — вторая пара стрелок рядом только путала бы. */}
-            {show('undo') && active?.kind !== 'battle' && (
+            {active?.kind !== 'battle' && (
               <>
                 <button
                   type="button"
@@ -549,35 +519,7 @@ export function App() {
                 </button>
               </>
             )}
-            {show('zoom') && (
-              <div className="tb-zoom" title="Масштаб интерфейса (Ctrl+плюс / минус, Ctrl+0 — авто)">
-                <button type="button" className="tb-icon" onClick={() => zoomBy(-0.1)} aria-label="Мельче">
-                  <Icon name="minus" size={15} />
-                </button>
-                <button type="button" className="tb-zoom-val" onClick={() => setZoom('auto')} aria-label="Масштаб по экрану (авто)">
-                  {Math.round(zoom * 100)}%
-                </button>
-                <button type="button" className="tb-icon" onClick={() => zoomBy(0.1)} aria-label="Крупнее">
-                  <Icon name="plus" size={15} />
-                </button>
-              </div>
-            )}
-            {show('theme') && (
-              <button type="button" className="tb-icon" onClick={toggleTheme} title={st.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}>
-                <Icon name={st.theme === 'dark' ? 'sun' : 'moon'} size={17} />
-              </button>
-            )}
-            {show('help') && (
-              <button type="button" className="tb-icon" onClick={() => openTab('help')} title="Справка">
-                <Icon name="help" size={17} />
-              </button>
-            )}
-            {show('find') && (
-              <button type="button" className="tb-icon" onClick={() => openPalette()} title="Найти что угодно (Ctrl+K)">
-                <Icon name="search" size={17} />
-              </button>
-            )}
-            {show('search') && <ToolbarSearch />}
+            <ToolbarSearch />
             <Menu
               sm
               label={<Icon name="menu" size={17} />}
@@ -596,7 +538,6 @@ export function App() {
                 'sep',
                 { label: st.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема', onClick: toggleTheme },
                 { label: sidebar ? 'Скрыть боковую панель' : 'Показать боковую панель', kbd: 'Ctrl+B', onClick: toggleSidebar },
-                { label: 'Настроить окно…', onClick: openToolbarSetup, tip: 'Кнопки панели инструментов и масштаб интерфейса' },
                 ...(desktop?.toggleFullScreen
                   ? [{ label: fullScreen ? 'Выйти из полноэкранного режима' : 'Во весь экран', kbd: 'F11', onClick: () => desktop?.toggleFullScreen?.() }]
                   : []),
@@ -628,7 +569,6 @@ export function App() {
       <DialogHost />
       <Palette />
       <QuickLookHost />
-      <ToolbarSetupHost />
       <Toasts />
       <TooltipHost />
       <ContextMenuHost />

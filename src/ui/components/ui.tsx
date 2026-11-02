@@ -325,12 +325,16 @@ export interface MenuItem {
   checked?: boolean;
 }
 
+/** Заголовок группы пунктов в меню (не выбирается). */
+export type MenuHeading = { heading: string };
+type MenuEntry = MenuItem | MenuHeading | 'sep';
+
 /**
  * Кнопка «⋯» с выпадающим списком второстепенных действий. С клавиатуры: Enter/пробел или ↓ открывают,
  * ↑/↓ выбирают пункт, Enter выполняет, Esc или Tab закрывают и возвращают фокус на кнопку.
  */
 export function Menu(props: {
-  items: (MenuItem | 'sep' | false | null | undefined)[];
+  items: (MenuEntry | false | null | undefined)[];
   label?: ReactNode;
   title?: string;
   sm?: boolean;
@@ -389,7 +393,7 @@ export function Menu(props: {
       window.removeEventListener('wheel', onScroll, { capture: true });
     };
   }, [pos]);
-  const items = props.items.filter(Boolean) as (MenuItem | 'sep')[];
+  const items = props.items.filter(Boolean) as MenuEntry[];
   const open = () => setPos(btn.current!.getBoundingClientRect());
   return (
     <>
@@ -421,7 +425,7 @@ export function Menu(props: {
   );
 }
 
-function MenuItems({ items, onPick }: { items: (MenuItem | 'sep')[]; onPick: () => void }) {
+function MenuItems({ items, onPick }: { items: MenuEntry[]; onPick: () => void }) {
   return (
     <>
       {items.map((it, i) =>
@@ -429,6 +433,10 @@ function MenuItems({ items, onPick }: { items: (MenuItem | 'sep')[]; onPick: () 
           i > 0 && i < items.length - 1 && items[i - 1] !== 'sep' ? (
             <hr key={i} className="menu-sep" />
           ) : null
+        ) : 'heading' in it ? (
+          <div key={i} className="menu-heading" role="presentation">
+            {it.heading}
+          </div>
         ) : (
           // biome-ignore lint/a11y/useAriaPropsSupportedByRole: роль задаётся выражением — menuitemcheckbox у пунктов-переключателей
           <button
@@ -456,14 +464,14 @@ function MenuItems({ items, onPick }: { items: (MenuItem | 'sep')[]; onPick: () 
 
 // ------------------------------------------------------------------ контекстное меню (правый щелчок)
 
-const useContextMenu = create<{ at: { x: number; y: number } | null; items: (MenuItem | 'sep')[] }>(() => ({ at: null, items: [] }));
+const useContextMenu = create<{ at: { x: number; y: number } | null; items: MenuEntry[] }>(() => ({ at: null, items: [] }));
 const closeContextMenu = () => useContextMenu.setState({ at: null });
 
 /** Открыть меню у указателя мыши (правый щелчок). */
-export function openContextMenu(e: React.MouseEvent | MouseEvent, items: (MenuItem | 'sep' | false | null | undefined)[]) {
+export function openContextMenu(e: React.MouseEvent | MouseEvent, items: (MenuEntry | false | null | undefined)[]) {
   e.preventDefault();
   e.stopPropagation();
-  useContextMenu.setState({ at: { x: e.clientX, y: e.clientY }, items: items.filter(Boolean) as (MenuItem | 'sep')[] });
+  useContextMenu.setState({ at: { x: e.clientX, y: e.clientY }, items: items.filter(Boolean) as MenuEntry[] });
 }
 
 export function ContextMenuHost() {

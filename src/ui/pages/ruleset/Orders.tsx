@@ -6,11 +6,6 @@ import { Btn, Card, Info, Menu, Num, Sel, Txt } from '../../components/ui';
 import { toastUndoable } from '../../store';
 import { moveIn, moveItems, type Upd } from './common';
 
-/** Описание (необязательно): видно подсказкой в выпадающих списках и в разборе расчёта. */
-export function Desc({ value, onChange }: { value: string | undefined; onChange: (v: string | undefined) => void }) {
-  return <Txt value={value ?? ''} onChange={(v) => onChange(v.trim() ? v : undefined)} placeholder="описание (необязательно)" width="100%" />;
-}
-
 export function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
   const missing = (['retreat', 'rout'] as Behavior[]).filter((b) => !r.orders.some((o) => o.behavior === b));
   return (
@@ -83,7 +78,6 @@ export function OrdersSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                   title="Подставленность под огонь: 0 — вне огня, 1 — полностью"
                 />
               </div>
-              <Desc value={o.description} onChange={(v) => upd((d) => void (d.orders[i].description = v))} />
               <EffectsEditor value={o.effects} onChange={(v) => upd((d) => void (d.orders[i].effects = v))} />
             </div>
           ))}
@@ -123,7 +117,6 @@ export function LevelsSection({ title, hint, levels, set }: { title: string; hin
                 ]}
               />
             </div>
-            <Desc value={lv.description} onChange={(v) => set((l) => void (l[i].description = v))} />
             <EffectsEditor value={lv.effects} onChange={(v) => set((l) => void (l[i].effects = v))} />
           </div>
         ))}
@@ -178,7 +171,6 @@ export function OptionGrid({ options, set }: { options: OptionDef[]; set: (fn: (
               ]}
             />
           </div>
-          <Desc value={op.description} onChange={(v) => set((o) => void (o[i].description = v))} />
           <EffectsEditor value={op.effects} onChange={(v) => set((o) => void (o[i].effects = v))} />
         </div>
       ))}

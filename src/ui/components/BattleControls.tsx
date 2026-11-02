@@ -21,7 +21,6 @@ import {
 } from '../../engine';
 import { updateSettings, useApp } from '../store';
 import { EffectsEditor, effectsText } from './EffectsEditor';
-import { IvNote } from '../pages/battle/Decisions';
 import { Btn, Check, Field, Modal, Num, Sel, Txt, fmt0, pct } from './ui';
 
 export type Iv = (type: InterventionType, payload: Record<string, unknown>) => void;
@@ -248,7 +247,6 @@ export function EffectModal({ b, target, onClose, iv }: { b: Battle; target: Tar
       onClose={onClose}
       footer={
         <>
-          <IvNote />
           <span className="muted small grow">Со следующего хода; снять можно раньше срока.</span>
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn
@@ -321,7 +319,6 @@ export function StrikeModal({
       onClose={onClose}
       footer={
         <>
-          <IvNote />
           <span className="muted small grow">В начале следующего хода; до него можно отменить.</span>
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn
@@ -514,7 +511,6 @@ export function GroupEditModal({ b, ids, onClose, iv }: { b: Battle; ids: string
       onClose={onClose}
       footer={
         <>
-          <IvNote />
           <span className="muted small grow">Заданное получат все выбранные — одним решением ГМ.</span>
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn

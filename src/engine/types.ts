@@ -178,7 +178,6 @@ export interface Ruleset {
   dataVersion?: number;
   id: Id;
   name: string;
-  era?: string;
   description?: string;
   /** Минут в одном ходу (для отображения времени боя). */
   turnMinutes: number;
@@ -199,8 +198,6 @@ export interface Ruleset {
   tempEffects: EffectDef[];
   outcomeLevels: OutcomeLevel[];
   coefficients: Coefficients;
-  /** Описания тегов (тег → текст): подсказка у тега в каталоге, на схеме и в бою. */
-  tagDescriptions?: Record<string, string>;
   updatedAt?: string;
 }
 

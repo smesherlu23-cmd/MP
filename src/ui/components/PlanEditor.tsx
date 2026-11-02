@@ -19,7 +19,7 @@ import {
   type TriggerMetric,
 } from '../../engine';
 import { updateScenario } from '../store';
-import { Btn, Info, Menu, Num, Section, Sel, Txt } from './ui';
+import { Btn, Info, Menu, Num, Section, Sel } from './ui';
 
 const HINT = [
   'События наступают в начале хода — в каждом бою и в каждом прогоне: на заданном ходу или когда выполнено условие («потери Синих ≥ 30% → резерв в бой»).',
@@ -493,7 +493,6 @@ export function PlanEditor({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
                   />
                 </>
               )}
-              <Txt value={ev.note ?? ''} onChange={(v) => set((e) => void (e.note = v || undefined))} placeholder="примечание для журнала" width={220} />
             </div>
           </div>
         );

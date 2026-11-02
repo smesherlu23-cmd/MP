@@ -70,7 +70,7 @@ test('без вкладок: страница сменяет страницу, �
 
 test('штаб, каталоги разделов и «+» (создать)', async ({ page }) => {
   const errors = await openApp(page);
-  await expect(page.locator('.wf-step')).toHaveCount(5);
+  await expect(page.locator('.card', { hasText: 'С чего начать' })).toBeVisible();
   // Каталог раздела: по щелчку на название раздела, с поиском и действиями в строке.
   await page.locator('.nav-sec[data-sec="scenarios"] .nav-item').click();
   await expect(pageTitle(page)).toHaveText('Сценарии');

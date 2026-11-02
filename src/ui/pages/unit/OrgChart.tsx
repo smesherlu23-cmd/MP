@@ -25,7 +25,7 @@ export function EmptyStart({ ctx }: { ctx: Ctx }) {
           <b>+ Подчинённое</b>
           <span>взводы, отделения, расчёты — любая глубина</span>
         </button>
-        <button type="button" onClick={() => ctx.openInsert(ctx.root.id, false)} disabled={!hasLib}>
+        <button type="button" onClick={() => ctx.openInsert(ctx.root.id)} disabled={!hasLib}>
           <b>Вставить из шаблонов</b>
           <span>{hasLib ? 'готовые взводы, роты, батареи' : 'подходящих шаблонов пока нет'}</span>
         </button>
@@ -47,16 +47,10 @@ export function NodeBadges({ ctx, node, compact }: { ctx: Ctx; node: UnitNode; c
   return (
     <>
       {node.isHQ && <span className="badge warn">штаб</span>}
-      {node.transfer ? (
+      {node.transfer && (
         <span className="badge info" data-tip={`Передано из «${node.transfer.fromName}» — вернуть: меню подразделения`}>
           передано
         </span>
-      ) : (
-        node.attachedFrom !== undefined && (
-          <span className="badge info" data-tip={node.attachedFrom ? `Придано из: ${node.attachedFrom}` : 'Придано'}>
-            придано
-          </span>
-        )
       )}
       {tpl && !isLibRoot && (
         <span className={`badge${outdated ? ' bad' : ''}`} data-tip={outdated ? `Шаблон «${tpl.name}» изменён — можно обновить` : `Из шаблона «${tpl.name}»`}>

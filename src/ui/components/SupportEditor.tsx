@@ -1,5 +1,6 @@
 // Огневая поддержка стороны вне поля боя: артиллерия, авиация, корабли. Её нельзя поразить; она бьёт
 // по вызову ГМ в бою или по плану боя. Сила удара — огневая мощь типа из каталога × число единиц.
+// Средством поддержки может быть только тип, стреляющий с закрытых позиций (отметка в каталоге типов).
 
 import { newId, plural, type Ruleset, type Scenario, type SupportAsset } from '../../engine';
 import { useTabState } from '../hooks';
@@ -17,8 +18,14 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
       fn(sd.support);
       if (!sd.support.length) delete sd.support;
     });
-  // Сначала — оружие с закрытых позиций: обычно поддержка — это они.
-  const types = [...rs.componentTypes].sort((a, b) => Number(b.indirect) - Number(a.indirect) || a.name.localeCompare(b.name, 'ru'));
+  // Только типы с огнём с закрытых позиций: артиллерия, миномёты, авиация — не пехота и не танки.
+  const types = rs.componentTypes.filter((t) => t.indirect).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  // Средство из прежних версий с другим типом — оставляем его тип в списке, с пометкой.
+  const typeOptions = (cur: string) => {
+    const opts = types.map((t) => ({ value: t.id, label: t.name }));
+    if (!types.some((t) => t.id === cur)) opts.unshift({ value: cur, label: `${typeName(cur)} (не с закрытых позиций)` });
+    return opts;
+  };
   const typeName = (id: string) => rs.componentTypes.find((t) => t.id === id)?.name ?? '?';
   // Название средства — по типу (своё название было только у примеров прежних версий — его показываем как есть).
   const summary = list.length
@@ -44,7 +51,7 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
           </span>
           <h4>Огневая поддержка</h4>
         </button>
-        <Info text="Средства вне поля боя — артиллерия старшего начальника, авиация, корабли. Их нельзя поразить; удар наносится по вызову ГМ в бою (в начале следующего хода) или по плану боя. Сила удара — огневая мощь типа из каталога (лучшая по дистанциям) × число единиц; по необнаруженной цели — слабее." />
+        <Info text="Средства вне поля боя — артиллерия старшего начальника, авиация, корабли. Тип — только из стреляющих с закрытых позиций (отметка в каталоге типов). Их нельзя поразить; удар наносится по вызову ГМ в бою (в начале следующего хода) или по плану боя. Сила удара — огневая мощь типа из каталога (лучшая по дистанциям) × число единиц; по необнаруженной цели — слабее." />
         <span className="faint small grow nowrap" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }} title={summary}>
           {summary}
         </span>
@@ -72,7 +79,7 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
                       l[ai].name = typeName(v);
                     })
                   }
-                  options={types.map((t) => ({ value: t.id, label: t.name }))}
+                  options={typeOptions(a.typeId)}
                   width="100%"
                   title="Чем наносится удар: тип из каталога набора правил"
                 />
@@ -92,9 +99,13 @@ export function SideSupport({ sc, i, rs }: { sc: Scenario; i: number; rs: Rulese
               </Btn>
             </div>
           ))}
-          <Btn sm kind="ghost" onClick={add} disabled={!types.length}>
-            + средство поддержки
-          </Btn>
+          {types.length ? (
+            <Btn sm kind="ghost" onClick={add}>
+              + средство поддержки
+            </Btn>
+          ) : (
+            <span className="faint small">В наборе правил нет типов с огнём с закрытых позиций — отметьте это у артиллерии в каталоге типов.</span>
+          )}
         </div>
       )}
     </div>

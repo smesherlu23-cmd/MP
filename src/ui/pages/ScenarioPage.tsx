@@ -50,7 +50,7 @@ import { PartialButton, type PartialLimit, PartialModal, partialCount } from '..
 import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
 import { SectorSelect, SectorsEditor } from '../components/SectorsEditor';
 import { SideSupport } from '../components/SupportEditor';
-import { Area, Chev, openContextMenu, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable, ToolbarSlot } from '../components/ui';
+import { Chev, openContextMenu, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable, ToolbarSlot } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import {
   confirmDialog,
@@ -138,15 +138,6 @@ function durationHint(sc: Scenario, rs: Ruleset): string {
   );
 }
 
-/** Быстрые переходы по разделам страницы сценария. */
-const JUMPS = [
-  { id: 'sc-setting', label: 'Обстановка' },
-  { id: 'sc-sectors', label: 'Участки' },
-  { id: 'sc-sides', label: 'Стороны' },
-  { id: 'sc-plan', label: 'План боя' },
-  { id: 'sc-ratio', label: 'Соотношение сил' },
-];
-
 export function ScenarioPage({ tab }: { tab: Tab }) {
   const st = useApp();
   const sc = st.scenarios[tab.ref!];
@@ -219,16 +210,8 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
         </div>
       )}
 
-      <nav className="jump-nav" aria-label="Разделы сценария">
-        {JUMPS.filter((j) => j.id !== 'sc-sectors' || rs).map((j) => (
-          <button key={j.id} type="button" onClick={() => document.getElementById(j.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
-            {j.label}
-          </button>
-        ))}
-      </nav>
-
       <div className="stack">
-        <div id="sc-setting" className="jump-target">
+        <div>
           <Card title="Обстановка">
             <div className="fields">
               {rs?.conditions.map((cat) => {
@@ -299,25 +282,13 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
                 <Sel value={sc.rulesetId} onChange={changeRuleset} options={Object.values(st.rulesets).map((r) => ({ value: r.id, label: r.name }))} />
               </Field>
             </div>
-            <div style={{ marginTop: 12 }}>
-              <Area
-                value={sc.description ?? ''}
-                onChange={(v) => upd((d) => void (v.trim() ? (d.description = v) : delete d.description))}
-                rows={2}
-                placeholder="Описание (необязательно): замысел, вводная для игроков — видно в начале отчёта боя"
-              />
-            </div>
           </Card>
         </div>
 
-        {rs && (
-          <div id="sc-sectors" className="jump-target">
-            <SectorsEditor sc={sc} rsc={rsc} rs={rs} />
-          </div>
-        )}
+        {rs && <SectorsEditor sc={sc} rsc={rsc} rs={rs} />}
 
         {rs ? (
-          <div id="sc-sides" className="grid two jump-target">
+          <div className="grid two">
             {[0, 1].map((i) => (
               <SideEditor key={i} sc={sc} rsc={rsc} i={i} rs={rs} />
             ))}
@@ -326,13 +297,9 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
           <div className="note bad">Набор правил сценария не найден — выберите другой.</div>
         )}
 
+        {rs && <PlanEditor sc={rsc} rs={rs} />}
         {rs && (
-          <div id="sc-plan" className="jump-target">
-            <PlanEditor sc={rsc} rs={rs} />
-          </div>
-        )}
-        {rs && (
-          <div id="sc-ratio" className="jump-target">
+          <div>
             <QuickForecast sc={sc} rs={rs} />
             <ForceRatio sc={rsc} rs={rs} />
           </div>
@@ -450,12 +417,10 @@ function SideTree(props: {
           <span className="side-node-name" title={n.name}>
             {n.name}
           </span>
-          {n.transfer ? (
+          {n.transfer && (
             <span className="badge info" data-tip={`Передано из «${n.transfer.fromName}» — вернуть можно в «Силах»`}>
               передано
             </span>
-          ) : (
-            n.attachedFrom !== undefined && <span className="badge info">придано</span>
           )}
           {arrivals?.has(n.id) && (
             <span className="badge warn" data-tip="Подкрепление по плану боя">

@@ -18,10 +18,9 @@ import {
 import { SupportPanel, type Target } from '../../components/BattleControls';
 import { CommanderSelect } from '../../components/CommanderSelect';
 import { Chev, Btn, Card, Check, Menu, Meter, ScrollX, Sel, fmt0, pct } from '../../components/ui';
-import { useTabState } from '../../hooks';
+import { setTabState, useTabState } from '../../hooks';
 import { type Iv, SIDES } from './common';
 import { openDecision } from './Decisions';
-import { SideCompare } from './Result';
 
 /** Приказ ГМ ещё в пути (задержка доведения приказов): куда идёт и с каким шансом дойдёт к следующему ходу. */
 export function PendingOrder({ E, el }: { E: EngineContext; el: ElementState }) {
@@ -121,21 +120,9 @@ export const CMD_TIP =
 
 /**
  * Сводка сторон над таблицей сил — компактно, строкой на сторону (чтобы таблица с приказами была на виду
- * и на небольшом экране); «подробнее» разворачивает полное сравнение.
+ * и на небольшом экране); «подробнее» — вкладка «Оценка» с полным сравнением.
  */
 function SideStrip({ b, result, tabKey }: { b: Battle; result: BattleResult; tabKey: string }) {
-  const [open, setOpen] = useTabState(`${tabKey}:compare`, false);
-  if (open)
-    return (
-      <Card tight>
-        <SideCompare b={b} result={result} />
-        <div className="side-strip-foot">
-          <button type="button" className="link-btn small" onClick={() => setOpen(false)}>
-            свернуть сводку
-          </button>
-        </div>
-      </Card>
-    );
   return (
     <div className="side-strip card">
       {SIDES.map((side) => {
@@ -168,7 +155,12 @@ function SideStrip({ b, result, tabKey }: { b: Battle; result: BattleResult; tab
           </div>
         );
       })}
-      <button type="button" className="link-btn small side-strip-more" onClick={() => setOpen(true)} title="Техника, удача и исполнение, все показатели">
+      <button
+        type="button"
+        className="link-btn small side-strip-more"
+        onClick={() => setTabState(`${tabKey}:view`, 'result')}
+        title="Вкладка «Оценка»: техника, удача и исполнение, все показатели"
+      >
         подробнее
       </button>
     </div>
@@ -222,11 +214,16 @@ export function Forces(props: {
       {sel.length > 0 && !b.finished && (
         <div className="group-bar">
           <b>Выбрано: {selLabel}</b>
-          <Sel
-            value=""
-            width={150}
-            onChange={(v) => v && iv('setOrder', { elementIds: sel.filter((id) => E.elements.get(id)?.status === 'active'), orderId: v })}
-            options={[{ value: '', label: 'приказ всем…' }, ...b.ruleset.orders.map((o) => ({ value: o.id, label: o.name, title: o.description }))]}
+          <Menu
+            sm
+            alignLeft
+            label="Приказ всем…"
+            title="Один приказ всем выбранным"
+            items={b.ruleset.orders.map((o) => ({
+              label: o.name,
+              tip: o.description,
+              onClick: () => iv('setOrder', { elementIds: sel.filter((id) => E.elements.get(id)?.status === 'active'), orderId: o.id }),
+            }))}
           />
           <Btn sm onClick={() => props.onGroupEdit(sel)} title="Мораль, усталость, боезапас… сразу всем выбранным">
             Изменить…
@@ -546,7 +543,6 @@ function PickMenu({ b, E, side, onPick }: { b: Battle; E: EngineContext; side: S
         ...(tags.length ? (['sep'] as const) : []),
         ...tags.map((t) => ({
           label: `с тегом «${t}» (${byTag.get(t)!.length})`,
-          tip: b.ruleset.tagDescriptions?.[t],
           onClick: () => onPick(byTag.get(t)!),
         })),
       ]}
