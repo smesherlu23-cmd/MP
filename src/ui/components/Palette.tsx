@@ -120,7 +120,7 @@ function buildItems(): Item[] {
         id: `tag:${r.id}:${tag}`,
         group: 'Наборы правил',
         title: `#${tag}`,
-        sub: `тег${r.tagDescriptions?.[tag] ? ` · ${r.tagDescriptions[tag]}` : ''} · ${r.name}`,
+        sub: `тег · ${r.name}`,
         run: () => {
           setTabState(`${tabKey('ruleset', r.id)}:tag`, tag);
           openTab('ruleset', r.id, { sub: 'tags' });

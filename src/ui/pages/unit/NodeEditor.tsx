@@ -20,7 +20,7 @@ import {
   type UnitNode,
 } from '../../../engine';
 import { Link } from '../../components/Link';
-import { Area, Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, fmt0, pressable } from '../../components/ui';
+import { Btn, Card, Check, Field, Info, Menu, Modal, Num, Range, Section, Sel, fmt0, pressable } from '../../components/ui';
 import { TagChips } from '../../components/TagChips';
 import { instantiateLibrary, returnPart, updateCopy } from '../../store';
 import { type Ctx, canInsertTemplate, nodeActions } from './model';
@@ -83,6 +83,13 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
   );
   if (!expOptions.some((o) => o.value === 0)) expOptions.unshift({ value: 0, label: `${expName(pr.state.experience)} (${inheritText})` });
   const types = new Map(rs.componentTypes.map((t) => [t.id, t]));
+  // «+ Добавить из каталога…»: по видам; тип, который уже есть в составе, второй строкой не добавляется — у него меняют число.
+  const addTypes = (['personnel', 'weapon', 'vehicle'] as ComponentKind[]).flatMap((k) => {
+    const free = rs.componentTypes.filter((t) => t.kind === k && !node.composition.some((c) => c.typeId === t.id));
+    if (!free.length) return [];
+    const add = (id: string) => un((n) => void n.composition.push({ typeId: id, authorized: 10, current: 10 }));
+    return [{ heading: KIND_LABELS[k] }, ...free.map((t) => ({ label: t.name, onClick: () => add(t.id) }))];
+  });
   const typeTags = compositionTags(rs, node.composition);
   let ownCur = 0;
   let ownAuth = 0;
@@ -287,28 +294,10 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
           </div>
         )}
         <div className="comp-add-row">
-          {types.size ? (
-            <select
-              className="comp-add"
-              value=""
-              onChange={(ev) => {
-                const id = ev.target.value;
-                if (id) un((n) => void n.composition.push({ typeId: id, authorized: 10, current: 10 }));
-              }}
-            >
-              <option value="">+ Добавить из каталога…</option>
-              {(['personnel', 'weapon', 'vehicle'] as ComponentKind[]).map((k) => (
-                <optgroup key={k} label={KIND_LABELS[k]}>
-                  {rs.componentTypes
-                    .filter((t) => t.kind === k)
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
+          {addTypes.length ? (
+            <Menu sm alignLeft className="ghost comp-add" label="+ Добавить из каталога…" title="Добавить тип в состав" items={addTypes} />
+          ) : types.size ? (
+            <span className="faint small">Все типы каталога уже в составе.</span>
           ) : (
             <span className="muted">
               Каталог пуст — добавьте типы в{' '}
@@ -380,7 +369,7 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
         summary={
           [node.attackMod !== 100 && `атака ${node.attackMod}%`, node.defenseMod !== 100 && `защита ${node.defenseMod}%`, ...typeTags]
             .filter(Boolean)
-            .join(', ') || 'атака и защита, заметки'
+            .join(', ') || 'атака и защита'
         }
       >
         <div className="stack" style={{ gap: 10 }}>
@@ -415,7 +404,6 @@ export function NodeEditor({ ctx, node }: { ctx: Ctx; node: UnitNode }) {
               </Btn>
             </div>
           )}
-          <Area value={node.notes ?? ''} onChange={(v) => un((n) => void (n.notes = v))} rows={2} placeholder="Заметки" />
         </div>
       </Section>
     </div>

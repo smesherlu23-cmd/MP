@@ -32,7 +32,8 @@ test('бой: групповой приказ, эффект на выбранн�
   await checks.nth(1).check();
   const bar = page.locator('.group-bar');
   await expect(bar).toContainText('Выбрано: 2 элемента');
-  await bar.locator('select').selectOption({ label: 'Закрепление' });
+  await bar.getByRole('button', { name: 'Приказ всем…' }).click();
+  await menu(page, 'Закрепление');
   await expect(page.locator('.battle-log')).toContainText('приказ «Закрепление»');
   // Приказ доходит не сразу: под приказом — «в пути».
   await expect(blue.locator('.order-pending', { hasText: 'Закрепление' })).toHaveCount(2);

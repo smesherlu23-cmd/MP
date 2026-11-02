@@ -1730,6 +1730,16 @@ h4 {
   opacity: 0.45;
   cursor: default;
 }
+.menu-heading {
+  padding: 6px 10px 2px;
+  color: var(--faint);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  pointer-events: none;
+}
+.menu-heading:first-child {
+  padding-top: 2px;
+}
 .menu-sep {
   height: 1px;
   border: none;
@@ -1904,16 +1914,16 @@ h4 {
 .eff-row:hover .eff-del {
   visibility: visible;
 }
-select.eff-add {
+/* «+ эффект» — кнопка с меню (не выпадающий список): в списке нет пункта-заголовка. */
+.eff-add {
   align-self: flex-start;
-  max-width: 100%;
-  background: transparent;
-  border-color: transparent;
+}
+.eff-add > .btn {
   color: var(--faint);
   padding-left: 0;
-  min-height: 24px;
 }
-select.eff-add:hover {
+.eff-add > .btn:hover,
+.eff-add > .btn.active {
   color: var(--text);
 }
 .grid.align-start {
@@ -3901,6 +3911,13 @@ select:disabled,
 textarea:disabled {
   opacity: 0.45;
 }
+/* Пункты выпадающего списка — в цветах темы. Без этого у списка с прозрачным фоном (в строке, в таблице)
+   Windows открывает белый список. */
+option,
+optgroup {
+  background-color: var(--panel);
+  color: var(--text);
+}
 /* Выпадающий список — как всплывающая кнопка macOS: значок ⌃⌄ справа. */
 select {
   appearance: none;
@@ -5177,14 +5194,6 @@ tr[tabindex]:focus-visible {
 }
 .ql-body {
   gap: 14px;
-}
-.ql-note {
-  margin: 0 0 12px;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  white-space: pre-wrap;
-  max-height: 120px;
-  overflow: auto;
 }
 .ql-facts {
   display: grid;

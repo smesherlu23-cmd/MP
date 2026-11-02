@@ -199,8 +199,6 @@ export interface Ruleset {
   tempEffects: EffectDef[];
   outcomeLevels: OutcomeLevel[];
   coefficients: Coefficients;
-  /** Описания тегов (тег → текст): подсказка у тега в каталоге, на схеме и в бою. */
-  tagDescriptions?: Record<string, string>;
   updatedAt?: string;
 }
 

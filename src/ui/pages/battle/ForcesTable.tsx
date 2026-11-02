@@ -222,11 +222,16 @@ export function Forces(props: {
       {sel.length > 0 && !b.finished && (
         <div className="group-bar">
           <b>Выбрано: {selLabel}</b>
-          <Sel
-            value=""
-            width={150}
-            onChange={(v) => v && iv('setOrder', { elementIds: sel.filter((id) => E.elements.get(id)?.status === 'active'), orderId: v })}
-            options={[{ value: '', label: 'приказ всем…' }, ...b.ruleset.orders.map((o) => ({ value: o.id, label: o.name, title: o.description }))]}
+          <Menu
+            sm
+            alignLeft
+            label="Приказ всем…"
+            title="Один приказ всем выбранным"
+            items={b.ruleset.orders.map((o) => ({
+              label: o.name,
+              tip: o.description,
+              onClick: () => iv('setOrder', { elementIds: sel.filter((id) => E.elements.get(id)?.status === 'active'), orderId: o.id }),
+            }))}
           />
           <Btn sm onClick={() => props.onGroupEdit(sel)} title="Мораль, усталость, боезапас… сразу всем выбранным">
             Изменить…
@@ -546,7 +551,6 @@ function PickMenu({ b, E, side, onPick }: { b: Battle; E: EngineContext; side: S
         ...(tags.length ? (['sep'] as const) : []),
         ...tags.map((t) => ({
           label: `с тегом «${t}» (${byTag.get(t)!.length})`,
-          tip: b.ruleset.tagDescriptions?.[t],
           onClick: () => onPick(byTag.get(t)!),
         })),
       ]}

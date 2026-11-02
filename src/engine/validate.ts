@@ -126,13 +126,18 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
       for (const sec of sectors) if (!used.has(sec.id)) issues.push({ level: 'warning', text: `На участке «${sec.name}» нет сил стороны «${sd.name}».` });
     }
   }
-  // Огневая поддержка: тип из каталога, единиц и ударов больше нуля.
+  // Огневая поддержка: тип из каталога, с огнём с закрытых позиций; единиц и ударов больше нуля.
   for (const sd of sc.sides)
     for (const a of sd.support ?? []) {
       const t = rs.componentTypes.find((x) => x.id === a.typeId);
       if (!t) issues.push({ level: 'error', text: `Огневая поддержка «${a.name}» (${sd.name}): тип не найден в наборе правил.` });
       else if (!Object.values(t.firepower).some((row) => Object.values(row).some((v) => v > 0)))
         issues.push({ level: 'warning', text: `Огневая поддержка «${a.name}» (${sd.name}): у типа «${t.name}» нет огневой мощи.` });
+      else if (!t.indirect)
+        issues.push({
+          level: 'warning',
+          text: `Огневая поддержка «${a.name}» (${sd.name}): тип «${t.name}» не стреляет с закрытых позиций — поддержкой бывает артиллерия, авиация и т. п.`,
+        });
       if (!(a.count > 0) || !(a.missions > 0))
         issues.push({ level: 'warning', text: `Огневая поддержка «${a.name}» (${sd.name}): нужно хотя бы одно средство и один удар.` });
     }

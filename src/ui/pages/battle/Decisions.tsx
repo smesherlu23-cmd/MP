@@ -1,26 +1,11 @@
-// Решения ГМ в бою: подвоз, переброска на участок, заметка в журнал и примечание к любому решению.
+// Решения ГМ в бою: подвоз, переброска на участок, заметка в журнал.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { create } from 'zustand';
 import { plural, type Battle, type SideId } from '../../../engine';
 import type { Target } from '../../components/BattleControls';
-import { Area, Btn, Check, Field, Modal, Num, Sel, Txt } from '../../components/ui';
+import { Area, Btn, Check, Field, Modal, Num, Sel } from '../../components/ui';
 import type { Iv } from './common';
-
-// ------------------------------------------------------------------ примечание к решению
-
-/** Примечание к решению ГМ: поле в окне решения; пишется в журнал вместе с решением. */
-export const useIvNote = create<{ note: string }>(() => ({ note: '' }));
-
-/** Примечание, введённое в открытом окне решения (пустое — нет). */
-export const takeIvNote = (): string | undefined => useIvNote.getState().note.trim() || undefined;
-
-/** Поле «примечание для журнала» в подвале окна решения; очищается при закрытии окна. */
-export function IvNote({ width = 200 }: { width?: number }) {
-  const note = useIvNote((s) => s.note);
-  useEffect(() => () => useIvNote.setState({ note: '' }), []);
-  return <Txt value={note} onChange={(v) => useIvNote.setState({ note: v })} placeholder="примечание для журнала" width={width} />;
-}
 
 // ------------------------------------------------------------------ окна решений
 
@@ -76,7 +61,6 @@ function ResupplyModal({ b, target, iv }: { b: Battle; target: Target; iv: Iv })
       onClose={closeDecision}
       footer={
         <>
-          <IvNote />
           <span className="grow" />
           <Btn onClick={closeDecision}>Отмена</Btn>
           <Btn
@@ -148,7 +132,6 @@ function TransferModal({ b, target, iv }: { b: Battle; target: Target; iv: Iv })
       onClose={closeDecision}
       footer={
         <>
-          <IvNote />
           <span className="grow" />
           <Btn onClick={closeDecision}>Отмена</Btn>
           <Btn

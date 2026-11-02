@@ -6,7 +6,6 @@ import { useTabState } from '../../hooks';
 import { openTab, toastUndoable, useApp } from '../../store';
 import { moveIn, moveItems, type Upd } from './common';
 import { EffectsEditor } from '../../components/EffectsEditor';
-import { Desc } from './Orders';
 
 export function typeUsage(typeId: string): number {
   const s = useApp.getState();
@@ -288,9 +287,7 @@ export function TypeEditor({
           </Check>
         </Field>
       </div>
-      <div style={{ marginTop: 12 }}>
-        <Desc value={t.description} onChange={(v) => ut((x) => void (x.description = v))} />
-      </div>
+      <div style={{ marginTop: 12 }}></div>
       <div style={{ marginTop: 12 }}>
         <Field
           label="Теги"
@@ -475,7 +472,6 @@ export function ClassesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
               <td>
                 <div className="stack" style={{ gap: 4 }}>
                   <Txt value={c.name} onChange={(v) => upd((d) => void (d.targetClasses[i].name = v))} width="100%" />
-                  <Desc value={c.description} onChange={(v) => upd((d) => void (d.targetClasses[i].description = v))} />
                 </div>
               </td>
               <td className="num" style={{ width: 110 }}>
@@ -559,7 +555,6 @@ export function BandsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
               <td>
                 <div className="stack" style={{ gap: 4 }}>
                   <Txt value={b.name} onChange={(v) => upd((d) => void (d.rangeBands[i].name = v))} width="100%" />
-                  <Desc value={b.description} onChange={(v) => upd((d) => void (d.rangeBands[i].description = v))} />
                 </div>
               </td>
               <td className="num" style={{ width: 120 }}>

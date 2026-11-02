@@ -46,7 +46,8 @@ test('узкое окно: боковая панель и инспектор п�
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(app).not.toHaveClass(/side-hidden/);
   await expect(insp).not.toHaveClass(/hidden/);
-  expect((await page.locator('.split-main').boundingBox())!.width).toBeLessThan(1440 - 260 - 300);
+  // Ширина меняется с анимацией панелей — ждём, пока она устоится.
+  await expect.poll(async () => (await page.locator('.split-main').boundingBox())!.width).toBeLessThan(1440 - 260 - 300);
   expect(errors).toEqual([]);
 });
 

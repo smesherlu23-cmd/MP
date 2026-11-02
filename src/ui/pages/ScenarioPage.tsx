@@ -50,7 +50,7 @@ import { PartialButton, type PartialLimit, PartialModal, partialCount } from '..
 import { PlanEditor, arrivalsOf } from '../components/PlanEditor';
 import { SectorSelect, SectorsEditor } from '../components/SectorsEditor';
 import { SideSupport } from '../components/SupportEditor';
-import { Area, Chev, openContextMenu, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable, ToolbarSlot } from '../components/ui';
+import { Chev, openContextMenu, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable, ToolbarSlot } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
 import {
   confirmDialog,
@@ -298,14 +298,6 @@ export function ScenarioPage({ tab }: { tab: Tab }) {
               <Field label="Набор правил">
                 <Sel value={sc.rulesetId} onChange={changeRuleset} options={Object.values(st.rulesets).map((r) => ({ value: r.id, label: r.name }))} />
               </Field>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <Area
-                value={sc.description ?? ''}
-                onChange={(v) => upd((d) => void (v.trim() ? (d.description = v) : delete d.description))}
-                rows={2}
-                placeholder="Описание (необязательно): замысел, вводная для игроков — видно в начале отчёта боя"
-              />
             </div>
           </Card>
         </div>

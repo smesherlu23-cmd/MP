@@ -1,7 +1,7 @@
 // Окна боя: элемент, формирование, условия и дистанция.
 
 import { useState } from 'react';
-import { walkUnits, type Battle, type CustomModifier, type ElementState, type EngineContext, type SideId } from '../../../engine';
+import { type Battle, type CustomModifier, type ElementState, type EngineContext, type SideId } from '../../../engine';
 import { effectsText } from '../../components/EffectsEditor';
 import { TagChips } from '../../components/TagChips';
 import type { Target } from '../../components/BattleControls';
@@ -9,7 +9,7 @@ import { CommanderSelect } from '../../components/CommanderSelect';
 import { RichText } from '../../components/LogView';
 import { Btn, Check, Field, Menu, Modal, Num, Sel, fmt0 } from '../../components/ui';
 import { SIDES, type Iv } from './common';
-import { IvNote, openDecision } from './Decisions';
+import { openDecision } from './Decisions';
 import { CMD_TIP, PendingOrder, statusOf } from './ForcesTable';
 
 export const EDITABLE: { key: keyof ElementState; label: string; feature?: keyof Battle['ruleset']['features'] }[] = [
@@ -65,17 +65,12 @@ export function ElementModal({
   const [edit, setEdit] = useState(false);
   const [patch, setPatch] = useState<Record<string, number>>({});
   const [comps, setComps] = useState<Record<string, number>>({});
-  const [addType, setAddType] = useState('');
   if (!el) return null;
   const rs = b.ruleset;
   const fs = E.formationOf(el);
   const st = statusOf(E, el);
   const tags = E.tags(el);
   const sector = b.sectors?.length ? E.sectorOf(el) : null;
-  // Заметки подразделения (из конструктора) — в окне элемента.
-  let notes = '';
-  for (const sd of b.scenario.sides)
-    for (const f of sd.formations) walkUnits(f, (n) => void (n.id === el.defId && n.notes?.trim() && (notes = n.notes.trim())));
   // Какие свои правила сейчас действуют на элемент (без зависящих от цели) и множители типов состава.
   const contextual = (m: CustomModifier) => m.when.some((c) => c.field.startsWith('enemy.') || c.field === 'targetClass');
   const rules = el.status === 'active' ? rs.modifiers.filter((m) => m.enabled && !contextual(m) && E.ruleMatches(m, el)) : [];
@@ -123,7 +118,6 @@ export function ElementModal({
       footer={
         editing ? (
           <>
-            <IvNote />
             <span className="grow" />
             <Btn onClick={cancel}>Отмена</Btn>
             <Btn kind="primary" disabled={!dirty} onClick={apply}>
@@ -231,7 +225,6 @@ export function ElementModal({
           )}
         </div>
       )}
-      {notes && <div className="ql-note">{notes}</div>}
       <div className="grid two align-start">
         <div className="stack">
           {canEdit && (
@@ -368,23 +361,13 @@ export function ElementModal({
           </table>
           {editing && newTypes.length > 0 && (
             <div className="row" style={{ gap: 6 }}>
-              <Sel
-                value={addType}
-                onChange={setAddType}
-                options={[{ value: '', label: '+ тип в состав…' }, ...newTypes.map((t) => ({ value: t.id, label: t.name, title: t.description }))]}
-                width={200}
-              />
-              <Btn
+              <Menu
                 sm
-                disabled={!addType}
-                onClick={() => {
-                  setComps({ ...comps, [addType]: 1 });
-                  setAddType('');
-                }}
+                alignLeft
+                label="+ тип в состав…"
                 title="Придан расчёт, подошла техника: тип появится в составе элемента"
-              >
-                Добавить
-              </Btn>
+                items={newTypes.map((t) => ({ label: t.name, tip: t.description, onClick: () => setComps({ ...comps, [t.id]: 1 }) }))}
+              />
             </div>
           )}
         </div>
@@ -480,7 +463,6 @@ export function ConditionsModal({ b, onClose, iv }: { b: Battle; onClose: () => 
       onClose={onClose}
       footer={
         <>
-          <IvNote />
           <span className="grow" />
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn kind="primary" onClick={apply}>
@@ -627,7 +609,6 @@ export function FormationModal({
             />
           )}
           <span className="grow" />
-          {!b.finished && <IvNote width={170} />}
           <Btn onClick={onClose}>Отмена</Btn>
           <Btn
             kind="primary"

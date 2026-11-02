@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { COEFFICIENT_GROUPS, COEFFICIENTS, FEATURE_LABELS, clone, newId, normalizeRuleset, type Features, type Ruleset } from '../../../engine';
 import { EffectsEditor } from '../../components/EffectsEditor';
-import { Area, Btn, Card, Check, Field, Info, Menu, Num, Section, Txt } from '../../components/ui';
+import { Btn, Card, Check, Field, Info, Menu, Num, Section, Txt } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { replaceRuleset, toast, toastUndoable, useApp } from '../../store';
 import { moveIn, moveItems, type Upd } from './common';
@@ -30,7 +30,7 @@ export const FEATURE_HINTS: Record<keyof Features, string> = {
 
 export function General({ r, upd }: { r: Ruleset; upd: Upd }) {
   return (
-    <Card title="Описание">
+    <Card title="Общее">
       <div className="fields">
         <Field label="Название">
           <Txt value={r.name} onChange={(v) => upd((d) => void (d.name = v))} />
@@ -50,9 +50,6 @@ export function General({ r, upd }: { r: Ruleset; upd: Upd }) {
         >
           <Txt value={r.reconTag} onChange={(v) => upd((d) => void (d.reconTag = v))} />
         </Field>
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <Area value={r.description ?? ''} onChange={(v) => upd((d) => void (d.description = v))} rows={3} placeholder="Описание (необязательно)" />
       </div>
     </Card>
   );
@@ -131,12 +128,6 @@ export function TempEffectsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                 ]}
               />
             </div>
-            <Txt
-              value={x.description ?? ''}
-              onChange={(v) => upd((d) => void (d.tempEffects[i].description = v || undefined))}
-              placeholder="описание (необязательно)"
-              width="100%"
-            />
             <EffectsEditor value={x.effects} onChange={(v) => upd((d) => void (d.tempEffects[i].effects = v))} />
           </div>
         ))}

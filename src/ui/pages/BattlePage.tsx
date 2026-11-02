@@ -47,7 +47,7 @@ import {
 } from '../store';
 import { SIDES, copyText } from './battle/common';
 import { Forces } from './battle/ForcesTable';
-import { DecisionHost, openDecision, takeIvNote } from './battle/Decisions';
+import { DecisionHost, openDecision } from './battle/Decisions';
 import { ConditionsModal, ElementModal, FormationModal } from './battle/Modals';
 import { Charts, Result } from './battle/Result';
 
@@ -124,7 +124,7 @@ function BattleView({ b, rev, tab }: { b: Battle; rev: number; tab: Tab }) {
   const iv = (type: Parameters<typeof applyIntervention>[1]['type'], payload: Record<string, unknown>) => {
     forgetBattleRedo(b.id);
     setPauseNote(null);
-    applyIntervention(b, { type, payload, note: takeIvNote() });
+    applyIntervention(b, { type, payload });
     touchBattle(b.id);
     if (b.finished) setView('result');
   };
