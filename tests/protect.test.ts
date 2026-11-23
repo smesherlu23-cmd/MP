@@ -67,28 +67,42 @@ describe('файлы данных', () => {
     expect(store.takeProblems()).toHaveLength(0);
   });
 
-  it('резервная копия: только при изменениях, без боёв; восстановление поверх текущего', async () => {
+  it('резервная копия: только при изменениях; из боёв — незавершённые; восстановление поверх текущего', async () => {
     expect(await store.backup('auto')).toBeNull();
     await store.save('rulesets', 'rs-1', { id: 'rs-1', name: 'Правила', v: 1 });
-    await store.save('battles', 'b-1', { id: 'b-1', name: 'Бой' });
+    await store.save('battles', 'b-1', { id: 'b-1', name: 'Бой', finished: false });
+    // Окончен и записывать в силы нечего — в копию не идёт; окончен, а итоги не записаны — идёт.
+    await store.save('battles', 'b-done', { id: 'b-done', name: 'Старый бой', finished: true, scenario: { sides: [] } });
+    await store.save('battles', 'b-unrec', { id: 'b-unrec', finished: true, scenario: { sides: [{ units: [{ forceId: 'f' }] }] } });
     const first = await store.backup('auto', new Date(2026, 0, 1, 10));
-    expect(first?.counts).toEqual({ rulesets: 1, formations: 0, forces: 0, scenarios: 0 });
-    expect(await exists(`backups/${first!.id}/battles`)).toBe(false);
+    expect(first?.counts).toEqual({ rulesets: 1, formations: 0, forces: 0, scenarios: 0, battles: 2 });
+    expect((await fs.readdir(path.join(dir, 'backups', first!.id, 'battles'))).sort()).toEqual(['b-1.json', 'b-unrec.json']);
     expect(await store.backup('auto')).toBeNull();
     expect((await store.backup('manual'))?.unchanged).toBe(true);
 
     await store.save('rulesets', 'rs-1', { id: 'rs-1', name: 'Правила', v: 2 });
     await store.save('scenarios', 'sc-new', { id: 'sc-new', name: 'Новый' });
+    await store.save('battles', 'b-1', { id: 'b-1', name: 'Бой', finished: false, turn: 5 });
     await store.remove('rulesets', 'rs-1');
     const n = await store.restoreBackup(first!.id);
-    expect(n).toBe(1);
+    expect(n).toBe(3);
     expect(await store.load('rulesets', 'rs-1')).toMatchObject({ v: 1 });
+    expect(await store.load('battles', 'b-1')).not.toHaveProperty('turn');
     expect(await store.load('scenarios', 'sc-new')).toMatchObject({ name: 'Новый' });
     expect(await store.trash()).toHaveLength(0);
     // Состояние до восстановления сохранено отдельной копией.
     const list = await store.backups();
     expect(list[0].kind).toBe('restore');
-    expect(list[0].counts).toEqual({ rulesets: 0, formations: 0, forces: 0, scenarios: 1 });
+    expect(list[0].counts).toEqual({ rulesets: 0, formations: 0, forces: 0, scenarios: 1, battles: 2 });
+  });
+
+  it('две одновременные записи одного файла не дают ошибки, побеждает последняя', async () => {
+    const big = (v: number) => ({ id: 'b-x', v, log: Array.from({ length: 20000 }, (_, i) => ({ i, text: 'запись журнала' })) });
+    for (let i = 0; i < 10; i++) {
+      await Promise.all([store.save('battles', 'b-x', big(1)), store.save('battles', 'b-x', big(2))]);
+      expect(await store.load('battles', 'b-x')).toMatchObject({ v: 2 });
+    }
+    expect((await fs.readdir(path.join(dir, 'battles'))).filter((x) => x.endsWith('.tmp'))).toEqual([]);
   });
 
   it('хранятся 10 последних автоматических копий и по одной за прошлые дни', async () => {

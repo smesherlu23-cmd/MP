@@ -88,8 +88,10 @@ export interface WindowBridge {
   /** Окно перенесли на другой экран или у экрана сменился масштаб. */
   onDisplay?(cb: (d: { w: number; h: number }) => void): void;
   setZoom(f: number): void;
-  /** Перед закрытием окна главный процесс ждёт, пока `flush` допишет сохранения. */
-  onBeforeClose(flush: () => Promise<void>): void;
+  /** Перед закрытием окна главный процесс ждёт, пока `flush` допишет сохранения; false — не всё записано, окно остаётся. */
+  onBeforeClose(flush: () => Promise<boolean | void>): void;
+  /** Закрыть окно без сохранения (ГМ согласился). */
+  closeAnyway(): void;
 }
 
 declare global {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Btn, Card, Field, Modal, Num, Seg } from '../components/ui';
 import { ZOOM_HINT, ZoomSelect } from '../components/ZoomSelect';
 import { storage, storageKind, type BackupInfo, type TrashItem } from '../storage';
-import { confirmDialog, deleteBattles, fmtDate, installExamples, restoreBackup, restoreFromTrash, toast, updateSettings, useApp } from '../store';
+import { confirmDialog, deleteBattles, flushSaves, fmtDate, installExamples, restoreBackup, restoreFromTrash, toast, updateSettings, useApp } from '../store';
 
 export function SettingsPage() {
   const s = useApp((x) => x.settings);
@@ -126,6 +126,8 @@ export function SettingsPage() {
                 <Btn onClick={() => storage.openDataDir()}>Открыть папку</Btn>
                 <Btn
                   onClick={async () => {
+                    // Отложенные правки — в прежнюю папку, до смены (иначе последняя уйдёт в новую).
+                    await flushSaves();
                     const d = await storage.chooseDataDir();
                     if (d) {
                       toast('Папка данных изменена. Перезапуск…', 'good');
@@ -139,7 +141,7 @@ export function SettingsPage() {
             )}
             <Field
               label="Резервные копии"
-              hint="Наборы правил, шаблоны, силы и сценарии копируются при запуске и раз в час, если что-то изменилось (бои не копируются — они воспроизводятся из сценария). Хранятся 10 последних копий и по одной за 14 последних дней."
+              hint="Наборы правил, шаблоны, силы и сценарии копируются при запуске и раз в час, если что-то изменилось (из боёв — незавершённые и те, чьи итоги ещё не записаны в силы: решения ГМ хранятся только в бою). Хранятся 10 последних копий и по одной за 14 последних дней."
             >
               <div className="row">
                 <span className="muted">{backups.length ? `последняя — ${fmtDate(backups[0].createdAt)} · всего ${backups.length}` : 'копий пока нет'}</span>
@@ -217,7 +219,13 @@ const KIND_LABEL: Record<BackupInfo['kind'], string> = {
 };
 
 const countsText = (c: Record<string, number>) =>
-  [`наборов правил ${c.rulesets ?? 0}`, `шаблонов ${c.formations ?? 0}`, `сил ${c.forces ?? 0}`, `сценариев ${c.scenarios ?? 0}`].join(' · ');
+  [
+    `наборов правил ${c.rulesets ?? 0}`,
+    `шаблонов ${c.formations ?? 0}`,
+    `сил ${c.forces ?? 0}`,
+    `сценариев ${c.scenarios ?? 0}`,
+    ...(c.battles ? [`боёв ${c.battles}`] : []),
+  ].join(' · ');
 
 function BackupsModal({ list, onClose }: { list: BackupInfo[]; onClose: () => void }) {
   return (

@@ -36,14 +36,20 @@ contextBridge.exposeInMainWorld('warsim', {
   },
   /** Масштаб интерфейса (1 — обычный): как масштаб страницы, со всеми меню и окнами. */
   setZoom: (f: number) => webFrame.setZoomFactor(f),
-  /** Перед закрытием окна: дописать сохранения и ответить «готово». */
-  onBeforeClose: (flush: () => Promise<void>) => {
+  /**
+   * Перед закрытием окна: дописать сохранения и ответить «готово». flush вернул false — не всё записано:
+   * окно не закрывается (программа спросит ГМ сама и при согласии вызовет closeAnyway).
+   */
+  onBeforeClose: (flush: () => Promise<boolean | void>) => {
     ipcRenderer.on('app:flush', async () => {
+      let ok: boolean | void = true;
       try {
-        await flush();
+        ok = await flush();
       } finally {
-        ipcRenderer.send('app:flushed');
+        ipcRenderer.send('app:flushed', ok !== false);
       }
     });
   },
+  /** Закрыть окно, не дожидаясь сохранения (ГМ согласился потерять незаписанное). */
+  closeAnyway: () => ipcRenderer.send('app:close-anyway'),
 });
