@@ -77,7 +77,7 @@ export function checkEnd(E: EngineContext) {
   const attacking = b.elements.some((x) => E.engaged(x) && E.behavior(x) === 'attack');
   const waiting = awaitingReinforcements(b, 'A') || awaitingReinforcements(b, 'B');
   b.quietTurns = losses <= 0 && !attacking && !waiting ? b.quietTurns + 1 : 0;
-  if (k.stalemateTurns > 0 && b.quietTurns >= k.stalemateTurns) finish(E, `Бой затих: ${b.quietTurns} ход. без потерь и без атак`);
+  if (k.stalemateTurns > 0 && b.quietTurns >= E.turnsOf(k.stalemateTurns)) finish(E, `Бой затих: ${b.quietTurns} ход. без потерь и без атак`);
 }
 
 export function finish(E: EngineContext, reason: string) {

@@ -1,8 +1,15 @@
 // Проверка сценария и подразделений на ошибки до начала боя.
 
 import { fmtDuration, scenarioHours, scenarioTurns } from './duration';
-import { EVENT_KIND_LABELS, MODIFIER_FIELDS } from './labels';
-import type { CustomModifier, Id, Ruleset, Scenario, SideDef, UnitNode } from './types';
+import { EVENT_KIND_LABELS, MODIFIER_FIELDS, STAT_LABELS } from './labels';
+import type { CustomModifier, Id, Ruleset, Scenario, SideDef, StatKey, UnitNode } from './types';
+
+/** Характеристики, для которых проверяется класс цели (огонь против конкретной цели). */
+const CLASS_STATS: StatKey[] = ['fire', 'lethality', 'protection'];
+/** Характеристики, для которых проверяется противник (в прежних версиях — только эти). */
+const ENEMY_BASE: StatKey[] = [...CLASS_STATS, 'detection'];
+/** То же с моралью и подавлением: противник — стрелявшие по элементу в этом ходу. */
+const ENEMY_STATS: StatKey[] = [...ENEMY_BASE, 'moraleLoss', 'panic', 'suppression'];
 import { sideUnits, walkUnits } from './units';
 
 export interface Issue {
@@ -82,6 +89,17 @@ export function ruleIssues(r: Ruleset, m: CustomModifier): string[] {
       );
   }
   if (!Object.values(m.effects).some((v) => v !== undefined && v !== 1)) out.push('нет действия: все множители — 1');
+  // Условие на противника проверяется не для всех характеристик: для остальных правило молча не действует.
+  const enemy = m.when.some((c) => c.field.startsWith('enemy.'));
+  const cls = m.when.some((c) => c.field === 'targetClass');
+  if (enemy || cls) {
+    const ok = new Set<string>(cls ? CLASS_STATS : r.coefficients.moraleEnemyRules === 0 ? ENEMY_BASE : ENEMY_STATS);
+    const dead = (Object.keys(m.effects) as StatKey[]).filter((k) => m.effects[k] !== undefined && m.effects[k] !== 1 && !ok.has(k));
+    if (dead.length)
+      out.push(
+        `условие на ${cls ? 'класс цели' : 'противника'} не действует для: ${dead.map((k) => `«${STAT_LABELS[k].toLowerCase()}»`).join(', ')} — эти множители не применятся`,
+      );
+  }
   if (m.byShare && !m.when.some((c) => (c.field === 'tag' || c.field === 'kind') && !['not_has', 'nin', 'neq'].includes(c.op)))
     out.push('«по доле» без условия на свой тег или состав — действует на весь элемент');
   return out;

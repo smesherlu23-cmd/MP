@@ -7,17 +7,18 @@ import type { Factor } from '../types';
 
 export function phaseSupply(E: EngineContext) {
   const { k, f } = E;
+  const ts = E.ts;
   for (const el of E.b.elements) {
     if (el.status !== 'active') continue;
     const sup = E.supply(el);
     const inContact = el.firedThisTurn || el.underFireThisTurn;
-    const m = inContact ? k.resupplyInContact : 1;
+    const m = (inContact ? k.resupplyInContact : 1) * ts;
     if (f.ammo) el.ammo = clamp(el.ammo + k.resupplyAmmo * sup * m, 0, 100);
     if (f.fuel) el.fuel = clamp(el.fuel + k.resupplyFuel * sup * m, 0, 100);
-    if (f.equipment && inContact) el.equipment = clamp(el.equipment - k.equipmentWear, 0, 100);
+    if (f.equipment && inContact) el.equipment = clamp(el.equipment - k.equipmentWear * ts, 0, 100);
     // Готовность растёт, пока элемент не под огнём (развёртывание, изготовка к бою).
     if (f.readiness && k.readinessGrowth > 0 && !el.underFireThisTurn && el.readiness < 100) {
-      el.readiness = clamp(el.readiness + k.readinessGrowth, 0, 100);
+      el.readiness = clamp(el.readiness + k.readinessGrowth * ts, 0, 100);
       E.invalidate(el);
     }
     const bh = E.behavior(el);
@@ -34,6 +35,7 @@ export function phaseFatigue(E: EngineContext) {
     const bh = E.behavior(el);
     let gain = k.fatiguePerTurn * E.mult(el, 'fatigue') * (1 + (f.suppression ? (el.suppression / 100) * k.fatigueSuppressionFactor : 0));
     if (bh === 'reserve' || bh === 'consolidate') gain -= k.fatigueRecovery * E.mult(el, 'recovery');
+    gain *= E.ts;
     const before = el.fatigue;
     el.fatigue = clamp(el.fatigue + gain, 0, 100);
     if (Math.abs(el.fatigue - before) >= 0.5) {

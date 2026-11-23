@@ -170,6 +170,68 @@ export class EngineContext {
     return this.rs.features;
   }
 
+  /**
+   * Во сколько раз ход длиннее эталонного: темпы «за ход» заданы для эталонной длины хода и пересчитываются
+   * на длину хода набора правил. 1 — эталон не задан (бои прежних версий) или ход эталонной длины.
+   */
+  get ts(): number {
+    const ref = this.k.turnRefMinutes;
+    return ref > 0 && this.rs.turnMinutes > 0 ? this.rs.turnMinutes / ref : 1;
+  }
+
+  /** Шанс «за ход» эталонной длины → шанс за ход боя: 1 − (1 − p)^(длина хода / эталон). */
+  chancePerTurn(p: number): number {
+    const t = this.ts;
+    if (t === 1 || p <= 0) return p;
+    if (p >= 1) return 1;
+    return 1 - (1 - p) ** t;
+  }
+
+  /** Число ходов эталонной длины → ходов боя (не меньше одного). */
+  turnsOf(n: number): number {
+    return this.ts === 1 ? n : Math.max(1, Math.round(n / this.ts));
+  }
+
+  /** Кто стрелял по элементу в этом ходу и с какой силой (для правил с условием на противника). */
+  readonly incoming = new Map<Id, Map<ElementState, number>>();
+
+  /** Отметить огонь стрелка по цели в этом ходу. */
+  noteIncoming(target: ElementState, shooter: ElementState, fire: number) {
+    let m = this.incoming.get(target.id);
+    if (!m) {
+      m = new Map();
+      this.incoming.set(target.id, m);
+    }
+    m.set(shooter, (m.get(shooter) ?? 0) + fire);
+  }
+
+  /**
+   * Множитель правил с условием на противника для характеристики, которая не считается против одного
+   * противника (мораль, паника, подавление): противник — стрелявшие по элементу в этом ходу, правило
+   * действует по доле огня тех, для кого оно выполнено. Если out передан — туда пишется разбор.
+   */
+  enemyRules(el: ElementState, stat: StatKey, out?: Factor[]): number {
+    if (!(this.k.moraleEnemyRules > 0) || !this.contextualList.length) return 1;
+    const inc = this.incoming.get(el.id);
+    if (!inc?.size) return 1;
+    let total = 0;
+    for (const v of inc.values()) total += v;
+    if (total <= 0) return 1;
+    let m = 1;
+    for (const mod of this.contextualList) {
+      const v = mod.effects[stat];
+      if (v === undefined || !Number.isFinite(v) || mod.when.some((w) => w.field === 'targetClass')) continue;
+      let part = 0;
+      for (const [enemy, fire] of inc) if (this.ruleMatches(mod, el, { enemy })) part += fire;
+      if (part <= 0) continue;
+      const share = part / total;
+      const val = 1 + (this.ruleValue(mod, v, el) - 1) * share;
+      m *= val;
+      out?.push({ label: `Правило «${mod.name}» (противник — ${Math.round(share * 100)}% огня по элементу)`, value: val, kind: 'mult' });
+    }
+    return m;
+  }
+
   get band() {
     return this.rs.rangeBands[this.b.bandIndex];
   }

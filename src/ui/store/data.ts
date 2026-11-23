@@ -24,6 +24,8 @@ import {
   newId,
   normalizeRuleset,
   recalibrateRuleset,
+  upgradeExampleData,
+  COEFFICIENTS,
   scenarioToHours,
   extractForces,
   rehashCopies,
@@ -199,12 +201,16 @@ export function migrateScenario(sc: Scenario): Scenario {
 const CALIBRATED_HERE = 'warsim-calibration-2';
 
 /** Набор правил прежней версии — к текущей: несменённые коэффициенты — откалиброванные. Возвращает, менялись ли значения. */
-export function upgradeRuleset(r: Ruleset, calibrate = true): { ruleset: Ruleset; changed: boolean } {
-  if ((r.dataVersion ?? 0) >= DATA_VERSION) return { ruleset: r, changed: false };
+export function upgradeRuleset(r: Ruleset, calibrate = true): { ruleset: Ruleset; changed: boolean; notes: string[] } {
+  const from = r.dataVersion ?? 0;
+  if (from >= DATA_VERSION) return { ruleset: r, changed: false, notes: [] };
   const copy = clone(r);
-  const changed = calibrate && recalibrateRuleset(copy).length > 0;
+  // Калибровка версии 2 на этом компьютере уже применялась (наборы без версии) — повторно не трогаем.
+  const keys = recalibrateRuleset(copy, calibrate ? from : Math.max(from, 2));
+  const notes = keys.map((k) => COEFFICIENTS.find((m) => m.key === k)?.label ?? k).map((x) => `«${x}»`);
+  if (from < 3) notes.push(...upgradeExampleData(copy));
   copy.dataVersion = DATA_VERSION;
-  return { ruleset: copy, changed };
+  return { ruleset: copy, changed: notes.length > 0, notes };
 }
 
 /**
@@ -234,12 +240,14 @@ export function upgradeData() {
   const s = get();
   const calibrate = !localStorage.getItem(CALIBRATED_HERE);
   const names: string[] = [];
+  const notes = new Set<string>();
   for (const r of Object.values(s.rulesets)) {
-    const { ruleset, changed } = upgradeRuleset(r, calibrate);
+    const { ruleset, changed, notes: n } = upgradeRuleset(r, calibrate);
     if (ruleset === r) continue;
     set((st) => ({ rulesets: { ...st.rulesets, [r.id]: ruleset } }));
     scheduleSave('rulesets', r.id, () => get().rulesets[r.id]);
     if (changed) names.push(`«${r.name}»`);
+    for (const x of n) notes.add(x);
   }
   for (const sc of Object.values(s.scenarios)) {
     const next = upgradeScenario(sc, get().rulesets[sc.rulesetId], calibrate);
@@ -249,7 +257,7 @@ export function upgradeData() {
   }
   if (names.length)
     toast(
-      `Модель боя откалибрована: в наборах ${names.join(', ')} обновлены «Мораль за 1% потерь» и «Порог отхода (потери)» — там, где их не меняли. Начатые бои идут по своим прежним правилам.`,
+      `Модель боя откалибрована: в наборах ${names.join(', ')} обновлено (там, где не меняли): ${[...notes].join(', ')}. Начатые бои идут по своим прежним правилам.`,
       'info',
     );
 }
