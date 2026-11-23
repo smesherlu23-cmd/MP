@@ -226,7 +226,12 @@ function registerIpc() {
     if (path.resolve(next) === path.resolve(dataDir)) return null;
     const err = await checkDataDir(next);
     if (err) {
-      await dialog.showMessageBox(win!, { type: 'warning', title: APP_NAME, message: 'В эту папку нельзя сохранять данные', detail: `${next}\n\nПричина: ${err}.` });
+      await dialog.showMessageBox(win!, {
+        type: 'warning',
+        title: APP_NAME,
+        message: 'В эту папку нельзя сохранять данные',
+        detail: `${next}\n\nПричина: ${err}.`,
+      });
       return null;
     }
     // Данные не переезжают сами: ГМ решает, перенести их или открыть новую папку как есть.

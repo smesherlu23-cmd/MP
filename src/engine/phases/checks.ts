@@ -251,15 +251,36 @@ export function phaseChecks(E: EngineContext) {
       let shareBreak = 1;
       if (byShare && sh.kind === 'rout' && sh.el) {
         const v = sh.el.startValue;
-        shareF = Math.min(1, (3 * v) / Math.max(1e-9, startValueOf((x) => ids.has(x.formationId))));
-        shareS = Math.min(1, (3 * v) / Math.max(1e-9, startValueOf((x) => x.side === sh.formation.side)));
+        shareF = Math.min(
+          1,
+          (3 * v) /
+            Math.max(
+              1e-9,
+              startValueOf((x) => ids.has(x.formationId)),
+            ),
+        );
+        shareS = Math.min(
+          1,
+          (3 * v) /
+            Math.max(
+              1e-9,
+              startValueOf((x) => x.side === sh.formation.side),
+            ),
+        );
       }
       if (byShare && sh.kind === 'break' && sh.formation.parentId) {
         let root = sh.formation;
         for (let up = root.parentId && E.formations.get(root.parentId); up; up = up.parentId && E.formations.get(up.parentId)) root = up;
         if (root !== sh.formation) {
           const rootIds = subtreeIds(E, root.id);
-          shareBreak = Math.min(1, startValueOf((x) => ids.has(x.formationId)) / Math.max(1e-9, startValueOf((x) => rootIds.has(x.formationId))));
+          shareBreak = Math.min(
+            1,
+            startValueOf((x) => ids.has(x.formationId)) /
+              Math.max(
+                1e-9,
+                startValueOf((x) => rootIds.has(x.formationId)),
+              ),
+          );
         }
       }
       for (const el of b.elements) {

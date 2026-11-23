@@ -214,13 +214,28 @@ test('страница команды: численность, бои и бое�
 
 test('прогноз исхода прямо в сценарии; устаревает при правке', async ({ page }) => {
   const errors = await openApp(page);
+  // Прогоны идут в фоновых потоках, а не в окне.
+  let workers = 0;
+  page.on('worker', () => workers++);
   await openFromNav(page, 'атака на высоту');
   const qf = page.locator('.quick-forecast');
   await qf.getByRole('button', { name: 'Оценить шансы' }).click();
   await expect(qf.locator('.qf-line')).toContainText('%', { timeout: 30000 });
   await expect(qf).not.toContainText('изменились');
+  expect(workers).toBeGreaterThan(0);
   await page.locator('.field', { hasText: 'Длительность боя' }).locator('input').fill('3');
   await page.locator('.field', { hasText: 'Длительность боя' }).locator('input').press('Enter');
   await expect(qf).toContainText('изменились');
+  expect(errors).toEqual([]);
+});
+
+test('прогноз в сценарии можно остановить', async ({ page }) => {
+  const errors = await openApp(page);
+  await openFromNav(page, 'атака на высоту');
+  const qf = page.locator('.quick-forecast');
+  await qf.getByRole('button', { name: 'Оценить шансы' }).click();
+  await qf.getByRole('button', { name: 'Остановить' }).click();
+  await expect(qf.getByRole('button', { name: /Оценить шансы|Пересчитать/ })).toBeVisible();
+  await expect(qf).not.toContainText('считаю');
   expect(errors).toEqual([]);
 });

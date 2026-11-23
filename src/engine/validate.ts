@@ -97,7 +97,7 @@ export function ruleIssues(r: Ruleset, m: CustomModifier): string[] {
     const dead = (Object.keys(m.effects) as StatKey[]).filter((k) => m.effects[k] !== undefined && m.effects[k] !== 1 && !ok.has(k));
     if (dead.length)
       out.push(
-        `условие на ${cls ? 'класс цели' : 'противника'} не действует для: ${dead.map((k) => `«${STAT_LABELS[k].toLowerCase()}»`).join(', ')} — эти множители не применятся`,
+        `условие на ${cls ? 'класс цели' : 'противника'} не действует для: ${dead.map((k) => `«${(STAT_LABELS[k] ?? k).toLowerCase()}»`).join(', ')} — эти множители не применятся`,
       );
   }
   if (m.byShare && !m.when.some((c) => (c.field === 'tag' || c.field === 'kind') && !['not_has', 'nin', 'neq'].includes(c.op)))

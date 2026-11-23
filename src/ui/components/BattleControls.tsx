@@ -7,7 +7,6 @@ import {
   EngineContext,
   PAUSE_LABELS,
   fmtDuration,
-  forecastAsync,
   plural,
   randomSeed,
   resolveRefs,
@@ -19,6 +18,7 @@ import {
   type PauseRules,
   type SideId,
 } from '../../engine';
+import { runForecast } from '../parallel';
 import { updateSettings, useApp } from '../store';
 import { EffectsEditor, effectsText } from './EffectsEditor';
 import { Btn, Check, Field, Modal, Num, Sel, Txt, fmt0, pct } from './ui';
@@ -102,8 +102,8 @@ export function ForecastModal({ b, onClose }: { b: Battle; onClose: () => void }
     const seed = randomSeed();
     const total = base ? n * 2 : n;
     const stop = () => closed.current;
-    const now = await forecastAsync(b, n, seed, (d) => setProgress(d / total), stop);
-    const without = base ? await forecastAsync(base, n, seed, (d) => setProgress((n + d) / total), stop) : undefined;
+    const now = await runForecast(b, n, seed, (d) => setProgress(d / total), stop);
+    const without = base ? await runForecast(base, n, seed, (d) => setProgress((n + d) / total), stop) : undefined;
     if (closed.current) return;
     setRes({ now, without });
     setRunning(false);

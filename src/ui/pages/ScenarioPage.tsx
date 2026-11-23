@@ -20,7 +20,6 @@ import {
   newObjective,
   partOf,
   randomSeed,
-  runManyAsync,
   type MonteCarloResult,
   resolveScenario,
   scenarioForceIds,
@@ -52,6 +51,7 @@ import { SectorSelect, SectorsEditor } from '../components/SectorsEditor';
 import { SideSupport } from '../components/SupportEditor';
 import { Chev, openContextMenu, Btn, Card, Field, Info, Menu, Num, Section, Sel, fmt0, fmt1, pressable, ToolbarSlot } from '../components/ui';
 import { openUnit, useTabState } from '../hooks';
+import { runScenario } from '../parallel';
 import {
   confirmDialog,
   createForcesFromTemplate,
@@ -979,7 +979,7 @@ function SideCommanders({ sc, i, rs }: { sc: Scenario; i: number; rs: Ruleset })
 
 /** Быстрый прогноз по сценарию: результат и для какой версии сценария и сил он посчитан. */
 const useQuickForecast = create<{
-  bySc: Record<Id, { running?: boolean; done?: number; result?: MonteCarloResult; stamp?: string }>;
+  bySc: Record<Id, { running?: boolean; cancel?: boolean; done?: number; result?: MonteCarloResult; stamp?: string }>;
 }>(() => ({ bySc: {} }));
 const QUICK_RUNS = 100;
 
@@ -1000,10 +1000,19 @@ function QuickForecast({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
   const stale = !!st?.result && st.stamp !== forecastStamp(sc);
   const set = (x: Partial<NonNullable<typeof st>>) => useQuickForecast.setState((s) => ({ bySc: { ...s.bySc, [sc.id]: { ...s.bySc[sc.id], ...x } } }));
   const run = async () => {
-    set({ running: true, done: 0 });
+    set({ running: true, cancel: false, done: 0 });
     try {
-      const result = await runManyAsync(scenarioForBattle(sc), rs, QUICK_RUNS, randomSeed(), (done) => set({ done }));
-      set({ running: false, result, stamp: forecastStamp(sc) });
+      const result = await runScenario(
+        scenarioForBattle(sc),
+        rs,
+        QUICK_RUNS,
+        randomSeed(),
+        (done) => set({ done }),
+        () => !!useQuickForecast.getState().bySc[sc.id]?.cancel,
+      );
+      // Остановлен до первых итогов — прежний прогноз остаётся.
+      if (result.n) set({ running: false, result, stamp: forecastStamp(sc) });
+      else set({ running: false });
     } catch (e) {
       set({ running: false });
       toast(`Ошибка прогноза: ${(e as Error).message}`, 'bad');
@@ -1028,12 +1037,18 @@ function QuickForecast({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
             </span>
           </span>
         )}
+        {r && r.n < QUICK_RUNS && <span className="faint small">по {r.n} прогонам</span>}
         {stale && <span className="warn small">сценарий или силы изменились</span>}
         <span className="grow" />
         {st?.running ? (
-          <span className="faint small">
-            считаю… {st.done ?? 0} из {QUICK_RUNS}
-          </span>
+          <>
+            <span className="faint small">
+              считаю… {st.done ?? 0} из {QUICK_RUNS}
+            </span>
+            <Btn sm kind="ghost" onClick={() => set({ cancel: true })}>
+              Остановить
+            </Btn>
+          </>
         ) : (
           <Btn sm kind={r && !stale ? 'ghost' : undefined} onClick={() => void run()}>
             {r ? 'Пересчитать' : 'Оценить шансы'}

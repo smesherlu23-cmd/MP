@@ -209,7 +209,11 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
       firedAny = true;
       const exLimit = k.exposureLimitsFire > 0 ? Math.min(1, maxEx) : 1;
       if (exLimit < 1)
-        factors?.push({ label: `Цели укрыты (${indirect ? 'навесной огонь' : 'прямой огонь'}): подставленность ${dec(exLimit, 2)}`, value: exLimit, kind: 'mult' });
+        factors?.push({
+          label: `Цели укрыты (${indirect ? 'навесной огонь' : 'прямой огонь'}): подставленность ${dec(exLimit, 2)}`,
+          value: exLimit,
+          kind: 'mult',
+        });
       for (const c of cands) {
         const share = c.w / W;
         const r = c.raw.get(c.cls)!;

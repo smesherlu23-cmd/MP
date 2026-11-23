@@ -257,7 +257,9 @@ export function TypeEditor({
           <Num value={t.value} onChange={(v) => ut((x) => void (x.value = v))} min={0} step={0.5} />
           {refLine((x) => x.value)}
           {t.value <= 0 && (
-            <div className="ref-line" style={{ color: 'var(--warn)' }}>⚠ Ценность 0: подразделение только из таких типов в бой не попадает, даже если у типа есть огонь.</div>
+            <div className="ref-line" style={{ color: 'var(--warn)' }}>
+              ⚠ Ценность 0: подразделение только из таких типов в бой не попадает, даже если у типа есть огонь.
+            </div>
           )}
         </Field>
         <Field label="Защищённость" hint="1 — как у типичной цели класса.">

@@ -28,9 +28,10 @@ test('теги — у типов: у подразделения видны те�
   await extra.locator('.card-head').click();
   await expect(extra.locator('.tags.readonly .chip', { hasText: 'разведка' })).toBeVisible();
   await expect(extra.locator('.tags input')).toHaveCount(0);
-  // У роты без разведчиков тегов нет — и поля тоже.
+  // У роты без разведчиков — только теги её типов (ПТ-средства), «разведки» нет.
   await page.locator('.org-box', { hasText: '2-я мотострелковая рота' }).click();
-  await expect(extra.locator('.field', { hasText: 'Теги' })).toHaveCount(0);
+  await expect(extra.locator('.tags.readonly .chip', { hasText: 'ПТ' })).toBeVisible();
+  await expect(extra.locator('.tags.readonly .chip', { hasText: 'разведка' })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
