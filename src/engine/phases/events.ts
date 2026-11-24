@@ -1,5 +1,6 @@
 // План боя: события сценария по ходам и по условию (подход, приказ, условия, удар, эффект).
 
+import { addAmmo } from '../weapons';
 import { type EngineContext, e, fm, notArrived, s } from '../context';
 import { plural } from '../labels';
 import type { Battle, ElementState, EventTrigger, Id, Scenario, ScenarioEvent } from '../types';
@@ -217,7 +218,7 @@ export function phaseEvents(E: EngineContext) {
         continue;
       }
       for (const el of act) {
-        if (ev.ammo) el.ammo = Math.max(0, Math.min(100, el.ammo + ev.ammo));
+        if (ev.ammo) addAmmo(el, ev.ammo);
         if (ev.fuel) el.fuel = Math.max(0, Math.min(100, el.fuel + ev.fuel));
         if (ev.equipment) el.equipment = Math.max(0, Math.min(100, el.equipment + ev.equipment));
         E.invalidate(el);

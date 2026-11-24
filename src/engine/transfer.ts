@@ -31,13 +31,13 @@ function remapFirepower(t: ComponentType, from: Ruleset, to: Ruleset, notes: Set
   const out: ComponentType['firepower'] = {};
   const ns = from.rangeBands.length;
   const nt = to.rangeBands.length;
-  for (const [cls, row] of Object.entries(t.firepower)) {
+  for (const [cls, row] of Object.entries(t.firepower ?? {})) {
     out[cls] = {};
     to.rangeBands.forEach((band, j) => {
       let src = from.rangeBands.find((x) => x.id === band.id);
       if (!src && ns) {
         src = from.rangeBands[Math.round((j * (ns - 1)) / Math.max(1, nt - 1))];
-        notes.add('Дистанции наборов различаются — огневая мощь перенесена по порядку дистанций (от дальней к ближней); проверьте её в каталоге.');
+        notes.add('Дистанции наборов различаются — огневая мощь и точность перенесены по порядку дистанций (от дальней к ближней); проверьте их в каталоге.');
       }
       out[cls][band.id] = src ? (row[src.id] ?? 0) : 0;
     });
@@ -66,7 +66,7 @@ export function transferFromRuleset(target: Ruleset, source: Ruleset, sel: Parti
     if (!t) continue;
     const copy = clone(t);
     // Классы целей, которых нет в наборе, переносятся вместе с типом.
-    const classes = new Set([copy.targetClass, ...Object.keys(copy.firepower)]);
+    const classes = new Set([copy.targetClass, ...Object.keys(copy.firepower ?? {}), ...(copy.weapons ?? []).flatMap((w) => Object.keys(w.damage))]);
     for (const cls of classes) {
       if (rs.targetClasses.some((x) => x.id === cls)) continue;
       const c = source.targetClasses.find((x) => x.id === cls);
@@ -75,6 +75,16 @@ export function transferFromRuleset(target: Ruleset, source: Ruleset, sel: Parti
       notes.add(`Добавлен класс целей «${c.name}».`);
     }
     copy.firepower = remapFirepower(copy, source, rs, notes);
+    // Типы вооружения, которых нет в наборе, переносятся вместе с типом (точность — по дистанциям набора).
+    for (const w of copy.weapons ?? []) {
+      if ((rs.weaponTypes ??= []).some((x) => x.id === w.weaponType)) continue;
+      const src = source.weaponTypes?.find((x) => x.id === w.weaponType);
+      if (!src) continue;
+      const wt = clone(src);
+      wt.accuracy = remapFirepower({ firepower: { x: src.accuracy } } as unknown as ComponentType, source, rs, notes).x ?? {};
+      rs.weaponTypes.push(wt);
+      notes.add(`Добавлен тип вооружения «${wt.name}».`);
+    }
     put(rs.componentTypes, copy);
   }
   for (const id of sel.orders ?? []) {

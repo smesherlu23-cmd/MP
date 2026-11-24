@@ -263,6 +263,14 @@ export async function flushSave(col: Collection, id: Id) {
   await pendingSaves.get(`${col}:${id}`)?.();
 }
 
+/** Дописать сохранение объекта и дождаться записи. false — записать не удалось (данные держать в памяти). */
+export async function settleSave(col: Collection, id: Id): Promise<boolean> {
+  const key = `${col}:${id}`;
+  await pendingSaves.get(key)?.();
+  await chains.get(key)?.catch(() => {});
+  return !failed.has(key) && !pendingSaves.has(key);
+}
+
 /** Немедленно выполнить отложенные сохранения и дождаться всех записей (перед закрытием окна). */
 export async function flushSaves() {
   await Promise.all([...pendingSaves.values()].map((fn) => fn()));

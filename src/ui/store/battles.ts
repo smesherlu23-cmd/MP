@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { clone, newId, restoreBattleLog, rewindBattle, trimBattleForStorage, undoBattleAction, lastBattleAction, type Battle, type Id } from '../../engine';
 import { battleMeta, storage } from '../storage';
-import { chooseDialog, closeTabsWhere, flushSave, get, openTab, scheduleSave, set, toast } from './core';
+import { chooseDialog, closeTabsWhere, flushSave, get, openTab, scheduleSave, set, settleSave, toast } from './core';
 import { restoreFromTrash } from './data';
 
 export interface BattlesState {
@@ -59,8 +59,11 @@ export const battleRedo = new Map<Id, Battle[]>();
 export const NOT_REPLAYABLE =
   'Этот бой сохранён другой версией программы — повтор с ним расходится, отменить ход нельзя. Можно «Повторить с решениями ГМ» в меню боя.';
 
+/** Сколько отменённых состояний боя хранится для «Вернуть» (каждое — целый бой с журналом). */
+const REDO_LIMIT = 5;
+
 export function replaceBattle(prev: Battle, next: Battle, what: string) {
-  battleRedo.set(prev.id, [...(battleRedo.get(prev.id) ?? []), prev]);
+  battleRedo.set(prev.id, [...(battleRedo.get(prev.id) ?? []), prev].slice(-REDO_LIMIT));
   putBattle(next);
   toast(`${what}.`, 'info', { label: 'Вернуть', run: () => redoBattle(prev.id) });
 }
@@ -154,6 +157,24 @@ export async function branchBattleDialog(id: Id) {
 export function touchBattle(id: Id) {
   const b = useBattles.getState().battles[id];
   if (b) putBattle(b);
+}
+
+/**
+ * Выгрузить из памяти бои, которых нет на экране: живой бой с подробным журналом занимает десятки мегабайт,
+ * а открытые за сеанс бои иначе копятся до закрытия программы. На диске бой есть — откроется заново.
+ * Бой, который не удалось записать, остаётся в памяти (программа повторит запись).
+ */
+export async function unloadBattlesExcept(keep: (id: Id) => boolean) {
+  const ids = Object.keys(useBattles.getState().battles).filter((id) => !keep(id));
+  if (!ids.length) return;
+  const saved = await Promise.all(ids.map((id) => settleSave('battles', id)));
+  const drop = new Set(ids.filter((id, i) => saved[i] && !keep(id)));
+  if (!drop.size) return;
+  useBattles.setState((s) => ({
+    battles: Object.fromEntries(Object.entries(s.battles).filter(([id]) => !drop.has(id))),
+    rev: Object.fromEntries(Object.entries(s.rev).filter(([id]) => !drop.has(id))),
+  }));
+  for (const id of drop) battleRedo.delete(id);
 }
 
 export async function loadBattle(id: Id): Promise<Battle | null> {

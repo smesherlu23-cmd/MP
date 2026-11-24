@@ -1,11 +1,27 @@
 // Набор правил: каталог типов (карточки и таблица), классы целей и дистанции.
 
-import { KIND_LABELS, clone, dec, newId, rulesetTags, walkUnits, type ComponentKind, type ComponentType, type UnitNode, type Ruleset } from '../../../engine';
+import {
+  KIND_LABELS,
+  clone,
+  convertToWeapons,
+  newId,
+  rulesetTags,
+  typeFire,
+  usesWeapons,
+  walkUnits,
+  weaponTypeMap,
+  type ComponentKind,
+  type ComponentType,
+  type Ruleset,
+  type UnitNode,
+  type WeaponType,
+} from '../../../engine';
 import { Btn, Card, Check, Field, Info, Menu, Num, ScrollX, Sel, Seg, Tags, Txt, pressable } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { openTab, toastUndoable, useApp } from '../../store';
 import { moveIn, moveItems, type Upd } from './common';
 import { EffectsEditor } from '../../components/EffectsEditor';
+import { FireTable } from '../unit/Summary';
 
 export function typeUsage(typeId: string): number {
   const s = useApp.getState();
@@ -19,30 +35,12 @@ export function typeUsage(typeId: string): number {
   return n;
 }
 
-/** Эталон по умолчанию: люди первого класса цели с ценностью 1 (стрелок, мушкетёр), иначе первые люди, иначе первый тип. */
-export function defaultReference(r: Ruleset): ComponentType | undefined {
-  const people = r.componentTypes.filter((x) => x.kind === 'personnel');
-  return people.find((x) => x.value === 1 && x.targetClass === r.targetClasses[0]?.id) ?? people.find((x) => x.value === 1) ?? people[0] ?? r.componentTypes[0];
-}
-
-/** Во сколько раз больше эталона: «×2,9»; пусто, если сравнивать не с чем. */
-const ratio = (v: number, base: number) => {
-  if (!(v > 0) || !(base > 0)) return '';
-  const x = v / base;
-  return `×${dec(x, x >= 10 ? 0 : x >= 1 ? 1 : 2)
-    .replace(/(,\d*?)0+$/, '$1')
-    .replace(/,$/, '')}`;
-};
-
 const KIND_OWN: Record<ComponentKind, string> = { personnel: 'у людей', weapon: 'у оружия', vehicle: 'у техники' };
 
 export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey: string }) {
   const [selId, setSel] = useTabState<string>(`${tabKey}:type`, r.componentTypes[0]?.id ?? '');
   const [view, setView] = useTabState<'edit' | 'table'>(`${tabKey}:typesView`, 'edit');
   const t = r.componentTypes.find((x) => x.id === selId) ?? r.componentTypes[0];
-  // Эталон для сравнения чисел типа: по умолчанию — рядовой боец (люди первого класса цели с ценностью 1).
-  const [refId, setRef] = useTabState<string>(`${tabKey}:refType`, defaultReference(r)?.id ?? '');
-  const ref = r.componentTypes.find((x) => x.id === refId) ?? defaultReference(r);
   const add = () => {
     const id = newId('type');
     upd((d) =>
@@ -55,6 +53,7 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
         value: 1,
         protection: 1,
         firepower: {},
+        weapons: [],
         indirect: false,
         suppressive: 1,
         ammoUse: 5,
@@ -94,7 +93,7 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
           onChange={setView}
           options={[
             { value: 'edit', label: 'Карточки' },
-            { value: 'table', label: 'Таблица', title: 'Все типы и их огневая мощь в одной таблице' },
+            { value: 'table', label: 'Таблица', title: 'Все типы и их средний огонь за ход в одной таблице' },
           ]}
         />
       </div>
@@ -127,54 +126,29 @@ export function TypesSection({ r, upd, tabKey }: { r: Ruleset; upd: Upd; tabKey:
               {r.componentTypes.length > 0 && !r.componentTypes.some(fits) && <div className="empty">Ничего не найдено.</div>}
             </div>
           </Card>
-          {t && <TypeEditor r={r} t={t} upd={upd} allTags={allTags} onSelect={setSel} reference={ref} onReference={setRef} />}
+          {t && <TypeEditor r={r} t={t} upd={upd} allTags={allTags} onSelect={setSel} />}
         </div>
       )}
     </>
   );
 }
 
-export function TypeEditor({
-  r,
-  t,
-  upd,
-  allTags,
-  onSelect,
-  reference,
-  onReference,
-}: {
-  r: Ruleset;
-  t: ComponentType;
-  upd: Upd;
-  allTags: string[];
-  onSelect: (id: string) => void;
-  reference?: ComponentType;
-  onReference?: (id: string) => void;
-}) {
+export function TypeEditor({ r, t, upd, allTags, onSelect }: { r: Ruleset; t: ComponentType; upd: Upd; allTags: string[]; onSelect: (id: string) => void }) {
   const ut = (fn: (x: ComponentType) => void) =>
     upd((d) => {
       const x = d.componentTypes.find((y) => y.id === t.id);
       if (x) fn(x);
     });
   const used = typeUsage(t.id);
-  // Эталонные значения: у эталона и у типов того же вида в этом наборе — подпись под полем.
-  const ref = reference && reference.id !== t.id ? reference : undefined;
+  // Подпись под полем: разброс значения у типов того же вида в этом наборе.
   const same = r.componentTypes.filter((x) => x.kind === t.kind && x.id !== t.id);
-  const refLine = (get: (x: ComponentType) => number, withRef = true) => {
+  const refLine = (get: (x: ComponentType) => number) => {
     const vs = same.map(get);
+    if (vs.length < 2) return null;
     const lo = Math.min(...vs);
     const hi = Math.max(...vs);
-    const parts = [
-      ref && withRef ? `эталон ${num(get(ref))}` : '',
-      vs.length >= 2 ? `${KIND_OWN[t.kind]} в наборе ${lo === hi ? num(lo) : `${num(lo)}–${num(hi)}`}` : '',
-    ].filter(Boolean);
-    return parts.length ? <div className="ref-line">{parts.join(' · ')}</div> : null;
+    return <div className="ref-line">{`${KIND_OWN[t.kind]} в наборе ${lo === hi ? num(lo) : `${num(lo)}–${num(hi)}`}`}</div>;
   };
-  // Огонь по классу, по которому стреляет эталон (обычно — живая сила): во сколько раз больше эталона по дистанциям.
-  const refClass = ref && r.targetClasses.find((c) => r.rangeBands.some((b) => (ref.firepower[c.id]?.[b.id] ?? 0) > 0));
-  const fireRatios = refClass
-    ? r.rangeBands.map((b) => ({ b, x: ratio(t.firepower[refClass.id]?.[b.id] ?? 0, ref?.firepower[refClass.id]?.[b.id] ?? 0) })).filter((y) => y.x)
-    : [];
   // Соседи по списку — типы того же вида (в каталоге они сгруппированы по виду).
   const sameKind = r.componentTypes.filter((x) => x.kind === t.kind).map((x) => x.id);
   return (
@@ -216,14 +190,6 @@ export function TypeEditor({
         />
       }
     >
-      {onReference && reference && (
-        <div className="row ref-pick">
-          <span className="muted small">Эталон для сравнения</span>
-          <Sel value={reference.id} onChange={onReference} options={r.componentTypes.map((x) => ({ value: x.id, label: x.name }))} />
-          <Info text="Числа типа сравниваются с эталоном — обычно рядовым бойцом эпохи: под полями — его значения и разброс у типов того же вида в этом наборе, в огневой мощи — во сколько раз больше эталона. Ценность обычно близка к огню в эталонах на «своей» дистанции (руководство ГМ, «Ценность: как подобрать»)." />
-          {reference.id === t.id && <span className="faint small">— это сам эталон</span>}
-        </div>
-      )}
       <div className="fields">
         <Field label="Название">
           <Txt value={t.name} onChange={(v) => ut((x) => void (x.name = v))} />
@@ -250,7 +216,7 @@ export function TypeEditor({
         {t.kind !== 'personnel' && (
           <Field label="Экипаж / расчёт, чел.">
             <Num value={t.crew} onChange={(v) => ut((x) => void (x.crew = v))} min={0} integer />
-            {refLine((x) => x.crew, ref?.kind === t.kind)}
+            {refLine((x) => x.crew)}
           </Field>
         )}
         <Field label="Боевая ценность" hint="Очки: вес в боеспособности и потерях.">
@@ -270,7 +236,7 @@ export function TypeEditor({
           <Num value={t.suppressive} onChange={(v) => ut((x) => void (x.suppressive = v))} min={0} step={0.1} />
           {refLine((x) => x.suppressive)}
         </Field>
-        {r.features.ammo && (
+        {r.features.ammo && !usesWeapons(t) && (
           <Field label="Расход БК, %/ход">
             <Num value={t.ammoUse} onChange={(v) => ut((x) => void (x.ammoUse = v))} min={0} step={0.5} />
             {refLine((x) => x.ammoUse)}
@@ -308,62 +274,7 @@ export function TypeEditor({
         </div>
         <EffectsEditor value={t.effects ?? {}} onChange={(v) => ut((x) => void (Object.keys(v).length ? (x.effects = v) : delete x.effects))} />
       </div>
-      <div className="row" style={{ margin: '16px 0 6px', gap: 6 }}>
-        <h4>Огневая мощь одной единицы за ход</h4>
-        <Info text="Пример: 0,04 — сто таких единиц за ход в идеальных условиях выводят из строя около 4 целей этого класса. Реальный результат умножается на состояние, условия, приказы и защищённость цели." />
-      </div>
-      <ScrollX>
-        <table className="tbl matrix fire-tbl" style={{ width: 'auto' }}>
-          <thead>
-            <tr>
-              <th>По классу цели</th>
-              {r.rangeBands.map((b) => (
-                <th key={b.id} className="num">
-                  {b.name}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {r.targetClasses.map((c) => (
-              <tr key={c.id}>
-                <td>{c.name}</td>
-                {r.rangeBands.map((b) => {
-                  const own = t.firepower[c.id]?.[b.id] ?? 0;
-                  const base = ref?.firepower[c.id]?.[b.id] ?? 0;
-                  const x = ratio(own, base);
-                  return (
-                    <td key={b.id} className="num">
-                      <Num
-                        value={own}
-                        min={0}
-                        step={0.005}
-                        width={80}
-                        onChange={(v) =>
-                          ut((y) => {
-                            y.firepower[c.id] = { ...(y.firepower[c.id] ?? {}), [b.id]: v };
-                          })
-                        }
-                      />
-                      {ref && (
-                        <div className="ref-line" data-tip={`«${ref.name}»: ${num(base)}`}>
-                          {x || (base > 0 ? '—' : `эталон ${num(base)}`)}
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </ScrollX>
-      {ref && refClass && (
-        <p className="muted small" style={{ margin: '8px 0 0' }}>
-          Против класса «{refClass.name}» огонь — {fireRatios.length ? fireRatios.map((y) => `${y.b.name.toLowerCase()} ${y.x}`).join(', ') : 'нет'} эталона «
-          {ref.name}»; ценность — {ratio(t.value, ref.value) || '0'} эталона.
-        </p>
-      )}
+      <WeaponsEditor r={r} t={t} upd={upd} />
       {used > 0 && (
         <p className="faint small" style={{ margin: '8px 0 0' }}>
           Используется в элементах: {used}
@@ -373,10 +284,262 @@ export function TypeEditor({
   );
 }
 
+// ------------------------------------------------------------------ вооружение типа
+
+/** Новый тип вооружения: точность 100% на всех дистанциях, нужен боезапас. */
+export const newWeaponType = (r: Ruleset, name = 'Новое вооружение'): WeaponType => ({
+  id: newId('wpn'),
+  name,
+  accuracy: Object.fromEntries(r.rangeBands.map((b) => [b.id, 1])),
+  ammo: true,
+});
+
+function WeaponsEditor({ r, t, upd }: { r: Ruleset; t: ComponentType; upd: Upd }) {
+  const ut = (fn: (x: ComponentType) => void) =>
+    upd((d) => {
+      const x = d.componentTypes.find((y) => y.id === t.id);
+      if (x) fn(x);
+    });
+  const wts = weaponTypeMap(r);
+  const head = (
+    <div className="row" style={{ margin: '16px 0 6px', gap: 6 }}>
+      <h4>Вооружение</h4>
+      <Info text="Урон одной единицы за ход по классу цели: каждый ход выпадает случайное число от мин. до макс. (0,04 — сто таких единиц выводят из строя около 4 целей). Дистанция влияет на точность — она задаётся у типа вооружения (раздел «Вооружение»). Боезапас у каждого типа вооружения в элементе свой: кончились выстрелы гранатомёта — автоматы стреляют дальше." />
+    </div>
+  );
+  if (!usesWeapons(t))
+    return (
+      <>
+        {head}
+        <p className="muted small" style={{ margin: '0 0 8px' }}>
+          Огонь этого типа задан таблицей по дистанциям (прежняя версия программы).
+        </p>
+        <Btn
+          onClick={() => {
+            upd((d) => void convertToWeapons(d));
+            toastUndoable('Огонь типов набора переведён на вооружение.');
+          }}
+        >
+          Перевести на вооружение
+        </Btn>
+      </>
+    );
+  const addItems = [
+    ...(r.weaponTypes ?? []).map((w) => ({
+      label: w.name,
+      onClick: () => ut((x) => void x.weapons!.push({ weaponType: w.id, damage: {}, ammoUse: w.ammo ? 5 : 0 })),
+    })),
+    ...((r.weaponTypes ?? []).length ? (['sep'] as const) : []),
+    {
+      label: 'Новый тип вооружения…',
+      onClick: () =>
+        upd((d) => {
+          const w = newWeaponType(d);
+          (d.weaponTypes ??= []).push(w);
+          d.componentTypes.find((y) => y.id === t.id)?.weapons?.push({ weaponType: w.id, damage: {}, ammoUse: 5 });
+        }),
+      tip: 'Добавить тип вооружения в набор и дать его этому типу; точность по дистанциям — в разделе «Вооружение»',
+    },
+  ];
+  return (
+    <>
+      {head}
+      {!t.weapons.length && <p className="faint small">Нет вооружения — тип не стреляет (грузовик, тягач, штаб).</p>}
+      <div className="stack" style={{ gap: 10 }}>
+        {t.weapons.map((w, wi) => {
+          const wt = wts.get(w.weaponType);
+          return (
+            <div key={`${w.weaponType}-${wi}`} className="weapon-box">
+              <div className="row" style={{ gap: 8, marginBottom: 6 }}>
+                <Sel
+                  value={w.weaponType}
+                  onChange={(v) => ut((x) => void (x.weapons![wi].weaponType = v))}
+                  options={[
+                    ...(wt ? [] : [{ value: w.weaponType, label: '— не найдено —' }]),
+                    ...(r.weaponTypes ?? []).map((x) => ({ value: x.id, label: x.name })),
+                  ]}
+                />
+                {r.features.ammo && wt?.ammo !== false && (
+                  <span className="row" style={{ gap: 4 }}>
+                    <span className="muted small">Расход БК, %/ход</span>
+                    <Num value={w.ammoUse} onChange={(v) => ut((x) => void (x.weapons![wi].ammoUse = v))} min={0} step={0.5} width={72} />
+                  </span>
+                )}
+                {wt?.ammo === false && <span className="faint small">без боезапаса</span>}
+                <div className="grow" />
+                <Menu
+                  sm
+                  items={[
+                    ...moveItems(wi, t.weapons.length, (dir) => ut((x) => moveIn(x.weapons!, wi, dir))),
+                    'sep',
+                    { label: 'Убрать вооружение', danger: true, onClick: () => ut((x) => void x.weapons!.splice(wi, 1)) },
+                  ]}
+                />
+              </div>
+              <table className="tbl compact" style={{ width: 'auto' }}>
+                <thead>
+                  <tr>
+                    <th>По классу цели</th>
+                    <th className="num">Урон мин.</th>
+                    <th className="num">Урон макс.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.targetClasses.map((c) => {
+                    const d = w.damage[c.id] ?? [0, 0];
+                    const set = (i: 0 | 1, v: number) =>
+                      ut((x) => {
+                        const dm = x.weapons![wi].damage;
+                        const next: [number, number] = [...(dm[c.id] ?? [0, 0])] as [number, number];
+                        next[i] = v;
+                        // Мин. не больше макс.: ввели мин. больше — макс. подтягивается, и наоборот.
+                        if (i === 0 && next[1] < v) next[1] = v;
+                        if (i === 1 && next[0] > v) next[0] = v;
+                        if (next[0] <= 0 && next[1] <= 0) delete dm[c.id];
+                        else dm[c.id] = next;
+                      });
+                    return (
+                      <tr key={c.id}>
+                        <td>{c.name}</td>
+                        <td className="num">
+                          <Num value={d[0]} onChange={(v) => set(0, v)} min={0} step={0.005} width={80} />
+                        </td>
+                        <td className="num">
+                          <Num value={d[1]} onChange={(v) => set(1, v)} min={0} step={0.005} width={80} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+      </div>
+      <div className="row" style={{ marginTop: 8 }}>
+        <Menu sm alignLeft label="+ Вооружение" items={addItems} />
+      </div>
+      {t.weapons.length > 0 && (
+        <>
+          <div className="row" style={{ margin: '14px 0 6px', gap: 6 }}>
+            <h4>В среднем за ход</h4>
+            <Info text="Средний урон (между мин. и макс.) × точность на дистанции — сумма по всему вооружению одной единицы. Без состояния, условий и приказов." />
+          </div>
+          <FireTable fire={typeFireTable(r, t)} rs={r} fmt={(v) => (v ? num(Math.round(v * 1000) / 1000) : '0')} />
+        </>
+      )}
+    </>
+  );
+}
+
+/** Средний огонь одной единицы типа: [класс цели][дистанция]. */
+export function typeFireTable(r: Ruleset, t: ComponentType): Record<string, Record<string, number>> {
+  const wts = weaponTypeMap(r);
+  return Object.fromEntries(r.targetClasses.map((c) => [c.id, Object.fromEntries(r.rangeBands.map((b) => [b.id, typeFire(r, t, c.id, b.id, wts)]))]));
+}
+
+// ------------------------------------------------------------------ типы вооружения
+
+export function WeaponTypesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
+  const list = r.weaponTypes ?? [];
+  const usedBy = (id: string) => r.componentTypes.filter((t) => t.weapons?.some((w) => w.weaponType === id));
+  return (
+    <Card
+      title={
+        <>
+          Вооружение{' '}
+          <Info text="Типы вооружения: автомат, пулемёт, гранатомёт, танковая пушка. Точность — доля попаданий на дистанции: урон оружия умножается на неё. У каждого типа вооружения в элементе свой боезапас; без боезапаса — холодное оружие, оно не кончается. Урон задаётся у типа единиц (каталог типов)." />
+        </>
+      }
+      actions={
+        <Btn sm kind="ghost" onClick={() => upd((d) => void (d.weaponTypes ??= []).push(newWeaponType(d)))}>
+          + Вооружение
+        </Btn>
+      }
+      tight
+    >
+      {!list.length ? (
+        <div className="empty">Типов вооружения нет. Добавьте первый: например, «Автомат» или «Гранатомёт».</div>
+      ) : (
+        <ScrollX>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Название</th>
+                {r.rangeBands.map((b) => (
+                  <th key={b.id} className="num" data-tip={`Точность на дистанции «${b.name}»`}>
+                    {b.name}
+                  </th>
+                ))}
+                {r.features.ammo && <th data-tip="Нужен боезапас: кончился — оружие молчит. Нет — холодное оружие">Боезапас</th>}
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((w, i) => {
+                const users = usedBy(w.id);
+                return (
+                  <tr key={w.id}>
+                    <td>
+                      <Txt value={w.name} onChange={(v) => upd((d) => void (d.weaponTypes![i].name = v))} width="100%" />
+                      {users.length > 0 && <div className="faint small">{users.map((t) => t.name).join(', ')}</div>}
+                    </td>
+                    {r.rangeBands.map((b) => (
+                      <td key={b.id} className="num" style={{ width: 100 }}>
+                        <Num
+                          value={Math.round((w.accuracy?.[b.id] ?? 1) * 100)}
+                          onChange={(v) => upd((d) => void ((d.weaponTypes![i].accuracy ??= {})[b.id] = v / 100))}
+                          min={0}
+                          max={1000}
+                          suffix="%"
+                          width={80}
+                        />
+                      </td>
+                    ))}
+                    {r.features.ammo && (
+                      <td>
+                        <Check value={w.ammo} onChange={(v) => upd((d) => void (d.weaponTypes![i].ammo = v))}>
+                          нужен
+                        </Check>
+                      </td>
+                    )}
+                    <td style={{ width: 36 }}>
+                      <Menu
+                        sm
+                        items={[
+                          ...moveItems(i, list.length, (dir) => upd((d) => moveIn(d.weaponTypes!, i, dir))),
+                          'sep',
+                          {
+                            label: 'Удалить',
+                            danger: true,
+                            onClick: () => {
+                              toastUndoable(`Вооружение «${w.name}» удалено${users.length ? ` — и у типов: ${users.map((t) => t.name).join(', ')}` : ''}.`);
+                              upd((d) => {
+                                d.weaponTypes = d.weaponTypes!.filter((x) => x.id !== w.id);
+                                for (const t of d.componentTypes) if (t.weapons) t.weapons = t.weapons.filter((x) => x.weaponType !== w.id);
+                              });
+                            },
+                          },
+                        ]}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </ScrollX>
+      )}
+    </Card>
+  );
+}
+
 /** Число из набора правил как есть, но с запятой: 0,035. */
 const num = (v: number | undefined) => String(v ?? 0).replace('.', ',');
 
 export function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => void }) {
+  const wts = weaponTypeMap(r);
+  const fire = (t: ComponentType, cls: string, band: string) => typeFire(r, t, cls, band, wts);
   return (
     <Card tight>
       <ScrollX>
@@ -422,6 +585,7 @@ export function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => 
                     </span>
                   )}
                   {t.tags.length > 0 && <div className="faint small">{t.tags.join(', ')}</div>}
+                  {!!t.weapons?.length && <div className="faint small">{t.weapons.map((w) => wts.get(w.weaponType)?.name ?? '?').join(' + ')}</div>}
                 </td>
                 <td className="small">{KIND_LABELS[t.kind]}</td>
                 <td className="small">{r.targetClasses.find((c) => c.id === t.targetClass)?.name}</td>
@@ -430,7 +594,7 @@ export function TypesTable({ r, onPick }: { r: Ruleset; onPick: (id: string) => 
                 {r.targetClasses.flatMap((c) =>
                   r.rangeBands.map((b, bi) => (
                     <td key={`${c.id}-${b.id}`} className={`num small${bi === 0 ? ' fp-first' : ''}`}>
-                      {t.firepower[c.id]?.[b.id] ? num(t.firepower[c.id][b.id]) : <span className="faint">0</span>}
+                      {fire(t, c.id, b.id) ? num(Math.round(fire(t, c.id, b.id) * 10000) / 10000) : <span className="faint">0</span>}
                     </td>
                   )),
                 )}
@@ -498,7 +662,8 @@ export function ClassesSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                           d.targetClasses = d.targetClasses.filter((x) => x.id !== c.id);
                           const fallback = d.targetClasses[0]?.id ?? '';
                           for (const t of d.componentTypes) {
-                            delete t.firepower[c.id];
+                            delete t.firepower?.[c.id];
+                            for (const w of t.weapons ?? []) delete w.damage[c.id];
                             if (t.targetClass === c.id) t.targetClass = fallback;
                           }
                         });
@@ -594,7 +759,8 @@ export function BandsSection({ r, upd }: { r: Ruleset; upd: Upd }) {
                         toastUndoable(`Дистанция «${b.name}» удалена.`);
                         upd((d) => {
                           d.rangeBands = d.rangeBands.filter((x) => x.id !== b.id);
-                          for (const t of d.componentTypes) for (const c of Object.keys(t.firepower)) delete t.firepower[c][b.id];
+                          for (const t of d.componentTypes) for (const c of Object.keys(t.firepower ?? {})) delete t.firepower[c][b.id];
+                          for (const w of d.weaponTypes ?? []) delete w.accuracy?.[b.id];
                         });
                       },
                     },

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { create } from 'zustand';
-import { plural, type Battle, type SideId } from '../../../engine';
+import { ammoLevel, plural, weaponTypeMap, type Battle, type SideId } from '../../../engine';
 import type { Target } from '../../components/BattleControls';
 import { Area, Btn, Check, Field, Modal, Num, Sel } from '../../components/ui';
 import type { Iv } from './common';
@@ -54,7 +54,10 @@ function ResupplyModal({ b, target, iv }: { b: Battle; target: Target; iv: Iv })
   const [on, setOn] = useState<Record<string, number>>(() => (keys[0] ? { [keys[0].key]: 25 } : {}));
   const ids = targetElements(b, target).filter((id) => b.elements.find((x) => x.id === id)?.status === 'active');
   const els = b.elements.filter((x) => ids.includes(x.id));
-  const avg = (k: 'ammo' | 'fuel' | 'equipment') => (els.length ? Math.round(els.reduce((a, x) => a + x[k], 0) / els.length) : 0);
+  const wts = weaponTypeMap(b.ruleset);
+  const typeOf = (id: string) => b.ruleset.componentTypes.find((t) => t.id === id);
+  const val = (x: (typeof els)[number], k: 'ammo' | 'fuel' | 'equipment') => (k === 'ammo' ? ammoLevel(x, typeOf, wts) : x[k]);
+  const avg = (k: 'ammo' | 'fuel' | 'equipment') => (els.length ? Math.round(els.reduce((a, x) => a + val(x, k), 0) / els.length) : 0);
   return (
     <Modal
       title={`Подвоз — ${target.label}`}

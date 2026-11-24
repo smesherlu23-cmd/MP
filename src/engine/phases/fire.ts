@@ -6,6 +6,7 @@ import type { ElementState, Factor, Id, SideId, StrikeOrder } from '../types';
 import { subtreeIds } from './common';
 import { frontage, frontageKey } from './frontage';
 import type { Initiative } from './initiative';
+import { accuracyAt, maxDamage, poolAmmo, rollDamage, typeFire, usesWeapons, weaponAmmoFactor } from '../weapons';
 
 // ------------------------------------------------------------------ огонь
 
@@ -49,12 +50,21 @@ export function shooterMult(E: EngineContext, el: ElementState, out?: Factor[]):
   if (f.equipment) add(`Снаряжение ${Math.round(el.equipment)}%`, lerp(k.equipmentFireMin, 1, el.equipment / 100));
   if (f.fatigue) add(`Усталость ${Math.round(el.fatigue)}%`, 1 - (el.fatigue / 100) * k.fatigueFirePenalty);
   if (f.suppression) add(`Подавление ${Math.round(el.suppression)}%`, 1 - (el.suppression / 100) * k.suppressionFirePenalty);
-  if (f.ammo) add(`Боезапас ${Math.round(el.ammo)}%`, el.ammo >= k.lowAmmoThreshold ? 1 : lerp(k.noAmmoFire, 1, el.ammo / Math.max(1, k.lowAmmoThreshold)));
+  // Вооружение по видам: боезапас каждого вида действует на своё оружие (см. computeFire).
+  if (f.ammo && !hasWeapons(E, el))
+    add(`Боезапас ${Math.round(el.ammo)}%`, el.ammo >= k.lowAmmoThreshold ? 1 : lerp(k.noAmmoFire, 1, el.ammo / Math.max(1, k.lowAmmoThreshold)));
   if (f.comms) add(`Связь ${Math.round(E.comms(el) * 100)}%`, lerp(k.commsFireMin, 1, E.comms(el)));
   const luck = E.b.sides[el.side].luck;
   if (luck) add('Удача и исполнение стороны в этом бою', luck);
   return Math.max(0, m);
 }
+
+/** В составе элемента есть типы со списком вооружения. */
+export const hasWeapons = (E: EngineContext, el: ElementState) => el.comps.some((c) => usesWeapons(E.type(c.typeId)));
+
+/** Множитель огня типа прежних версий при общем боезапасе элемента. */
+const legacyAmmoFactor = (E: EngineContext, el: ElementState) =>
+  el.ammo >= E.k.lowAmmoThreshold ? 1 : lerp(E.k.noAmmoFire, 1, el.ammo / Math.max(1, E.k.lowAmmoThreshold));
 
 export function exposureOf(E: EngineContext, t: ElementState, indirect: boolean): number {
   const k = E.k;
@@ -103,7 +113,7 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
       m = new Map();
       for (const t of E.rs.componentTypes) {
         let v = 0;
-        for (const cls of E.rs.targetClasses) v = Math.max(v, t.firepower[cls.id]?.[band] ?? 0);
+        if (!usesWeapons(t)) for (const cls of E.rs.targetClasses) v = Math.max(v, t.firepower[cls.id]?.[band] ?? 0);
         m.set(t.id, v);
       }
       maxFpCache.set(band, m);
@@ -122,7 +132,7 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
       ambush = true;
       factors?.push({ label: 'Первый залп из засады', value: k.ambushFirstVolley, kind: 'mult' });
     }
-    const rnd = Math.max(0, 1 + k.randomSpread * (E.rng.next() + E.rng.next() - 1));
+    const rnd = Math.max(0, 1 + k.randomSpread * (k.randomUniform > 0 ? 2 * E.rng.next() - 1 : E.rng.next() + E.rng.next() - 1));
     factors?.push({ label: 'Случайность', value: rnd, kind: 'mult' });
     sm *= rnd;
     // Огонь за ход пропорционален длине хода (темпы заданы для эталонного хода).
@@ -136,6 +146,36 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
     let firedAny = false;
     let ammoNum = 0;
     let ammoDen = 0;
+    // Вооружение по видам: бросок урона (мин.–макс.) — один на вид оружия типа за ход; расход — по видам.
+    const withWeapons = hasWeapons(E, sh);
+    const rolls = new Map<string, number>();
+    const roll = (key: string) => {
+      let u = rolls.get(key);
+      if (u === undefined) {
+        u = E.rng.next();
+        rolls.set(key, u);
+      }
+      return u;
+    };
+    const wAmmo = new Map<Id, { num: number; den: number }>();
+    if (withWeapons && E.f.ammo && factors) {
+      const seen = new Set<Id>();
+      for (const c of sh.comps) {
+        const t = E.type(c.typeId);
+        if (c.current <= 0 || !usesWeapons(t)) continue;
+        for (const w of t.weapons) {
+          const wt = E.weaponTypes.get(w.weaponType);
+          if (seen.has(w.weaponType) || !wt?.ammo) continue;
+          seen.add(w.weaponType);
+          const a = poolAmmo(sh, w.weaponType);
+          const af = weaponAmmoFactor(wt, a, k.lowAmmoThreshold);
+          if (af < 1) factors.push({ label: `Боезапас «${wt.name}» ${Math.round(a)}% (только это оружие)`, value: af, kind: 'mult' });
+        }
+      }
+      if (sh.comps.some((c) => c.current > 0 && !usesWeapons(E.type(c.typeId))) && legacyAmmoFactor(E, sh) < 1)
+        factors.push({ label: `Боезапас ${Math.round(sh.ammo)}% (типы без вооружения по видам)`, value: legacyAmmoFactor(E, sh), kind: 'mult' });
+    }
+
     const ownBand = bandIdOf(sh);
     const fr = front.get(frontageKey(sh));
     const frontMult = fr?.factor ?? 1;
@@ -159,13 +199,24 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
           let cf = 1;
           if (t.kind === 'vehicle' && E.f.vehicleCondition) cf *= lerp(k.vehicleConditionFireMin, 1, sh.vehicleCondition / 100);
           if (!indirect) cf *= sh.echelon === 'support' ? k.fireSupport : sh.echelon === 'rear' ? k.fireRear : 1;
-          for (const cls of E.rs.targetClasses) {
-            const v = (t.firepower[cls.id]?.[band] ?? 0) * c.current * cf;
-            if (v > 0) {
-              pl.raw.set(cls.id, (pl.raw.get(cls.id) ?? 0) + v);
-              pl.supp.set(cls.id, (pl.supp.get(cls.id) ?? 0) + v * t.suppressive);
-            }
+          const put = (cls: Id, v: number) => {
+            if (v <= 0) return;
+            pl!.raw.set(cls, (pl!.raw.get(cls) ?? 0) + v);
+            pl!.supp.set(cls, (pl!.supp.get(cls) ?? 0) + v * t.suppressive);
+          };
+          if (!usesWeapons(t)) {
+            if (withWeapons && E.f.ammo) cf *= legacyAmmoFactor(E, sh);
+            for (const cls of E.rs.targetClasses) put(cls.id, (t.firepower[cls.id]?.[band] ?? 0) * c.current * cf);
+            continue;
           }
+          t.weapons.forEach((w, i) => {
+            const wt = E.weaponTypes.get(w.weaponType);
+            const acc = accuracyAt(wt, band);
+            const af = E.f.ammo ? weaponAmmoFactor(wt, poolAmmo(sh, w.weaponType), k.lowAmmoThreshold) : 1;
+            if (acc <= 0 || af <= 0) return;
+            const u = roll(`${t.id}#${i}`);
+            for (const cls of E.rs.targetClasses) put(cls.id, rollDamage(w, cls.id, u) * acc * af * c.current * cf);
+          });
         }
         pools.set(band, pl);
         return pl;
@@ -174,6 +225,20 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
       const mf = maxFpOf(ownBand);
       for (const c of comps) {
         const t = E.type(c.typeId);
+        if (usesWeapons(t)) {
+          // Расход по видам: средний расход оружия вида, взвешенный по его урону и числу стволов.
+          for (const w of t.weapons) {
+            const wt = E.weaponTypes.get(w.weaponType);
+            if (!wt?.ammo || accuracyAt(wt, ownBand) <= 0) continue;
+            const m = Math.max(0, ...E.rs.targetClasses.map((cls) => maxDamage(w, cls.id))) * c.current;
+            if (m <= 0) continue;
+            const a = wAmmo.get(w.weaponType) ?? { num: 0, den: 0 };
+            a.num += m * w.ammoUse;
+            a.den += m;
+            wAmmo.set(w.weaponType, a);
+          }
+          continue;
+        }
         const maxFp = mf.get(t.id) ?? 0;
         ammoNum += c.current * maxFp * t.ammoUse;
         ammoDen += c.current * maxFp;
@@ -230,9 +295,14 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
     if (!firedAny) continue;
     sh.firedThisTurn = true;
     if (ambush) sh.ambushUsed = true;
-    if (E.f.ammo && ammoDen > 0) {
-      const use = (ammoNum / ammoDen) * E.mult(sh, 'ammoUse') * (E.f.suppression ? 1 - (sh.suppression / 100) * 0.5 : 1) * ts;
-      sh.ammo = Math.max(0, sh.ammo - use);
+    if (E.f.ammo && (ammoDen > 0 || wAmmo.size)) {
+      const m = E.mult(sh, 'ammoUse') * (E.f.suppression ? 1 - (sh.suppression / 100) * 0.5 : 1) * ts;
+      if (ammoDen > 0) sh.ammo = Math.max(0, sh.ammo - (ammoNum / ammoDen) * m);
+      for (const [wt, a] of wAmmo) {
+        if (a.den <= 0) continue;
+        sh.ammoBy ??= {};
+        sh.ammoBy[wt] = Math.max(0, poolAmmo(sh, wt) - (a.num / a.den) * m);
+      }
     }
     if (E.logging) {
       const total = [...allocation.values()].reduce((a, x) => a + x, 0);
@@ -514,7 +584,7 @@ function resolveStrike(E: EngineContext, st: StrikeOrder) {
   const raw = new Map<Id, number>();
   for (const cls of E.rs.targetClasses) {
     let m = 0;
-    for (const band of E.rs.rangeBands) m = Math.max(m, t.firepower[cls.id]?.[band.id] ?? 0);
+    for (const band of E.rs.rangeBands) m = Math.max(m, typeFire(E.rs, t, cls.id, band.id, E.weaponTypes));
     if (m > 0) raw.set(cls.id, m * asset.count * k.strikeScale);
   }
   const rnd = Math.max(0, 1 + k.strikeSpread * (E.rng.next() + E.rng.next() - 1)) * (b.sides[st.side].luck ?? 1);

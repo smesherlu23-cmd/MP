@@ -7,6 +7,7 @@ import { notArrived } from './context';
 import { COEFFICIENT_DEFAULTS } from './coefficients';
 import { plural } from './labels';
 import { STATE_KEYS } from './types';
+import { ammoLevel, weaponTypeMap } from './weapons';
 import type {
   Battle,
   ComponentEntry,
@@ -321,7 +322,9 @@ export function applyBattleToForces(b: Battle, forces: Record<Id, UnitNode>): { 
       }
       for (const k of STATE_KEYS) {
         const was = before.get(n.id)?.[k];
-        n.state[k] = Math.round(share >= 1 || was === undefined ? el[k] : was + (el[k] - was) * share);
+        // Боезапас по видам вооружения в силы переходит средним (между боями он у подразделения один).
+        const now = k === 'ammo' ? ammoLevel(el, (id) => b.ruleset.componentTypes.find((t) => t.id === id), weaponTypeMap(b.ruleset)) : el[k];
+        n.state[k] = Math.round(share >= 1 || was === undefined ? now : was + (now - was) * share);
       }
     });
     const r = b.result;

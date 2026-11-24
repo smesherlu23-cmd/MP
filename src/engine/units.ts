@@ -1,6 +1,7 @@
 // Дерево подразделений: создание, наследование параметров, шаблоны, перемещение, сводка, проверка.
 // Подразделение любого уровня — один и тот же узел UnitNode, глубина не ограничена.
 
+import { typeFire, weaponTypeMap } from './weapons';
 import type { ComponentKind, ComponentEntry, Echelon, Id, Ruleset, SideDef, StateKey, UnitNode, UnitState } from './types';
 import { STATE_KEYS } from './types';
 import { newId } from './ids';
@@ -489,6 +490,8 @@ export interface UnitSummaryDef {
   persCur: number;
   recoverable: number;
   equip: { id: string; name: string; kind: ComponentKind; auth: number; cur: number; rec: number }[];
+  /** Люди по типам (стрелки, пулемётчики…): в строю, по штату, раненые. */
+  people: { id: string; name: string; kind: ComponentKind; auth: number; cur: number; rec: number }[];
   value: number;
   valueAuth: number;
   fire: Record<string, Record<string, number>>;
@@ -500,8 +503,10 @@ export interface UnitSummaryDef {
 /** Сводка по поддеревьям (с учётом наследования морали). */
 export function summarizeUnits(roots: UnitNode[], rs: Ruleset, bases?: Map<Id, Resolved>): UnitSummaryDef {
   const types = new Map(rs.componentTypes.map((t) => [t.id, t]));
-  const out: UnitSummaryDef = { persAuth: 0, persCur: 0, recoverable: 0, equip: [], value: 0, valueAuth: 0, fire: {}, combatUnits: 0, morale: 0 };
+  const wts = weaponTypeMap(rs);
+  const out: UnitSummaryDef = { persAuth: 0, persCur: 0, recoverable: 0, equip: [], people: [], value: 0, valueAuth: 0, fire: {}, combatUnits: 0, morale: 0 };
   const eq = new Map<string, UnitSummaryDef['equip'][number]>();
+  const pp = new Map<string, UnitSummaryDef['equip'][number]>();
   let mw = 0;
   for (const root of roots) {
     const res = bases ?? resolveTree(root);
@@ -520,17 +525,18 @@ export function summarizeUnits(roots: UnitNode[], rs: Ruleset, bases?: Map<Id, R
         out.value += c.current * t.value;
         out.valueAuth += c.authorized * t.value;
         v += c.current * t.value;
-        if (t.kind !== 'personnel') {
-          const q = eq.get(t.id) ?? { id: t.id, name: t.name, kind: t.kind, auth: 0, cur: 0, rec: 0 };
+        {
+          const m = t.kind === 'personnel' ? pp : eq;
+          const q = m.get(t.id) ?? { id: t.id, name: t.name, kind: t.kind, auth: 0, cur: 0, rec: 0 };
           q.auth += c.authorized;
           q.cur += c.current;
           q.rec += c.recoverable ?? 0;
-          eq.set(t.id, q);
+          m.set(t.id, q);
         }
         for (const cls of rs.targetClasses)
           for (const b of rs.rangeBands) {
             out.fire[cls.id] ??= {};
-            out.fire[cls.id][b.id] = (out.fire[cls.id][b.id] ?? 0) + (t.firepower[cls.id]?.[b.id] ?? 0) * c.current * ((r?.attack ?? n.attackMod ?? 100) / 100);
+            out.fire[cls.id][b.id] = (out.fire[cls.id][b.id] ?? 0) + typeFire(rs, t, cls.id, b.id, wts) * c.current * ((r?.attack ?? n.attackMod ?? 100) / 100);
           }
       }
       if (r) {
@@ -541,6 +547,7 @@ export function summarizeUnits(roots: UnitNode[], rs: Ruleset, bases?: Map<Id, R
   }
   out.morale = mw > 0 ? out.morale / mw : 0;
   out.equip = [...eq.values()];
+  out.people = [...pp.values()];
   return out;
 }
 

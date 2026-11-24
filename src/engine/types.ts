@@ -48,6 +48,23 @@ export interface RangeBand extends Named {
   turnsToClose: number;
 }
 
+/** Тип вооружения: автомат, пулемёт, гранатомёт, танковая пушка… Общий для всех типов единиц, у которых он есть. */
+export interface WeaponType extends Named {
+  /** Точность по дистанциям (доля попаданий, 1 = 100%): [дистанция] → множитель урона. Не задано — 100%. */
+  accuracy: Record<Id, number>;
+  /** Нужен боезапас: у каждого элемента — свой запас на этот тип вооружения; кончился — оружие молчит. Нет — холодное оружие. */
+  ammo: boolean;
+}
+
+/** Вооружение типа единиц: тип вооружения, урон по классам целей (мин. и макс. за ход) и расход его боезапаса. */
+export interface Weapon {
+  weaponType: Id;
+  /** [класс цели] → [мин, макс] «поражений» за ход одной единицей при точности 100%. */
+  damage: Record<Id, [number, number]>;
+  /** Расход боезапаса этого вооружения, % за ход огня. */
+  ammoUse: number;
+}
+
 /** personnel — люди; weapon — расчётное вооружение (пулемёт, орудие, катапульта); vehicle — техника. */
 export type ComponentKind = 'personnel' | 'weapon' | 'vehicle';
 
@@ -62,8 +79,13 @@ export interface ComponentType extends Named {
   value: number;
   /** Защищённость относительно «типичной» цели своего класса (1 = как у всех). */
   protection: number;
-  /** Огневая мощь: [класс цели][дистанция] = ожидаемые «поражения» за ход одной единицей. */
+  /**
+   * Огневая мощь прежних версий: [класс цели][дистанция] = ожидаемые «поражения» за ход одной единицей.
+   * Действует, только если у типа нет списка вооружения (weapons) — в наборах и боях прежних версий.
+   */
   firepower: Record<Id, Record<Id, number>>;
+  /** Вооружение типа (несколько видов: пушка и пулемёт у танка, автомат и гранатомёт у бойца). */
+  weapons?: Weapon[];
   /** Стреляет с закрытых позиций: не нуждается в прямой видимости, достаёт тыловые эшелоны. */
   indirect: boolean;
   /** Подавляющее действие огня (1 = обычное). */
@@ -186,6 +208,8 @@ export interface Ruleset {
   features: Features;
   targetClasses: TargetClass[];
   rangeBands: RangeBand[];
+  /** Типы вооружения (в наборах прежних версий их нет). */
+  weaponTypes?: WeaponType[];
   componentTypes: ComponentType[];
   orders: OrderDef[];
   experienceLevels: LevelDef[];
@@ -529,7 +553,10 @@ export interface ElementState {
   morale: number;
   cohesion: number;
   readiness: number;
+  /** Боезапас, %: общий (типы без списка вооружения) и, если ammoBy нет, — каждого вида вооружения. */
   ammo: number;
+  /** Боезапас по типам вооружения, %: запас заводится, когда оружие начинает его расходовать. */
+  ammoBy?: Record<Id, number>;
   fuel: number;
   equipment: number;
   fatigue: number;

@@ -121,7 +121,7 @@ export const OP_LABELS: Record<ConditionOp, string> = {
 export const MODIFIER_FIELDS: {
   field: string;
   label: string;
-  kind: 'order' | 'behavior' | 'tag' | 'kind' | 'number' | 'side' | 'echelon' | 'range' | 'class' | 'fort' | 'intel' | 'bool';
+  kind: 'order' | 'behavior' | 'tag' | 'kind' | 'weapon' | 'number' | 'side' | 'echelon' | 'range' | 'class' | 'fort' | 'intel' | 'bool';
   /** Механика, без которой поле не имеет смысла: при выключенной поле в списке не предлагается. */
   feature?: keyof Features;
   /** Поле противника — проверяется для каждой пары стрелок — цель. */
@@ -133,6 +133,7 @@ export const MODIFIER_FIELDS: {
   { field: 'behavior', label: 'Поведение (своё)', kind: 'behavior' },
   { field: 'tag', label: 'Тег (свой)', kind: 'tag' },
   { field: 'kind', label: 'Состав (свой)', kind: 'kind' },
+  { field: 'weapon', label: 'Вооружение (своё)', kind: 'weapon' },
   { field: 'experience', label: 'Опыт (свой)', kind: 'number' },
   { field: 'side', label: 'Сторона', kind: 'side' },
   { field: 'echelon', label: 'Эшелон (свой)', kind: 'echelon' },
@@ -158,6 +159,7 @@ export const MODIFIER_FIELDS: {
   { field: 'targetClass', label: 'Класс цели', kind: 'class', enemy: true },
   { field: 'enemy.tag', label: 'Тег противника', kind: 'tag', enemy: true },
   { field: 'enemy.kind', label: 'Состав противника', kind: 'kind', enemy: true },
+  { field: 'enemy.weapon', label: 'Вооружение противника', kind: 'weapon', enemy: true },
   { field: 'enemy.order', label: 'Приказ противника', kind: 'order', enemy: true },
   { field: 'enemy.behavior', label: 'Поведение противника', kind: 'behavior', enemy: true },
   { field: 'enemy.echelon', label: 'Эшелон противника', kind: 'echelon', enemy: true },

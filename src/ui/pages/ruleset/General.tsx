@@ -1,9 +1,19 @@
 // Набор правил: общее, механики, временные эффекты, исходы, коэффициенты, JSON.
 
 import { useMemo, useState } from 'react';
-import { COEFFICIENT_GROUPS, COEFFICIENTS, FEATURE_LABELS, clone, newId, normalizeRuleset, type Features, type Ruleset } from '../../../engine';
+import {
+  COEFFICIENT_DEFAULTS,
+  COEFFICIENT_GROUPS,
+  COEFFICIENTS,
+  FEATURE_LABELS,
+  clone,
+  newId,
+  normalizeRuleset,
+  type Features,
+  type Ruleset,
+} from '../../../engine';
 import { EffectsEditor } from '../../components/EffectsEditor';
-import { Btn, Card, Check, Field, Info, Menu, Num, Section, Txt } from '../../components/ui';
+import { Btn, Card, Check, Field, Info, Menu, Num, Section, Seg, Txt } from '../../components/ui';
 import { useTabState } from '../../hooks';
 import { replaceRuleset, toast, toastUndoable, useApp } from '../../store';
 import { moveIn, moveItems, type Upd } from './common';
@@ -58,6 +68,69 @@ export function General({ r, upd }: { r: Ruleset; upd: Upd }) {
             </Check>
           </span>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+/** Случайность боя и мораль: главные ручки баланса — на виду, остальное в «Коэффициентах». */
+export function ChanceAndMorale({ r, upd }: { r: Ruleset; upd: Upd }) {
+  const k = (key: string) => r.coefficients[key] ?? COEFFICIENT_DEFAULTS[key];
+  const set = (key: string, v: number) => upd((d) => void (d.coefficients[key] = v));
+  const pctField = (key: string, label: string, hint: string, max = 100) => (
+    <Field label={label} hint={hint}>
+      <Num value={Math.round(k(key) * 100)} onChange={(v) => set(key, v / 100)} min={0} max={max} suffix="%" width={120} />
+    </Field>
+  );
+  return (
+    <Card
+      title={
+        <>
+          Случайность и мораль{' '}
+          <Info text="Главные настройки баланса. Остальные числа — в разделе «Коэффициенты» (группы «Огонь и потери», «Мораль», «Ширина фронта и удача»)." />
+        </>
+      }
+    >
+      <div className="fields">
+        {pctField(
+          'randomSpread',
+          'Разброс огня за ход, ±',
+          'Огонь каждого элемента за ход умножается на случайное число в пределах 1 ± разброс. Сверх него — случайный урон оружия между мин. и макс.',
+        )}
+        <Field
+          label="Разброс"
+          hint="Равномерно — любое отклонение в пределах разброса равновероятно. К середине — крупные отклонения редки (как в прежних версиях)."
+        >
+          <Seg
+            value={k('randomUniform') > 0 ? 'u' : 't'}
+            onChange={(v) => set('randomUniform', v === 'u' ? 1 : 0)}
+            options={[
+              { value: 'u', label: 'Равномерно' },
+              { value: 't', label: 'К середине' },
+            ]}
+          />
+        </Field>
+        {pctField(
+          'sideLuck',
+          'Удача стороны в бою',
+          'В начале боя каждой стороне выпадает множитель огня и стойкости на весь бой: обычно в пределах ±значения, изредка вдвое больше. 0 — без удачи.',
+        )}
+        {r.features.morale && (
+          <>
+            {pctField(
+              'moraleLossScale',
+              'Скорость падения морали',
+              '100% — как в прежних версиях, 50% — мораль падает вдвое медленнее. Действует на все потери морали: от потерь, подавления, усталости, бегства соседей.',
+              300,
+            )}
+            <Field label="Мораль за 1% потерь" hint="Сколько морали снимает каждый процент потерь за ход (до множителя скорости).">
+              <Num value={k('moralePerLossPct')} onChange={(v) => set('moralePerLossPct', v)} min={0} step={0.1} width={120} />
+            </Field>
+            <Field label="Восстановление морали за ход" hint="Сколько морали возвращается за ход вне огня (не выше, чем было в начале боя).">
+              <Num value={k('moraleRecovery')} onChange={(v) => set('moraleRecovery', v)} min={0} step={0.5} width={120} />
+            </Field>
+          </>
+        )}
       </div>
     </Card>
   );

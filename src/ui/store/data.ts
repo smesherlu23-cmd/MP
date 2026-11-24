@@ -25,6 +25,7 @@ import {
   normalizeRuleset,
   recalibrateRuleset,
   upgradeExampleData,
+  convertToWeapons,
   COEFFICIENTS,
   scenarioToHours,
   extractForces,
@@ -209,6 +210,8 @@ export function upgradeRuleset(r: Ruleset, calibrate = true): { ruleset: Ruleset
   const keys = recalibrateRuleset(copy, calibrate ? from : Math.max(from, 2));
   const notes = keys.map((k) => COEFFICIENTS.find((m) => m.key === k)?.label ?? k).map((x) => `«${x}»`);
   if (from < 3) notes.push(...upgradeExampleData(copy));
+  if (from < 4 && convertToWeapons(copy) > 0)
+    notes.push('огневая мощь типов — теперь вооружение: урон мин.–макс. и точность вида вооружения по дистанциям (каталог типов)');
   copy.dataVersion = DATA_VERSION;
   return { ruleset: copy, changed: notes.length > 0, notes };
 }
