@@ -44,6 +44,26 @@ function destroyElement(E: EngineContext, el: ElementState) {
   return left;
 }
 
+/** Уничтожен ли элемент как боевая единица (остаток ценности ниже порога или людей не осталось). */
+function destroyedNow(E: EngineContext, el: ElementState): boolean {
+  return E.value(el) <= el.startValue * E.k.destroyedThreshold || E.personnel(el) <= 0;
+}
+
+function logDestroyed(E: EngineContext, el: ElementState, valueNow: number, left: number) {
+  E.log({
+    phase: 'checks',
+    level: 0,
+    side: el.side,
+    severity: 'critical',
+    refs: [el.id],
+    text: `${e(el)} перестаёт существовать как боевая единица${left > 0 ? ` (уцелевшие ${left} чел. рассеяны)` : ''}.`,
+    factors: [
+      { label: 'Сохранилось боевой ценности', value: round1((valueNow / Math.max(1e-9, el.startValue)) * 100), kind: 'base' },
+      { label: 'Порог уничтожения, %', value: E.k.destroyedThreshold * 100, kind: 'base' },
+    ],
+  });
+}
+
 export function phaseChecks(E: EngineContext) {
   const { b, k, f, rng } = E;
   const shocks: { kind: 'rout' | 'hq' | 'break'; el?: ElementState; formation: FormationState }[] = [];
@@ -51,10 +71,17 @@ export function phaseChecks(E: EngineContext) {
   for (const el of b.elements) {
     if (el.status !== 'active') continue;
     const bh = E.behavior(el);
+    // Отходящий и бегущий под огнём преследования тоже может быть уничтожен.
+    if ((bh === 'retreat' || bh === 'rout') && k.destroyRetreating > 0 && destroyedNow(E, el)) {
+      const valueNow = E.value(el);
+      logDestroyed(E, el, valueNow, destroyElement(E, el));
+      if (el.isHQ) shocks.push({ kind: 'hq', el, formation: E.formationOf(el) });
+      continue;
+    }
     // Выход из боя
     if (bh === 'retreat') {
       el.exitTurns++;
-      if (el.exitTurns >= k.retreatExitTurns) {
+      if (el.exitTurns >= E.turnsOf(k.retreatExitTurns)) {
         el.status = 'withdrawn';
         E.log({ phase: 'checks', level: 0, side: el.side, severity: 'bad', refs: [el.id], text: `${e(el)} организованно выходит из боя.` });
       }
@@ -64,7 +91,7 @@ export function phaseChecks(E: EngineContext) {
       for (const c of el.comps) {
         const t = E.type(c.typeId);
         if (t.kind === 'personnel' || c.current <= 0) continue;
-        const n = rng.binomial(c.current, k.routAbandonShare);
+        const n = rng.binomial(c.current, E.chancePerTurn(k.routAbandonShare));
         if (n > 0) {
           c.current -= n;
           c.abandoned += n;
@@ -72,7 +99,7 @@ export function phaseChecks(E: EngineContext) {
         }
       }
       el.exitTurns++;
-      if (el.exitTurns >= k.routExitTurns) {
+      if (el.exitTurns >= E.turnsOf(k.routExitTurns)) {
         el.status = 'routed';
         E.log({ phase: 'checks', level: 0, side: el.side, severity: 'critical', refs: [el.id], text: `${e(el)} в беспорядке покидает поле боя.` });
       }
@@ -82,26 +109,15 @@ export function phaseChecks(E: EngineContext) {
     const valueNow = E.value(el);
     const pers = E.personnel(el);
     if (valueNow <= el.startValue * k.destroyedThreshold || pers <= 0) {
-      const left = destroyElement(E, el);
-      E.log({
-        phase: 'checks',
-        level: 0,
-        side: el.side,
-        severity: 'critical',
-        refs: [el.id],
-        text: `${e(el)} перестаёт существовать как боевая единица${left > 0 ? ` (уцелевшие ${left} чел. рассеяны)` : ''}.`,
-        factors: [
-          { label: 'Сохранилось боевой ценности', value: round1((valueNow / Math.max(1e-9, el.startValue)) * 100), kind: 'base' },
-          { label: 'Порог уничтожения, %', value: k.destroyedThreshold * 100, kind: 'base' },
-        ],
-      });
+      logDestroyed(E, el, valueNow, destroyElement(E, el));
       if (el.isHQ) shocks.push({ kind: 'hq', el, formation: E.formationOf(el) });
       continue;
     }
     // Паника
-    const panicMult = E.mult(el, 'panic');
+    const enemyPanic: Factor[] = [];
+    const panicMult = E.mult(el, 'panic') * E.enemyRules(el, 'panic', E.logging ? enemyPanic : undefined);
     if (f.panic && f.morale && el.morale < k.panicMorale && bh !== 'reserve') {
-      const chance = clamp(k.panicChance * (1 - el.morale / Math.max(1, k.panicMorale)) * panicMult * (el.holdFast ? 0.5 : 1), 0, 1);
+      const chance = E.chancePerTurn(clamp(k.panicChance * (1 - el.morale / Math.max(1, k.panicMorale)) * panicMult * (el.holdFast ? 0.5 : 1), 0, 1));
       const roll = rng.next();
       const factors: Factor[] = [
         {
@@ -110,6 +126,7 @@ export function phaseChecks(E: EngineContext) {
           kind: 'chance',
         },
         { label: 'Склонность к панике (опыт, командир, условия)', value: panicMult, kind: 'mult' },
+        ...enemyPanic,
       ];
       if (el.holdFast) factors.push({ label: '«Стоять насмерть»', value: 0.5, kind: 'mult' });
       factors.push({ label: 'Итоговый шанс', value: chance, kind: 'chance' });
@@ -145,7 +162,7 @@ export function phaseChecks(E: EngineContext) {
         reasons.push({ label: `Потери ${Math.round(lossPct)}% больше порога ${k.retreatLossPct}%`, value: round1(v * 100) / 100, kind: 'base' });
       }
       const turnLoss = (el.turnValueLost / Math.max(1e-9, el.startValue)) * 100;
-      if (turnLoss > k.retreatShockPct) {
+      if (turnLoss > k.retreatShockPct * E.ts) {
         sev = Math.max(sev, 0.5);
         reasons.push({ label: `Шоковые потери за ход ${Math.round(turnLoss)}%`, value: 0.5, kind: 'base' });
       }
@@ -159,7 +176,7 @@ export function phaseChecks(E: EngineContext) {
       }
       if (reasons.length) {
         const comms = E.comms(el);
-        const chance = clamp(k.retreatChance * (0.5 + sev) * panicMult, 0, 1);
+        const chance = E.chancePerTurn(clamp(k.retreatChance * (0.5 + sev) * panicMult, 0, 1));
         reasons.push({ label: 'Склонность к отходу', value: panicMult, kind: 'mult' }, { label: 'Итоговый шанс', value: chance, kind: 'chance' });
         if (rng.next() < chance) {
           setOrderByBehavior(E, el, 'retreat');
@@ -224,22 +241,62 @@ export function phaseChecks(E: EngineContext) {
   }
   // Применение моральных потрясений (после всех проверок — чтобы порядок элементов не влиял)
   if (f.morale) {
+    const byShare = k.moraleShockByShare > 0;
+    const startValueOf = (pred: (x: ElementState) => boolean) => b.elements.reduce((a, x) => (pred(x) && !notArrived(x) ? a + x.startValue : a), 0);
     for (const sh of shocks) {
       const ids = subtreeIds(E, sh.formation.id);
+      // Доля бегущего в своём формировании и в стороне; доля сломленного формирования в старшем.
+      let shareF = 1;
+      let shareS = 1;
+      let shareBreak = 1;
+      if (byShare && sh.kind === 'rout' && sh.el) {
+        const v = sh.el.startValue;
+        shareF = Math.min(
+          1,
+          (3 * v) /
+            Math.max(
+              1e-9,
+              startValueOf((x) => ids.has(x.formationId)),
+            ),
+        );
+        shareS = Math.min(
+          1,
+          (3 * v) /
+            Math.max(
+              1e-9,
+              startValueOf((x) => x.side === sh.formation.side),
+            ),
+        );
+      }
+      if (byShare && sh.kind === 'break' && sh.formation.parentId) {
+        let root = sh.formation;
+        for (let up = root.parentId && E.formations.get(root.parentId); up; up = up.parentId && E.formations.get(up.parentId)) root = up;
+        if (root !== sh.formation) {
+          const rootIds = subtreeIds(E, root.id);
+          shareBreak = Math.min(
+            1,
+            startValueOf((x) => ids.has(x.formationId)) /
+              Math.max(
+                1e-9,
+                startValueOf((x) => rootIds.has(x.formationId)),
+              ),
+          );
+        }
+      }
       for (const el of b.elements) {
         if (el.status !== 'active' || el === sh.el) continue;
         let hit = 0;
         let label = '';
         if (sh.kind === 'rout') {
           if (ids.has(el.formationId)) {
-            hit = k.moraleRoutFormation;
+            hit = k.moraleRoutFormation * shareF;
             label = 'бегство соседнего элемента';
           } else if (el.side === sh.formation.side) {
-            hit = k.moraleRoutSide;
+            hit = k.moraleRoutSide * shareS;
             label = 'бегство на соседнем участке';
           }
         } else if (ids.has(el.formationId)) {
-          hit = sh.kind === 'hq' ? k.moraleHQLoss : k.moraleFormationBreak;
+          hit = sh.kind === 'hq' ? k.moraleHQLoss : k.moraleFormationBreak * shareBreak;
           label = sh.kind === 'hq' ? 'потеря штаба' : 'распад формирования';
         }
         if (hit <= 0) continue;

@@ -1269,7 +1269,23 @@ describe('ширина фронта, удача стороны, доведени
   it('бой прежней версии (в снимке правил нет новых ключей) повторяется по прежним правилам', () => {
     const sc = makeDemoScenario();
     const old = clone(rs);
-    for (const key of ['frontageOverlap', 'frontageExcess', 'vehicleFrontage', 'frontDensity', 'sideLuck', 'orderSpeed', 'orderCommsMin', 'orderNoCommander'])
+    for (const key of [
+      'frontageOverlap',
+      'frontageExcess',
+      'vehicleFrontage',
+      'frontDensity',
+      'sideLuck',
+      'orderSpeed',
+      'orderCommsMin',
+      'orderNoCommander',
+      'turnRefMinutes',
+      'crewHitShare',
+      'exposureLimitsFire',
+      'reserveIndirectExposure',
+      'moraleShockByShare',
+      'moraleEnemyRules',
+      'destroyRetreating',
+    ])
       delete old.coefficients[key];
     delete (old.features as Partial<typeof old.features>).orderDelay;
     Object.assign(old.coefficients, { moralePerLossPct: 1.2, retreatLossPct: 50 });
@@ -1280,7 +1296,19 @@ describe('ширина фронта, удача стороны, доведени
     expect(r.log.some((e) => e.factors?.some((f) => f.label.startsWith('Ширина фронта')))).toBe(false);
     // Тот же бой, что с явно выключенными механиками.
     const manual = clone(rs);
-    Object.assign(manual.coefficients, { frontageOverlap: 0, sideLuck: 0, moralePerLossPct: 1.2, retreatLossPct: 50 });
+    Object.assign(manual.coefficients, {
+      frontageOverlap: 0,
+      sideLuck: 0,
+      moralePerLossPct: 1.2,
+      retreatLossPct: 50,
+      turnRefMinutes: 0,
+      crewHitShare: 0,
+      exposureLimitsFire: 0,
+      reserveIndirectExposure: 0,
+      moraleShockByShare: 0,
+      moraleEnemyRules: 0,
+      destroyRetreating: 0,
+    });
     manual.features.orderDelay = false;
     const m = createBattle(sc, manual, { seed: 'C1' });
     runToEnd(m);

@@ -2,7 +2,7 @@
 // Без Electron — только папка на диске, поэтому проверяется обычными тестами.
 //
 //   <папка данных>/rulesets|formations|scenarios|battles/<id>.json — сами данные;
-//   backups/<дата_время>/… — копии наборов правил, подразделений и сценариев (без боёв);
+//   backups/<дата_время>/… — копии наборов правил, подразделений, сценариев и незавершённых боёв;
 //   trash/<коллекция>/<id>.json — удалённое (хранится 30 дней);
 //   damaged/<коллекция>/… — файлы, которые не удалось прочитать как JSON.
 
@@ -11,8 +11,19 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 export const COLLECTIONS = ['rulesets', 'formations', 'forces', 'scenarios', 'battles'];
-/** Бои в копии не входят: они большие и воспроизводятся из сценария. Силы входят: в них потери после боёв. */
-export const BACKED_UP = ['rulesets', 'formations', 'forces', 'scenarios'];
+/** Силы входят: в них потери после боёв. Бои — только незавершённые и с незаписанными итогами (см. battleWorthKeeping). */
+export const BACKED_UP = ['rulesets', 'formations', 'forces', 'scenarios', 'battles'];
+
+/**
+ * Бой стоит копировать, если он не окончен или его итоги ещё не записаны в силы: решения ГМ (приказы, правки,
+ * удары) хранятся только в нём. Окончённый и записанный бой — уже история, его копировать незачем.
+ */
+export function battleWorthKeeping(b: any): boolean {
+  if (!b || typeof b !== 'object') return false;
+  if (!b.finished) return true;
+  const forces = (b.scenario?.sides ?? []).some((sd: any) => (sd.units ?? []).length > 0);
+  return forces && !b.appliedToForces;
+}
 export const KEEP_BACKUPS = 10;
 export const KEEP_DAILY = 14;
 export const TRASH_DAYS = 30;
@@ -56,16 +67,29 @@ async function readdir(dir: string): Promise<string[]> {
   }
 }
 
+let tmpSeq = 0;
+
+/**
+ * Запись через временный файл и переименование: оборванная запись не портит прежний файл. У каждой записи
+ * свой временный файл — две одновременные записи одного файла не мешают друг другу.
+ */
 export async function writeAtomic(file: string, content: string) {
   await fs.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
-  await fs.writeFile(tmp, content, 'utf8');
-  await fs.rename(tmp, file);
+  const tmp = `${file}.${process.pid}-${++tmpSeq}.tmp`;
+  try {
+    await fs.writeFile(tmp, content, 'utf8');
+    await fs.rename(tmp, file);
+  } catch (e) {
+    await fs.rm(tmp, { force: true }).catch(() => undefined);
+    throw e;
+  }
 }
 
 export class DataStore {
   private problemList: DataProblem[] = [];
   private queue: Promise<unknown> = Promise.resolve();
+  /** Записи каждого файла — по очереди. */
+  private writes = new Map<string, Promise<unknown>>();
 
   constructor(readonly dir: string) {}
 
@@ -148,10 +172,24 @@ export class DataStore {
     }
   }
 
-  async save(col: string, id: string, data: unknown) {
-    await writeAtomic(this.filePath(col, id), JSON.stringify(data, null, col === 'battles' ? 0 : 2));
-    // Сохранённое снова живое — его копия в корзине больше не нужна.
-    await fs.rm(this.trashFile(col, id), { force: true });
+  save(col: string, id: string, data: unknown): Promise<void> {
+    const file = this.filePath(col, id);
+    const text = JSON.stringify(data, null, col === 'battles' ? 0 : 2);
+    const prev = this.writes.get(file) ?? Promise.resolve();
+    const run = prev
+      .catch(() => undefined)
+      .then(async () => {
+        await writeAtomic(file, text);
+        // Сохранённое снова живое — его копия в корзине больше не нужна.
+        await fs.rm(this.trashFile(col, id), { force: true });
+      });
+    this.writes.set(file, run);
+    void run
+      .finally(() => {
+        if (this.writes.get(file) === run) this.writes.delete(file);
+      })
+      .catch(() => undefined);
+    return run;
   }
 
   // ---------------------------------------------------------------- корзина
@@ -256,9 +294,11 @@ export class DataStore {
       for (const name of (await readdir(dir)).sort()) {
         if (!name.endsWith('.json')) continue;
         try {
-          files.push({ col, name, content: await fs.readFile(path.join(dir, name)) });
+          const content = await fs.readFile(path.join(dir, name));
+          if (col === 'battles' && !battleWorthKeeping(JSON.parse(content.toString('utf8')))) continue;
+          files.push({ col, name, content });
         } catch {
-          /* файл занят или исчез — в эту копию не попадёт */
+          /* файл занят, исчез или повреждён — в эту копию не попадёт */
         }
       }
     }

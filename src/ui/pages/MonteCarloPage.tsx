@@ -3,12 +3,13 @@
 import { Icon } from '../components/Icon';
 import { Fragment, type ReactNode, useMemo, useState } from 'react';
 import { create } from 'zustand';
-import { createBattle, fmtDuration, newId, randomSeed, runManyAsync, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
+import { createBattle, fmtDuration, newId, randomSeed, runToEnd, type MonteCarloResult, type RunSummary, type SideId } from '../../engine';
 import { Histogram, StackBar } from '../components/Charts';
 import { Crumbs } from '../components/Crumbs';
 import { CompareSection } from '../components/McCompare';
 import { Btn, Card, Field, Info, Menu, Num, Section, fmt1, pressable } from '../components/ui';
 import { useTabState } from '../hooks';
+import { runScenario } from '../parallel';
 import { exportText, fmtDate, openTab, putBattle, scenarioForBattle, toast, useApp, type Tab } from '../store';
 
 interface McState {
@@ -130,7 +131,7 @@ export function MonteCarloPage({ tab }: { tab: Tab }) {
     setRun(sc.id, { running: true, done: 0, n, cancel: false });
     try {
       // Прогоны — по текущему состоянию сил сторон.
-      const res = await runManyAsync(
+      const res = await runScenario(
         scenarioForBattle(sc),
         rs,
         n,

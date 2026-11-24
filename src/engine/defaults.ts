@@ -5,15 +5,16 @@ import { COEFFICIENT_DEFAULTS, COMPAT_NEUTRAL, DEFAULT_FEATURES, RECALIBRATED } 
 import { turnsFor } from './duration';
 import { newId } from './ids';
 import { instantiate, newRootUnit, newUnit, walkUnits } from './units';
-import type { ComponentType, EffectDef, Id, LevelDef, Objective, OrderDef, Ruleset, Scenario, SideDef, UnitNode } from './types';
+import type { ComponentType, CustomModifier, EffectDef, Id, LevelDef, Objective, OrderDef, Ruleset, Scenario, SideDef, UnitNode } from './types';
 
 export const SCHEMA_VERSION = 1;
 
 /**
  * Версия данных наборов правил и сценариев — хранится в самих файлах, чтобы одноразовые обновления
- * выполнялись один раз для данных, а не для компьютера: 2 — калибровка коэффициентов, длительность в часах.
+ * выполнялись один раз для данных, а не для компьютера: 2 — калибровка коэффициентов, длительность в часах;
+ * 3 — эталонная длина хода, удача 0,25, подавление, опыт, танки и правила примера.
  */
-export const DATA_VERSION = 2;
+export const DATA_VERSION = 3;
 
 export { newId } from './ids';
 
@@ -90,7 +91,26 @@ const STANDARD_ORDERS: OrderDef[] = [
   },
 ];
 
+// Ветераны на равных бьют новобранцев примерно в 4 боях из 5, а двойной перевес новобранцев даёт им шанс
+// (около 20%). До версии данных 3 опыт был сильнее двукратного перевеса — см. PREVIOUS_EXPERIENCE.
 const STANDARD_EXPERIENCE: LevelDef[] = [
+  {
+    name: 'Новобранцы',
+    effects: { fire: 0.9, protection: 0.95, moraleLoss: 1.2, panic: 1.3, initiative: 0.9, suppression: 1.2, recovery: 0.9, detection: 0.95 },
+  },
+  { name: 'Обученные', effects: {} },
+  {
+    name: 'Опытные',
+    effects: { fire: 1.05, protection: 1.02, moraleLoss: 0.9, panic: 0.85, initiative: 1.05, suppression: 0.9, recovery: 1.1, detection: 1.05 },
+  },
+  {
+    name: 'Ветераны',
+    effects: { fire: 1.15, protection: 1.05, moraleLoss: 0.8, panic: 0.7, initiative: 1.15, suppression: 0.8, recovery: 1.2, detection: 1.1 },
+  },
+];
+
+/** Уровни опыта примера до версии данных 3: в наборе, где их не меняли, они заменяются на нынешние. */
+const PREVIOUS_EXPERIENCE: LevelDef[] = [
   {
     name: 'Новобранцы',
     effects: { fire: 0.8, protection: 0.85, moraleLoss: 1.3, panic: 1.5, initiative: 0.8, suppression: 1.3, recovery: 0.8, detection: 0.9 },
@@ -105,6 +125,23 @@ const STANDARD_EXPERIENCE: LevelDef[] = [
     effects: { fire: 1.25, protection: 1.1, moraleLoss: 0.7, panic: 0.5, initiative: 1.25, suppression: 0.7, recovery: 1.3, detection: 1.1 },
   },
 ];
+
+/** Огонь танка примера по живой силе до версии данных 3 (дальняя, средняя, ближняя). */
+const PREVIOUS_TANK_INF = [0.2, 0.35, 0.45];
+const TANK_INF: [number, number, number] = [0.35, 0.7, 0.9];
+
+/** Правило примера: пехоту без противотанковых средств танки давят морально. */
+const TANK_FEAR_RULE: CustomModifier = {
+  id: 'mod-tank-fear',
+  name: 'Танки против пехоты без ПТ-средств',
+  description: 'Пехота, которой нечем ответить танкам, теряет мораль быстрее (по доле огня танков по ней).',
+  enabled: true,
+  when: [
+    { field: 'tag', op: 'not_has', value: 'ПТ' },
+    { field: 'enemy.tag', op: 'has', value: 'танк' },
+  ],
+  effects: { moraleLoss: 1.3, panic: 1.3 },
+};
 
 const STANDARD_COMMAND: LevelDef[] = [
   { name: 'Некомпетентный', effects: { fire: 0.9, initiative: 0.7, moraleLoss: 1.2, panic: 1.3, recovery: 0.8 } },
@@ -283,6 +320,7 @@ export function makeUniversalRuleset(): Ruleset {
         value: 5,
         protection: 1.2,
         ammoUse: 7,
+        tags: ['ПТ'],
         firepower: fp(B, { inf: [0.01, 0.025, 0.04], soft: [0.12, 0.2, 0.25], armor: [0.1, 0.2, 0.25] }),
       }),
       type({
@@ -344,8 +382,8 @@ export function makeUniversalRuleset(): Ruleset {
         suppressive: 1.5,
         ammoUse: 6,
         fuelUse: 6,
-        tags: ['ночное видение'],
-        firepower: fp(B, { inf: [0.2, 0.35, 0.45], soft: [0.35, 0.45, 0.45], armor: [0.3, 0.45, 0.5] }),
+        tags: ['ночное видение', 'танк', 'ПТ'],
+        firepower: fp(B, { inf: TANK_INF, soft: [0.35, 0.45, 0.45], armor: [0.3, 0.45, 0.5] }),
       }),
     ],
     orders: STANDARD_ORDERS,
@@ -366,6 +404,7 @@ export function makeUniversalRuleset(): Ruleset {
           { field: 'tag', op: 'has', value: 'ночное видение' },
         ],
         effects: { detection: 1.8, fire: 1.25 },
+        byShare: true,
       },
       {
         id: 'mod-swamp-vehicles',
@@ -377,6 +416,7 @@ export function makeUniversalRuleset(): Ruleset {
           { field: 'kind', op: 'has', value: 'vehicle' },
         ],
         effects: { movement: 0.5, fatigue: 1.2 },
+        byShare: true,
       },
       {
         id: 'mod-urban-at',
@@ -390,6 +430,7 @@ export function makeUniversalRuleset(): Ruleset {
         ],
         effects: { fire: 1.5 },
       },
+      TANK_FEAR_RULE,
     ],
     outcomeLevels: STANDARD_OUTCOMES,
     coefficients: { ...COEFFICIENT_DEFAULTS },
@@ -559,6 +600,8 @@ export function makeLinearRuleset(): Ruleset {
       woundedShare: 0.55,
       missingShare: 0.15,
       frontDensity: 250,
+      // Темпы этого набора подобраны для хода 20 минут.
+      turnRefMinutes: 20,
     },
   };
 }
@@ -588,14 +631,60 @@ export function defaultCommandLevel(rs: Pick<Ruleset, 'commandLevels'>): number 
  * Перевести на откалиброванные значения коэффициенты набора, которые в нём не меняли (равны прежним значениям
  * по умолчанию). Возвращает изменённые ключи.
  */
-export function recalibrateRuleset(r: Ruleset): string[] {
+export function recalibrateRuleset(r: Ruleset, fromVersion = 0): string[] {
   const changed: string[] = [];
-  for (const [key, [was, now]] of Object.entries(RECALIBRATED))
-    if (r.coefficients[key] === was) {
+  for (const [key, [was, now, version]] of Object.entries(RECALIBRATED))
+    if (version > fromVersion && r.coefficients[key] === was) {
       r.coefficients[key] = now;
       changed.push(key);
     }
   return changed;
+}
+
+const sameEffects = (a: LevelDef['effects'], b: LevelDef['effects']) => {
+  const ka = Object.keys(a ?? {}).filter((k) => a[k as keyof typeof a] !== undefined);
+  const kb = Object.keys(b ?? {}).filter((k) => b[k as keyof typeof b] !== undefined);
+  return ka.length === kb.length && ka.every((k) => a[k as keyof typeof a] === b[k as keyof typeof b]);
+};
+
+/**
+ * Обновление набора правил до версии данных 3. Эталонная длина хода — нынешняя длина хода набора (его темпы
+ * подобраны под неё, расчёт не меняется). Данные примера, которые в наборе не меняли, — нынешние: уровни опыта,
+ * огонь танка по живой силе, теги «танк»/«ПТ» и правило «Танки против пехоты без ПТ-средств», правила «Ночное
+ * видение» и «Болото: техника вязнет» — по доле. Возвращает список изменённого (для сообщения ГМ).
+ */
+export function upgradeExampleData(r: Ruleset): string[] {
+  const out: string[] = [];
+  if (r.coefficients.turnRefMinutes === undefined) r.coefficients.turnRefMinutes = r.turnMinutes;
+  const exp = r.experienceLevels;
+  if (
+    exp?.length === PREVIOUS_EXPERIENCE.length &&
+    exp.every((l, i) => l.name === PREVIOUS_EXPERIENCE[i].name && sameEffects(l.effects, PREVIOUS_EXPERIENCE[i].effects))
+  ) {
+    r.experienceLevels = clone(STANDARD_EXPERIENCE);
+    out.push('уровни опыта');
+  }
+  const tank = r.componentTypes.find((t) => t.id === 'tank');
+  const inf = tank?.firepower.inf;
+  const bands = ['long', 'medium', 'close'];
+  if (tank && inf && bands.every((b, i) => inf[b] === PREVIOUS_TANK_INF[i])) {
+    tank.firepower.inf = Object.fromEntries(bands.map((b, i) => [b, TANK_INF[i]]));
+    for (const tag of ['танк', 'ПТ']) if (!tank.tags.includes(tag)) tank.tags = [...tank.tags, tag];
+    const at = r.componentTypes.find((t) => t.id === 'at' && t.name === 'Противотанковое средство');
+    if (at && !at.tags.includes('ПТ')) at.tags = [...at.tags, 'ПТ'];
+    if (!r.modifiers.some((m) => m.id === TANK_FEAR_RULE.id)) r.modifiers = [...r.modifiers, clone(TANK_FEAR_RULE)];
+    out.push('огонь танка по пехоте и правило «Танки против пехоты без ПТ-средств»');
+  }
+  let share = false;
+  r.modifiers = r.modifiers.map((m) => {
+    if ((m.id === 'mod-nv' || m.id === 'mod-swamp-vehicles') && m.byShare === undefined) {
+      share = true;
+      return { ...m, byShare: true };
+    }
+    return m;
+  });
+  if (share) out.push('правила «Ночное видение» и «Болото» — по доле');
+  return out;
 }
 
 /**
@@ -610,6 +699,8 @@ export function normalizeRuleset(r: Ruleset, compat = false): Ruleset {
   if (r.dataVersion === undefined) delete out.dataVersion;
   out.features = { ...DEFAULT_FEATURES, ...(compat ? { orderDelay: false } : {}), ...(r.features ?? {}) };
   out.coefficients = { ...COEFFICIENT_DEFAULTS, ...(compat ? COMPAT_NEUTRAL : {}), ...(r.coefficients ?? {}) };
+  // Набор прежней версии: его темпы подобраны под его длину хода — она и есть эталон (расчёт не меняется).
+  if (!compat && r.coefficients && r.coefficients.turnRefMinutes === undefined) out.coefficients.turnRefMinutes = out.turnMinutes;
   out.targetClasses = r.targetClasses ?? [];
   out.rangeBands = r.rangeBands ?? [];
   out.componentTypes = (r.componentTypes ?? []).map((t) => ({ ...type({ ...t }), ...t, tags: t.tags ?? [] }));

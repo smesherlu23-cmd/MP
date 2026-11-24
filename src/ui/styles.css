@@ -3989,6 +3989,27 @@ input.invalid {
 .tb-actions .btn.icon:not(.primary):active:not(:disabled) {
   background: var(--side-sel);
 }
+/* «Не сохранено» — запись на диск не удалась; щелчок повторяет. */
+.tb-unsaved {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  margin-right: 6px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--bad) 55%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+  color: var(--bad);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tb-unsaved:hover {
+  background: color-mix(in srgb, var(--bad) 22%, transparent);
+}
 /* «+ Создать» — кнопка с подписью (в узком окне — только «+»). */
 .tb-global .btn.tb-create {
   min-height: 28px;

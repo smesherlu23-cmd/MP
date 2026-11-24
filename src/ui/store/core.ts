@@ -84,6 +84,8 @@ export interface AppState {
   toasts: Toast[];
   dialog: Dialog | null;
   saving: number;
+  /** Не сохранённые на диск объекты (запись не удалась и после повторов): «коллекция:id» → текст ошибки. */
+  unsaved: Record<string, string>;
 }
 
 export type NavSection = 'scenarios' | 'forces' | 'units' | 'battles' | 'rulesets';
@@ -112,6 +114,7 @@ export const useApp = create<AppState>(() => ({
   toasts: [],
   dialog: null,
   saving: 0,
+  unsaved: {},
 }));
 
 export const set = useApp.setState;
@@ -163,6 +166,48 @@ export const pendingSaves = new Map<string, () => Promise<void>>();
 /** Записи, которые уже идут на диск: перед закрытием окна ждём и их. */
 const inflight = new Set<Promise<void>>();
 
+/** Последняя запись каждого объекта: записи одного файла идут по очереди, не одновременно. */
+const chains = new Map<string, Promise<void>>();
+
+/** Записи, которые не удались и после повторов: их можно повторить (значок «Не сохранено», перед закрытием). */
+const failed = new Map<string, { col: Collection; id: Id; getData: () => unknown }>();
+
+/** Паузы между повторами неудачной записи (файл занят антивирусом, синхронизацией OneDrive). */
+export const SAVE_RETRY_MS = [300, 1500];
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function saveWithRetry(col: Collection, id: Id, data: unknown) {
+  for (let i = 0; ; i++) {
+    try {
+      await storage.save(col, id, data);
+      return;
+    } catch (e) {
+      if (i >= SAVE_RETRY_MS.length) throw e;
+      await wait(SAVE_RETRY_MS[i]);
+    }
+  }
+}
+
+function markUnsaved(key: string, error: string | null) {
+  const had = key in get().unsaved;
+  if (error === null && !had) return;
+  set((s) => {
+    const next = { ...s.unsaved };
+    if (error === null) delete next[key];
+    else next[key] = error;
+    return { unsaved: next };
+  });
+}
+
+let retryTimer: ReturnType<typeof setInterval> | undefined;
+
+/** Повторить неудавшиеся записи (по значку «Не сохранено», перед закрытием и сами раз в 20 с). */
+export async function retryUnsaved() {
+  for (const [, x] of failed) scheduleSave(x.col, x.id, x.getData, 0);
+  await flushSaves();
+}
+
 export function scheduleSave(col: Collection, id: Id, getData: () => unknown, delay = 400) {
   const key = `${col}:${id}`;
   clearTimeout(timers.get(key));
@@ -172,16 +217,36 @@ export function scheduleSave(col: Collection, id: Id, getData: () => unknown, de
     timers.delete(key);
     if (!pendingSaves.has(key)) return;
     pendingSaves.delete(key);
+    const prev = chains.get(key);
     const write = (async () => {
       try {
+        // Предыдущая запись того же файла должна закончиться: две одновременные мешают друг другу.
+        if (prev) await prev;
         const data = getData();
-        if (data) await storage.save(col, id, data);
+        if (data) await saveWithRetry(col, id, data);
+        failed.delete(key);
+        markUnsaved(key, null);
       } catch (e) {
-        toast(`Не удалось сохранить: ${(e as Error).message}`, 'bad');
+        const first = !failed.has(key);
+        failed.set(key, { col, id, getData });
+        markUnsaved(key, (e as Error).message);
+        if (first) toast(`Не удалось сохранить: ${(e as Error).message}. Правка не потеряна — программа повторит запись.`, 'bad');
+        retryTimer ??= setInterval(() => {
+          if (!failed.size) {
+            clearInterval(retryTimer);
+            retryTimer = undefined;
+            return;
+          }
+          void retryUnsaved();
+        }, 20_000);
       } finally {
         set((s) => ({ saving: Math.max(0, s.saving - 1) }));
       }
     })();
+    chains.set(key, write);
+    void write.finally(() => {
+      if (chains.get(key) === write) chains.delete(key);
+    });
     inflight.add(write);
     try {
       await write;
@@ -202,6 +267,17 @@ export async function flushSave(col: Collection, id: Id) {
 export async function flushSaves() {
   await Promise.all([...pendingSaves.values()].map((fn) => fn()));
   await Promise.all([...inflight]);
+}
+
+/**
+ * Перед закрытием окна: дописать отложенное и повторить неудавшееся. false — что-то так и не записалось:
+ * окно не закрывается, ГМ решает сам (повторить или закрыть без сохранения).
+ */
+export async function flushBeforeClose(): Promise<boolean> {
+  // Неудавшиеся ранее — заново, вместе с отложенными (одним проходом, с повторами).
+  for (const [, x] of failed) scheduleSave(x.col, x.id, x.getData, 0);
+  await flushSaves();
+  return failed.size === 0;
 }
 
 // ------------------------------------------------------------------ отмена и повтор

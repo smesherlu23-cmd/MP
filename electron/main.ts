@@ -6,7 +6,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, screen, shell }
 import { existsSync, promises as fs } from 'node:fs';
 import { release } from 'node:os';
 import path from 'node:path';
-import { DataStore, type BackupKind } from './protect';
+import { COLLECTIONS, DataStore, type BackupKind } from './protect';
 
 // Прежнее название программы — WarSim. Её папки остаются в ходу, чтобы после переименования
 // не потерялись данные, настройки и открытые вкладки.
@@ -46,6 +46,105 @@ function defaultDataDir(): string {
   const legacy = path.join(base, portable ? `${LEGACY_NAME}-data` : LEGACY_NAME);
   if (existsSync(legacy)) return legacy;
   return path.join(base, portable ? `${APP_NAME}-data` : APP_NAME);
+}
+
+/** Не дольше ms: папка на отключённом сетевом диске может «висеть» минутами. */
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${what} не отвечает`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+
+/** Можно ли работать с папкой данных: создать её и записать в неё файл. null — можно, иначе причина. */
+async function checkDataDir(dir: string): Promise<string | null> {
+  try {
+    await withTimeout(
+      (async () => {
+        await fs.mkdir(dir, { recursive: true });
+        const probe = path.join(dir, `.write-test-${process.pid}`);
+        await fs.writeFile(probe, 'ok', 'utf8');
+        await fs.rm(probe, { force: true });
+      })(),
+      10_000,
+      'Папка',
+    );
+    return null;
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    const why: Record<string, string> = {
+      ENOENT: 'диск или папка не найдены (флешка или сетевой диск не подключены?)',
+      EACCES: 'нет прав на запись',
+      EPERM: 'нет прав на запись',
+      EROFS: 'диск только для чтения',
+      ENOSPC: 'на диске нет места',
+    };
+    return (code && why[code]) || (e as Error).message;
+  }
+}
+
+/**
+ * Папка данных при запуске. Недоступна (флешка, сетевой диск, нет прав) — окно с выбором: повторить, выбрать
+ * другую, папка по умолчанию или выйти. Без этого программа не открывалась вовсе и оставалась висеть в фоне.
+ */
+async function startupDataDir(saved: string | undefined): Promise<string | null> {
+  let dir = saved || defaultDataDir();
+  for (;;) {
+    const err = await checkDataDir(dir);
+    if (!err) return dir;
+    const def = defaultDataDir();
+    const buttons = ['Повторить', 'Выбрать другую папку…', ...(dir !== def ? ['Папка по умолчанию'] : []), 'Выйти'];
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      title: APP_NAME,
+      message: 'Папка данных недоступна',
+      detail: `${dir}\n\nПричина: ${err}.\n\nЕсли папка на флешке или сетевом диске — подключите его и нажмите «Повторить». Можно выбрать другую папку${dir !== def ? ` или папку по умолчанию (${def})` : ''}.`,
+      buttons,
+      defaultId: 0,
+      cancelId: buttons.length - 1,
+      noLink: true,
+    });
+    const choice = buttons[response];
+    if (choice === 'Выйти') return null;
+    if (choice === 'Выбрать другую папку…') {
+      const res = await dialog.showOpenDialog({ title: `Папка данных ${APP_NAME}`, properties: ['openDirectory', 'createDirectory'] });
+      if (res.canceled || !res.filePaths[0]) continue;
+      dir = res.filePaths[0];
+    } else if (choice === 'Папка по умолчанию') dir = def;
+    else continue;
+    if (!(await checkDataDir(dir))) await writeSettings({ ...(await readSettings()), dataDir: dir });
+  }
+}
+
+/** Сколько файлов данных в папке (наборы правил, шаблоны, силы, сценарии, бои). */
+async function countData(dir: string): Promise<number> {
+  let n = 0;
+  for (const col of COLLECTIONS) {
+    try {
+      n += (await fs.readdir(path.join(dir, col))).filter((x) => x.endsWith('.json')).length;
+    } catch {
+      /* нет папки */
+    }
+  }
+  return n;
+}
+
+/** Скопировать данные и резервные копии в новую папку, не заменяя то, что там уже есть. */
+async function copyData(from: string, to: string) {
+  for (const sub of [...COLLECTIONS, 'backups']) {
+    const src = path.join(from, sub);
+    if (!existsSync(src)) continue;
+    await fs.cp(src, path.join(to, sub), { recursive: true, force: false, errorOnExist: false });
+  }
 }
 
 function battleMeta(b: any) {
@@ -123,9 +222,52 @@ function registerIpc() {
       defaultPath: dataDir,
     });
     if (res.canceled || !res.filePaths[0]) return null;
-    dataDir = res.filePaths[0];
+    const next = res.filePaths[0];
+    if (path.resolve(next) === path.resolve(dataDir)) return null;
+    const err = await checkDataDir(next);
+    if (err) {
+      await dialog.showMessageBox(win!, {
+        type: 'warning',
+        title: APP_NAME,
+        message: 'В эту папку нельзя сохранять данные',
+        detail: `${next}\n\nПричина: ${err}.`,
+      });
+      return null;
+    }
+    // Данные не переезжают сами: ГМ решает, перенести их или открыть новую папку как есть.
+    const have = await countData(dataDir);
+    const there = await countData(next);
+    if (have > 0) {
+      const buttons =
+        there > 0
+          ? ['Открыть данные новой папки', 'Перенести мои данные туда', 'Отмена']
+          : ['Перенести данные в новую папку', 'Открыть пустую папку', 'Отмена'];
+      const { response } = await dialog.showMessageBox(win!, {
+        type: 'question',
+        title: APP_NAME,
+        message: there > 0 ? `В новой папке уже есть данные (файлов: ${there}).` : 'Перенести данные в новую папку?',
+        detail:
+          there > 0
+            ? `Можно открыть их как есть или перенести туда ваши данные (файлов: ${have}); файлы, которые там уже есть, не заменяются. Прежняя папка остаётся на месте.`
+            : `В прежней папке файлов данных: ${have}. Они будут скопированы вместе с резервными копиями; прежняя папка остаётся на месте. Без переноса новая папка откроется пустой.`,
+        buttons,
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+      });
+      if (response === 2) return null;
+      const move = there > 0 ? response === 1 : response === 0;
+      if (move) {
+        try {
+          await copyData(dataDir, next);
+        } catch (e) {
+          await dialog.showMessageBox(win!, { type: 'error', title: APP_NAME, message: 'Не удалось перенести данные', detail: (e as Error).message });
+          return null;
+        }
+      }
+    }
+    dataDir = next;
     store = new DataStore(dataDir);
-    await fs.mkdir(dataDir, { recursive: true });
     await writeSettings({ ...(await readSettings()), dataDir });
     return dataDir;
   });
@@ -233,24 +375,43 @@ async function createWindow() {
   win.on('leave-full-screen', sendFullScreen);
   // Перед закрытием окно дописывает отложенные сохранения (последняя правка — за 0,4 с до закрытия)
   // и сообщает «готово»; не ответило за 3 с (зависло) — закрываем всё равно.
+  // Запись не удалась и после повторов — окно остаётся открытым: программа покажет, что не сохранено,
+  // и закроется без сохранения, только если ГМ согласится (app:close-anyway).
   let closing = false;
   win.on('close', (e) => {
     if (closing || !win || win.webContents.isCrashed()) return;
     e.preventDefault();
     closing = true;
     const w = win;
-    const done = () => {
+    const stop = () => {
       clearTimeout(timer);
       ipcMain.removeListener('app:flushed', onFlushed);
+    };
+    const done = () => {
+      stop();
       if (!w.isDestroyed()) w.destroy();
     };
-    const onFlushed = (ev: Electron.IpcMainEvent) => {
-      if (ev.sender === w.webContents) done();
+    const onFlushed = (ev: Electron.IpcMainEvent, ok?: boolean) => {
+      if (ev.sender !== w.webContents) return;
+      if (ok === false) {
+        stop();
+        closing = false;
+        return;
+      }
+      done();
     };
-    const timer = setTimeout(done, 3000);
+    // Запись с повторами занимает до 2 с; окно, не ответившее за 6 с, считается зависшим.
+    const timer = setTimeout(done, 6000);
     ipcMain.on('app:flushed', onFlushed);
     w.webContents.send('app:flush');
   });
+  const closeAnyway = (ev: Electron.IpcMainEvent) => {
+    if (!win || ev.sender !== win.webContents) return;
+    closing = true;
+    win.destroy();
+  };
+  ipcMain.on('app:close-anyway', closeAnyway);
+  win.on('closed', () => ipcMain.removeListener('app:close-anyway', closeAnyway));
   // Окно упало (нехватка памяти, сбой отрисовки) — предложить перезапустить его, а не оставлять белым.
   win.webContents.on('render-process-gone', async (_e, details) => {
     if (details.reason === 'clean-exit' || !win || win.isDestroyed()) return;
@@ -289,9 +450,13 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(async () => {
     const s = await readSettings();
-    dataDir = s.dataDir || defaultDataDir();
+    const dir = await startupDataDir(s.dataDir);
+    if (!dir) {
+      app.quit();
+      return;
+    }
+    dataDir = dir;
     store = new DataStore(dataDir);
-    await fs.mkdir(dataDir, { recursive: true });
     await store.purgeOldTrash().catch(() => undefined);
     registerIpc();
     buildMenu();

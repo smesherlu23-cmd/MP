@@ -36,6 +36,7 @@ import {
   redo,
   redoBattle,
   resolveFormation,
+  retryUnsaved,
   undo,
   undoBattle,
   updateSettings,
@@ -260,6 +261,8 @@ export function App() {
   const s = useApp();
   const battles = useBattles((x) => x.battles);
   const hist = useHistory();
+  const unsaved = useApp((s) => s.unsaved);
+  const unsavedN = Object.keys(unsaved).length;
   const nav = useNav();
   const rename = useRenaming();
   const active = useMemo(() => s.tabs.find((t) => t.key === s.active) ?? s.tabs[0], [s.tabs, s.active]);
@@ -484,6 +487,17 @@ export function App() {
           </div>
           <div id="tb-actions" className="tb-actions" />
           <div className="tb-global">
+            {unsavedN > 0 && (
+              <button
+                type="button"
+                className="tb-unsaved"
+                onClick={() => void retryUnsaved()}
+                title={`Не удалось записать на диск (${unsavedN}): ${Object.values(unsaved)[0]}\nПравки не потеряны, программа повторяет запись каждые 20 с. Щелчок — повторить сейчас.`}
+              >
+                <Icon name="alert" size={15} />
+                <span>Не сохранено</span>
+              </button>
+            )}
             <Menu
               sm
               label={

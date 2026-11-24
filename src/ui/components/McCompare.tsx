@@ -12,7 +12,6 @@ import {
   SWEEP_LABELS,
   SWEEP_NEEDS,
   randomSeed,
-  runManyAsync,
   fmtDuration,
   sweepDefaults,
   sweepRange,
@@ -27,6 +26,7 @@ import {
   type SweepParam,
   type Variant,
 } from '../../engine';
+import { runScenario } from '../parallel';
 import { exportText, scenarioForBattle, toast, useApp } from '../store';
 import { Btn, Field, Info, Menu, Num, Section, Seg, Sel, fmt0, fmt1 } from './ui';
 
@@ -149,7 +149,7 @@ export function CompareSection({ sc, rs }: { sc: Scenario; rs: Ruleset }) {
     const rows: Row[] = [];
     for (let i = 0; i < list.length; i++) {
       if (useCmp.getState().byScenario[sc.id]?.cancel) break;
-      const r = await runManyAsync(
+      const r = await runScenario(
         list[i].scenario,
         list[i].ruleset ?? rs,
         n,

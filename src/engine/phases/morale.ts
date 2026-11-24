@@ -8,6 +8,7 @@ import type { Factor, SideId } from '../types';
 
 export function phaseMorale(E: EngineContext) {
   const { k, f } = E;
+  const ts = E.ts;
   const sideLoss: Record<SideId, number> = { A: 0, B: 0 };
   const sideValue: Record<SideId, number> = { A: 0, B: 0 };
   for (const el of E.b.elements) {
@@ -32,13 +33,13 @@ export function phaseMorale(E: EngineContext) {
       const w = clamp(k.moraleValueWeight, 0, 1);
       const moraleLossPct = persPct * (1 - w) + lossPct * w;
       addNeg(`Потери за ход: люди ${dec(persPct)}%, боевая ценность ${dec(lossPct)}%`, moraleLossPct * k.moralePerLossPct);
-      if (f.suppression) addNeg(`Подавление ${Math.round(el.suppression)}%`, el.suppression * k.moraleSuppression);
-      if (f.fatigue && el.fatigue > k.moraleFatigueThreshold) addNeg(`Изнурение (усталость ${Math.round(el.fatigue)}%)`, k.moraleHighFatigue);
-      if (f.ammo && el.ammo <= 0) addNeg('Нет боезапаса', k.moraleNoAmmo);
+      if (f.suppression) addNeg(`Подавление ${Math.round(el.suppression)}%`, el.suppression * k.moraleSuppression * ts);
+      if (f.fatigue && el.fatigue > k.moraleFatigueThreshold) addNeg(`Изнурение (усталость ${Math.round(el.fatigue)}%)`, k.moraleHighFatigue * ts);
+      if (f.ammo && el.ammo <= 0) addNeg('Нет боезапаса', k.moraleNoAmmo * ts);
       let negMult = 1;
       if (neg > 0) {
         const mf: Factor[] | undefined = E.logging ? [] : undefined;
-        negMult = E.mult(el, 'moraleLoss', {}, mf);
+        negMult = E.mult(el, 'moraleLoss', {}, mf) * E.enemyRules(el, 'moraleLoss', mf);
         if (mf) for (const x of mf) factors.push({ ...x, label: `Потери морали — ${x.label}` });
         const luck = E.b.sides[el.side].luck;
         if (luck) {
@@ -55,7 +56,7 @@ export function phaseMorale(E: EngineContext) {
       }
       let pos = 0;
       if (!el.underFireThisTurn && el.morale < el.startMorale) {
-        const r = Math.min(el.startMorale - el.morale, k.moraleRecovery * E.mult(el, 'recovery'));
+        const r = Math.min(el.startMorale - el.morale, k.moraleRecovery * E.mult(el, 'recovery') * ts);
         if (r > 0) {
           pos += r;
           factors.push({ label: 'Передышка (не под огнём)', value: round1(r), kind: 'add' });
@@ -63,13 +64,14 @@ export function phaseMorale(E: EngineContext) {
       }
       const enemy = E.enemyOf(el.side);
       if (el.firedThisTurn && lossRate(enemy) > 0 && lossRate(enemy) > lossRate(el.side) * 1.5) {
-        pos += k.moraleSuccess;
-        factors.push({ label: 'Противник несёт большие потери', value: k.moraleSuccess, kind: 'add' });
+        pos += k.moraleSuccess * ts;
+        factors.push({ label: 'Противник несёт большие потери', value: round1(k.moraleSuccess * ts), kind: 'add' });
       }
       let negTotal = neg * negMult;
-      if (k.moraleMaxLossPerTurn > 0 && negTotal > k.moraleMaxLossPerTurn) {
-        factors.push({ label: `Ограничение потерь морали за ход`, value: k.moraleMaxLossPerTurn, kind: 'base' });
-        negTotal = k.moraleMaxLossPerTurn;
+      const maxLoss = k.moraleMaxLossPerTurn * ts;
+      if (maxLoss > 0 && negTotal > maxLoss) {
+        factors.push({ label: `Ограничение потерь морали за ход`, value: round1(maxLoss), kind: 'base' });
+        negTotal = maxLoss;
       }
       const delta = -negTotal + pos;
       const before = el.morale;
@@ -89,16 +91,16 @@ export function phaseMorale(E: EngineContext) {
     }
     if (f.cohesion) {
       let d = -lossPct * k.cohesionPerLossPct;
-      if (f.comms && E.comms(el) < 0.5) d -= k.cohesionLowComms;
+      if (f.comms && E.comms(el) < 0.5) d -= k.cohesionLowComms * ts;
       const bh = E.behavior(el);
-      if (bh === 'reserve' || bh === 'consolidate') d += k.cohesionRecovery * E.mult(el, 'recovery');
+      if (bh === 'reserve' || bh === 'consolidate') d += k.cohesionRecovery * E.mult(el, 'recovery') * ts;
       const before = el.cohesion;
       el.cohesion = clamp(el.cohesion + d, 0, 100);
       if (Math.abs(d) >= 1)
         E.log({ phase: 'morale', level: 2, side: el.side, refs: [el.id], text: `Слаженность ${e(el)}: ${Math.round(before)} → ${Math.round(el.cohesion)}%.` });
     }
     if (f.suppression && el.suppression > 0) {
-      el.suppression = Math.max(0, el.suppression - k.suppressionRecovery * E.mult(el, 'recovery'));
+      el.suppression = Math.max(0, el.suppression - k.suppressionRecovery * E.mult(el, 'recovery') * ts);
     }
   }
 }

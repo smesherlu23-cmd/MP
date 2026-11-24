@@ -40,7 +40,8 @@ export function phaseMovement(E: EngineContext) {
     const where = g.name ? `${g.name}: ` : '';
     if (p >= k.attackPressureMin && g.st.bandIndex < last) {
       const band = b.ruleset.rangeBands[g.st.bandIndex];
-      g.st.closingProgress += p / Math.max(0.25, band.turnsToClose);
+      // «Ходов на сближение» — ходов эталонной длины: при длинном ходе за ход проходится больше.
+      g.st.closingProgress += (p / Math.max(0.25, band.turnsToClose)) * E.ts;
       if (g.st.closingProgress >= 1) {
         g.st.bandIndex++;
         g.st.closingProgress = 0;
@@ -82,12 +83,12 @@ export function phaseMovement(E: EngineContext) {
     const isMoving = moved.has(el.id);
     if (f.fuel) {
       const use = vehicles.reduce((a, c) => a + c.current * E.type(c.typeId).fuelUse, 0) / vehicles.reduce((a, c) => a + c.current, 0);
-      el.fuel = Math.max(0, el.fuel - use * (isMoving ? 1 : 0.2));
+      el.fuel = Math.max(0, el.fuel - use * (isMoving ? 1 : 0.2) * E.ts);
     }
     if (f.breakdowns && isMoving) {
       const terrain = Math.max(0.2, Math.min(1, E.mult(el, 'movement')));
       const cond = f.vehicleCondition ? el.vehicleCondition / 100 : 1;
-      const pBreak = (k.breakdownBase * (1 + 4 * (1 - cond))) / terrain;
+      const pBreak = E.chancePerTurn(Math.min(1, (k.breakdownBase * (1 + 4 * (1 - cond))) / terrain));
       for (const c of vehicles) {
         const n = E.rng.binomial(c.current, pBreak);
         if (n > 0) {

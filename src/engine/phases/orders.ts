@@ -17,7 +17,7 @@ function commandQuality(E: EngineContext, el: ElementState): number {
 /** Вероятность, что приказ дойдёт до элемента к этому ходу. */
 export function orderChance(E: EngineContext, el: ElementState): number {
   const comms = E.f.comms ? lerp(E.k.orderCommsMin, 1, E.comms(el)) : 1;
-  return Math.max(0.05, Math.min(1, E.k.orderSpeed * comms * commandQuality(E, el)));
+  return E.chancePerTurn(Math.max(0.05, Math.min(1, E.k.orderSpeed * comms * commandQuality(E, el))));
 }
 
 /** Применить приказ к элементу. */

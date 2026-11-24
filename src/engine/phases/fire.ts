@@ -58,10 +58,18 @@ export function shooterMult(E: EngineContext, el: ElementState, out?: Factor[]):
 
 export function exposureOf(E: EngineContext, t: ElementState, indirect: boolean): number {
   const k = E.k;
+  const order = E.order(t);
+  // Резерв не поражается прямым огнём, но навесной огонь и удары по нему доходят (если задано).
+  if (order.exposure <= 0) return indirect && order.behavior === 'reserve' ? Math.max(0, k.reserveIndirectExposure) : 0;
   let ex: number;
   if (indirect) ex = t.echelon === 'front' ? 1 : t.echelon === 'support' ? k.indirectExposureSupport : k.indirectExposureRear;
   else ex = t.echelon === 'front' ? k.exposureFront : t.echelon === 'support' ? k.exposureSupport : k.exposureRear;
-  return ex * E.order(t).exposure;
+  return ex * order.exposure;
+}
+
+/** Элемент может быть целью огня (прямого или навесного). */
+function targetable(E: EngineContext, t: ElementState): boolean {
+  return t.status === 'active' && E.size(t) > 0 && (exposureOf(E, t, false) > 0 || exposureOf(E, t, true) > 0);
 }
 
 function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
@@ -71,7 +79,7 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
   // Участки: прямой огонь — только по своему участку, навесной — и по соседним (с весом sectorIndirectShare).
   const sectored = !!b.sectors;
   const bandIdOf = (el: ElementState) => E.bandOf(el).id;
-  const targets = E.sideElements(E.enemyOf(side)).filter((t) => t.status === 'active' && E.order(t).exposure > 0 && E.size(t) > 0);
+  const targets = E.sideElements(E.enemyOf(side)).filter((t) => targetable(E, t));
   if (!targets.length) return shots;
   const shooters = E.sideElements(side).filter((x) => E.engaged(x));
   // Ширина фронта: прямой огонь сил сверх охвата или фронта — с меньшим весом.
@@ -117,6 +125,12 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
     const rnd = Math.max(0, 1 + k.randomSpread * (E.rng.next() + E.rng.next() - 1));
     factors?.push({ label: 'Случайность', value: rnd, kind: 'mult' });
     sm *= rnd;
+    // Огонь за ход пропорционален длине хода (темпы заданы для эталонного хода).
+    const ts = E.ts;
+    if (ts !== 1) {
+      sm *= ts;
+      factors?.push({ label: `Длина хода ${E.rs.turnMinutes} мин (эталон ${k.turnRefMinutes} мин)`, value: ts, kind: 'mult' });
+    }
 
     const allocation = new Map<Id, number>();
     let firedAny = false;
@@ -167,6 +181,8 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
       if (!ownPool.raw.size && !(sectored && indirect && k.sectorIndirectShare > 0)) continue;
       // Распределение огня по целям
       const cands: { t: ElementState; cls: Id; w: number; vis: number; pursuit: number; raw: Map<Id, number>; supp: Map<Id, number> }[] = [];
+      // Самая подставленная из целей стрелка: если все цели укрыты (тыл, второй эшелон), огонь по ним слабее.
+      let maxEx = 0;
       for (const t of targets) {
         let pool = ownPool;
         let across = 1;
@@ -175,7 +191,8 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
           across = k.sectorIndirectShare;
           pool = poolAt(bandIdOf(t));
         }
-        const ex = exposureOf(E, t, indirect) * across;
+        const ex0 = exposureOf(E, t, indirect);
+        const ex = ex0 * across;
         if (ex <= 0) continue;
         const vis = !E.f.detection || t.spotted ? 1 : indirect ? k.indirectUnspottedMult : k.unspottedFireMult;
         const bh = E.behavior(t);
@@ -184,20 +201,29 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
           const r = pool.raw.get(cls);
           if (!r) continue;
           cands.push({ t, cls, w: r * Math.sqrt(pres) * ex * vis * pursuit, vis, pursuit, raw: pool.raw, supp: pool.supp });
+          maxEx = Math.max(maxEx, ex0);
         }
       }
       const W = cands.reduce((a, c) => a + c.w, 0);
       if (W <= 0) continue;
       firedAny = true;
+      const exLimit = k.exposureLimitsFire > 0 ? Math.min(1, maxEx) : 1;
+      if (exLimit < 1)
+        factors?.push({
+          label: `Цели укрыты (${indirect ? 'навесной огонь' : 'прямой огонь'}): подставленность ${dec(exLimit, 2)}`,
+          value: exLimit,
+          kind: 'mult',
+        });
       for (const c of cands) {
         const share = c.w / W;
         const r = c.raw.get(c.cls)!;
         const ctxFire = E.contextual(sh, 'fire', { enemy: c.t, targetClass: c.cls });
-        const fire = r * share * c.vis * c.pursuit * sm * ctxFire * (indirect ? 1 : frontMult);
+        const fire = r * share * c.vis * c.pursuit * sm * ctxFire * exLimit * (indirect ? 1 : frontMult);
         if (fire <= 0) continue;
         const cls = E.classes.get(c.cls);
         const leth = (cls?.lethality ?? 1) * E.mult(sh, 'lethality', { enemy: c.t, targetClass: c.cls }) * k.casualtyScale;
         shots.push({ shooter: sh, target: c.t, cls: c.cls, fire, lethality: leth, suppressive: (c.supp.get(c.cls) ?? r) / r });
+        E.noteIncoming(c.t, sh, fire);
         allocation.set(c.t.id, (allocation.get(c.t.id) ?? 0) + fire);
       }
     }
@@ -205,7 +231,7 @@ function computeFire(E: EngineContext, side: SideId, bonus: number): Shot[] {
     sh.firedThisTurn = true;
     if (ambush) sh.ambushUsed = true;
     if (E.f.ammo && ammoDen > 0) {
-      const use = (ammoNum / ammoDen) * E.mult(sh, 'ammoUse') * (E.f.suppression ? 1 - (sh.suppression / 100) * 0.5 : 1);
+      const use = (ammoNum / ammoDen) * E.mult(sh, 'ammoUse') * (E.f.suppression ? 1 - (sh.suppression / 100) * 0.5 : 1) * ts;
       sh.ammo = Math.max(0, sh.ammo - use);
     }
     if (E.logging) {
@@ -236,7 +262,7 @@ function protectionMult(E: EngineContext, t: ElementState, cls: Id, shooter: Ele
     out?.push({ label, value: v, kind: 'mult' });
   };
   add(`Защита элемента ${t.defenseMod}%`, t.defenseMod / 100);
-  if (t.digInTurns > 0) add(`Закрепление (${t.digInTurns} ход.)`, 1 + Math.min(E.k.digInMax, t.digInTurns * E.k.digInPerTurn));
+  if (t.digInTurns > 0) add(`Закрепление (${t.digInTurns} ход.)`, 1 + Math.min(E.k.digInMax, t.digInTurns * E.k.digInPerTurn * E.ts));
   return Math.max(0.05, m);
 }
 
@@ -282,6 +308,7 @@ export function applyShots(E: EngineContext, shots: Shot[]) {
         const tt = E.type(c.typeId);
         const p = 1 - Math.exp(-pc.hits / (N * Math.max(0.05, tt.protection)));
         const n = rng.binomial(c.current, p);
+        if (tt.kind === 'weapon' && k.crewHitShare > 0 && tt.crew > 0) crewHits(E, c, tt, p, n, routing, loss);
         if (n <= 0) continue;
         c.current -= n;
         loss.value += n * tt.value;
@@ -329,7 +356,7 @@ export function applyShots(E: EngineContext, shots: Shot[]) {
     const before = t.suppression;
     if (E.f.suppression) {
       const size = Math.max(1, sizeBefore);
-      suppGain = Math.min(k.suppressionMaxPerTurn, (suppIn / size) * k.suppressionScale * E.mult(t, 'suppression'));
+      suppGain = Math.min(k.suppressionMaxPerTurn * E.ts, (suppIn / size) * k.suppressionScale * E.mult(t, 'suppression') * E.enemyRules(t, 'suppression'));
       t.suppression = clamp(t.suppression + suppGain, 0, 100);
     }
     if (E.logging) {
@@ -382,6 +409,47 @@ export function applyShots(E: EngineContext, shots: Shot[]) {
           : undefined,
       });
     }
+  }
+}
+
+/**
+ * Потери расчёта уцелевшего оружия: номера выбывают и тогда, когда само оружие цело. Оружие, у которого
+ * людей меньше, чем стволов, бросается (некому обслуживать).
+ */
+function crewHits(
+  E: EngineContext,
+  c: ElementState['comps'][number],
+  tt: { crew: number; value: number },
+  p: number,
+  lostNow: number,
+  routing: boolean,
+  loss: { pers: number; kia: number; wia: number; mia: number; value: number; equip: Map<Id, { destroyed: number; damaged: number; abandoned: number }> },
+) {
+  const intact = c.current - lostNow;
+  const alive = c.start * tt.crew - c.kia - c.wia - c.mia;
+  // Люди уцелевших стволов (часть живых могла остаться от уже потерянного оружия — они тоже под огнём).
+  const exposed = Math.min(alive, intact * tt.crew);
+  if (exposed <= 0) return;
+  const hit = E.rng.binomial(exposed, clamp(p * E.k.crewHitShare, 0, 1));
+  if (hit <= 0) return;
+  const [kk, ww, mm] = splitCasualties(E, hit, routing);
+  c.kia += kk;
+  c.wia += ww;
+  c.mia += mm;
+  loss.pers += hit;
+  loss.kia += kk;
+  loss.wia += ww;
+  loss.mia += mm;
+  // Стволов больше, чем людей, — лишние брошены (людей других стволов этого типа уже нет).
+  const left = alive - hit;
+  if (left < intact) {
+    const ab = intact - Math.max(0, left);
+    c.current -= ab;
+    c.abandoned += ab;
+    loss.value += ab * tt.value;
+    const q = loss.equip.get(c.typeId) ?? { destroyed: 0, damaged: 0, abandoned: 0 };
+    q.abandoned += ab;
+    loss.equip.set(c.typeId, q);
   }
 }
 

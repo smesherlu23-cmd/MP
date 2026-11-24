@@ -173,6 +173,13 @@ function continuation(b: Battle, seed: string): Battle {
   return c;
 }
 
+/** Одно продолжение боя для прогноза (i — номер прогона: от него зависят случайности). */
+export function forecastRun(b: Battle, baseSeed: string, i: number): RunSummary {
+  const c = continuation(b, runSeed(baseSeed, i));
+  runToEnd(c);
+  return summarizeRun(c, i);
+}
+
 /** Прогноз с текущего хода: n продолжений боя с разными случайностями (решения ГМ после — не учитываются). */
 export async function forecastAsync(
   b: Battle,
@@ -186,9 +193,7 @@ export async function forecastAsync(
   let lastYield = Date.now();
   for (let i = 0; i < n; i++) {
     if (isCancelled?.()) break;
-    const c = continuation(b, runSeed(baseSeed, i));
-    runToEnd(c);
-    runs.push(summarizeRun(c, i));
+    runs.push(forecastRun(b, baseSeed, i));
     if (Date.now() - lastYield > 30) {
       onProgress?.(i + 1, n);
       await new Promise((r) => setTimeout(r, 0));
@@ -201,11 +206,7 @@ export async function forecastAsync(
 
 export function forecast(b: Battle, n: number, baseSeed: string): MonteCarloResult {
   const runs: RunSummary[] = [];
-  for (let i = 0; i < n; i++) {
-    const c = continuation(b, runSeed(baseSeed, i));
-    runToEnd(c);
-    runs.push(summarizeRun(c, i));
-  }
+  for (let i = 0; i < n; i++) runs.push(forecastRun(b, baseSeed, i));
   return aggregate(runs, b.ruleset, { A: b.sides.A.name, B: b.sides.B.name }, baseSeed);
 }
 
