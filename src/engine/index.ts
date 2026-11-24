@@ -33,3 +33,4 @@ export * from './variants';
 export * from './transfer';
 export * from './duration';
 export * from './structure';
+export * from './weapons';

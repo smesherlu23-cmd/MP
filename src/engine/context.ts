@@ -3,6 +3,7 @@
 import { COMPAT_NEUTRAL } from './coefficients';
 import { Rng } from './rng';
 import { STAT_KEYS } from './types';
+import { ammoLevel, usesWeapons } from './weapons';
 import type {
   ActiveEffect,
   Battle,
@@ -26,6 +27,7 @@ import type {
   SideId,
   StatKey,
   TargetClass,
+  WeaponType,
 } from './types';
 
 export interface StatCx {
@@ -54,7 +56,7 @@ const STATE_FIELDS = new Set([
 ]);
 
 /** Поля условий своих правил, которые проверяются и для ударов огневой поддержки. */
-const SUPPORT_FIELDS = new Set(['tag', 'kind', 'side', 'turn', 'intel', 'sideLosses']);
+const SUPPORT_FIELDS = new Set(['tag', 'kind', 'weapon', 'side', 'turn', 'intel', 'sideLosses']);
 
 /** Подкрепление, которое ещё не подошло (вне боя и в итогах не учитывается); переброска между участками — не оно. */
 export const notArrived = (el: ElementState) => el.status === 'pending' && !el.transit;
@@ -67,6 +69,7 @@ export class EngineContext {
   readonly types = new Map<Id, ComponentType>();
   readonly orders = new Map<Id, OrderDef>();
   readonly classes = new Map<Id, TargetClass>();
+  readonly weaponTypes = new Map<Id, WeaponType>();
   readonly formations = new Map<Id, FormationState>();
   readonly elements = new Map<Id, ElementState>();
   /** Кэш множителей всех характеристик элемента (без правил, зависящих от противника/класса цели). */
@@ -94,6 +97,7 @@ export class EngineContext {
     for (const t of this.rs.componentTypes) this.types.set(t.id, t);
     for (const o of this.rs.orders) this.orders.set(o.id, o);
     for (const c of this.rs.targetClasses) this.classes.set(c.id, c);
+    for (const w of this.rs.weaponTypes ?? []) this.weaponTypes.set(w.id, w);
     for (const f of b.formations) this.formations.set(f.id, f);
     for (const e of b.elements) this.elements.set(e.id, e);
     this.contextualMods = new Set(
@@ -429,6 +433,22 @@ export class EngineContext {
     return Math.max(0, Math.min(1, (el.supply ?? this.formationOf(el).supply) / 100));
   }
 
+  /** Боезапас элемента в целом, % (у вооружения по видам — средний по видам). */
+  ammo(el: ElementState): number {
+    return ammoLevel(el, (id) => this.types.get(id), this.weaponTypes);
+  }
+
+  /** Виды вооружения в составе элемента (в строю). */
+  weaponsOf(el: ElementState): Id[] {
+    const out = new Set<Id>();
+    for (const c of el.comps) {
+      if (c.current <= 0) continue;
+      const t = this.types.get(c.typeId);
+      if (t && usesWeapons(t)) for (const w of t.weapons) out.add(w.weaponType);
+    }
+    return [...out];
+  }
+
   /** Командиры элемента: свой (если есть), затем командиры старших звеньев с ослабевающим влиянием. */
   commandLevels(el: ElementState): { level: LevelDef; weight: number; name: string }[] {
     if (!this.f.command) return [];
@@ -467,6 +487,8 @@ export class EngineContext {
         return this.tags(el);
       case 'kind':
         return this.kinds(el);
+      case 'weapon':
+        return this.weaponsOf(el);
       case 'experience':
         return el.experience;
       case 'side':
@@ -479,11 +501,12 @@ export class EngineContext {
         return this.b.sides[el.side].intel;
       case 'sector':
         return this.sectorOf(el)?.id;
+      case 'ammo':
+        return this.ammo(el);
       case 'morale':
       case 'cohesion':
       case 'suppression':
       case 'fatigue':
-      case 'ammo':
       case 'readiness':
       case 'fuel':
       case 'equipment':

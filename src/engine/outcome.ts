@@ -261,7 +261,8 @@ function summarize(E: EngineContext, els: ElementState[]): UnitSummary {
       if (E.f.morale) ce *= lerp(k.ceMoraleMin, 1, el.morale / 100);
       if (E.f.cohesion) ce *= lerp(k.ceCohesionMin, 1, el.cohesion / 100);
       if (E.f.fatigue) ce *= 1 - (el.fatigue / 100) * k.ceFatiguePenalty;
-      if (E.f.ammo) ce *= el.ammo >= k.lowAmmoThreshold ? 1 : lerp(k.noAmmoFire, 1, el.ammo / Math.max(1, k.lowAmmoThreshold));
+      const a = E.ammo(el);
+      if (E.f.ammo) ce *= a >= k.lowAmmoThreshold ? 1 : lerp(k.noAmmoFire, 1, a / Math.max(1, k.lowAmmoThreshold));
       if (el.status === 'routed') ce *= 0.5;
       return ce;
     })();
@@ -273,7 +274,7 @@ function summarize(E: EngineContext, els: ElementState[]): UnitSummary {
     if (el.status !== 'destroyed') {
       moraleNum += el.morale * Math.max(v, 1e-6);
       wActive += Math.max(v, 1e-6);
-      ammo += el.ammo * Math.max(v, 1e-6);
+      ammo += E.ammo(el) * Math.max(v, 1e-6);
       equip += el.equipment * Math.max(v, 1e-6);
       if (el.comps.some((c) => E.type(c.typeId).kind === 'vehicle' && c.current > 0)) {
         fuel += el.fuel * Math.max(v, 1e-6);

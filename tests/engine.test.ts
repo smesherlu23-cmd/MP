@@ -1000,7 +1000,11 @@ describe('силы между боями, варианты прогонов, п�
   it('итоги боя — в боевой путь; отдых — состояние, лечение — раненые, ремонт — техника, пополнение — до штата', () => {
     const { scenario, forces } = extractForces(makeDemoScenario(), new Set(), () => newId('u'));
     const map = Object.fromEntries(forces.map((f) => [f.id, f])) as Record<string, UnitNode>;
-    const b = createBattle(resolveScenario(scenario, map), rs, { seed: 'R1' });
+    // Мораль и разброс — как в прежних версиях: мораль падает ниже нормы, есть что восстанавливать отдыхом.
+    const fast = clone(rs);
+    fast.coefficients.moraleLossScale = 1;
+    fast.coefficients.randomUniform = 0;
+    const b = createBattle(resolveScenario(scenario, map), fast, { seed: 'R1' });
     runToEnd(b);
     const { updated } = applyBattleToForces(b, map);
     const f = updated[0];
@@ -1169,8 +1173,11 @@ describe('силы между боями, варианты прогонов, п�
     const res = transferFromRuleset(lin, rs, { componentTypes: ['tank'], tempEffects: ['flares'] });
     const tank = res.ruleset.componentTypes.find((t) => t.id === 'tank')!;
     expect(res.ruleset.targetClasses.some((c) => c.id === 'armor')).toBe(true);
-    expect(Object.keys(tank.firepower.armor)).toEqual(lin.rangeBands.map((b) => b.id));
-    expect(tank.firepower.armor.melee).toBe(rs.componentTypes.find((t) => t.id === 'tank')!.firepower.armor.close);
+    // Вооружение переносится с типами вооружения; их точность — по дистанциям набора (по порядку).
+    expect(tank.weapons!.map((w) => w.weaponType)).toEqual(['w-tankgun', 'w-mg']);
+    const gun = res.ruleset.weaponTypes!.find((w) => w.id === 'w-tankgun')!;
+    expect(Object.keys(gun.accuracy)).toEqual(lin.rangeBands.map((b) => b.id));
+    expect(gun.accuracy.melee).toBe(rs.weaponTypes!.find((w) => w.id === 'w-tankgun')!.accuracy.close);
     expect(res.notes.length).toBeGreaterThan(0);
     expect(res.ruleset.tempEffects.some((x) => x.id === 'flares')).toBe(true);
 

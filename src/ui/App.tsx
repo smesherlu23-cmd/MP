@@ -41,6 +41,7 @@ import {
   undoBattle,
   updateSettings,
   useApp,
+  unloadBattlesExcept,
   useBattles,
   useHistory,
   type NavSection,
@@ -270,6 +271,12 @@ export function App() {
   const activeKey = s.active;
   useEffect(() => {
     if (activeKey) closePeek();
+  }, [activeKey]);
+  // Бои, ушедшие с экрана, выгружаются из памяти (через несколько секунд — после записи на диск).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: проверка — при каждой смене страницы
+  useEffect(() => {
+    const t = setTimeout(() => void unloadBattlesExcept((id) => useApp.getState().tabs.some((x) => x.kind === 'battle' && x.ref === id)), 5000);
+    return () => clearTimeout(t);
   }, [activeKey]);
   // Ширина боковой панели меняется перетаскиванием края; сохраняется, когда отпустили.
   const [sideW, setSideW] = useState<number | null>(null);

@@ -16,7 +16,10 @@ export function combatEffectiveness(E: EngineContext, el: ElementState): number 
   if (f.morale) ce *= lerp(k.ceMoraleMin, 1, el.morale / 100);
   if (f.cohesion) ce *= lerp(k.ceCohesionMin, 1, el.cohesion / 100);
   if (f.fatigue) ce *= 1 - (el.fatigue / 100) * k.ceFatiguePenalty;
-  if (f.ammo) ce *= el.ammo >= k.lowAmmoThreshold ? 1 : lerp(k.noAmmoFire, 1, el.ammo / Math.max(1, k.lowAmmoThreshold));
+  if (f.ammo) {
+    const a = E.ammo(el);
+    ce *= a >= k.lowAmmoThreshold ? 1 : lerp(k.noAmmoFire, 1, a / Math.max(1, k.lowAmmoThreshold));
+  }
   return ce;
 }
 

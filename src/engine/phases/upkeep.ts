@@ -1,5 +1,6 @@
 // Снабжение (подвоз боезапаса и топлива, износ, закрепление) и усталость.
 
+import { addAmmo } from '../weapons';
 import { type EngineContext, clamp, e } from '../context';
 import type { Factor } from '../types';
 
@@ -13,7 +14,7 @@ export function phaseSupply(E: EngineContext) {
     const sup = E.supply(el);
     const inContact = el.firedThisTurn || el.underFireThisTurn;
     const m = (inContact ? k.resupplyInContact : 1) * ts;
-    if (f.ammo) el.ammo = clamp(el.ammo + k.resupplyAmmo * sup * m, 0, 100);
+    if (f.ammo) addAmmo(el, k.resupplyAmmo * sup * m);
     if (f.fuel) el.fuel = clamp(el.fuel + k.resupplyFuel * sup * m, 0, 100);
     if (f.equipment && inContact) el.equipment = clamp(el.equipment - k.equipmentWear * ts, 0, 100);
     // Готовность растёт, пока элемент не под огнём (развёртывание, изготовка к бою).

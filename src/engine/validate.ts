@@ -1,5 +1,6 @@
 // Проверка сценария и подразделений на ошибки до начала боя.
 
+import { typeArmed } from './weapons';
 import { fmtDuration, scenarioHours, scenarioTurns } from './duration';
 import { EVENT_KIND_LABELS, MODIFIER_FIELDS, STAT_LABELS } from './labels';
 import type { CustomModifier, Id, Ruleset, Scenario, SideDef, StatKey, UnitNode } from './types';
@@ -149,8 +150,7 @@ export function validateScenario(sc: Scenario, rs: Ruleset | undefined): Issue[]
     for (const a of sd.support ?? []) {
       const t = rs.componentTypes.find((x) => x.id === a.typeId);
       if (!t) issues.push({ level: 'error', text: `Огневая поддержка «${a.name}» (${sd.name}): тип не найден в наборе правил.` });
-      else if (!Object.values(t.firepower).some((row) => Object.values(row).some((v) => v > 0)))
-        issues.push({ level: 'warning', text: `Огневая поддержка «${a.name}» (${sd.name}): у типа «${t.name}» нет огневой мощи.` });
+      else if (!typeArmed(t)) issues.push({ level: 'warning', text: `Огневая поддержка «${a.name}» (${sd.name}): у типа «${t.name}» нет огневой мощи.` });
       else if (!t.indirect)
         issues.push({
           level: 'warning',
@@ -267,7 +267,7 @@ export function importIssues(kind: 'ruleset' | 'unit' | 'scenario' | 'battle', d
       if (!['personnel', 'weapon', 'vehicle'].includes(t.kind)) add(`${at}: неизвестный вид «${String(t.kind)}»`);
       if (!classes.has(t.targetClass)) add(`${at}: класс цели «${String(t.targetClass)}» не найден в наборе`);
       for (const f of ['crew', 'value', 'protection'] as const) if (!isNum(t[f])) add(`${at}: «${f}» — не число`);
-      if (!isObj(t.firepower)) add(`${at}: нет огневой мощи`);
+      if (!isObj(t.firepower) && !Array.isArray(t.weapons)) add(`${at}: нет огневой мощи`);
     });
     return out;
   }

@@ -175,6 +175,6 @@ test('одноразовые обновления — по версии данн
       const l = JSON.parse(localStorage.getItem('warsim:rulesets:rs-linear')!);
       return [u.coefficients.moralePerLossPct, l.coefficients.retreatLossPct, l.dataVersion];
     });
-  await expect.poll(read).toEqual([1.2, 40, 3]);
+  await expect.poll(read).toEqual([1.2, 40, 4]);
   expect(errors).toEqual([]);
 });

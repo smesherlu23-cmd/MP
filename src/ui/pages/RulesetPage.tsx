@@ -7,8 +7,8 @@ import { Menu, ToolbarSlot } from '../components/ui';
 import { Crumbs } from '../components/Crumbs';
 import { createRuleset, deleteRuleset, exportJson, setTabSub, updateRuleset, useApp, type Tab } from '../store';
 import type { Upd } from './ruleset/common';
-import { CoefficientsSection, General, JsonSection, OutcomesSection, TempEffectsSection } from './ruleset/General';
-import { BandsSection, ClassesSection, TypesSection } from './ruleset/Types';
+import { ChanceAndMorale, CoefficientsSection, General, JsonSection, OutcomesSection, TempEffectsSection } from './ruleset/General';
+import { BandsSection, ClassesSection, TypesSection, WeaponTypesSection } from './ruleset/Types';
 import { ConditionsSection, LevelsSection, OptionsSection, OrdersSection } from './ruleset/Orders';
 import { ModifiersSection } from './ruleset/Modifiers';
 import { TagsSection } from './ruleset/TagsSection';
@@ -16,6 +16,7 @@ import { TagsSection } from './ruleset/TagsSection';
 export const SECTIONS: { id: string; label: string; count?: (r: Ruleset) => number }[] = [
   { id: 'general', label: 'Общее' },
   { id: 'types', label: 'Каталог типов', count: (r) => r.componentTypes.length },
+  { id: 'weapons', label: 'Вооружение', count: (r) => r.weaponTypes?.length ?? 0 },
   { id: 'tags', label: 'Теги', count: (r) => rulesetTags(r).length },
   { id: 'classes', label: 'Классы и дистанции' },
   { id: 'orders', label: 'Приказы', count: (r) => r.orders.length },
@@ -75,8 +76,14 @@ export function RulesetPage({ tab }: { tab: Tab }) {
           ))}
         </nav>
         <div className="stack">
-          {sub === 'general' && <General r={r} upd={upd} />}
+          {sub === 'general' && (
+            <>
+              <General r={r} upd={upd} />
+              <ChanceAndMorale r={r} upd={upd} />
+            </>
+          )}
           {sub === 'types' && <TypesSection r={r} upd={upd} tabKey={tab.key} />}
+          {sub === 'weapons' && <WeaponTypesSection r={r} upd={upd} />}
           {sub === 'tags' && <TagsSection r={r} upd={upd} tabKey={tab.key} />}
           {sub === 'classes' && (
             <>

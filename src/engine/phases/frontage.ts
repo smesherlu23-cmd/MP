@@ -3,6 +3,7 @@
 // втрое большая сила уничтожает противника, почти не неся потерь. На деле перевес даёт глубину —
 // резерв, смену уставших, охват флангов, — но стреляет в каждый момент только первая линия.
 
+import { typeArmed } from '../weapons';
 import type { EngineContext } from '../context';
 import type { ElementState, Id, SideId } from '../types';
 
@@ -25,7 +26,7 @@ function echelonWeight(E: EngineContext, el: ElementState): number {
 /** Есть ли у типа прямой огонь хоть по кому-то (грузовик, тягач фронта не занимают). */
 const armed = (E: EngineContext, typeId: string) => {
   const t = E.type(typeId);
-  return !t.indirect && Object.values(t.firepower).some((row) => Object.values(row).some((v) => v > 0));
+  return !t.indirect && typeArmed(t);
 };
 
 /**

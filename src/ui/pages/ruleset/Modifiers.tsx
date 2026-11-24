@@ -45,6 +45,9 @@ export function fieldInfo(r: Ruleset, field: string): { label: string; kind: Fie
     case 'kind':
       options = (['personnel', 'weapon', 'vehicle'] as ComponentKind[]).map((k) => ({ value: k, label: KIND_LABELS[k] }));
       break;
+    case 'weapon':
+      options = (r.weaponTypes ?? []).map((w) => ({ value: w.id, label: w.name }));
+      break;
     case 'tag':
       options = rulesetTags(r).map((t) => ({ value: t, label: t }));
       break;
@@ -83,13 +86,14 @@ export function fieldInfo(r: Ruleset, field: string): { label: string; kind: Fie
 export function opsFor(kind: FieldKind): ConditionOp[] {
   if (kind === 'number') return ['eq', 'neq', 'gte', 'lte'];
   if (kind === 'bool') return ['eq'];
-  if (kind === 'tag' || kind === 'kind') return ['has', 'not_has', 'in', 'nin'];
+  if (kind === 'tag' || kind === 'kind' || kind === 'weapon') return ['has', 'not_has', 'in', 'nin'];
   return ['eq', 'neq', 'in', 'nin'];
 }
 
 /** Подпись операции: у тегов и состава — «есть / нет / любой из / ни один из». */
 function opLabel(kind: FieldKind, op: ConditionOp): string {
-  if (kind === 'tag' || kind === 'kind') return { has: 'есть', not_has: 'нет', in: 'любой из', nin: 'ни один из' }[op as 'has'] ?? OP_LABELS[op];
+  if (kind === 'tag' || kind === 'kind' || kind === 'weapon')
+    return { has: 'есть', not_has: 'нет', in: 'любой из', nin: 'ни один из' }[op as 'has'] ?? OP_LABELS[op];
   return OP_LABELS[op];
 }
 

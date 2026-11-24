@@ -5,16 +5,17 @@ import { COEFFICIENT_DEFAULTS, COMPAT_NEUTRAL, DEFAULT_FEATURES, RECALIBRATED } 
 import { turnsFor } from './duration';
 import { newId } from './ids';
 import { instantiate, newRootUnit, newUnit, walkUnits } from './units';
-import type { ComponentType, CustomModifier, EffectDef, Id, LevelDef, Objective, OrderDef, Ruleset, Scenario, SideDef, UnitNode } from './types';
+import type { ComponentType, Weapon, CustomModifier, EffectDef, Id, LevelDef, Objective, OrderDef, Ruleset, Scenario, SideDef, UnitNode } from './types';
 
 export const SCHEMA_VERSION = 1;
 
 /**
  * Версия данных наборов правил и сценариев — хранится в самих файлах, чтобы одноразовые обновления
  * выполнялись один раз для данных, а не для компьютера: 2 — калибровка коэффициентов, длительность в часах;
- * 3 — эталонная длина хода, удача 0,25, подавление, опыт, танки и правила примера.
+ * 3 — эталонная длина хода, удача 0,25, подавление, опыт, танки и правила примера; 4 — вооружение типов
+ * (урон мин.–макс., точность по дистанциям) вместо таблицы огневой мощи.
  */
-export const DATA_VERSION = 3;
+export const DATA_VERSION = 4;
 
 export { newId } from './ids';
 
@@ -231,18 +232,14 @@ const STANDARD_EFFECTS: EffectDef[] = [
   },
 ];
 
-type FP3 = [number, number, number];
-function fp(bands: Id[], table: Record<Id, FP3>): Record<Id, Record<Id, number>> {
-  const out: Record<Id, Record<Id, number>> = {};
-  for (const [cls, vals] of Object.entries(table)) {
-    out[cls] = {};
-    bands.forEach((b, i) => (out[cls][b] = vals[i] ?? 0));
-  }
-  return out;
-}
+type MM = [number, number];
+/** Вооружение типа: вид, урон по классам целей [мин, макс], расход боезапаса. */
+const wpn = (weaponType: Id, damage: Record<Id, MM>, ammoUse = 0): Weapon => ({ weaponType, damage, ammoUse });
+const acc = (bands: Id[], vals: number[]) => Object.fromEntries(bands.map((b, i) => [b, vals[i] ?? 1]));
 
-function type(t: Partial<ComponentType> & Pick<ComponentType, 'id' | 'name' | 'kind' | 'targetClass' | 'firepower'>): ComponentType {
+function type(t: Partial<ComponentType> & Pick<ComponentType, 'id' | 'name' | 'kind' | 'targetClass'>): ComponentType {
   return {
+    firepower: {},
     crew: 1,
     value: 1,
     protection: 1,
@@ -279,6 +276,14 @@ export function makeUniversalRuleset(): Ruleset {
       { id: 'medium', name: 'Средняя', detection: 0.6, turnsToClose: 3, description: 'Действенный огонь стрелкового оружия и ПТ-средств.' },
       { id: 'close', name: 'Ближняя', detection: 0.9, turnsToClose: 1, description: 'Ближний бой, штурм позиций.' },
     ],
+    weaponTypes: [
+      { id: 'w-rifle', name: 'Стрелковое оружие', accuracy: acc(B, [0.1, 0.35, 1]), ammo: true },
+      { id: 'w-mg', name: 'Пулемёт', accuracy: acc(B, [0.25, 0.67, 1]), ammo: true },
+      { id: 'w-at', name: 'Противотанковое оружие', accuracy: acc(B, [0.45, 0.8, 1]), ammo: true },
+      { id: 'w-mortar', name: 'Миномёт', accuracy: acc(B, [1, 1, 0.6]), ammo: true },
+      { id: 'w-gun', name: 'Артиллерийское орудие', accuracy: acc(B, [1, 1, 0.45]), ammo: true },
+      { id: 'w-tankgun', name: 'Танковая пушка', accuracy: acc(B, [0.6, 0.9, 1]), ammo: true },
+    ],
     componentTypes: [
       type({
         id: 'rifleman',
@@ -287,7 +292,7 @@ export function makeUniversalRuleset(): Ruleset {
         targetClass: 'inf',
         value: 1,
         ammoUse: 5,
-        firepower: fp(B, { inf: [0.01, 0.035, 0.1], soft: [0.002, 0.01, 0.025], armor: [0, 0, 0.002] }),
+        weapons: [wpn('w-rifle', { inf: [0.08, 0.12], soft: [0.02, 0.03], armor: [0, 0.004] }, 5)],
       }),
       type({
         id: 'scout',
@@ -297,7 +302,7 @@ export function makeUniversalRuleset(): Ruleset {
         value: 1.3,
         ammoUse: 5,
         tags: ['разведка'],
-        firepower: fp(B, { inf: [0.01, 0.035, 0.1], soft: [0.002, 0.01, 0.025], armor: [0, 0, 0.002] }),
+        weapons: [wpn('w-rifle', { inf: [0.08, 0.12], soft: [0.02, 0.03], armor: [0, 0.004] }, 5)],
       }),
       type({
         id: 'mg',
@@ -309,7 +314,7 @@ export function makeUniversalRuleset(): Ruleset {
         protection: 1.2,
         suppressive: 2,
         ammoUse: 6,
-        firepower: fp(B, { inf: [0.07, 0.2, 0.3], soft: [0.02, 0.05, 0.07], armor: [0, 0, 0] }),
+        weapons: [wpn('w-mg', { inf: [0.25, 0.35], soft: [0.06, 0.08] }, 6)],
       }),
       type({
         id: 'at',
@@ -321,7 +326,7 @@ export function makeUniversalRuleset(): Ruleset {
         protection: 1.2,
         ammoUse: 7,
         tags: ['ПТ'],
-        firepower: fp(B, { inf: [0.01, 0.025, 0.04], soft: [0.12, 0.2, 0.25], armor: [0.1, 0.2, 0.25] }),
+        weapons: [wpn('w-at', { inf: [0.03, 0.05], soft: [0.2, 0.3], armor: [0.2, 0.3] }, 7)],
       }),
       type({
         id: 'mortar',
@@ -333,7 +338,7 @@ export function makeUniversalRuleset(): Ruleset {
         indirect: true,
         suppressive: 3,
         ammoUse: 7,
-        firepower: fp(B, { inf: [0.25, 0.25, 0.15], soft: [0.1, 0.1, 0.07], armor: [0.01, 0.01, 0.008] }),
+        weapons: [wpn('w-mortar', { inf: [0.15, 0.35], soft: [0.06, 0.14], armor: [0.005, 0.015] }, 7)],
       }),
       type({
         id: 'gun',
@@ -345,7 +350,7 @@ export function makeUniversalRuleset(): Ruleset {
         indirect: true,
         suppressive: 3,
         ammoUse: 6,
-        firepower: fp(B, { inf: [0.7, 0.7, 0.3], soft: [0.3, 0.3, 0.15], armor: [0.04, 0.04, 0.025] }),
+        weapons: [wpn('w-gun', { inf: [0.4, 1], soft: [0.2, 0.4], armor: [0.02, 0.06] }, 6)],
       }),
       type({
         id: 'truck',
@@ -357,7 +362,7 @@ export function makeUniversalRuleset(): Ruleset {
         protection: 1,
         ammoUse: 0,
         fuelUse: 4,
-        firepower: fp(B, { inf: [0, 0, 0], soft: [0, 0, 0], armor: [0, 0, 0] }),
+        weapons: [],
       }),
       type({
         id: 'apc',
@@ -369,7 +374,7 @@ export function makeUniversalRuleset(): Ruleset {
         protection: 0.7,
         ammoUse: 6,
         fuelUse: 5,
-        firepower: fp(B, { inf: [0.07, 0.2, 0.25], soft: [0.07, 0.15, 0.2], armor: [0.008, 0.02, 0.04] }),
+        weapons: [wpn('w-mg', { inf: [0.2, 0.3], soft: [0.15, 0.25], armor: [0.03, 0.05] }, 6)],
       }),
       type({
         id: 'tank',
@@ -383,7 +388,7 @@ export function makeUniversalRuleset(): Ruleset {
         ammoUse: 6,
         fuelUse: 6,
         tags: ['ночное видение', 'танк', 'ПТ'],
-        firepower: fp(B, { inf: TANK_INF, soft: [0.35, 0.45, 0.45], armor: [0.3, 0.45, 0.5] }),
+        weapons: [wpn('w-tankgun', { inf: [0.3, 0.5], soft: [0.35, 0.55], armor: [0.4, 0.6] }, 6), wpn('w-mg', { inf: [0.45, 0.55] }, 4)],
       }),
     ],
     orders: STANDARD_ORDERS,
@@ -460,6 +465,12 @@ export function makeLinearRuleset(): Ruleset {
       { id: 'musket', name: 'Мушкетная (до 200 шагов)', detection: 0.95, turnsToClose: 2 },
       { id: 'melee', name: 'Штыковой бой / сшибка', detection: 1, turnsToClose: 1 },
     ],
+    weaponTypes: [
+      { id: 'w-musket', name: 'Мушкет', accuracy: acc(B, [0, 1, 0.5]), ammo: true },
+      { id: 'w-rifled', name: 'Штуцер', accuracy: acc(B, [0.1, 1, 1]), ammo: true },
+      { id: 'w-cannon', name: 'Полевая пушка', accuracy: acc(B, [0.5, 1, 0.6]), ammo: true },
+      { id: 'w-blade', name: 'Холодное оружие', accuracy: acc(B, [0, 0, 1]), ammo: false },
+    ],
     componentTypes: [
       type({
         id: 'musketeer',
@@ -468,7 +479,10 @@ export function makeLinearRuleset(): Ruleset {
         targetClass: 'inf',
         value: 1,
         ammoUse: 5,
-        firepower: fp(B, { inf: [0, 0.012, 0.03], cav: [0, 0.01, 0.025], art: [0, 0.006, 0.03] }),
+        weapons: [
+          wpn('w-musket', { inf: [0.01, 0.014], cav: [0.008, 0.012], art: [0.004, 0.008] }, 5),
+          wpn('w-blade', { inf: [0.02, 0.028], cav: [0.015, 0.025], art: [0.024, 0.03] }),
+        ],
       }),
       type({
         id: 'grenadier',
@@ -477,7 +491,10 @@ export function makeLinearRuleset(): Ruleset {
         targetClass: 'inf',
         value: 1.3,
         ammoUse: 5,
-        firepower: fp(B, { inf: [0, 0.012, 0.045], cav: [0, 0.01, 0.03], art: [0, 0.006, 0.04] }),
+        weapons: [
+          wpn('w-musket', { inf: [0.01, 0.014], cav: [0.008, 0.012], art: [0.004, 0.008] }, 5),
+          wpn('w-blade', { inf: [0.033, 0.045], cav: [0.02, 0.03], art: [0.03, 0.044] }),
+        ],
       }),
       type({
         id: 'jaeger',
@@ -487,7 +504,7 @@ export function makeLinearRuleset(): Ruleset {
         value: 1.4,
         ammoUse: 5,
         tags: ['лёгкая'],
-        firepower: fp(B, { inf: [0.002, 0.02, 0.02], cav: [0.001, 0.015, 0.015], art: [0.003, 0.02, 0.02] }),
+        weapons: [wpn('w-rifled', { inf: [0.016, 0.024], cav: [0.012, 0.018], art: [0.016, 0.024] }, 5)],
       }),
       type({
         id: 'cuirassier',
@@ -498,7 +515,7 @@ export function makeLinearRuleset(): Ruleset {
         protection: 1.2,
         ammoUse: 1,
         tags: ['кавалерия'],
-        firepower: fp(B, { inf: [0, 0, 0.09], cav: [0, 0, 0.08], art: [0, 0, 0.12] }),
+        weapons: [wpn('w-blade', { inf: [0.07, 0.11], cav: [0.06, 0.1], art: [0.1, 0.14] })],
       }),
       type({
         id: 'hussar',
@@ -508,7 +525,7 @@ export function makeLinearRuleset(): Ruleset {
         value: 2.2,
         ammoUse: 1,
         tags: ['лёгкая', 'кавалерия'],
-        firepower: fp(B, { inf: [0, 0.002, 0.06], cav: [0, 0.002, 0.06], art: [0, 0.002, 0.1] }),
+        weapons: [wpn('w-blade', { inf: [0.045, 0.075], cav: [0.045, 0.075], art: [0.08, 0.12] })],
       }),
       type({
         id: 'fieldgun',
@@ -519,7 +536,7 @@ export function makeLinearRuleset(): Ruleset {
         value: 12,
         suppressive: 2.5,
         ammoUse: 8,
-        firepower: fp(B, { inf: [0.25, 0.5, 0.3], cav: [0.15, 0.4, 0.2], art: [0.08, 0.1, 0.05] }),
+        weapons: [wpn('w-cannon', { inf: [0.3, 0.7], cav: [0.25, 0.55], art: [0.06, 0.14] }, 8)],
       }),
     ],
     conditions: [
@@ -703,6 +720,7 @@ export function normalizeRuleset(r: Ruleset, compat = false): Ruleset {
   if (!compat && r.coefficients && r.coefficients.turnRefMinutes === undefined) out.coefficients.turnRefMinutes = out.turnMinutes;
   out.targetClasses = r.targetClasses ?? [];
   out.rangeBands = r.rangeBands ?? [];
+  out.weaponTypes = r.weaponTypes ?? [];
   out.componentTypes = (r.componentTypes ?? []).map((t) => ({ ...type({ ...t }), ...t, tags: t.tags ?? [] }));
   out.orders = r.orders?.length ? r.orders : base.orders;
   out.experienceLevels = r.experienceLevels?.length ? r.experienceLevels : base.experienceLevels;

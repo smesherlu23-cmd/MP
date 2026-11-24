@@ -35,7 +35,7 @@ export function phaseMorale(E: EngineContext) {
       addNeg(`Потери за ход: люди ${dec(persPct)}%, боевая ценность ${dec(lossPct)}%`, moraleLossPct * k.moralePerLossPct);
       if (f.suppression) addNeg(`Подавление ${Math.round(el.suppression)}%`, el.suppression * k.moraleSuppression * ts);
       if (f.fatigue && el.fatigue > k.moraleFatigueThreshold) addNeg(`Изнурение (усталость ${Math.round(el.fatigue)}%)`, k.moraleHighFatigue * ts);
-      if (f.ammo && el.ammo <= 0) addNeg('Нет боезапаса', k.moraleNoAmmo * ts);
+      if (f.ammo && E.ammo(el) <= 0) addNeg('Нет боезапаса', k.moraleNoAmmo * ts);
       let negMult = 1;
       if (neg > 0) {
         const mf: Factor[] | undefined = E.logging ? [] : undefined;
@@ -68,6 +68,10 @@ export function phaseMorale(E: EngineContext) {
         factors.push({ label: 'Противник несёт большие потери', value: round1(k.moraleSuccess * ts), kind: 'add' });
       }
       let negTotal = neg * negMult;
+      if (neg > 0 && k.moraleLossScale !== 1) {
+        negTotal *= k.moraleLossScale;
+        factors.push({ label: 'Потери морали — скорость падения морали (набор правил)', value: k.moraleLossScale, kind: 'mult' });
+      }
       const maxLoss = k.moraleMaxLossPerTurn * ts;
       if (maxLoss > 0 && negTotal > maxLoss) {
         factors.push({ label: `Ограничение потерь морали за ход`, value: round1(maxLoss), kind: 'base' });

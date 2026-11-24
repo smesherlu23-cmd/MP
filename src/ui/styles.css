@@ -5595,22 +5595,17 @@ html.desktop.fullscreen .toolbar-win {
   }
 }
 
-/* Каталог типов: эталонные значения — подпись под полем и под огневой мощью, выбор эталона. */
+/* Каталог типов: подпись под полем (разброс у типов того же вида), блок вооружения. */
 .ref-line {
   margin-top: 2px;
   font-size: var(--fs-xs);
   color: var(--faint);
   white-space: nowrap;
 }
-.fire-tbl td .ref-line {
-  text-align: right;
-}
-.ref-pick {
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.ref-pick select {
-  max-width: 260px;
+.weapon-box {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 
 /* Пока открыто окно, уведомления — слева внизу: справа они закрывали бы кнопки окна. */

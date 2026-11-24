@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import {
+  ammoPools,
   type EngineContext,
   STATUS_LABELS,
   arrivalTurn,
@@ -513,7 +514,7 @@ export function FormationRows(props: {
                 <td className="num">{vehStart ? `${vehNow}/${vehStart}` : <span className="faint">—</span>}</td>
                 {f.suppression && <td className={`num ${el.suppression > 50 ? 'bad' : ''}`}>{Math.round(el.suppression)}</td>}
                 {f.fatigue && <td className="num">{Math.round(el.fatigue)}</td>}
-                {f.ammo && <td className={`num ${el.ammo < b.ruleset.coefficients.lowAmmoThreshold ? 'bad' : ''}`}>{Math.round(el.ammo)}</td>}
+                {f.ammo && <AmmoCell E={E} el={el} low={b.ruleset.coefficients.lowAmmoThreshold} />}
                 {f.detection && <td className="center">{el.status === 'active' ? el.spotted ? 'да' : <span className="faint">—</span> : ''}</td>}
               </>
             )}
@@ -527,6 +528,23 @@ export function FormationRows(props: {
 // ------------------------------------------------------------------ карточка элемента
 
 /** Выбрать элементы стороны для группового решения: всех в бою или по тегу типов состава. */
+/** Боезапас элемента: средний, в подсказке — по видам вооружения; вид без выстрелов — красным. */
+function AmmoCell({ E, el, low }: { E: EngineContext; el: ElementState; low: number }) {
+  const a = E.ammo(el);
+  const pools = [...ammoPools(el, (id) => E.types.get(id), E.weaponTypes)].filter(([id]) => id);
+  const tip =
+    pools.length > 1 || (pools.length === 1 && Math.abs(pools[0][1].ammo - a) > 0.5)
+      ? pools.map(([id, p]) => `${E.weaponTypes.get(id)?.name ?? id}: ${Math.round(p.ammo)}%`).join('\n')
+      : undefined;
+  const empty = pools.some(([, p]) => p.ammo < low);
+  return (
+    <td className={`num ${a < low ? 'bad' : ''}`} data-tip={tip}>
+      {Math.round(a)}
+      {empty && a >= low && <span className="bad">*</span>}
+    </td>
+  );
+}
+
 function PickMenu({ b, E, side, onPick }: { b: Battle; E: EngineContext; side: SideId; onPick: (ids: string[]) => void }) {
   const act = b.elements.filter((x) => x.side === side && x.status === 'active');
   const byTag = new Map<string, string[]>();

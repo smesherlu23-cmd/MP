@@ -166,7 +166,7 @@ export function phaseChecks(E: EngineContext) {
         sev = Math.max(sev, 0.5);
         reasons.push({ label: `Шоковые потери за ход ${Math.round(turnLoss)}%`, value: 0.5, kind: 'base' });
       }
-      if (f.ammo && el.ammo <= 0) {
+      if (f.ammo && E.ammo(el) <= 0) {
         sev = Math.max(sev, 0.3);
         reasons.push({ label: 'Нет боезапаса', value: 0.3, kind: 'base' });
       }
@@ -300,7 +300,7 @@ export function phaseChecks(E: EngineContext) {
           label = sh.kind === 'hq' ? 'потеря штаба' : 'распад формирования';
         }
         if (hit <= 0) continue;
-        const v = hit * E.mult(el, 'moraleLoss');
+        const v = hit * E.mult(el, 'moraleLoss') * E.k.moraleLossScale;
         el.morale = clamp(el.morale - v, 0, 100);
         E.log({ phase: 'checks', level: 2, side: el.side, severity: 'bad', refs: [el.id], text: `Мораль ${e(el)} −${dec(v)}: ${label}.` });
       }

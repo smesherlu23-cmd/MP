@@ -1,6 +1,7 @@
 // Вмешательства ГМ между ходами. Каждое записывается в бой, поэтому бой можно воспроизвести
 // с тем же сидом и теми же решениями ГМ. Вмешательства не тратят случайные числа.
 
+import { addAmmo, setAmmo } from './weapons';
 import { createBattle, finish, stepTurn } from './battle';
 import { EngineContext, clamp, e, fm, notArrived, s as sd } from './context';
 import { plural } from './labels';
@@ -13,6 +14,8 @@ export interface ElementPatch {
   cohesion?: number;
   readiness?: number;
   ammo?: number;
+  /** Боезапас по видам вооружения, %. */
+  ammoBy?: Record<string, number>;
   fuel?: number;
   equipment?: number;
   fatigue?: number;
@@ -75,6 +78,19 @@ function setField(el: ElementState, key: PatchKey, val: unknown, b: Battle): str
     case 'defenseMod':
       el.defenseMod = Math.max(1, Number(val));
       break;
+    case 'ammo':
+      setAmmo(el, Number(val));
+      break;
+    case 'ammoBy': {
+      const names = new Map((b.ruleset.weaponTypes ?? []).map((w) => [w.id, w.name]));
+      const parts: string[] = [];
+      for (const [id, v] of Object.entries((val ?? {}) as Record<string, number>)) {
+        el.ammoBy ??= {};
+        el.ammoBy[id] = clamp(Number(v), 0, 100);
+        parts.push(`${names.get(id) ?? id} ${el.ammoBy[id]}%`);
+      }
+      return `боезапас: ${parts.join(', ')}`;
+    }
     default:
       el[key] = clamp(Number(val), 0, 100);
   }
@@ -194,7 +210,7 @@ export function applyIntervention(b: Battle, iv: { type: InterventionType; paylo
       for (const id of ids) {
         const el = E.elements.get(id);
         if (el?.status !== 'active') continue;
-        if (typeof p.ammo === 'number') el.ammo = clamp(el.ammo + p.ammo, 0, 100);
+        if (typeof p.ammo === 'number') addAmmo(el, p.ammo);
         if (typeof p.fuel === 'number') el.fuel = clamp(el.fuel + p.fuel, 0, 100);
         if (typeof p.equipment === 'number') el.equipment = clamp(el.equipment + p.equipment, 0, 100);
       }

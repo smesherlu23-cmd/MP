@@ -1,7 +1,7 @@
 // Окна боя: элемент, формирование, условия и дистанция.
 
 import { useState } from 'react';
-import { type Battle, type CustomModifier, type ElementState, type EngineContext, type SideId } from '../../../engine';
+import { ammoPools, type Battle, type CustomModifier, type ElementState, type EngineContext, type SideId } from '../../../engine';
 import { effectsText } from '../../components/EffectsEditor';
 import { TagChips } from '../../components/TagChips';
 import type { Target } from '../../components/BattleControls';
@@ -64,6 +64,8 @@ export function ElementModal({
   const el = b.elements.find((x) => x.id === id);
   const [edit, setEdit] = useState(false);
   const [patch, setPatch] = useState<Record<string, number>>({});
+  // Боезапас по видам вооружения (у элемента, где их несколько, — правится по каждому).
+  const [ammoBy, setAmmoBy] = useState<Record<string, number>>({});
   const [comps, setComps] = useState<Record<string, number>>({});
   if (!el) return null;
   const rs = b.ruleset;
@@ -92,15 +94,20 @@ export function ElementModal({
     .slice(-6)
     .reverse()
     .map((x) => ({ turn: x.turn, text: ownText(x.text) }));
-  const dirty = Object.keys(patch).length + Object.keys(comps).length > 0;
+  const pools = rs.features.ammo ? [...ammoPools(el, (id) => E.types.get(id), E.weaponTypes)].filter(([id]) => id) : [];
+  const perWeapon = pools.length > 1 || (pools.length === 1 && el.comps.some((c) => c.current > 0 && !E.types.get(c.typeId)?.weapons));
+  const stateOf = (key: keyof ElementState) => (key === 'ammo' ? E.ammo(el) : (el[key] as number));
+  const dirty = Object.keys(patch).length + Object.keys(comps).length + Object.keys(ammoBy).length > 0;
   const stateKeys = EDITABLE.filter((x) => !x.feature || rs.features[x.feature]);
   const cancel = () => {
     setPatch({});
+    setAmmoBy({});
     setComps({});
     setEdit(false);
   };
   const apply = () => {
     const p: Record<string, unknown> = { ...patch };
+    if (Object.keys(ammoBy).length) p.ammoBy = ammoBy;
     if (Object.keys(comps).length) p.comps = Object.entries(comps).map(([typeId, current]) => ({ typeId, current }));
     iv('editElement', { elementId: el.id, patch: p });
     cancel();
@@ -374,23 +381,36 @@ export function ElementModal({
         <div className="stack">
           {editing ? (
             <div className="fields" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
-              {stateKeys.map((x) => (
-                <Field key={x.key} label={x.label}>
-                  <Num
-                    value={patch[x.key] ?? Math.round(el[x.key] as number)}
-                    onChange={(v) => setPatch({ ...patch, [x.key]: v })}
-                    min={0}
-                    max={100}
-                    width="100%"
-                  />
-                </Field>
-              ))}
+              {stateKeys.map((x) =>
+                x.key === 'ammo' && perWeapon ? (
+                  pools.map(([id, p]) => (
+                    <Field key={`ammo-${id}`} label={`БК: ${E.weaponTypes.get(id)?.name ?? id}`}>
+                      <Num value={ammoBy[id] ?? Math.round(p.ammo)} onChange={(v) => setAmmoBy({ ...ammoBy, [id]: v })} min={0} max={100} width="100%" />
+                    </Field>
+                  ))
+                ) : (
+                  <Field key={x.key} label={x.label}>
+                    <Num
+                      value={patch[x.key] ?? Math.round(stateOf(x.key))}
+                      onChange={(v) => setPatch({ ...patch, [x.key]: v })}
+                      min={0}
+                      max={100}
+                      width="100%"
+                    />
+                  </Field>
+                ),
+              )}
             </div>
           ) : (
             <div className="state-list">
               {stateKeys.map((x) => (
-                <StateRow key={x.key} label={x.label} value={el[x.key] as number} inverse={HIGH_IS_BAD.has(x.key)} />
+                <StateRow key={x.key} label={x.label} value={stateOf(x.key)} inverse={HIGH_IS_BAD.has(x.key)} />
               ))}
+            </div>
+          )}
+          {!editing && perWeapon && (
+            <div className="faint small">
+              Боезапас по видам: {pools.map(([id, p]) => `${E.weaponTypes.get(id)?.name ?? id} ${Math.round(p.ammo)}%`).join(' · ')}
             </div>
           )}
           {!editing && (
